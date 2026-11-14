@@ -1,5 +1,7 @@
 extends RefCounted
 
+const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
+
 const BEATS := 12
 const TICKS_PER_BEAT := 21
 const TICKS_PER_SECOND := 60
@@ -180,7 +182,7 @@ const CAMPAIGN_ENEMIES := {
 		"push": 345.0, "displacement": 0.73}
 }
 
-const TILES := {
+const CORE_TILES := {
 	"pull": {
 		"label": "Pull", "width": 3, "range": 610.0, "damage": 5,
 		"targets": TARGET_RULES, "description": "Drag an enemy toward you."
@@ -420,6 +422,8 @@ const TILES := {
 	}
 }
 
+static var TILES: Dictionary = CORE_TILES.merged(ArsenalTiles.SPECS)
+
 var units: Array[Dictionary] = []
 var trace: Array[Dictionary] = []
 var activations: Array[Dictionary] = []
@@ -436,6 +440,15 @@ var _towline_mark: Dictionary = {}
 var _metronome_loop := -1
 var _barrage_hits: Dictionary = {}
 var _siege_loop := -1
+var _healed_tiles: Dictionary = {}
+
+
+static func _static_init() -> void:
+	TILES.make_read_only()
+
+
+static func is_ranged_tile(tile_id: String) -> bool:
+	return tile_id in RANGED_TILES or TILES.get(tile_id, {}).get("ranged", false)
 
 
 static func default_lanes(fixture: String = "duo") -> Array:
@@ -476,6 +489,7 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 	_metronome_loop = -1
 	_barrage_hits.clear()
 	_siege_loop = -1
+	_healed_tiles.clear()
 	if not options.is_empty():
 		_start_campaign(options)
 	elif fixture == "solo":
@@ -498,7 +512,7 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 		var has_close_attack := false
 		for tile: Dictionary in _lanes[lane]:
 			var spec: Dictionary = TILES[tile.id]
-			if tile.id in RANGED_TILES:
+			if is_ranged_tile(tile.id):
 				ranged_damage += int(spec.damage)
 			has_precision = has_precision or spec.has("distance_bonus")
 			has_close_attack = has_close_attack or (spec.damage > 0 and spec.range < PRECISION_SPACING)
@@ -811,6 +825,8 @@ func target_for(lane: int, tile_id: String, rule: String) -> Dictionary:
 		return {}
 	var tile: Dictionary = TILES[tile_id]
 	if tile.targets == ["self"]:
+		if ArsenalTiles.SPECS.has(tile_id):
+			return _arsenal_support_target(actor, tile)
 		return _guard_recipient(actor, tile)
 	var target := _select(actor, rule, tile.range)
 	return actor if target.is_empty() and tile.get("family") == "guard" else target
@@ -1077,6 +1093,12 @@ func _activate_lanes() -> void:
 
 func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 	var tile: Dictionary = TILES[tile_id]
+	var arsenal := ArsenalTiles.SPECS.has(tile_id)
+	if arsenal and tile.damage == 0:
+		var recipient := _arsenal_support_target(actor, tile)
+		_review_activation_target(recipient)
+		_apply_arsenal_support(actor, recipient, tile_id, tile)
+		return
 	if tile.get("family") == "guard":
 		_cast_guard(actor, tile_id, tile, rule)
 		return
@@ -1094,6 +1116,9 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 			_activation.reason = "No eligible enemy remained when the tile finished."
 		return
 	_review_activation_target(target)
+	if arsenal:
+		_cast_arsenal_attack(actor, target, tile_id, tile)
+		return
 	if tile.get("family") != "blink":
 		_prepare_siege_fuse(actor, target, tile_id)
 	match tile_id:
@@ -1147,7 +1172,9 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 
 func _select_attack_target(actor: Dictionary, tile_id: String, rule: String) -> Dictionary:
 	var tile: Dictionary = TILES[tile_id]
-	if actor.has("afterimage") and tile.damage > 0 and tile.get("family") != "blink" and tile_id != "bulwark_charge":
+	var moves_actor: bool = tile.get("family") == "blink" or tile_id == "bulwark_charge" \
+		or tile.has("retreat") or tile.get("charge", false)
+	if actor.has("afterimage") and tile.damage > 0 and not moves_actor:
 		var echo: Dictionary = actor.afterimage
 		actor.erase("afterimage")
 		var target := _select(actor, rule, tile.range, echo.position)
@@ -1191,13 +1218,18 @@ func _siege_pull_landing(enemy: Dictionary, center: Vector2) -> Vector2:
 	var start: Vector2 = enemy.pos
 	var resistance: float = enemy.get("attack", {}).get("displacement", 1.0)
 	var end := _bounded(start.move_toward(center, SIEGE_PULL_DISTANCE * resistance), enemy.radius)
+	return _slide_landing(enemy, end)
+
+
+func _slide_landing(mover: Dictionary, end: Vector2) -> Vector2:
+	var start: Vector2 = mover.pos
 	if end.is_equal_approx(start):
 		return start
 	var fraction := 1.0
 	for unit: Dictionary in units:
-		if unit.id == enemy.id or unit.hp <= 0:
+		if unit.id == mover.id or unit.hp <= 0:
 			continue
-		var minimum: float = enemy.radius + unit.radius + 3.0
+		var minimum: float = mover.radius + unit.radius + 3.0
 		var offset: Vector2 = unit.pos - start
 		if offset.length_squared() <= minimum * minimum:
 			if offset.dot(end - start) > 0.0:
@@ -1221,12 +1253,91 @@ func _activation_result(activation: Dictionary) -> String:
 		parts.append("%d damage dealt" % activation.damage)
 	if activation.guard > 0:
 		parts.append("%d Guard granted" % activation.guard)
-	if not parts.is_empty():
-		return ", ".join(parts) + "."
+	var notes: Array = activation.get("effect_details", [])
+	var result := ", ".join(parts) + "." if not parts.is_empty() else ""
+	if not notes.is_empty():
+		return (result + " " + " ".join(notes)).strip_edges()
+	if not result.is_empty():
+		return result
 	var tile: Dictionary = TILES[activation.tile]
-	if tile.get("family") == "guard" and (tile.damage == 0 or activation.target_name == activation.hero):
+	if tile.damage == 0 or (tile.get("family") == "guard" and activation.target_name == activation.hero):
 		return "Guard was already full."
 	return "The tile connected. The target blocked all damage."
+
+
+func _arsenal_support_target(actor: Dictionary, tile: Dictionary) -> Dictionary:
+	var recipient := actor
+	if tile.get("support") == "weakest":
+		for ally: Dictionary in units:
+			if ally.side == actor.side and ally.hp > 0 and ally.hp < recipient.hp:
+				recipient = ally
+	return recipient
+
+
+func _apply_arsenal_support(actor: Dictionary, recipient: Dictionary, tile_id: String, tile: Dictionary) -> void:
+	var guard: int = tile.get("guard", 0)
+	if guard > 0:
+		if tile.get("support") == "party":
+			_guard_allies(actor, tile_id, guard)
+		else:
+			_guard(recipient, guard, tile_id, actor)
+	var healing: int = tile.get("heal", 0)
+	if healing <= 0 or _activation.is_empty():
+		return
+	var placement := Vector2i(actor.lane, _activation.start)
+	var gained := mini(healing, recipient.max_hp - recipient.hp)
+	if gained <= 0 or _healed_tiles.has(placement):
+		return
+	_healed_tiles[placement] = true
+	recipient.hp += gained
+	_emit("heal", "%s restores %d HP to %s." % [tile.label, gained, recipient.name], actor, recipient, tile_id, gained)
+
+
+func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
+	if tile.get("charge", false) and not _charge(actor, target, tile_id):
+		_emit("miss", "%s: %s has no clear path." % [actor.name, tile.label], actor, target, tile_id)
+		return
+	_prepare_siege_fuse(actor, target, tile_id)
+	var damage: int = tile.damage
+	if target.hp * 2 < target.max_hp:
+		damage += int(tile.get("low_hp_bonus", 0))
+	if not str(target.intent).is_empty() and target.intent_tick >= tick:
+		damage += int(tile.get("windup_bonus", 0))
+	_strip_guard(actor, target, tile_id, int(tile.get("guard_break", 0)))
+	_damage(actor, target, damage, tile_id)
+	_apply_splash(actor, target, tile_id, tile)
+	if target.hp > 0:
+		if tile.has("push"):
+			_displace("push", actor, target, tile_id, target.pos - _attack_origin(actor), tile.push)
+		if tile.has("pull"):
+			_pull_toward(actor, target, tile_id, _attack_origin(actor), tile.pull)
+		if tile.has("mark_bonus") and not _activation.is_empty():
+			target["arsenal_mark"] = {
+				"bonus": tile.mark_bonus, "expires": tick + tile.mark_beats * TICKS_PER_BEAT,
+				"order": _activation.order,
+			}
+			_emit("mark", "%s marks %s for %d beats." % [tile.label, target.name, tile.mark_beats], actor, target, tile_id, tile.mark_bonus)
+	if tile.has("retreat"):
+		_retreat_from(actor, target, tile_id, tile.retreat)
+	if tile.has("guard"):
+		_apply_arsenal_support(actor, _arsenal_support_target(actor, tile), tile_id, tile)
+
+
+func _retreat_from(actor: Dictionary, target: Dictionary, tile_id: String, distance: float) -> void:
+	var start: Vector2 = actor.pos
+	var threat: Vector2 = target.pos
+	var away := threat.direction_to(start)
+	if away.is_zero_approx():
+		away = Vector2.LEFT
+	for angle in [0.0, 0.55, -0.55, 1.05, -1.05]:
+		var destination := _bounded(start + away.rotated(angle) * distance, actor.radius)
+		var landing := _slide_landing(actor, destination)
+		if landing.distance_squared_to(threat) <= start.distance_squared_to(threat) or landing.distance_squared_to(start) < 1.0:
+			continue
+		actor.pos = landing
+		actor.prev_pos = landing
+		_emit("retreat", "%s retreats from %s." % [actor.name, target.name], actor, target, tile_id, 0, start, landing)
+		return
 
 
 func _cast_shot(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
@@ -1235,6 +1346,10 @@ func _cast_shot(actor: Dictionary, target: Dictionary, tile_id: String, tile: Di
 	if origin.distance_squared_to(target.pos) > PRECISION_BONUS_RANGE * PRECISION_BONUS_RANGE:
 		damage += int(tile.get("distance_bonus", 0))
 	_damage(actor, target, damage, tile_id)
+	_apply_splash(actor, target, tile_id, tile)
+
+
+func _apply_splash(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
 	if not tile.has("splash"):
 		return
 	var center: Vector2 = target.pos
@@ -1324,11 +1439,15 @@ func _strike_and_push(actor: Dictionary, target: Dictionary, tile_id: String, da
 
 func _area_push(actor: Dictionary, target: Dictionary, tile_id: String, damage: int, radius: float, force: float, guard_break := 0) -> void:
 	for enemy in _enemies_in_area(actor, target.pos, radius):
-		var stripped := mini(enemy.guard, guard_break)
-		if stripped > 0:
-			enemy.guard -= stripped
-			_emit("guard_break", "%s strips %d Guard from %s." % [TILES[tile_id].label, stripped, enemy.name], actor, enemy, tile_id, stripped)
+		_strip_guard(actor, enemy, tile_id, guard_break)
 		_strike_and_push(actor, enemy, tile_id, damage, force)
+
+
+func _strip_guard(actor: Dictionary, target: Dictionary, tile_id: String, limit: int) -> void:
+	var stripped := mini(target.guard, limit)
+	if stripped > 0:
+		target.guard -= stripped
+		_emit("guard_break", "%s strips %d Guard from %s." % [TILES[tile_id].label, stripped, target.name], actor, target, tile_id, stripped)
 
 
 func _enemies_in_area(actor: Dictionary, center: Vector2, radius: float) -> Array[Dictionary]:
@@ -2157,6 +2276,7 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 	if TILES.has(tile_id):
 		amount = _class_attack_damage(actor, target, amount)
 		if not _activation.is_empty() and actor.side == "hero" and target.side == "enemy":
+			amount += _consume_arsenal_mark(actor, target, tile_id)
 			amount += _relic_attack_bonus(actor, target)
 			_apply_barrage_rack(actor, target, tile_id)
 		if target.get("marshal_plated", false) and actor.side == "hero":
@@ -2251,6 +2371,17 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		target["regent_contributors"] = []
 		_guard(target, 22, "regent_seals")
 		_emit("intent", "The Regent raises three seals. Land a hit from each hero within 4 beats to break them.", target, actor, "regent_seals")
+
+
+func _consume_arsenal_mark(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
+	var mark: Dictionary = target.get("arsenal_mark", {})
+	if mark.is_empty() or mark.order == _activation.order:
+		return 0
+	target.erase("arsenal_mark")
+	if mark.expires < tick:
+		return 0
+	_emit("mark_spent", "Mark on %s adds %d damage." % [target.name, mark.bonus], actor, target, tile_id, mark.bonus)
+	return mark.bonus
 
 
 func _relic_attack_bonus(actor: Dictionary, target: Dictionary) -> int:
@@ -2522,6 +2653,10 @@ func _emit(kind: String, message: String, actor: Dictionary = {}, target: Dictio
 				_activation.damage += amount
 			"guard":
 				_activation.guard += amount
+			"heal", "retreat", "charge", "mark", "mark_spent", "guard_break":
+				if not _activation.has("effect_details"):
+					_activation["effect_details"] = []
+				_activation.effect_details.append(message)
 	if kind in ["intent", "interrupt", "miss"] and BOSS_REVIEW_STAGES.has(tile_id):
 		_review_boss_event(BOSS_REVIEW_STAGES[tile_id], tile_id, message, actor, target, kind)
 	elif tile_id == "enemy_attack" and actor.get("name") == "The Tollkeeper":

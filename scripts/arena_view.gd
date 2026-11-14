@@ -69,7 +69,12 @@ const EFFECT_LENGTHS := {
 	"afterimage": 0.44,
 	"barrage_rack": 0.34,
 	"siege_fuse": 0.46,
+	"retreat": 0.30,
+	"mark": 0.36,
+	"mark_spent": 0.32,
+	"guard_break": 0.34,
 }
+const MARK_COLOR := Color("#e4adff")
 const ELITE_RELIC_EFFECTS := ["afterimage", "barrage_rack", "siege_fuse"]
 const ENCOUNTER_EFFECTS := {
 	"relay_interrupted": "relay_interrupted",
@@ -316,6 +321,11 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		draw_rect(gauge.grow(1), INK)
 		draw_rect(gauge, Color("#593b29"))
 		draw_rect(Rect2(gauge.position, Vector2(gauge.size.x * charge, gauge.size.y)), GOLD.lerp(ENEMY_COLOR, charge * charge))
+	if int(unit.get("arsenal_mark", {}).get("expires", -1)) >= combat_tick:
+		var center := bar.position + Vector2(-8.0, 2.5)
+		var diamond := PackedVector2Array([center + Vector2(0, -5), center + Vector2(4, 0),
+			center + Vector2(0, 5), center + Vector2(-4, 0)])
+		draw_colored_polygon(diamond, MARK_COLOR)
 	if unit.get("marshal_plated", false):
 		var exposed: bool = int(unit.get("marshal_exposed_until", 0)) > 0
 		var plate_color := HERO_COLOR if exposed else GOLD
@@ -525,7 +535,7 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 	var opacity := 1.0 - progress
 	match kind:
 		"hit":
-			if ArenaSim.TILES.get(effect.tile, {}).get("family") == "shot":
+			if ArenaSim.is_ranged_tile(effect.tile):
 				var lift := Vector2(0.0, -19.0)
 				var tracer := Color(GOLD, pow(opacity, 4.0))
 				draw_line(from_point + lift, to_point + lift, tracer, 2.0, true)
@@ -548,12 +558,19 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			for index in range(5):
 				var ray := Vector2.RIGHT.rotated(index * TAU / 5.0 + progress * 1.7)
 				draw_circle(to_point + ray * (8.0 + progress * 27.0), 2.2 * opacity, Color(TELEPORT_COLOR, opacity), true, -1.0, true)
+		"retreat":
+			_draw_arrow(from_point, to_point, Color(HERO_COLOR, opacity))
+		"mark", "mark_spent":
+			var radius := lerpf(26.0, 12.0, progress) if kind == "mark" else lerpf(12.0, 28.0, progress)
+			for index in range(4):
+				var angle := index * TAU / 4.0
+				draw_arc(to_point, radius, angle, angle + 0.65, 7, Color(MARK_COLOR, opacity), 2.0, true)
 		"afterimage":
 			var lift := Vector2(0.0, -19.0)
 			var shimmer := Color(TELEPORT_COLOR.lightened(0.15), opacity)
 			draw_dashed_line(from_point + lift, to_point + lift, shimmer, 2.0, 7.0)
 			draw_arc(from_point, 9.0 + progress * 14.0, 0.0, TAU, 24, shimmer, 2.5, true)
-		"barrage_rack":
+		"barrage_rack", "guard_break":
 			var center := to_point - Vector2(0.0, 16.0)
 			for index in range(5):
 				var ray := Vector2.RIGHT.rotated(index * TAU / 5.0)

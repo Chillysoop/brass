@@ -167,10 +167,14 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 	var payload := {"id": item.id, "lane": -1, "row": row_index, "start": item.start}
 	var chosen := int(_selected.get("row", -1)) == row_index and int(_selected.get("start", -1)) == int(item.start)
 	var name := String(tile.get("label", item.id))
+	var caption: String = tile.get("short_label", name)
 	var width: int = tile.width
 	var damage := int(tile.get("damage", 0))
-	var card := _button("%s · %d" % [name, damage] if damage > 0 else name, func(): _host.storage_pick(row_index, item))
-	GameIcons.decorate(card, GameIcons.tile(item.id, tile), 22)
+	var card := _button("%s · %d" % [caption, damage] if damage > 0 else caption, func(): _host.storage_pick(row_index, item))
+	GameIcons.decorate(card, GameIcons.tile(item.id, tile), 15 if width == 1 else 22)
+	if width == 1:
+		card.add_theme_constant_override("h_separation", 3)
+		card.add_theme_font_size_override("font_size", 13)
 	card.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	card.tooltip_text = "%s · %s\n%s" % [name, GameIcons.tile_stats(tile), tile.get("description", "")]
 	card.add_theme_stylebox_override("normal", _box(SELECTED if chosen else STORED, GOLD if chosen else TEAL))

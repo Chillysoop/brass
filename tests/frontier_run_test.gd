@@ -2,6 +2,7 @@ extends SceneTree
 
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
+const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
 var failures: Array[String] = []
 
 
@@ -125,6 +126,7 @@ func _initialize() -> void:
 	_check_navigation(path)
 	_check_legacy_medium_unlocks()
 	_check_slam_pool()
+	_check_arsenal_rewards()
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
@@ -812,8 +814,9 @@ func _check_artifice(path: String) -> void:
 			restored.data.segment = leg
 			var stock := restored._shop_tiles()
 			check(stock.size() == 4 and stock[3] in ArenaSim.BLINK_TIERS[leg]
-				and stock.slice(0, 3).all(func(id: String): return id in restored._normal_pool()),
-				"Artifice adds one Blink upgrade to the shop's three common choices.")
+				and stock[2] in ArsenalTiles.UNCOMMON_IDS
+				and stock.slice(0, 2).all(func(id: String): return id in restored._normal_pool()),
+				"Artifice adds one Blink upgrade to the shop's regular stock.")
 			if leg == 1:
 				check(stock[3] == "phase_cut", "A matching shop upgrade should favor completing a pair.")
 	check(offered_normal.has_all(ArenaSim.BLINK_TIERS[1] + ArenaSim.BLINK_TIERS[2]),
@@ -849,10 +852,11 @@ func _check_specialist_drafts(path: String) -> void:
 	run.loadout.storage[0] = [{"id": shot, "start": 0}, {"id": shot, "start": 3}]
 	check(shot in run._standard_rewards(), "An owned pair keeps its slot in the expanded combat draft.")
 	run.loadout.storage[0] = []
-	for seed_value in range(1, 129):
+	for seed_value in range(1, 513):
 		run.data.seed = seed_value
 		var shop := run._shop_tiles()
-		check(shop.size() == 4 and shop.slice(0, 3).all(func(id: String): return id in run._normal_pool()),
+		check(shop.size() == 4 and shop[2] in ArsenalTiles.UNCOMMON_IDS
+			and shop.slice(0, 2).all(func(id: String): return id in run._normal_pool()),
 			"Multiple unlocks share one shop slot and preserve three regular offers.")
 		stocked[shop[3]] = true
 		var offers := run._tier_rewards(run._tier_pool(4), 3, 81)
@@ -866,6 +870,39 @@ func _check_specialist_drafts(path: String) -> void:
 		check(stocked.has_all(ArenaSim.FORGE_FAMILIES[family][1]) and normal.has_all(ArenaSim.FORGE_FAMILIES[family][1]),
 			"Each new family can enter shops and combat drafts.")
 		check(legendary.has_all(ArenaSim.FORGE_FAMILIES[family][4]), "Each new Legendary can appear as a boss reward.")
+
+
+func _check_arsenal_rewards() -> void:
+	var path := "user://frontier-arsenal-test-%d.json" % Time.get_ticks_usec()
+	var run := FrontierRun.new()
+	run.load_save(path)
+	check(run.start_run(42) and run.choose_hero(run.data.offers[0]) and run.choose_relic("pocket_bell")
+		and run.choose_starter("bash"), "Start an expedition with no Aether Chart unlocks.")
+	run.loadout.storage[0].append({"id": "bash", "start": 0, "target": "nearest"})
+	var battle_tiles := {}
+	var shop_tiles := {}
+	for seed_value in range(1, 1025):
+		run.data.seed = seed_value
+		var rewards := run._standard_rewards()
+		var stock := run._shop_tiles()
+		check(rewards.size() == 3 and "bash" in rewards and rewards == run._standard_rewards(),
+			"The expanded seeded draft keeps the third copy of an owned pair.")
+		check(stock.size() == 3 and stock[2] in ArsenalTiles.UNCOMMON_IDS,
+			"A fresh shop carries an Uncommon among its three tiles.")
+		for id: String in rewards:
+			battle_tiles[id] = true
+		for id: String in stock:
+			shop_tiles[id] = true
+	var added_tiles := ArsenalTiles.COMMON_IDS + ArsenalTiles.UNCOMMON_IDS
+	check(run._normal_pool().size() == 22 and battle_tiles.has_all(added_tiles) and shop_tiles.has_all(added_tiles),
+		"Fresh runs can find all 24 new tiles in both fights and shops.")
+	check(run.finish_combat(true, 90), "The expanded pool is active at the opening fight.")
+	var restored := FrontierRun.new()
+	check(restored.load_save(path) and restored.data.offers == run.data.offers and restored.reward_hint("bash") == "Third copy",
+		"Resuming keeps all three offers and identifies the copy needed for the forge.")
+	for suffix in ["", ".bak", ".tmp"]:
+		if FileAccess.file_exists(path + suffix):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
 
 
 func _check_navigation(path: String) -> void:

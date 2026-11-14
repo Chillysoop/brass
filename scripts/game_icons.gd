@@ -23,7 +23,7 @@ const RARITIES := ["common", "uncommon", "rare", "epic", "legendary"]
 
 
 static func tile(id: String, spec: Dictionary) -> String:
-	return TILE_ICONS.get(id, FAMILY_ICONS.get(spec.get("family", id), "battle"))
+	return spec.get("icon", TILE_ICONS.get(id, FAMILY_ICONS.get(spec.get("family", id), "battle")))
 
 
 static func relic(id: String) -> String:
@@ -50,7 +50,8 @@ static func rarity(spec: Dictionary) -> Color:
 
 
 static func tile_stats(spec: Dictionary) -> String:
-	var stats := PackedStringArray(["%d beats" % int(spec.width)])
+	var width := int(spec.width)
+	var stats := PackedStringArray(["1 beat" if width == 1 else "%d beats" % width])
 	if int(spec.get("damage", 0)) > 0:
 		stats.append("%d damage" % int(spec.damage))
 	return " · ".join(stats)

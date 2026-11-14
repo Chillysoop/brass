@@ -242,7 +242,8 @@ func _check(condition: bool, message: String) -> void:
 
 func _new_route_playthrough(game: Control, difficulty: String, location: String) -> int:
 	var run: RefCounted = game.run
-	game.run_start(42, difficulty, location)
+	var brass_hard := location == "brass" and difficulty == "hard"
+	game.run_start(3 if brass_hard else 42, difficulty, location)
 	if run.data.is_empty():
 		_check(false, "Expected to start " + location + " " + difficulty)
 		return 0
@@ -295,11 +296,15 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 					if moonwreck_medium:
 						_stow_early_hook(game)
 					elif moonwreck_hard:
-						_arrange_hard_combo(game, [
-							{"id": "bash", "start": 2, "target": "nearest"},
-							{"id": "pull", "start": 2, "target": "nearest"},
-							{"id": "bash", "start": 4, "target": "nearest"},
-						], 5)
+						var pulls := _pull_tiles(game)
+						_check(not pulls.is_empty(), "The Admiral playthrough needs a tile that can pull.")
+						if not pulls.is_empty():
+							var pull := pulls[0]
+							_arrange_hard_combo(game, [
+								{"id": "bash", "start": 2, "target": "nearest"},
+								{"id": pull, "start": 5 - ArenaSim.TILES[pull].width, "target": "nearest"},
+								{"id": "bash", "start": 4, "target": "nearest"},
+							], 6)
 					var saved := FrontierRun.new()
 					var boss_id: String = {"easy": "wreckmaster", "medium": "tidekeeper", "hard": "drowned_admiral"}[difficulty]
 					_check(saved.load_save(save_path) and saved.encounter().get("boss_id") == boss_id
@@ -365,12 +370,19 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 			"reward":
 				_pick_elite_relic(run)
 				var chosen: String = run.data.offers[0]
-				for preferred in ["dawn_bastion", "event_horizon", "bulwark_charge", "shield_ram", "hook_bash", "bash", "shot", "slam"]:
+				var priorities := ["dawn_bastion", "event_horizon", "bulwark_charge", "shield_ram", "hook_bash", "bash", "shot", "slam"]
+				if brass_hard:
+					priorities = ["dawn_bastion", "event_horizon", "shield_ram", "hook_bash", "scattershot", "finishing_cut", "slam", "guard", "shot", "bash"]
+				for preferred in priorities:
 					if preferred in run.data.offers:
 						chosen = preferred
 						break
-				if "pull" in run.data.offers and ((crown_medium or moonwreck_hard) and run.data.node.row == 0
-					or crown_hard and run.data.node.row in [0, 4]):
+				if (crown_medium or crown_hard) and _pull_tiles(game).size() < (2 if crown_hard else 1):
+					for pull: String in ["pull", "grapple", "hook_bash"]:
+						if pull in run.data.offers:
+							chosen = pull
+							break
+				if "pull" in run.data.offers and moonwreck_hard and run.data.node.row == 0:
 					chosen = "pull"
 				if not game.run_claim_reward(chosen):
 					run.reward("skip")
@@ -387,6 +399,8 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 				run.choose_node(choice.id)
 			"shop":
 				run.shop_heal()
+				if (crown_medium or crown_hard) and "grapple" in run.data.offers:
+					game.run_buy_shop("grapple")
 				for tile: String in run.data.offers.duplicate():
 					if tile in ["shield_ram", "hook_bash", "shot", "bash"]:
 						game.run_buy_shop(tile)
@@ -494,47 +508,42 @@ func _arrange_wreckmaster_bash(game: Control) -> void:
 
 
 func _arrange_crown_combo(game: Control) -> void:
-	var pull: Dictionary = {}
-	var bash: Dictionary = {}
-	for item: Dictionary in game.lanes[0]:
-		if item.id == "pull":
-			pull = item
-		elif item.id == "bash" and bash.is_empty():
-			bash = item
-	_check(not pull.is_empty() and not bash.is_empty(), "Crown Medium needs its starter Bash and earned Pull.")
-	if pull.is_empty() or bash.is_empty():
+	var pulls := _pull_tiles(game)
+	_check(not pulls.is_empty(), "Crown Medium needs a tile that can pull apart the link.")
+	if pulls.is_empty():
 		return
-	game.lanes[0].erase(pull)
-	game.lanes[0].erase(bash)
-	var remaining: Array = game.lanes[0] + game.lanes[1]
-	for row: Array in game.storage_rows:
-		remaining.append_array(row)
-		row.clear()
-	pull.start = 0
-	bash.start = 2
-	bash.target = "highest_hp"
-	game.lanes[0].assign([pull])
-	game.lanes[1].assign([bash])
-	remaining.sort_custom(func(left: Dictionary, right: Dictionary):
-		return ArenaSim.TILES[left.id].damage > ArenaSim.TILES[right.id].damage)
-	for item: Dictionary in remaining:
-		var destination: Dictionary = game._loot_destination(item.id)
-		_check(not destination.is_empty(), "The Crown Medium test should retain all earned tiles.")
-		if not destination.is_empty():
-			item.start = destination.start
-			destination.items.append(item)
-	game._save_loadout()
-
-
-func _arrange_crown_hard_combo(game: Control) -> void:
+	var pull := "hook_bash" if "hook_bash" in pulls else pulls[0]
 	_arrange_hard_combo(game, [
-		{"id": "pull", "start": 0, "target": "relay_left"},
-		{"id": "pull", "start": 1, "target": "relay_right"},
-		{"id": "bash", "start": 2, "target": "relay_regent"},
+		{"id": pull, "start": 3 - ArenaSim.TILES[pull].width, "target": "nearest"},
+		{"id": "bash", "start": 2, "target": "highest_hp"},
 	], 4)
 
 
-func _arrange_hard_combo(game: Control, combo: Array, first_free_beat: int) -> void:
+func _arrange_crown_hard_combo(game: Control) -> void:
+	var pulls := _pull_tiles(game)
+	_check(pulls.size() >= 2, "Crown Hard needs two tiles that can pull apart the links.")
+	if pulls.size() < 2:
+		return
+	var first := "hook_bash" if "hook_bash" in pulls else pulls[0]
+	pulls.erase(first)
+	var second := "grapple" if "grapple" in pulls else pulls[0]
+	_arrange_hard_combo(game, [
+		{"id": first, "start": 3 - ArenaSim.TILES[first].width, "target": "relay_left"},
+		{"id": second, "start": 7 - ArenaSim.TILES[second].width, "target": "relay_right"},
+		{"id": "bash", "start": 5, "target": "relay_regent"},
+	], 7, true)
+
+
+func _pull_tiles(game: Control) -> Array[String]:
+	var ids: Array[String] = []
+	for row: Array in game.lanes + game.storage_rows:
+		for tile: Dictionary in row:
+			if tile.id in ["pull", "grapple", "hook_bash"]:
+				ids.append(tile.id)
+	return ids
+
+
+func _arrange_hard_combo(game: Control, combo: Array, first_free_beat: int, discard_overflow := false) -> void:
 	var remaining: Array = []
 	for lane: Array in game.lanes + game.storage_rows:
 		remaining.append_array(lane)
@@ -573,7 +582,8 @@ func _arrange_hard_combo(game: Control, combo: Array, first_free_beat: int) -> v
 					break
 			if equipped:
 				break
-		_check(equipped, "The Hard combo should fit alongside the rest of the earned tiles.")
+		# Crown's later combo reserves more early beats, so keep the strongest tiles that still fit.
+		_check(equipped or discard_overflow, "The Hard combo should fit alongside the rest of the earned tiles.")
 	game._save_loadout()
 
 

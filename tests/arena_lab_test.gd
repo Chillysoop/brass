@@ -48,6 +48,7 @@ func _run() -> void:
 	await process_frame
 	_check(lab.lanes[1].size() == 4, "Dragging the palette tile to an open span should place it.")
 	await _check_nudge(lab)
+	await _check_practice_arsenal(lab)
 	await _check_target_icons(lab)
 	_check_enemy_windup(lab)
 	lab._load_fixture("duo")
@@ -110,6 +111,37 @@ func _run() -> void:
 	lab.queue_free()
 	await process_frame
 	quit(0 if failures.is_empty() else 1)
+
+func _check_practice_arsenal(lab: Control) -> void:
+	lab._load_fixture("duo")
+	await process_frame
+	_click(lab.arsenal_button.get_global_rect().get_center())
+	await process_frame
+	var jab: Button = lab.arsenal_panel.find_child("PracticeTile_jab", true, false)
+	var watchfire: Button = lab.arsenal_panel.find_child("PracticeTile_watchfire", true, false)
+	_check(lab.arsenal_panel.visible and jab != null and watchfire != null, "Practice must open a picker with Common and Uncommon expansion tiles.")
+	if jab == null or watchfire == null:
+		return
+	_click(jab.get_global_rect().get_center())
+	await process_frame
+	var board: Control = lab.lane_stack.get_child(0).get_child(1)
+	_click((board.get_child(0) as Control).get_global_rect().get_center())
+	await process_frame
+	_check(lab.tile_cards[0].has(0) and lab.tile_cards[0][0].get_meta("tile").id == "jab",
+		"The one-beat tile should equip through the picker and timeline.")
+	_click(lab.arsenal_button.get_global_rect().get_center())
+	await process_frame
+	board = lab.lane_stack.get_child(1).get_child(1)
+	var from := watchfire.get_global_rect().get_center()
+	var to := (board.get_child(2) as Control).get_global_rect().get_center()
+	var target_start := 2
+	_button_input(from, true)
+	_motion(from, from.lerp(to, 0.6), true)
+	_motion(from.lerp(to, 0.6), to, true)
+	_button_input(to, false)
+	await process_frame
+	_check(lab.tile_cards[1].has(target_start) and lab.tile_cards[1][target_start].get_meta("tile").id == "watchfire",
+		"An Uncommon tile should drag directly from the picker onto a timeline.")
 
 func _check_nudge(lab: Control) -> void:
 	lab.lanes[0].assign([lab._entry("bash", 1, "nearest"), lab._entry("shot", 3, "lowest_hp"), lab._entry("bash", 7, "farthest")])

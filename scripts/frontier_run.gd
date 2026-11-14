@@ -1,6 +1,7 @@
 extends RefCounted
 
 const ArenaSim = preload("res://scripts/arena_sim.gd")
+const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
 const HEROES = ArenaSim.HERO_CLASSES
 const BASE_TILES := ["bash", "shot", "slam", "pull", "guard", "blink"]
 const STARTER_TILES := ["bash", "shot", "slam"]
@@ -1155,6 +1156,8 @@ func _relic_bridge(excluded: Array) -> Dictionary:
 	var elite := _elite_relic_bridge(excluded)
 	if not elite.is_empty():
 		return elite
+	if data.node.type != "opening":
+		return {}
 	var starter: String = data.relics.front() if not data.relics.is_empty() else ""
 	var candidates: Array
 	var hint: String
@@ -1177,7 +1180,7 @@ func _relic_bridge(excluded: Array) -> Dictionary:
 	var eligible := candidates.filter(func(id: String): return id not in excluded)
 	if eligible.is_empty():
 		return {}
-	var id: String = eligible[0] if data.node.type == "opening" else _sample(eligible, 1, int(data.seed), _node_salt(86))[0]
+	var id: String = eligible[0]
 	return {"tile": id, "hint": hint}
 
 
@@ -1212,6 +1215,8 @@ func _has_build_tile(matches: Callable) -> bool:
 
 func _tier_pool(tier: int) -> Array:
 	var pool: Array = ArenaSim.BASH_TIERS[tier].duplicate()
+	if tier == 1:
+		pool.append_array(ArsenalTiles.UNCOMMON_IDS)
 	if tier == 4:
 		pool.append("meteor_seal")
 	if _owns_slam_family():
@@ -1255,7 +1260,8 @@ func _tier_rewards(pool: Array, count: int, salt: int) -> Array:
 
 
 func _shop_tiles() -> Array:
-	var stock := _sample(_normal_pool(), 3, int(data.seed), _node_salt(51))
+	var stock := _sample(_normal_pool(), 2, int(data.seed), _node_salt(51))
+	stock.append(_sample(ArsenalTiles.UNCOMMON_IDS, 1, int(data.seed), _node_salt(55))[0])
 	var upgrades := _specialist_pool(int(data.segment))
 	if upgrades.is_empty():
 		return stock
@@ -1284,7 +1290,8 @@ func _owned_reward(pool: Array, salt: int, favor_owned_family := true) -> String
 			continue
 		var priority := 0
 		var spec: Dictionary = ArenaSim.TILES[id]
-		if prioritize_forge and forge_family_available(spec.get("family", "")) and spec.rarity != "legendary" and counts[id] < 3:
+		if (counts[id] == 2 or prioritize_forge) and forge_family_available(spec.get("family", "")) \
+				and spec.rarity != "legendary" and counts[id] < 3:
 			# Complete pairs first, then prefer useful copies at higher rarities.
 			priority = int(counts[id]) * TILE_RARITIES.size() + TILE_RARITIES.find(spec.rarity)
 		if priority > best_priority:
@@ -1314,6 +1321,7 @@ func _owned_reward(pool: Array, salt: int, favor_owned_family := true) -> String
 
 func _normal_pool() -> Array:
 	var pool := BASE_TILES.duplicate()
+	pool.append_array(ArsenalTiles.COMMON_IDS)
 	if "curated_cache" in profile.meta:
 		pool.append("gravity_hook")
 	return pool

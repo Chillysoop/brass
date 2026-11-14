@@ -9,6 +9,7 @@ const GameIcons = preload("res://scripts/game_icons.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const FrontierScreen = preload("res://scripts/frontier_screen.gd")
+const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
 const PRACTICE_TILES := ["pull", "bash", "guard", "shot", "blink", "slam"]
 const INK := Color("#101820")
 const PANEL := Color("#192732")
@@ -57,6 +58,8 @@ var relic_badges: Dictionary = {}
 var relic_pulses: Dictionary = {}
 var lane_stack: VBoxContainer
 var palette: HBoxContainer
+var arsenal_button: Button
+var arsenal_panel: PanelContainer
 var arena
 var fixture_picker: OptionButton
 var speed_picker: OptionButton
@@ -233,6 +236,11 @@ func _build() -> void:
 	palette.add_theme_constant_override("separation", 5)
 	palette.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tray.add_child(palette)
+	arsenal_button = _button("Combat tiles", _toggle_practice_arsenal)
+	arsenal_button.name = "PracticeArsenal"
+	GameIcons.decorate(arsenal_button, "battle", 15)
+	arsenal_button.tooltip_text = "Browse and equip all 24 new tiles in Arena Practice."
+	tray.add_child(arsenal_button)
 	tray.add_child(fixture_picker)
 	tray.add_child(speed_picker)
 	tray.add_child(review_button)
@@ -248,6 +256,7 @@ func _build() -> void:
 	storage_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	storage_screen.configure(self)
 	storage_screen.hide()
+	_build_practice_arsenal()
 	forge_screen = ForgeScreen.new()
 	add_child(forge_screen)
 	forge_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -294,6 +303,7 @@ func _entry(id: String, start: int, target: String) -> Dictionary:
 
 func _reset_fight() -> void:
 	_close_review()
+	arsenal_panel.hide()
 	state = "setup"
 	edge_tick = 0
 	edge_tiles.clear()
@@ -315,6 +325,7 @@ func _action() -> void:
 				return
 			selected.clear()
 			storage_screen.hide()
+			arsenal_panel.hide()
 			edge_tick = 0
 			edge_tiles.clear()
 			if campaign:
@@ -386,6 +397,7 @@ func _update_controls() -> void:
 	speed_picker.visible = not reviewing and (not campaign or (encounter_setup and state != "finished"))
 	review_button.visible = state == "finished" and not reviewing
 	palette.visible = state == "setup" and not campaign and retry_options.is_empty()
+	arsenal_button.visible = palette.visible
 	palette.get_parent().visible = not campaign or camp_forge or review_button.visible or speed_picker.visible
 	setup_hint.visible = state == "setup"
 	var cycle := ArenaSim.LOOP_TICKS
@@ -768,6 +780,65 @@ func _rebuild_loadout() -> void:
 		_render_storage()
 
 
+func _build_practice_arsenal() -> void:
+	var center := CenterContainer.new()
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	arena.add_child(center)
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	arsenal_panel = PanelContainer.new()
+	arsenal_panel.name = "ArsenalTilePicker"
+	arsenal_panel.custom_minimum_size.x = 760
+	arsenal_panel.add_theme_stylebox_override("panel", _box(PANEL, GOLD, 10))
+	center.add_child(arsenal_panel)
+	var layout := VBoxContainer.new()
+	layout.add_theme_constant_override("separation", 5)
+	arsenal_panel.add_child(layout)
+	var header := HBoxContainer.new()
+	layout.add_child(header)
+	var heading := _label("Combat tiles", 21, GOLD)
+	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(heading)
+	header.add_child(_button("Close", arsenal_panel.hide))
+	for ids: Array in [ArsenalTiles.COMMON_IDS, ArsenalTiles.UNCOMMON_IDS]:
+		if ids == ArsenalTiles.UNCOMMON_IDS:
+			layout.add_child(HSeparator.new())
+		var grid := GridContainer.new()
+		grid.columns = 4
+		grid.add_theme_constant_override("h_separation", 5)
+		grid.add_theme_constant_override("v_separation", 4)
+		layout.add_child(grid)
+		for id: String in ids:
+			var tile: Dictionary = ArenaSim.TILES[id]
+			var payload := {"id": id}
+			var button := _button("%s · %d" % [tile.label, tile.width], func():
+				if selected == payload:
+					selected.clear()
+				_select(payload)
+				arsenal_panel.hide()
+				if selected.get("id") == id:
+					setup_hint.text = "%s · %s" % [tile.label, tile.description]
+			)
+			button.name = "PracticeTile_" + id
+			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			button.add_theme_color_override("font_color", GameIcons.rarity(tile))
+			GameIcons.decorate(button, GameIcons.tile(id, tile), 17)
+			button.tooltip_text = "%s · %s\n%s" % [str(tile.rarity).capitalize(), GameIcons.tile_stats(tile), tile.description]
+			_drag_source(button, payload)
+			grid.add_child(button)
+	arsenal_panel.hide()
+
+
+func _toggle_practice_arsenal() -> void:
+	if arsenal_panel.visible:
+		arsenal_panel.hide()
+	else:
+		if storage_screen.visible:
+			storage_close()
+		arsenal_panel.show()
+		var first: Button = arsenal_panel.find_child("PracticeTile_" + ArsenalTiles.COMMON_IDS.front(), true, false)
+		first.grab_focus()
+
+
 func _rebuild_relic_strip() -> void:
 	for child in relic_strip.get_children():
 		relic_strip.remove_child(child)
@@ -838,7 +909,7 @@ func _build_lane(lane_index: int) -> void:
 	if campaign and run.data.get("location", "brass") == "glass":
 		var ranged_damage := 0
 		for item: Dictionary in lanes[lane_index]:
-			if item.id in ArenaSim.RANGED_TILES:
+			if ArenaSim.is_ranged_tile(item.id):
 				ranged_damage += int(ArenaSim.TILES[item.id].damage)
 		hero_name.tooltip_text = "%d ranged damage · Foundry threat" % ranged_damage
 	var all := _target_buttons(sim.target_rules("bash"), defaults[lane_index], func(rule: String): _set_all(lane_index, rule), true)
@@ -894,17 +965,23 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	card.offset_right = 0
 	card.set_meta("tile", item)
 	tile_cards[lane_index][item.start] = card
-	var tile_title: String = tile.label
+	var tile_title: String = tile.get("short_label", tile.label)
 	if int(tile.get("damage", 0)) > 0:
 		tile_title += "  ·  %d" % int(tile.damage)
 	var name_button := _button(tile_title, func(): _select(payload))
-	GameIcons.decorate(name_button, GameIcons.tile(item.id, tile), 20)
+	var icon_key := GameIcons.tile(item.id, tile)
+	GameIcons.decorate(name_button, icon_key, 15 if tile.width == 1 else 20)
+	if tile.width == 1:
+		name_button.add_theme_constant_override("h_separation", 3)
 	name_button.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	name_button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	name_button.add_theme_font_size_override("font_size", 13)
-	var tint: Color = {
-		"guard": Color("#254949"), "blink": Color("#413653"), "shot": Color("#273f52"),
-	}.get(tile.get("family", ""), Color("#254949") if item.id in ["pull", "gravity_hook"] else Color("#583b35"))
+	var tones := {
+		"guard": Color("#254949"), "teleport": Color("#413653"), "shot": Color("#273f52"),
+		"pull": Color("#254949"), "rest": Color("#334c3e"), "elite": Color("#47384a"),
+	}
+	var family: String = tile.get("family", "")
+	var tint: Color = tones.get(family, tones.get(icon_key, Color("#583b35")))
 	var rarity_edge := GameIcons.rarity(tile).lerp(EDGE, 0.5)
 	var tile_back := Panel.new()
 	tile_back.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -914,25 +991,36 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	board.move_child(tile_back, card.get_index())
 	card.set_meta("tile_back", tile_back)
 	name_button.tooltip_text = _tile_tooltip(lane_index, item, tile)
-	name_button.add_theme_stylebox_override("normal", _box(tint, GOLD if active else rarity_edge))
-	name_button.add_theme_stylebox_override("disabled", _box(tint, rarity_edge))
+	for mode in ["normal", "disabled"]:
+		var background := _box(tint, GOLD if active and mode == "normal" else rarity_edge)
+		if tile.width == 1:
+			background.content_margin_left = 3
+			background.content_margin_right = 3
+			background.content_margin_top = 0
+			background.content_margin_bottom = 0
+		name_button.add_theme_stylebox_override(mode, background)
 	name_button.disabled = state != "setup"
 	card.add_child(name_button)
 	_drag_source(name_button, payload, board, lane_index, offer_height)
 	var available_rules: Array = sim.target_rules(item.id)
 	var current_rule: String = item.target if item.target in available_rules else available_rules[0]
-	var targets := _target_buttons(available_rules, current_rule, func(rule: String):
+	var choose := func(rule: String):
 		item.target = rule
 		_save_loadout()
 		var new_preview: Dictionary = sim.target_for(lane_index, item.id, item.target)
 		name_button.tooltip_text = _tile_tooltip(lane_index, item, tile)
 		setup_hint.text = "%s · %s" % [tile.label, new_preview.get("name", "No eligible target")]
-	)
-	card.add_child(targets)
-	_drop_destination(targets, board, lane_index, offer_height)
-	for target_button: Control in targets.get_children():
-		if target_button is Button:
-			_drop_destination(target_button, board, lane_index, offer_height)
+	var target_group := ButtonGroup.new()
+	var rule_rows := [available_rules]
+	if tile.width == 1 and available_rules.size() > 4:
+		rule_rows = [available_rules.slice(0, 4), available_rules.slice(4)]
+	for rules: Array in rule_rows:
+		var targets := _target_buttons(rules, current_rule, choose, false, target_group)
+		card.add_child(targets)
+		_drop_destination(targets, board, lane_index, offer_height)
+		for target_button: Control in targets.get_children():
+			if target_button is Button:
+				_drop_destination(target_button, board, lane_index, offer_height)
 	var marker := Panel.new()
 	marker.name = "TimingMarker"
 	marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -959,11 +1047,12 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	pips.offset_right = -5
 	pips.offset_top = offer_height + 1
 
-func _target_buttons(rules: Array, current: String, choose: Callable, all := false) -> HBoxContainer:
+func _target_buttons(rules: Array, current: String, choose: Callable, all := false, group: ButtonGroup = null) -> HBoxContainer:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 2)
 	row.alignment = BoxContainer.ALIGNMENT_CENTER
-	var group := ButtonGroup.new()
+	if group == null:
+		group = ButtonGroup.new()
 	if all:
 		var label := _label("All", 11, MUTED)
 		row.add_child(label)
@@ -992,8 +1081,8 @@ func _tile_tooltip(lane_index: int, item: Dictionary, tile: Dictionary) -> Strin
 	var available_rules: Array = sim.target_rules(item.id)
 	var rule: String = item.target if item.target in available_rules else available_rules[0]
 	var preview: Dictionary = sim.target_for(lane_index, item.id, rule)
-	return "%s · %s\n%s\nFires on beat %d · %s" % [
-		str(tile.get("rarity", "common")).capitalize(), GameIcons.tile_stats(tile), tile.description,
+	return "%s · %s · %s\n%s\nFires on beat %d · %s" % [
+		tile.label, str(tile.get("rarity", "common")).capitalize(), GameIcons.tile_stats(tile), tile.description,
 		item.start + tile.width, preview.get("name", "No target in range at setup")
 	]
 
@@ -1099,7 +1188,9 @@ func _add_drag_tile(id: String, start: int, top: int, accent: Color, copy := "")
 	ghost.add_theme_stylebox_override("panel", _box(Color("#20323e"), accent))
 	_add_span(drag_overlay, ghost, start, tile.width, top + 1, -1)
 	ghost.offset_right = 0
-	var caption := _label("%s · Beat %d" % [tile.label, start + int(tile.width)] if copy.is_empty() else copy, 13, accent)
+	var firing_beat := start + int(tile.width)
+	var timing := "Beat %d" % firing_beat if tile.width == 1 else "%s · Beat %d" % [tile.label, firing_beat]
+	var caption := _label(timing if copy.is_empty() else copy, 13, accent)
 	caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	caption.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -1132,6 +1223,12 @@ func _input(event: InputEvent) -> void:
 	if is_instance_valid(drag_board) and (not arena_screen.is_visible_in_tree()
 		or not drag_board.get_rect().has_point(drag_board.get_parent().get_global_transform_with_canvas().affine_inverse() * drag_pointer)):
 		_clear_drag_preview()
+
+func _unhandled_key_input(event: InputEvent) -> void:
+	if event.is_action_pressed("ui_cancel") and arsenal_panel.is_visible_in_tree():
+		arsenal_panel.hide()
+		arsenal_button.grab_focus()
+		get_viewport().set_input_as_handled()
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_DRAG_END:
@@ -1205,6 +1302,7 @@ func tile_spec(id: String) -> Dictionary:
 
 func _open_storage() -> void:
 	if state == "setup":
+		arsenal_panel.hide()
 		arena_screen.show()
 		storage_screen.show()
 		_render_storage()
@@ -1417,6 +1515,7 @@ func _show_frontier(page := "") -> void:
 	battle_snapshot.clear()
 	retry_options = {}
 	arena_screen.hide()
+	arsenal_panel.hide()
 	storage_screen.hide()
 	forge_screen.hide()
 	frontier_screen.show()
