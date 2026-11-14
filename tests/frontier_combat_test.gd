@@ -34,6 +34,7 @@ func _initialize() -> void:
 	var healer := _fight("apothecary", "opening", 80, ["shot"], [])
 	_check(_has_event(healer, "heal", "apothecary"), "Apothecary heals on a tile hit")
 	_check_glass_targeting()
+	_check_prism_ward()
 	_check_regent_seals()
 	for failure in failures:
 		printerr(failure)
@@ -57,6 +58,41 @@ func _check_glass_targeting() -> void:
 		return event.actor.begins_with("ember_twin") and event.target == "hero_2"), "Ember Twin prioritizes current low HP")
 	sim._damage(sim.units[0], sim.units[2], 200, "shot")
 	_check(sim.units[3].get("enraged", false), "The surviving Twin rallies")
+
+
+func _check_prism_ward() -> void:
+	var options := {"location": "glass", "difficulty": "medium", "segment": 2, "encounter": "boss",
+		"boss_id": "prism_warden", "heroes": [{"hero": "starshot"}, {"hero": "warden", "hp": 60}]}
+	var sim := ArenaSim.new()
+	sim.start([[{"id": "shot", "start": 0}], []], "duo", options)
+	var prism: Dictionary = sim.units[2]
+	_check(prism.get("sprite") == "prism_warden", "Glass Medium leg two summons the Prism Warden")
+	for frame in range(330):
+		sim.step()
+		if prism.intent != "":
+			break
+	_check(prism.intent == "hero_1" and prism.prism_secondary == "hero_2",
+		"Prism marks ranged and low-health heroes separately")
+	sim._resolve_intent(prism)
+	_check(sim.units[0].hp < 100 and sim.units[1].hp < 60, "Prism's dual beams hit both marked heroes in range")
+	sim._damage(sim.units[0], prism, 370, "shot")
+	_check(prism.prism_warded, "Prism ward rises at its phase change")
+	sim._displace("pull", sim.units[0], prism, "pull", Vector2.LEFT, 800.0)
+	_check(prism.prism_window_until > sim.tick and _has_event(sim, "interrupt", "prism_exposed"),
+		"Displacement exposes the prism ward")
+	sim._damage(sim.units[0], prism, 14, "shot")
+	_check(prism.prism_warded, "Same hero cannot break the prism ward")
+	prism.intent = "hero_1"
+	sim._damage(sim.units[1], prism, 14, "shot")
+	_check(not prism.prism_warded and prism.intent == "" and _has_event(sim, "interrupt", "prism_shattered"),
+		"Second hero shatters the prism ward and cancels the charged beams")
+
+	options.segment = 1
+	options.boss_id = "crucible_twins"
+	var first_leg := ArenaSim.new()
+	first_leg.start([[]], "solo", options)
+	_check(first_leg.units[2].get("sprite") == "glass_twin" and first_leg.units[2].max_hp > 139,
+		"Glass Medium leg one keeps strengthened Crucible Twins")
 
 
 func _check_regent_seals() -> void:

@@ -27,7 +27,7 @@ $shortcut = $shell.CreateShortcut($shortcutPath)
 $shortcut.TargetPath = Join-Path $env:SystemRoot 'System32/WindowsPowerShell/v1.0/powershell.exe'
 $shortcut.Arguments = '-NoLogo -NoProfile -NonInteractive -ExecutionPolicy RemoteSigned -WindowStyle Hidden -File "' + $launcher + '"'
 $shortcut.WorkingDirectory = $stateDirectory
-$shortcut.Description = 'Check for Brass & Aether updates and play.'
+$shortcut.Description = 'Play Brass & Aether and check for updates in the background.'
 if (Test-Path -LiteralPath $offlineGame -PathType Leaf) {
     $shortcut.IconLocation = $offlineGame + ',0'
 }

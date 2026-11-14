@@ -37,16 +37,16 @@ function Invoke-LauncherCommand {
     }
 }
 
-function Find-PlayableBuild {
-    if (Test-Path -LiteralPath $marker -PathType Leaf) {
-        $version = (Get-Content -LiteralPath $marker -Raw).Trim()
-        if ($version -match '^[0-9a-f]{40}$') {
-            $candidate = Join-Path (Join-Path $builds $version) $gameName
-            if (Test-Path -LiteralPath $candidate -PathType Leaf) { return $candidate }
-        }
+function Find-PlayableBuilds {
+    foreach ($versionFile in @($marker, (Join-Path $StateDirectory 'current-build.previous'))) {
+        if (-not (Test-Path -LiteralPath $versionFile -PathType Leaf)) { continue }
+        $version = (Get-Content -LiteralPath $versionFile -Raw).Trim()
+        if ($version -notmatch '^[0-9a-f]{40}$') { continue }
+        $candidate = Join-Path (Join-Path $builds $version) $gameName
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) { $candidate }
     }
     $fallback = Join-Path (Join-Path $builds 'local') $gameName
-    if (Test-Path -LiteralPath $fallback -PathType Leaf) { return $fallback }
+    if (Test-Path -LiteralPath $fallback -PathType Leaf) { $fallback }
 }
 
 function Select-PlayableBuild([string] $Version) {
@@ -125,34 +125,85 @@ function Update-PlayableBuild {
     return $executable
 }
 
-$null = New-Item -ItemType Directory -Path $StateDirectory, $builds -Force
-$lockPath = Join-Path $StateDirectory 'update.lock'
-try {
-    $lock = [IO.File]::Open($lockPath, 'OpenOrCreate', 'ReadWrite', 'None')
-} catch [IO.IOException] {
-    if ($CheckOnly) { throw 'Another Brass & Aether launch is already checking for updates.' }
-    exit
-}
-try {
-    Set-Content -LiteralPath $activity -Value ('Update check ' + (Get-Date -Format o))
+function Start-PlayableBuild([string[]] $Candidates) {
+    $launchLockPath = Join-Path $StateDirectory 'launch.lock'
     try {
-        $playable = Update-PlayableBuild
-    } catch {
-        Add-Content -LiteralPath $activity -Value ('Update unavailable. ' + $_.Exception.Message)
-        $playable = Find-PlayableBuild
+        $launchLock = [IO.File]::Open($launchLockPath, 'OpenOrCreate', 'ReadWrite', 'None')
+    } catch [IO.IOException] {
+        return $true
     }
-    if (-not $playable) {
-        $message = "No playable build was found. Details: $activity"
-        if ($CheckOnly) { throw $message }
-        $null = (New-Object -ComObject WScript.Shell).Popup($message, 0, 'Brass & Aether', 16)
-        exit 1
+    try {
+        $processName = [IO.Path]::GetFileNameWithoutExtension($gameName)
+        $startupLog = Join-Path $StateDirectory 'startup.log'
+        $existing = Get-Process -Name $processName -ErrorAction SilentlyContinue | Select-Object -First 1
+        if ($existing) {
+            $null = (New-Object -ComObject WScript.Shell).AppActivate($existing.Id)
+            return $true
+        }
+        foreach ($candidate in ($Candidates | Select-Object -Unique)) {
+            try {
+                $gameProcess = Start-Process -FilePath $candidate -WorkingDirectory (Split-Path -Parent $candidate) -WindowStyle Normal -PassThru
+                try {
+                    if (-not $gameProcess.WaitForExit(900)) {
+                        Set-Content -LiteralPath $startupLog -Value "$(Get-Date -Format o) Started $candidate"
+                        return $true
+                    }
+                    $reason = "Game closed during startup (exit code $($gameProcess.ExitCode))."
+                } finally {
+                    $gameProcess.Dispose()
+                }
+            } catch {
+                $reason = $_.Exception.Message
+            }
+            Add-Content -LiteralPath $startupLog -Value "$(Get-Date -Format o) $candidate - $reason"
+        }
+        return $false
+    } finally {
+        $launchLock.Dispose()
     }
-    Add-Content -LiteralPath $activity -Value "Playable: $playable"
-    if ($CheckOnly) {
-        Write-Output $playable
-    } else {
-        Start-Process -FilePath $playable -WorkingDirectory (Split-Path -Parent $playable)
+}
+
+function Invoke-UpdateCheck {
+    $lockPath = Join-Path $StateDirectory 'update.lock'
+    try {
+        $lock = [IO.File]::Open($lockPath, 'OpenOrCreate', 'ReadWrite', 'None')
+    } catch [IO.IOException] {
+        if ($CheckOnly) { throw 'Another Brass & Aether launch is already checking for updates.' }
+        return
     }
-} finally {
-    $lock.Dispose()
+    try {
+        Set-Content -LiteralPath $activity -Value ('Update check ' + (Get-Date -Format o))
+        try {
+            $playable = Update-PlayableBuild
+        } catch {
+            Add-Content -LiteralPath $activity -Value ('Update unavailable. ' + $_.Exception.Message)
+            $playable = Find-PlayableBuilds | Select-Object -First 1
+        }
+        if ($playable) { Add-Content -LiteralPath $activity -Value "Playable: $playable" }
+        return $playable
+    } finally {
+        $lock.Dispose()
+    }
+}
+
+$null = New-Item -ItemType Directory -Path $StateDirectory, $builds -Force
+if ($CheckOnly) {
+    $playable = Invoke-UpdateCheck
+    if (-not $playable) { throw "No playable build was found. Details are in $activity" }
+    Write-Output $playable
+    return
+}
+
+# Start the cached game before network or build work. An update takes effect on the next launch.
+$candidates = @(Find-PlayableBuilds)
+$started = $false
+if ($candidates.Count -gt 0) { $started = Start-PlayableBuild $candidates }
+$updated = Invoke-UpdateCheck
+if (-not $started -and $updated -and $updated -notin $candidates) {
+    $started = Start-PlayableBuild @($updated)
+}
+if (-not $started) {
+    $message = "Brass & Aether could not open. Launcher logs are in $StateDirectory."
+    $null = (New-Object -ComObject WScript.Shell).Popup($message, 0, 'Brass & Aether', 16)
+    exit 1
 }

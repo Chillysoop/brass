@@ -37,7 +37,7 @@ Run the scripts under `tests/` with Godot's `--headless --script` options to che
 
 ## Desktop launcher
 
-The **Brass & Aether** desktop shortcut checks the project's GitHub `main` branch when launched. It builds new revisions in a separate per-user cache and keeps the last working build available for offline play. The updater uses Git, Godot 4.7.2, and the matching Windows export templates.
+The **Brass & Aether** desktop shortcut opens the cached game immediately and checks the project's GitHub `main` branch in the background. An update takes effect the next time you open the game. The updater uses Git, Godot 4.7.2, and the matching Windows export templates.
 
 ## Credits
 
