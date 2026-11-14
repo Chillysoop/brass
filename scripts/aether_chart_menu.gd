@@ -16,6 +16,8 @@ const ORIGIN := Vector2(0.50, 0.49)
 const POINTS := {
 	"stout_start": Vector2(0.32, 0.39),
 	"curated_cache": Vector2(0.26, 0.20),
+	"blink_artifice": Vector2(0.49, 0.15),
+	"wayfarers_pin": Vector2(0.74, 0.27),
 	"purse": Vector2(0.64, 0.65),
 	"relic_archive": Vector2(0.83, 0.57),
 }
@@ -383,6 +385,19 @@ func _draw_icon(canvas: Control, center: Vector2, scale_factor: float, icon: Str
 				Vector2(-4, 8), Vector2(-15, 10)
 			], accent)
 			canvas.draw_line(center + Vector2(0, -8) * scale_factor, center + Vector2(0, 8) * scale_factor, INK, 2.0, true)
+		"blink_artifice":
+			canvas.draw_arc(center - Vector2(5, 0) * scale_factor, 11 * scale_factor, 0.55, TAU - 0.55, 28, accent, 2.7, true)
+			_icon_polygon(canvas, center, scale_factor, [
+				Vector2(-5, -3), Vector2(7, -3), Vector2(7, -9), Vector2(18, 0),
+				Vector2(7, 9), Vector2(7, 3), Vector2(-5, 3)
+			], accent)
+		"wayfarers_pin":
+			_icon_polygon(canvas, center, scale_factor, [
+				Vector2(-10, -11), Vector2(0, -19), Vector2(10, -11), Vector2(0, 1)
+			], accent)
+			canvas.draw_circle(center + Vector2(0, -10) * scale_factor, 3.5 * scale_factor, INK, true, -1, true)
+			canvas.draw_line(center, center + Vector2(0, 14) * scale_factor, accent, 2.5, true)
+			canvas.draw_line(center + Vector2(-5, 9) * scale_factor, center + Vector2(5, 9) * scale_factor, accent, 2.0, true)
 		_:
 			_icon_polygon(canvas, center, scale_factor, [
 				Vector2(0, -19), Vector2(5, -5), Vector2(19, 0), Vector2(5, 5),

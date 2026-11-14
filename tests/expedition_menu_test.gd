@@ -21,7 +21,7 @@ func _run() -> void:
 	await process_frame
 	game.set_physics_process(false)
 	game.run.load_save(save_path)
-	game.run.profile.marks = 20
+	game.run.profile.marks = 60
 	game.run_menu()
 	menu = game.frontier_screen.find_child("ExpeditionMenu", true, false)
 	chart = game.frontier_screen.find_child("AetherChartMenu", true, false)
@@ -116,9 +116,21 @@ func _check_chart() -> void:
 	await _press_named(chart, "UnlockUpgrade")
 	_check("curated_cache" in game.run.profile.meta and int(game.run.profile.marks) == marks - 13,
 		"Purchasing the prerequisite unlocks its downstream chart node.")
+	await _press_named(chart, "wayfarers_pin")
+	_check(details != null and details.text == "Wayfarer's Pin", "The new relic is visible before unlocking its prerequisite.")
+	unlock = chart.find_child("UnlockUpgrade", true, false) as Button
+	_check(unlock != null and unlock.disabled, "Wayfarer's Pin requires Blink Artifice.")
+	await _press_named(chart, "blink_artifice")
+	await _press_named(chart, "UnlockUpgrade")
+	_check("blink_artifice" in game.run.profile.meta and int(game.run.profile.marks) == marks - 31,
+		"Blink Artifice opens after Gravity Hook and costs 18 Marks.")
+	await _press_named(chart, "wayfarers_pin")
+	await _press_named(chart, "UnlockUpgrade")
+	_check("wayfarers_pin" in game.run.profile.meta and int(game.run.profile.marks) == marks - 45,
+		"Wayfarer's Pin opens after Blink Artifice and costs 14 Marks.")
 	var restored := FrontierRun.new()
-	_check(restored.load_save(save_path) and "curated_cache" in restored.profile.meta,
-		"Chart purchases persist across reload.")
+	_check(restored.load_save(save_path) and ["curated_cache", "blink_artifice", "wayfarers_pin"].all(func(id): return id in restored.profile.meta),
+		"Artifice purchases persist across reload.")
 	await _press_named(chart, "ChartBack")
 	_check(menu.is_visible_in_tree() and not chart.is_visible_in_tree(), "Chart Back returns to the title.")
 

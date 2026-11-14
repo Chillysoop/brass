@@ -8,6 +8,8 @@ From the title screen, choose **New Expedition**, select **Brass Frontier**, and
 
 Defeat the Tollkeeper on Easy to bank Aether Marks and unlock **Medium**. Open the **Aether Chart** from the title or after a run to inspect prerequisites and spend Marks on permanent upgrades between expeditions.
 
+In the **Artifice** branch, unlock **Gravity Hook**, then **Blink Artifice** to forge the Blink family and add its upgrades to future rewards. Each shop adds a Blink upgrade to its regular stock, from Uncommon on the first leg to Rare on the second and Epic on the third. Three touching copies of the same tile open both choices at the next rarity. A camp can advance one eligible tile instead of healing the party. **Wayfarer's Pin** adds a starter relic choice that grants each hero 6 Guard on their first successful teleport each loop. It can also appear in shops and elite rewards.
+
 Medium starts solo. After the Tollkeeper, take a Legendary tile into your build and recruit a second hero with a starter tile. Both lanes fire on the same beat clock. Push or pull the Gilded Marshal to expose its armor, then land a hit with the other hero before it closes. Defeating the Marshal unlocks Brass Frontier Hard and Glass Foundry Easy.
 
 Glass Foundry Easy is a solo route that ends at the Crucible Twins. Hunters prioritize the hero with the most ranged tile damage. Skirmishers prioritize the hero with the lowest current HP. The clear awards Aether Marks and records the unlock for Glass Foundry Medium.
@@ -38,6 +40,7 @@ Brass Frontier Hard has three legs. Recruit after the Tollkeeper and the Gilded 
 4. Try **Solo hero**, 2× speed, or a layout using Blink. Reset returns to setup and retains the current layout. Changing fixtures loads that fixture's preset.
 5. Open **Tile storage** to find three touching Bash tiles. Use **Combine → Yes**, inspect any rarity, then confirm one of the two upgrades offered at the next rarity. Select the result and use **Transfer selected to timeline** to equip it.
 6. Choose **Forge practice** from the fixture picker to start with three Epic Sunwalls on Warden's lane. Combine them into either Legendary, then try the result in battle or move it into storage. To move a tile to storage, select it on the timeline, open **Tile storage**, then choose an empty starting cell.
+7. Choose **Blink forge practice** to inspect the full Blink family and try its teleport upgrades without spending Aether Marks.
 
 The simulation runs at 60 ticks per second, with 21 ticks per beat and 12 beats per loop. Same-tick activations run in hero order. The arena is continuous and uses scripted movement and separation, capped displacement, and checked teleport destinations.
 

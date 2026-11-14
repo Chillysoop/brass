@@ -1,6 +1,6 @@
 extends Control
 
-const ArenaSim = preload("res://scripts/arena_sim.gd")
+const TilePacking = preload("res://scripts/tile_packing.gd")
 const INK := Color("#101820")
 const PANEL := Color("#192732")
 const EDGE := Color("#3c505b")
@@ -16,8 +16,10 @@ const TARGETS := {
 
 var _host
 var _source_id := ""
+var _tiers: Array = []
 var _next_ids: Array = []
 var _inspected_id := ""
+var _is_combine := true
 var _cards: Dictionary = {}
 var _subtitle: Label
 var _columns: HBoxContainer
@@ -36,18 +38,16 @@ func configure(host: Control) -> void:
 
 func open(source_id: String, copies := 3) -> void:
 	_source_id = source_id
-	_next_ids = []
-	for tier in range(ArenaSim.BASH_TIERS.size() - 1):
-		if source_id in ArenaSim.BASH_TIERS[tier]:
-			_next_ids = ArenaSim.BASH_TIERS[tier + 1]
-			break
+	_tiers = TilePacking.forge_tiers(source_id)
+	_next_ids = TilePacking.next_options(source_id)
+	_is_combine = copies == 3
 	var source: Dictionary = _host.tile_spec(source_id)
-	_subtitle.text = "Three %s tiles are ready to combine. Inspect any tile, then choose from the next rarity." % source.label if copies == 3 else "Upgrade one %s at the rest site. Inspect any tile, then choose from the next rarity." % source.label
+	_subtitle.text = "Three %s tiles are ready to combine. Inspect any tile, then choose from the next rarity." % source.label if _is_combine else "Upgrade one %s at the rest site. Inspect any tile, then choose from the next rarity." % source.label
 	for child in _columns.get_children():
 		_columns.remove_child(child)
 		child.queue_free()
 	_cards.clear()
-	for tier in range(ArenaSim.BASH_TIERS.size()):
+	for tier in range(_tiers.size()):
 		_add_tier(tier)
 	_inspect(source_id)
 	show()
@@ -141,7 +141,7 @@ func _build() -> void:
 
 
 func _add_tier(tier: int) -> void:
-	var ids: Array = ArenaSim.BASH_TIERS[tier]
+	var ids: Array = _tiers[tier]
 	var available: bool = ids[0] in _next_ids
 	var column := VBoxContainer.new()
 	column.custom_minimum_size.x = 108
@@ -173,12 +173,12 @@ func _add_tier(tier: int) -> void:
 
 
 func _draw_links() -> void:
-	for tier in range(ArenaSim.BASH_TIERS.size() - 1):
-		for from_id: String in ArenaSim.BASH_TIERS[tier]:
+	for tier in range(_tiers.size() - 1):
+		for from_id: String in _tiers[tier]:
 			if not _cards.has(from_id):
 				continue
 			var start: Rect2 = _cards[from_id].get_global_rect()
-			for to_id: String in ArenaSim.BASH_TIERS[tier + 1]:
+			for to_id: String in _tiers[tier + 1]:
 				if not _cards.has(to_id):
 					continue
 				var finish: Rect2 = _cards[to_id].get_global_rect()
@@ -196,11 +196,7 @@ func _draw_links() -> void:
 func _inspect(id: String) -> void:
 	_inspected_id = id
 	var tile: Dictionary = _host.tile_spec(id)
-	var rarity := ""
-	for tier in range(ArenaSim.BASH_TIERS.size()):
-		if id in ArenaSim.BASH_TIERS[tier]:
-			rarity = RARITIES[tier]
-			break
+	var rarity := str(tile.rarity).capitalize()
 	var targeting := PackedStringArray()
 	for rule: String in tile.get("targets", []):
 		targeting.append(TARGETS.get(rule, rule.capitalize()))
@@ -212,7 +208,8 @@ func _inspect(id: String) -> void:
 	_detail_description.text = tile.description
 	var can_choose := id in _next_ids
 	_confirm.disabled = not can_choose
-	_confirm.text = "Combine into " + tile.label if can_choose else "Choose a next-tier tile"
+	var prompt := "Combine into " if _is_combine else "Upgrade to "
+	_confirm.text = prompt + tile.label if can_choose else "Choose a next-tier tile"
 	_confirm.add_theme_stylebox_override("normal", _box(Color("#5b442a"), GOLD))
 	_confirm.add_theme_stylebox_override("hover", _box(Color("#715637"), GOLD))
 	_confirm.add_theme_stylebox_override("pressed", _box(Color("#45311d"), GOLD))

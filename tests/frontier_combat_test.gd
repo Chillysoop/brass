@@ -33,6 +33,8 @@ func _initialize() -> void:
 	_check(carry.units == duplicate.units, "Same encounter seed gives the same combat state")
 	var healer := _fight("apothecary", "opening", 80, ["shot"], [])
 	_check(_has_event(healer, "heal", "apothecary"), "Apothecary heals on a tile hit")
+	_check_blink_upgrades()
+	_check_wayfarers_pin()
 	_check_glass_targeting()
 	_check_prism_ward()
 	_check_tempered_colossus()
@@ -48,6 +50,84 @@ func _initialize() -> void:
 	if failures.is_empty():
 		print("Frontier combat checks passed (%d classes × 3 starters, fresh-profile win at %d HP)." % [ArenaSim.HERO_CLASSES.size(), hp])
 	quit(0 if failures.is_empty() else 1)
+
+
+func _check_blink_upgrades() -> void:
+	for tier: Array in ArenaSim.BLINK_TIERS:
+		for tile_id: String in tier:
+			var spec: Dictionary = ArenaSim.TILES[tile_id]
+			var sim := _blink_fixture([[{"id": tile_id, "start": 0}], []])
+			var hero: Dictionary = sim.units[0]
+			var ally: Dictionary = sim.units[1]
+			var target: Dictionary = sim.units[2]
+			var nearby: Dictionary = sim.units[3]
+			var target_hp: int = target.hp
+			var nearby_hp: int = nearby.hp
+			for beat_tick in range(int(spec.width) * ArenaSim.TICKS_PER_BEAT):
+				sim.step()
+			var teleports: Array[Dictionary] = sim.trace.filter(func(event: Dictionary) -> bool:
+				return event.kind == "teleport" and event.tile == tile_id)
+			_check(teleports.size() == 1 and teleports[0].beat == spec.width,
+				"%s teleports on its last beat" % spec.label)
+			_check(target_hp - target.hp == spec.damage, "%s deals its listed damage" % spec.label)
+			_check(nearby_hp - nearby.hp == (spec.damage if spec.has("splash") else 0),
+				"%s applies area damage only if listed" % spec.label)
+			_check(_has_event(sim, "push", tile_id) == spec.has("push"), "%s applies listed knockback" % spec.label)
+			_check(hero.guard == spec.get("guard", 0), "%s applies listed guard" % spec.label)
+			_check(ally.guard == (spec.guard if spec.has("guard_radius") else 0),
+				"%s applies listed ally guard" % spec.label)
+			_check(sim._free_position(hero.pos, hero) and hero.pos == sim._bounded(hero.pos, hero.radius),
+				"%s lands clear of walls and combatants" % spec.label)
+			if not teleports.is_empty():
+				var hop: Dictionary = teleports[0]
+				if spec.has("retreat"):
+					_check(hop.to.distance_to(target.pos) > hop.from.distance_to(target.pos),
+						"%s teleports away from the target" % spec.label)
+				else:
+					_check(hop.to.x > target.pos.x, "%s lands behind the target" % spec.label)
+	var corner := _blink_fixture([[], []])
+	var hero: Dictionary = corner.units[0]
+	var target: Dictionary = corner.units[2]
+	var hp: int = target.hp
+	hero.pos = Vector2(49, 49)
+	target.pos = Vector2(200, 200)
+	corner._cast(hero, "ward_step", "nearest")
+	_check(hero.pos == Vector2(49, 49) and hero.guard == 0 and target.hp == hp
+		and _has_event(corner, "miss", "ward_step"), "Ward Step misses when no legal retreat opens space")
+
+
+func _check_wayfarers_pin() -> void:
+	var sim := _blink_fixture([[], []], ["wayfarers_pin"])
+	var hero: Dictionary = sim.units[0]
+	var ally: Dictionary = sim.units[1]
+	var target: Dictionary = sim.units[2]
+	sim.tick = 1
+	# A distant target cannot cause a teleport or spend the relic's activation.
+	var original_position: Vector2 = target.pos
+	target.pos = Vector2(900, 400)
+	sim.units[3].pos = Vector2(880, 470)
+	sim._cast(hero, "blink", "nearest")
+	_check(hero.guard == 0 and _has_event(sim, "miss", "blink"), "Wayfarer's Pin ignores a missed teleport")
+	target.pos = original_position
+	sim._cast(hero, "blink", "nearest")
+	sim._cast(hero, "blink", "nearest")
+	sim._cast(ally, "blink", "nearest")
+	_check(hero.guard == 6 and ally.guard == 6, "Wayfarer's Pin grants 6 guard once per loop to each hero")
+	_check(ally.haste_until == sim.tick + 3 * ArenaSim.TICKS_PER_BEAT, "Wayfarer gains haste from a successful teleport")
+	sim.tick = ArenaSim.LOOP_TICKS + 1
+	sim._cast(hero, "blink", "nearest")
+	_check(hero.guard == 12 and ally.guard == 6, "Wayfarer's Pin can trigger again on the next loop")
+
+
+func _blink_fixture(lanes: Array, relics: Array = []) -> RefCounted:
+	var sim := ArenaSim.new()
+	sim.start(lanes, "duo", {"encounter": "elite", "heroes": [{"hero": "warden"}, {"hero": "wayfarer"}], "relics": relics})
+	var positions := [Vector2(310, 260), Vector2(280, 345), Vector2(485, 260), Vector2(485, 375)]
+	for index in range(sim.units.size()):
+		sim.units[index].pos = positions[index]
+		sim.units[index].speed = 0.0
+		sim.units[index].next_attack = 1000
+	return sim
 
 
 func _check_glass_targeting() -> void:

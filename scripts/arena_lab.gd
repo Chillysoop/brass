@@ -137,7 +137,8 @@ func _build() -> void:
 	fixture_picker.add_item("Two heroes")
 	fixture_picker.add_item("Solo hero")
 	fixture_picker.add_item("Forge practice")
-	fixture_picker.item_selected.connect(func(index: int): _load_fixture(["duo", "solo", "forge"][index]))
+	fixture_picker.add_item("Blink forge practice")
+	fixture_picker.item_selected.connect(func(index: int): _load_fixture(["duo", "solo", "forge", "blink_forge"][index]))
 	header.add_child(fixture_picker)
 	speed_picker = OptionButton.new()
 	speed_picker.add_item("1× speed")
@@ -238,6 +239,9 @@ func _load_fixture(next_fixture: String) -> void:
 	]
 	if next_fixture == "forge":
 		lanes[1] = [_entry("sunwall", 0, "nearest"), _entry("sunwall", 4, "nearest"), _entry("sunwall", 8, "nearest")]
+	elif next_fixture == "blink_forge":
+		lanes[0] = [_entry("blink", 0, "nearest"), _entry("blink", 3, "nearest"), _entry("blink", 6, "nearest")]
+		lanes[1] = [_entry("prism_stride", 0, "nearest"), _entry("prism_stride", 4, "nearest"), _entry("prism_stride", 8, "nearest")]
 	suppressed_combines.clear()
 	defaults.clear()
 	for _lane_index in range(lanes.size()):
@@ -624,7 +628,10 @@ func _rebuild_loadout() -> void:
 			button.add_theme_stylebox_override("normal", _box(Color("#4d4430"), GOLD))
 		_drag_source(button, payload)
 		palette.add_child(button)
-	setup_hint.text = "Select a tile to move it or send it to storage." if campaign else "Drag or select a tile, then choose an empty beat. Open Tile storage to pack or combine tiles."
+	if camp_forge:
+		setup_hint.text = "Select an upgradeable tile, then choose Forge selected."
+	else:
+		setup_hint.text = "Select a tile to move it or send it to storage." if campaign else "Drag or select a tile, then choose an empty beat. Open Tile storage to pack or combine tiles."
 
 func _build_lane(lane_index: int) -> void:
 	var row := HBoxContainer.new()
@@ -660,7 +667,7 @@ func _build_lane(lane_index: int) -> void:
 	identity.add_child(all)
 
 	var board := Control.new()
-	var offers: Array = TilePacking.offers(lanes[lane_index], suppressed_combines) if state == "setup" else []
+	var offers: Array = _combine_offers(lanes[lane_index]) if state == "setup" else []
 	var offer_height := 0 if offers.is_empty() else 33
 	board.custom_minimum_size.y = 69 + offer_height
 	board.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -706,7 +713,7 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	name_button.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	name_button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	name_button.add_theme_font_size_override("font_size", 13)
-	var tint := Color("#254949") if item.id in ["pull", "guard", "blink"] else Color("#583b35")
+	var tint := Color("#254949") if item.id in ["pull", "guard"] or tile.get("family") == "blink" else Color("#583b35")
 	name_button.tooltip_text = _tile_tooltip(lane_index, item, tile)
 	name_button.add_theme_stylebox_override("normal", _box(tint, GOLD if active else EDGE))
 	name_button.add_theme_stylebox_override("disabled", _box(tint, EDGE))
@@ -875,7 +882,7 @@ func storage_close() -> void:
 func _render_storage() -> void:
 	var all_offers: Array[Dictionary] = []
 	for row in range(storage_rows.size()):
-		for offer in TilePacking.offers(storage_rows[row], suppressed_combines):
+		for offer in _combine_offers(storage_rows[row]):
 			offer.row = row
 			all_offers.append(offer)
 	storage_screen.render(storage_rows, selected, all_offers, camp_forge)
@@ -939,11 +946,17 @@ func _combine_prompt(row: int, lane: int, offer: Dictionary) -> Control:
 	buttons.add_child(_button("No", func(): _offer_combine(row, lane, offer.start, false)))
 	return panel
 
+func _forge_family_available(id: String) -> bool:
+	return not campaign or ArenaSim.TILES.get(id, {}).get("family") != "blink" or "blink_artifice" in run.profile.meta
+
+func _combine_offers(items: Array) -> Array[Dictionary]:
+	return TilePacking.offers(items, suppressed_combines).filter(func(offer: Dictionary): return _forge_family_available(offer.id))
+
 func _offer_combine(row: int, lane: int, start: int, accept: bool) -> void:
 	if state != "setup":
 		return
 	var items: Array = storage_rows[row] if row >= 0 else lanes[lane]
-	for offer in TilePacking.offers(items, suppressed_combines):
+	for offer in _combine_offers(items):
 		if offer.start != start:
 			continue
 		pending_forge = {"row": row, "lane": lane, "offer": offer}
@@ -980,8 +993,10 @@ func forge_choose(id: String) -> void:
 	if id not in TilePacking.next_options(offer.id):
 		return
 	var items: Array = storage_rows[pending_forge.row] if pending_forge.row >= 0 else lanes[pending_forge.lane]
-	if not TilePacking.offers(items, suppressed_combines).has(offer):
+	if not _combine_offers(items).has(offer):
 		forge_close()
+		return
+	if ArenaSim.TILES[id].width > offer.width:
 		return
 	var target := ""
 	for index in range(items.size() - 1, -1, -1):
@@ -989,8 +1004,7 @@ func forge_choose(id: String) -> void:
 		if item.start >= offer.start and item.start < offer.start + offer.width:
 			target = item.target
 			items.remove_at(index)
-	var valid: Array = ArenaSim.TILES[id].targets
-	items.append(_entry(id, offer.start, target if target in valid else valid[0]))
+	items.append(_entry(id, offer.start, _forge_target(id, target)))
 	items.sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
 	suppressed_combines.erase(id)
 	selected.clear()
@@ -1086,11 +1100,16 @@ func run_show_arena() -> void:
 func run_rest_forge() -> void:
 	camp_forge = true
 	run_show_arena()
-	setup_hint.text = "Select a tile from the Bash family, then choose Forge selected."
 
 func _open_camp_forge() -> void:
-	if not selected.has("lane") or TilePacking.next_options(selected.get("id", "")).is_empty():
-		_show_inventory_message("Select a tile from the Bash family below Legendary.")
+	if not camp_forge or run.data.get("phase") != "rest":
+		return
+	var id: String = selected.get("id", "")
+	if not selected.has("lane") or TilePacking.next_options(id).is_empty():
+		_show_inventory_message("Select a tile that has a forge upgrade.")
+		return
+	if not _forge_family_available(id):
+		_show_inventory_message("Unlock Blink Artifice in the Aether Chart to forge Blink.")
 		return
 	pending_forge = {"camp": selected.duplicate()}
 	arena_screen.hide()
@@ -1099,7 +1118,7 @@ func _open_camp_forge() -> void:
 
 func _commit_camp_forge(id: String) -> void:
 	var source: Dictionary = pending_forge.camp
-	if id not in TilePacking.next_options(source.id):
+	if run.data.get("phase") != "rest" or not _forge_family_available(source.id) or id not in TilePacking.next_options(source.id):
 		return
 	var stored: bool = source.has("row")
 	var items: Array = storage_rows[source.row] if stored else lanes[source.lane]
@@ -1111,12 +1130,17 @@ func _commit_camp_forge(id: String) -> void:
 	for item: Dictionary in items:
 		if item.start == source.start and item.id == source.id:
 			item.id = id
+			item.target = _forge_target(id, item.target)
 			suppressed_combines.erase(id)
 			pending_forge.clear()
 			run.rest("forge")
 			_save_loadout()
 			run_return()
 			return
+
+func _forge_target(id: String, previous: String) -> String:
+	var valid: Array = ArenaSim.TILES[id].targets
+	return previous if previous in valid or (previous in ArenaSim.CROWN_TARGET_RULES and "nearest" in valid) else valid[0]
 
 func _show_inventory_message(message: String) -> void:
 	if storage_screen.visible:

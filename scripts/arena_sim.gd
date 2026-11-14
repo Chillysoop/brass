@@ -26,7 +26,10 @@ const TIDEKEEPER_SLAM_RADIUS := 310.0
 const ADMIRAL_SWEEP_BEATS := 6
 const ADMIRAL_SWEEP_RADIUS := 330.0
 const TARGET_RULES := ["nearest", "farthest", "lowest_hp", "highest_hp"]
-const RANGED_TILES := ["pull", "gravity_hook", "shot", "hook_bash", "graviton", "event_horizon", "meteor_seal"]
+const RANGED_TILES := [
+	"pull", "gravity_hook", "shot", "hook_bash", "graviton", "event_horizon", "meteor_seal",
+	"ward_step", "mirror_step", "prism_stride", "sanctuary_gate",
+]
 const BASH_TIERS := [
 	["bash"],
 	["shield_ram", "hook_bash"],
@@ -34,6 +37,14 @@ const BASH_TIERS := [
 	["sunwall", "graviton"],
 	["dawn_bastion", "event_horizon"],
 ]
+const BLINK_TIERS := [
+	["blink"],
+	["phase_cut", "ward_step"],
+	["rift_lunge", "mirror_step"],
+	["void_dance", "prism_stride"],
+	["starfall_step", "sanctuary_gate"],
+]
+const FORGE_FAMILIES := {"bash": BASH_TIERS, "blink": BLINK_TIERS}
 const HERO_CLASSES := {
 	"warden": {"label": "Warden", "description": "Gain 4 guard on the first Bash-family hit each loop."},
 	"bulwark": {"label": "Bulwark", "description": "Once per loop, intercept an ally's incoming strike and reduce it by 6. Alone, reduce your first strike."},
@@ -140,7 +151,48 @@ const TILES := {
 	},
 	"blink": {
 		"label": "Blink", "width": 3, "range": 430.0, "damage": 8,
+		"family": "blink", "rarity": "common",
 		"targets": TARGET_RULES, "description": "Teleport behind an enemy and strike."
+	},
+	"phase_cut": {
+		"label": "Phase Cut", "width": 3, "range": 490.0, "damage": 25,
+		"family": "blink", "rarity": "uncommon",
+		"targets": TARGET_RULES, "description": "Teleport behind an enemy and deal a heavier strike from longer range."
+	},
+	"ward_step": {
+		"label": "Ward Step", "width": 3, "range": 430.0, "damage": 19,
+		"family": "blink", "rarity": "uncommon", "retreat": 116.0, "guard": 10,
+		"targets": TARGET_RULES, "description": "Teleport away from the target and strike it. Gain 10 guard."
+	},
+	"rift_lunge": {
+		"label": "Rift Lunge", "width": 3, "range": 525.0, "damage": 29,
+		"family": "blink", "rarity": "rare", "push": 610.0,
+		"targets": TARGET_RULES, "description": "Teleport behind an enemy, then strike and knock it away from your landing point."
+	},
+	"mirror_step": {
+		"label": "Mirror Step", "width": 3, "range": 470.0, "damage": 23,
+		"family": "blink", "rarity": "rare", "retreat": 148.0, "guard": 13,
+		"targets": TARGET_RULES, "description": "Teleport farther away from the target and strike it. Gain 13 guard."
+	},
+	"void_dance": {
+		"label": "Void Dance", "width": 4, "range": 555.0, "damage": 33,
+		"family": "blink", "rarity": "epic", "splash": 145.0,
+		"targets": TARGET_RULES, "description": "Teleport behind an enemy and strike it and other enemies near it."
+	},
+	"prism_stride": {
+		"label": "Prism Stride", "width": 4, "range": 500.0, "damage": 25,
+		"family": "blink", "rarity": "epic", "retreat": 170.0, "guard": 15, "guard_radius": 230.0,
+		"targets": TARGET_RULES, "description": "Teleport away and strike the target. Give yourself and allies near your landing point 15 guard."
+	},
+	"starfall_step": {
+		"label": "Starfall Step", "width": 5, "range": 610.0, "damage": 39,
+		"family": "blink", "rarity": "legendary", "splash": 185.0, "push": 790.0,
+		"targets": TARGET_RULES, "description": "Teleport behind an enemy. Strike and knock back every enemy near it, including the target."
+	},
+	"sanctuary_gate": {
+		"label": "Sanctuary Gate", "width": 5, "range": 565.0, "damage": 33,
+		"family": "blink", "rarity": "legendary", "retreat": 195.0, "guard": 21, "guard_radius": INF,
+		"targets": TARGET_RULES, "description": "Teleport away and strike the target. Give every living ally 21 guard."
 	},
 	"slam": {
 		"label": "Slam", "width": 4, "range": 190.0, "damage": 20,
@@ -824,11 +876,6 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 			_guard_allies(actor, tile_id, 22)
 		"event_horizon":
 			_gravity_strike(actor, target, tile_id, 245.0, true)
-		"blink":
-			if _teleport(actor, target):
-				_damage(actor, target, tile.damage, tile_id)
-			else:
-				_emit("miss", "%s: Blink had no clear landing." % actor.name, actor, target, tile_id)
 		"slam":
 			_area_push(actor, target, tile_id, tile.damage, 115.0, 520.0)
 		"shot":
@@ -836,8 +883,25 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 		"meteor_seal":
 			for enemy in _enemies_in_area(actor, target.pos, 175.0):
 				_damage(actor, enemy, tile.damage, tile_id)
+		_:
+			if tile.get("family") == "blink":
+				_cast_blink(actor, target, tile_id, tile)
 	if tile.get("family") == "bash":
 		_warden_guard(actor, tile_id)
+
+
+func _cast_blink(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
+	if not _teleport(actor, target, tile_id, tile.get("retreat", 0.0)):
+		_emit("miss", "%s: %s had no clear landing." % [actor.name, tile.label], actor, target, tile_id)
+		return
+	var enemies: Array = _enemies_in_area(actor, target.pos, tile.splash) if tile.has("splash") else [target]
+	for enemy: Dictionary in enemies:
+		if tile.has("push"):
+			_strike_and_push(actor, enemy, tile_id, tile.damage, tile.push)
+		else:
+			_damage(actor, enemy, tile.damage, tile_id)
+	if tile.has("guard"):
+		_guard_allies(actor, tile_id, tile.guard, tile.get("guard_radius", 0.0))
 
 
 func _warden_guard(actor: Dictionary, tile_id: String) -> void:
@@ -955,15 +1019,22 @@ func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: Str
 		_displace_admiral(actor, target, kind)
 
 
-func _teleport(actor: Dictionary, target: Dictionary) -> bool:
+func _teleport(actor: Dictionary, target: Dictionary, tile_id: String, retreat: float) -> bool:
 	var start_position: Vector2 = actor.pos
 	var target_position: Vector2 = target.pos
 	var direction := start_position.direction_to(target_position)
 	if direction == Vector2.ZERO:
 		direction = Vector2.RIGHT
 	var spacing: float = target.radius + actor.radius + 22.0
+	var anchor := target_position
+	if retreat > 0.0:
+		direction = -direction
+		anchor = start_position
+		spacing = retreat
 	for angle in [0.0, 0.52, -0.52, 1.05, -1.05, PI / 2.0, -PI / 2.0, PI]:
-		var landing := _bounded(target_position + direction.rotated(angle) * spacing, actor.radius)
+		var landing := _bounded(anchor + direction.rotated(angle) * spacing, actor.radius)
+		if retreat > 0.0 and landing.distance_to(target_position) < start_position.distance_to(target_position) + 12.0:
+			continue
 		if not _free_position(landing, actor):
 			continue
 		actor.pos = landing
@@ -972,7 +1043,11 @@ func _teleport(actor: Dictionary, target: Dictionary) -> bool:
 		actor.impulse = Vector2.ZERO
 		if actor.get("class") == "wayfarer":
 			actor["haste_until"] = tick + TICKS_PER_BEAT * 3
-		_emit("teleport", "%s blinks beside %s." % [actor.name, target.name], actor, target, "blink", 0, start_position, landing)
+		var action := "blinks away from" if retreat > 0.0 else "blinks beside"
+		_emit("teleport", "%s %s %s." % [actor.name, action, target.name], actor, target, tile_id, 0, start_position, landing)
+		if _has_relic(actor, "wayfarers_pin") and actor.get("wayfarers_pin_loop", -1) != _loop_index():
+			actor["wayfarers_pin_loop"] = _loop_index()
+			_guard(actor, 6, "wayfarers_pin")
 		return true
 	return false
 

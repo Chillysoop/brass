@@ -5,20 +5,22 @@ const HEROES = ArenaSim.HERO_CLASSES
 const BASE_TILES := ["bash", "shot", "slam", "pull", "guard", "blink"]
 const STARTER_TILES := ["bash", "shot", "slam"]
 const STARTER_RELICS := ["pocket_bell", "copper_compass", "quartermasters_coin"]
-const ELITE_TILES := ["shield_ram", "hook_bash", "bulwark_charge", "rebound", "sunwall", "graviton"]
-const BOSS_TILES := ["dawn_bastion", "event_horizon", "meteor_seal"]
 const RELICS := {
 	"pocket_bell": {"label": "Pocket Bell", "description": "Gain guard at the start of each combat loop."},
 	"copper_compass": {"label": "Copper Compass", "description": "Your first push each loop travels farther."},
 	"quartermasters_coin": {"label": "Quartermaster's Coin", "description": "Gain 3 extra gold when you skip a combat tile reward."},
 	"trail_ration": {"label": "Trail Ration", "description": "Recover 5 HP after each victory."},
+	"wayfarers_pin": {"label": "Wayfarer's Pin", "description": "Each hero gains 6 guard on their first successful teleport each loop."},
 }
 const META_NODES := {
 	"stout_start": {"label": "Stout Start", "description": "Begin each run with 8% more maximum HP.", "cost": 5, "requires": []},
 	"purse": {"label": "Well-stocked Purse", "description": "Begin each run with 8 extra gold.", "cost": 5, "requires": []},
 	"curated_cache": {"label": "Gravity Hook", "description": "Permanently add Gravity Hook to normal drafts and shops.", "cost": 8, "requires": ["stout_start"]},
 	"relic_archive": {"label": "Relic Archive", "description": "Permanently add Trail Ration to the starter relic draft.", "cost": 8, "requires": ["purse"]},
+	"blink_artifice": {"label": "Blink Artifice", "description": "Unlock the full Blink forge family. Its upgrades enter future reward and shop pools.", "cost": 18, "requires": ["curated_cache"]},
+	"wayfarers_pin": {"label": "Wayfarer's Pin", "description": "Add Wayfarer's Pin to future relic drafts, shops and elite rewards. Each hero gains 6 guard on their first successful teleport each loop.", "cost": 14, "requires": ["blink_artifice"]},
 }
+const TILE_RARITIES := ["common", "uncommon", "rare", "epic", "legendary"]
 const NODE_LABELS := {
 	"battle": ["Dust Patrol", "Gate Watch", "Scrap Brigade", "Piston Guard", "Wall Patrol", "Relay Duel"],
 	"elite": ["Brass Vanguard", "The Tempered Guard"],
@@ -232,10 +234,12 @@ func choose_hero(id: String) -> bool:
 	data.hero = id
 	data.heroes.append({"id": id, "hp": data.hp, "max_hp": data.max_hp})
 	data.phase = "relic"
-	var pool := STARTER_RELICS.duplicate()
-	if "relic_archive" in profile.meta:
-		pool.append("trail_ration")
+	var pool := _available_relics()
+	var offer_pin := pool.has("wayfarers_pin")
+	pool.erase("wayfarers_pin")
 	data.offers = _sample(pool, 3, int(data.seed), 21)
+	if offer_pin:
+		data.offers.append("wayfarers_pin")
 	save()
 	return true
 
@@ -325,7 +329,7 @@ func choose_node(id: String) -> bool:
 	match selected.type:
 		"shop":
 			data.phase = "shop"
-			data.offers = _sample(_normal_pool(), 3, int(data.seed), _node_salt(51))
+			data.offers = _shop_tiles()
 			data.shop_healed = false
 			var available := _available_relics()
 			data.shop_relic = "" if available.is_empty() else _sample(available, 1, int(data.seed), _node_salt(52))[0]
@@ -378,12 +382,12 @@ func finish_combat(victory: bool, hp: Variant) -> bool:
 	data.phase = "reward"
 	match data.node.type:
 		"boss":
-			data.offers = _sample(BOSS_TILES, 3, int(data.seed), _node_salt(81))
+			data.offers = _tier_rewards(_tier_pool(4), 3, 81)
 			_resolve_boss()
 		"elite":
 			data.gold += 20
 			_grant_marks(2)
-			data.offers = _sample(ELITE_TILES, 3, int(data.seed), _node_salt(81))
+			data.offers = _tier_rewards(_tier_pool(1) + _tier_pool(2) + _tier_pool(3), 3, 81)
 			var relic_pool := _available_relics()
 			if not relic_pool.is_empty():
 				var found: String = _sample(relic_pool, 1, int(data.seed), _node_salt(82))[0]
@@ -612,7 +616,7 @@ func event_choice(index: int) -> bool:
 				data.gold += 8
 			elif _rng(int(data.seed), _node_salt(91)).randf() < 0.6:
 				data.phase = "reward"
-				data.offers = _sample(ELITE_TILES.slice(0, 2), 2, int(data.seed), _node_salt(92))
+				data.offers = _tier_rewards(_tier_pool(1), 2, 92)
 			else:
 				_apply_event_damage(0.10)
 				data.node_notice = "The mold shattered. Lost 10% of maximum HP." if data.location == "glass" else "The crane collapsed. Lost 10% of maximum HP."
@@ -626,7 +630,7 @@ func event_choice(index: int) -> bool:
 			if index == 1 and not data.relics.is_empty():
 				data.relics.pop_front()
 				data.phase = "reward"
-				data.offers = _sample(ELITE_TILES.slice(2, 4), 2, int(data.seed), _node_salt(92))
+				data.offers = _tier_rewards(_tier_pool(2), 2, 92)
 		"infirmary":
 			if index == 1:
 				data.gold -= 10
@@ -636,14 +640,14 @@ func event_choice(index: int) -> bool:
 			if index == 1:
 				data.gold -= 14
 				data.phase = "reward"
-				data.offers = _sample(ELITE_TILES.slice(2, 4), 2, int(data.seed), _node_salt(92))
+				data.offers = _tier_rewards(_tier_pool(2), 2, 92)
 		"prism_cache":
 			if index == 0:
 				data.gold += 12
 			else:
 				_apply_event_damage(0.15)
 				data.phase = "reward"
-				data.offers = _sample(ELITE_TILES.slice(4, 6), 1, int(data.seed), _node_salt(92))
+				data.offers = _sample(_tier_pool(3), 1, int(data.seed), _node_salt(92))
 				data.node_notice = "Opening the cache cost 15% of maximum HP."
 		"signal_cache":
 			if index == 0:
@@ -651,7 +655,7 @@ func event_choice(index: int) -> bool:
 			else:
 				_apply_event_damage(0.12)
 				data.phase = "reward"
-				data.offers = _sample(ELITE_TILES.slice(2, 4), 2, int(data.seed), _node_salt(92))
+				data.offers = _tier_rewards(_tier_pool(2), 2, 92)
 				data.node_notice = "The signal ward cost 12% of maximum HP."
 		"barge":
 			if index == 0:
@@ -822,22 +826,17 @@ func _node(kind: String, label: String, row: int, column: int) -> Dictionary:
 
 func _standard_rewards() -> Array:
 	var rewards: Array = []
-	var candidates: Array = []
-	var available := _normal_pool() + ELITE_TILES.slice(0, 4)
-	for items: Array in loadout.lanes + loadout.storage:
-		for tile: Dictionary in items:
-			if tile.id in available and tile.id not in candidates:
-				candidates.append(tile.id)
-	if not candidates.is_empty():
-		rewards.append(_sample(candidates, 1, int(data.seed), _node_salt(83))[0])
+	var owned := _owned_reward(_normal_pool() + _tier_pool(1) + _tier_pool(2), 83)
+	if not owned.is_empty():
+		rewards.append(owned)
 	var rng := _rng(int(data.seed), _node_salt(84))
 	while rewards.size() < 3:
 		var roll := rng.randi_range(1, 100)
 		var pool := _normal_pool()
 		if roll > 97:
-			pool = ELITE_TILES.slice(2, 4)
+			pool = _tier_pool(2)
 		elif roll > 80:
-			pool = ELITE_TILES.slice(0, 2)
+			pool = _tier_pool(1)
 		for tile: String in rewards:
 			pool.erase(tile)
 		if pool.is_empty():
@@ -846,6 +845,85 @@ func _standard_rewards() -> Array:
 				pool.erase(tile)
 		rewards.append(pool[rng.randi_range(0, pool.size() - 1)])
 	return _sample(rewards, 3, int(data.seed), _node_salt(85))
+
+
+func _tier_pool(tier: int) -> Array:
+	var pool: Array = ArenaSim.BASH_TIERS[tier].duplicate()
+	if tier == 4:
+		pool.append("meteor_seal")
+	if "blink_artifice" in profile.meta:
+		pool.append_array(ArenaSim.BLINK_TIERS[tier])
+	return pool
+
+
+func _tier_rewards(pool: Array, count: int, salt: int) -> Array:
+	var usual := pool.filter(func(id: String): return ArenaSim.TILES[id].get("family") != "blink")
+	if "blink_artifice" not in profile.meta or usual.size() == pool.size():
+		return _sample(pool, count, int(data.seed), _node_salt(salt))
+	# Keep one original pick and leave one slot open to the full expanded pool.
+	var rewards := _sample(usual, mini(usual.size(), count - 1), int(data.seed), _node_salt(salt))
+	var owned := _owned_reward(pool, salt + 100)
+	if rewards.size() > 1 and not owned.is_empty() and owned not in rewards:
+		rewards[-1] = owned
+	var remaining := pool.filter(func(id: String): return id not in rewards)
+	rewards.append_array(_sample(remaining, count - rewards.size(), int(data.seed), _node_salt(salt + 101)))
+	return rewards
+
+
+func _shop_tiles() -> Array:
+	var stock := _sample(_normal_pool(), 3, int(data.seed), _node_salt(51))
+	if "blink_artifice" not in profile.meta:
+		return stock
+	var upgrades: Array = ArenaSim.BLINK_TIERS[int(data.segment)]
+	var owned := _owned_reward(upgrades, 153)
+	stock.append(owned if not owned.is_empty() else _sample(upgrades, 1, int(data.seed), _node_salt(53))[0])
+	return stock
+
+
+func _owned_reward(pool: Array, salt: int) -> String:
+	var counts := {}
+	var family_tiers := {}
+	for items: Array in loadout.lanes + loadout.storage:
+		for tile: Dictionary in items:
+			counts[tile.id] = int(counts.get(tile.id, 0)) + 1
+			var spec: Dictionary = ArenaSim.TILES[tile.id]
+			if spec.has("family"):
+				var tier := TILE_RARITIES.find(spec.rarity)
+				family_tiers[spec.family] = maxi(tier, int(family_tiers.get(spec.family, -1)))
+	var focused: bool = "blink_artifice" in profile.meta
+	var candidates: Array = []
+	var best_priority := -1
+	for id: String in counts:
+		if id not in pool:
+			continue
+		var priority := 0
+		var spec: Dictionary = ArenaSim.TILES[id]
+		if focused and spec.has("family") and spec.rarity != "legendary" and counts[id] < 3:
+			# Complete pairs first, then prefer useful copies at higher rarities.
+			priority = int(counts[id]) * TILE_RARITIES.size() + TILE_RARITIES.find(spec.rarity)
+		if priority > best_priority:
+			candidates.clear()
+			best_priority = priority
+		if priority == best_priority:
+			candidates.append(id)
+	if best_priority <= 0 and focused:
+		var family_options: Array = []
+		var closest_tier := TILE_RARITIES.size() * 2
+		for id: String in pool:
+			var spec: Dictionary = ArenaSim.TILES[id]
+			var family: String = spec.get("family", "")
+			if not family_tiers.has(family) or counts.has(id):
+				continue
+			var offset := TILE_RARITIES.find(spec.rarity) - int(family_tiers[family])
+			var distance := absi(offset) * 2 + int(offset < 0)
+			if distance < closest_tier:
+				family_options.clear()
+				closest_tier = distance
+			if distance == closest_tier:
+				family_options.append(id)
+		if not family_options.is_empty():
+			candidates = family_options
+	return "" if candidates.is_empty() else _sample(candidates, 1, int(data.seed), _node_salt(salt))[0]
 
 
 func _normal_pool() -> Array:
@@ -859,7 +937,9 @@ func _available_relics() -> Array:
 	var pool := STARTER_RELICS.duplicate()
 	if "relic_archive" in profile.meta:
 		pool.append("trail_ration")
-	for held: String in data.relics:
+	if "wayfarers_pin" in profile.meta:
+		pool.append("wayfarers_pin")
+	for held: String in data.get("relics", []):
 		pool.erase(held)
 	return pool
 

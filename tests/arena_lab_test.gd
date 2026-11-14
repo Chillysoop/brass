@@ -1,6 +1,8 @@
 extends SceneTree
 
 const ArenaScene = preload("res://arena.tscn")
+const FrontierRun = preload("res://scripts/frontier_run.gd")
+const TilePacking = preload("res://scripts/tile_packing.gd")
 
 var failures: Array[String] = []
 
@@ -77,6 +79,7 @@ func _run() -> void:
 	lab._load_fixture("solo")
 	_check(lab.lanes.size() == 1, "Solo setup should switch to one lane.")
 	_check_forge(lab)
+	_check_blink_forge(lab)
 	if failures.is_empty():
 		print("Arena controls checks passed.")
 	else:
@@ -145,6 +148,56 @@ func _check_forge(lab: Control) -> void:
 	lab.storage_place(2, 2, {"id": "event_horizon", "lane": 1, "start": 0})
 	_check(lab.lanes[1].is_empty() and lab.storage_rows[2][0].start == 2,
 		"A six-wide Legendary should fit as one tile in eight-column storage.")
+
+func _check_blink_forge(lab: Control) -> void:
+	lab._load_fixture("blink_forge")
+	lab._offer_combine(-1, 0, 0, true)
+	_check(lab.forge_screen.visible and lab.forge_screen._cards.size() == 9
+		and lab.forge_screen._cards.has("sanctuary_gate"), "Blink should display its complete nine-tile forge tree.")
+	lab.forge_choose("shield_ram")
+	_check(lab.lanes[0].size() == 3, "A Bash-family upgrade cannot consume a Blink triple.")
+	lab.forge_screen._inspect("sanctuary_gate")
+	_check(lab.forge_screen._confirm.disabled, "A future Blink tier is inspectable but cannot be selected for a combine.")
+	lab.forge_choose("ward_step")
+	_check(lab.lanes[0].size() == 1 and lab.lanes[0][0].id == "ward_step", "Three Blink tiles should combine into Ward Step.")
+	_check(TilePacking.next_options("ward_step") == TilePacking.next_options("phase_cut")
+		and TilePacking.next_options("ward_step").size() == 2, "Both Uncommon tiles should lead to the same two Rare tiles.")
+	lab._offer_combine(-1, 1, 0, true)
+	lab.forge_choose("starfall_step")
+	_check(lab.lanes[1].size() == 1 and lab.lanes[1][0].id == "starfall_step", "Three Epic Blink tiles should combine into a Legendary.")
+
+	var save_path := "user://blink-forge-test-%d.json" % Time.get_ticks_usec()
+	lab.run.load_save(save_path)
+	lab.run_start(42)
+	lab.run.choose_hero(lab.run.data.offers[0])
+	lab.run.choose_relic("pocket_bell")
+	lab.run.choose_starter("bash")
+	lab.run.loadout.lanes[0].assign([lab._entry("blink", 0, "nearest"),
+		lab._entry("blink", 3, "nearest"), lab._entry("blink", 6, "nearest")])
+	lab.run_show_arena()
+	lab._offer_combine(-1, 0, 0, true)
+	_check(not lab.forge_screen.visible and lab.lanes[0].size() == 3,
+		"A fresh expedition must keep the existing Blink tile without granting its forge tree.")
+
+	lab.run.data.phase = "rest"
+	lab.run.loadout.storage[0].assign([lab._entry("blink", 0, "self")])
+	lab.run_rest_forge()
+	lab._open_storage()
+	lab.storage_pick(0, lab.storage_rows[0][0])
+	lab.storage_forge()
+	_check(not lab.forge_screen.visible, "The rest site must also respect the Blink forge unlock.")
+
+	lab.run.profile.meta.append("blink_artifice")
+	lab.storage_forge()
+	_check(lab.forge_screen.visible, "An unlocked expedition can open the Blink forge from storage at rest.")
+	lab.forge_choose("phase_cut")
+	var restored := FrontierRun.new()
+	_check(restored.load_save(save_path) and restored.data.phase == "map"
+		and restored.loadout.storage[0] == [lab._entry("phase_cut", 0, "nearest")],
+		"The chosen rest upgrade and its compatible target must save with the consumed rest action.")
+	for suffix in ["", ".bak", ".tmp"]:
+		if FileAccess.file_exists(save_path + suffix):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path + suffix))
 
 func _check(passed: bool, description: String) -> void:
 	if not passed:

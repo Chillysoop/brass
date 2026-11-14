@@ -117,6 +117,7 @@ func _initialize() -> void:
 	_check_moonwreck_easy(path)
 	_check_moonwreck_medium(path)
 	_check_moonwreck_hard(path)
+	_check_artifice(path)
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
@@ -705,6 +706,75 @@ func _check_moonwreck_hard(path: String) -> void:
 	var marks: int = finished.profile.marks
 	check(finished.finish_combat(true, [75]) and finished.profile.marks == marks + 39,
 		"A repeated Drowned Admiral clear must omit the first-clear bonus.")
+
+
+func _check_artifice(path: String) -> void:
+	var run := FrontierRun.new()
+	check(run.load_save(path) and run.reward("skip") and run.finish_run(),
+		"Return from the Moonwreck Hard recap before purchasing Artifice.")
+	check(not run.buy_meta("wayfarers_pin"), "Wayfarer's Pin must require Blink Artifice.")
+	var marks: int = run.profile.marks
+	check(run.buy_meta("blink_artifice") and run.profile.marks == marks - 18,
+		"Buying Blink Artifice must spend 18 Marks once its prerequisite is met.")
+	check(not run.buy_meta("blink_artifice") and run.buy_meta("wayfarers_pin") and run.profile.marks == marks - 32,
+		"Buying Wayfarer's Pin must spend another 14 Marks. Artifice cannot be bought twice.")
+	var restored := FrontierRun.new()
+	check(restored.load_save(path) and restored.profile.meta == run.profile.meta,
+		"Both new Chart purchases must persist.")
+	check(restored.start_run(42), "A new expedition can use unlocked Artifice.")
+	check(restored.choose_hero(restored.data.offers[0]), "A new expedition still begins with the hero draft.")
+	check(restored.data.offers.size() == 4 and "wayfarers_pin" in restored.data.offers
+		and "wayfarers_pin" in restored._available_relics(),
+		"The new relic joins the starter draft, elite and shop pools as an additional choice.")
+	check(restored.choose_relic(restored.data.offers[0]) and restored.choose_starter("bash"),
+		"The expanded draft must still leave an eligible relic and starter tile.")
+	check(restored.finish_combat(true, 90), "The first battle still awards a combat draft.")
+	check(restored.data.offers.size() == 3 and "bash" in restored.data.offers,
+		"An expanded reward pool must still offer an exact copy of the starting tile.")
+
+	var fresh := FrontierRun.new()
+	for tier in range(1, ArenaSim.BLINK_TIERS.size()):
+		for id: String in ArenaSim.BLINK_TIERS[tier]:
+			check(id not in fresh._tier_pool(tier) and id in restored._tier_pool(tier),
+				"Blink upgrades must enter their matching pool only after unlocking Artifice.")
+	check("blink" in fresh._normal_pool(), "The common Blink remains available on a fresh profile.")
+	check("wayfarers_pin" not in fresh._available_relics(), "A fresh profile cannot receive the locked relic.")
+
+	var offered_normal := {}
+	var offered_elite := {}
+	var offered_boss := {}
+	for seed_value in range(1, 129):
+		restored.data.seed = seed_value
+		restored.loadout.lanes = [[{"id": "bash"}, {"id": "phase_cut"}, {"id": "phase_cut"}]]
+		var rewards := restored._standard_rewards()
+		check(rewards.size() == 3 and "phase_cut" in rewards and rewards == restored._standard_rewards(),
+			"A held pair takes priority in the deterministic normal draft.")
+		for id: String in rewards:
+			offered_normal[id] = true
+		var elite_pool := restored._tier_pool(1) + restored._tier_pool(2) + restored._tier_pool(3)
+		var elites := restored._tier_rewards(elite_pool, 3, 81)
+		check(elites.size() == 3 and "phase_cut" in elites and not elites.any(func(id: String): return id not in elite_pool),
+			"Elites should retain one useful owned tile within their Uncommon through Epic pool.")
+		for id: String in elites:
+			offered_elite[id] = true
+		for id: String in restored._tier_rewards(restored._tier_pool(4), 3, 81):
+			offered_boss[id] = true
+		for leg in range(1, 4):
+			restored.data.segment = leg
+			var stock := restored._shop_tiles()
+			check(stock.size() == 4 and stock[3] in ArenaSim.BLINK_TIERS[leg]
+				and stock.slice(0, 3).all(func(id: String): return id in restored._normal_pool()),
+				"Artifice adds one Blink upgrade to the shop's three common choices.")
+			if leg == 1:
+				check(stock[3] == "phase_cut", "A matching shop upgrade should favor completing a pair.")
+	check(offered_normal.has_all(ArenaSim.BLINK_TIERS[1] + ArenaSim.BLINK_TIERS[2]),
+		"Normal drafts can offer both Uncommon and both Rare Blink upgrades.")
+	check(offered_elite.has_all(ArenaSim.BLINK_TIERS[1] + ArenaSim.BLINK_TIERS[2] + ArenaSim.BLINK_TIERS[3]),
+		"Elites can offer all Uncommon through Epic Blink upgrades.")
+	check(offered_boss.has_all(ArenaSim.BLINK_TIERS[4]) and offered_boss.size() == 5,
+		"The two Blink Legendaries join the existing boss choices.")
+	var next_blink := restored._owned_reward(restored._tier_pool(2), 92)
+	check(next_blink in ArenaSim.BLINK_TIERS[2], "With no eligible duplicate, a reward can offer another tile from an owned family.")
 
 
 func _reach_boss(run: RefCounted) -> void:

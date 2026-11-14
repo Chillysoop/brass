@@ -448,7 +448,7 @@ func _rest() -> void:
 	_page_title(_run.data.get("node", {}).get("label", "Rest site"), "Choose one use of this camp.")
 	var cards := _cards_row()
 	_choice(cards, "Rest", "Each hero recovers 30% of their maximum HP.", "Heal", func(): _run.rest("heal"); _host.run_return())
-	_choice(cards, "Forge", "Advance one eligible Bash family tile to the next rarity.", "Open forge", func(): _host.run_rest_forge())
+	_choice(cards, "Forge", "Advance one eligible tile to the next rarity.", "Open forge", func(): _host.run_rest_forge())
 	_layout.add_child(_button("Leave camp", _leave))
 
 
@@ -546,10 +546,13 @@ func _chart() -> void:
 			"prerequisites": prerequisites,
 			"purchased": id in owned,
 			"available": available,
-			"branch": "Vitality" if id in ["stout_start", "curated_cache"] else "Supplies",
+			"branch": {
+				"stout_start": "Vitality", "purse": "Supplies", "relic_archive": "Supplies"
+			}.get(id, "Artifice"),
 			"kind": {
 				"stout_start": "Starting health", "purse": "Starting gold",
-				"curated_cache": "Tile unlock", "relic_archive": "Relic unlock"
+				"curated_cache": "Tile unlock", "relic_archive": "Relic unlock",
+				"blink_artifice": "Forge family", "wayfarers_pin": "Relic unlock"
 			}[id]
 		})
 	_aether_chart.render(int(_run.profile.get("marks", 0)), entries, _run.data.is_empty())

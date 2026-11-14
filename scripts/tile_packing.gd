@@ -17,10 +17,16 @@ static func can_place(items: Array, id: String, start: int, capacity: int, ignor
 	return true
 
 
+static func forge_tiers(id: String) -> Array:
+	var family: String = ArenaSim.TILES.get(id, {}).get("family", "")
+	return ArenaSim.FORGE_FAMILIES.get(family, [])
+
+
 static func next_options(id: String) -> Array:
-	for tier in range(ArenaSim.BASH_TIERS.size() - 1):
-		if id in ArenaSim.BASH_TIERS[tier]:
-			return ArenaSim.BASH_TIERS[tier + 1]
+	var tiers := forge_tiers(id)
+	for tier in range(tiers.size() - 1):
+		if id in tiers[tier]:
+			return tiers[tier + 1]
 	return []
 
 
