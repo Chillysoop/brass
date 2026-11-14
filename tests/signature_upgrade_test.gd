@@ -12,10 +12,13 @@ func _initialize() -> void:
 		_check_warden(TilePacking.forge_tiers("rampart_counter")[tier])
 		_check_hexwright(TilePacking.forge_tiers("gravity_spike")[tier])
 		_check_starshot(TilePacking.forge_tiers("horizon_round")[tier])
+		_check_wayfarer(TilePacking.forge_tiers("ghost_volley")[tier])
+		_check_breaker(TilePacking.forge_tiers("collision_hammer")[tier])
+		_check_apothecary(TilePacking.forge_tiers("triage_kit")[tier])
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Rare, Epic, and Legendary signature combat checks passed for Warden, Hexwright, and Starshot.")
+		print("Rare, Epic, and Legendary signature combat checks passed for six heroes.")
 	quit(0 if failures.is_empty() else 1)
 
 
@@ -148,6 +151,143 @@ func _check_starshot(choices: Array) -> void:
 		and _damage_at(mixed, "tap_bolt", first_follow_up + BEAT) ==
 			ArenaSim.TILES.tap_bolt.damage + ArenaSim.TILES.lantern_shot.mark_bonus,
 		"%s should survive a regular mark reapplication without stacking both bonuses on the same hit." % setup_id)
+
+
+func _check_wayfarer(choices: Array) -> void:
+	var ambush: String = choices[0]
+	var cover: String = choices[1]
+	var ambush_spec: Dictionary = ArenaSim.TILES[ambush]
+	var cover_spec: Dictionary = ArenaSim.TILES[cover]
+	var edge: int = ambush_spec.width * BEAT
+	var sim := _fixture([[_tile(ambush, 0), _tile("tap_bolt", ambush_spec.width)]], ["wayfarer"])
+	sim.units[0].relics.assign(["afterimage"])
+	_move(sim.units[1], sim.units[0].pos + Vector2(215, 0))
+	_advance(sim, edge - 1)
+	var departure: Vector2 = sim.units[0].pos
+	_check(sim.activations.is_empty(), "%s must wait for its right edge." % ambush)
+	sim.step()
+	_check(sim.units[0].pos.distance_to(departure) > 10 and _damage_at(sim, ambush, edge) == ambush_spec.damage
+		and sim.units[0].get("afterimage", {}).get("position") == departure
+		and not ArenaSim.is_ranged_tile(ambush),
+		"%s should blink into melee, hit, and leave an Afterimage." % ambush)
+	_advance(sim, edge + BEAT)
+	_check(sim.trace.any(func(event: Dictionary):
+		return event.kind == "relic_proc" and event.tile == "afterimage" and event.tick == edge + BEAT),
+		"Afterimage from %s should extend a later attack from the departure point." % ambush)
+
+	var blocked := _fixture([[_tile(ambush, 0)]], ["wayfarer"])
+	blocked.units[1].radius = 1000.0
+	_advance(blocked, edge)
+	_check(_damage_at(blocked, ambush, edge) == 0
+		and blocked.trace.any(func(event: Dictionary): return event.kind == "miss" and event.tile == ambush)
+		and not blocked.trace.any(func(event: Dictionary): return event.kind == "teleport"),
+		"%s should miss without blinking when no landing is open." % ambush)
+
+	var start: int = cover_spec.width
+	var bonus: int = cover_spec.ranged_followup_bonus
+	var last: int = start + cover_spec.ranged_followup_beats
+	var retreat := _fixture([[_tile(cover, 0), _tile("jab", start),
+		_tile("tap_bolt", start + 1), _tile("tap_bolt", last - 1), _tile("tap_bolt", last)]], ["wayfarer"])
+	_advance(retreat, start * BEAT)
+	_check(retreat.trace.any(func(event: Dictionary):
+		return event.kind == "ranged_followup_ready" and event.tick == start * BEAT),
+		"%s should ready a ranged bonus only after its retreat." % cover)
+	_move(retreat.units[1], retreat.units[0].pos + Vector2(95, 0))
+	_advance(retreat, (start + 1) * BEAT)
+	_check(_damage_at(retreat, "jab", (start + 1) * BEAT) == ArenaSim.TILES.jab.damage,
+		"The ranged bonus from %s should survive a melee hit." % cover)
+	_move(retreat.units[1], retreat.units[0].pos + Vector2(390, 0))
+	_advance(retreat, (start + 2) * BEAT)
+	_check(_damage_at(retreat, "tap_bolt", (start + 2) * BEAT) == 0,
+		"The first ranged follow-up should miss from outside range.")
+	_move(retreat.units[1], retreat.units[0].pos + Vector2(115, 0))
+	_advance(retreat, (last + 1) * BEAT)
+	_check(_damage_at(retreat, "tap_bolt", last * BEAT) == ArenaSim.TILES.tap_bolt.damage + bonus
+		and _damage_at(retreat, "tap_bolt", (last + 1) * BEAT) == ArenaSim.TILES.tap_bolt.damage,
+		"%s should wait through a miss, boost the final eligible hit, then consume its bonus." % cover)
+
+	var late := _fixture([[_tile(cover, 0), _tile("tap_bolt", last)]], ["wayfarer"])
+	_advance(late, (last + 1) * BEAT)
+	_check(_damage_at(late, "tap_bolt", (last + 1) * BEAT) == ArenaSim.TILES.tap_bolt.damage,
+		"%s should not boost a ranged hit after the window closes." % cover)
+
+
+func _check_breaker(choices: Array) -> void:
+	var hammer: String = choices[0]
+	var sweep: String = choices[1]
+	var hammer_spec: Dictionary = ArenaSim.TILES[hammer]
+	var sweep_spec: Dictionary = ArenaSim.TILES[sweep]
+	var edge: int = hammer_spec.width * BEAT
+	for hero: String in ["warden", "breaker"]:
+		var sim := _push_fixture(hammer, hero)
+		_move(sim.units[2], Vector2(437, 240))
+		_advance(sim, edge + 18)
+		var collision := sim.trace.filter(func(event: Dictionary): return event.kind == "hammer_collision")
+		var impacts := sim.trace.filter(func(event: Dictionary): return event.kind == "hit" and event.tile == "breaker")
+		var damage: int = hammer_spec.collision_bonus + (5 if hero == "breaker" else 0)
+		_check(collision.size() == 1 and impacts.size() == 2 and impacts[0].amount == damage
+			and impacts[1].amount == damage and impacts[0].target != impacts[1].target,
+			"%s should damage both enemies on the first collision when equipped by %s." % [hammer, hero])
+
+	var group := _push_fixture(sweep, "breaker")
+	_move(group.units[2], Vector2(370, 320))
+	var edge_sweep: int = sweep_spec.width * BEAT
+	_advance(group, edge_sweep - 1)
+	_check(group.units[2].impulse == Vector2.ZERO, "%s must wait for its right edge." % sweep)
+	group.units[1].hp = 1
+	group.step()
+	var direction: Vector2 = group.units[0].pos.direction_to(group.units[2].pos)
+	_check(group.units[1].hp == 0 and group.units[2].impulse.dot(direction) > 0.0
+		and group.units[3].impulse == Vector2.ZERO,
+		"%s should still push nearby enemies away from the caster when it defeats the target." % sweep)
+
+
+func _check_apothecary(choices: Array) -> void:
+	var dose: String = choices[0]
+	var mist: String = choices[1]
+	var dose_spec: Dictionary = ArenaSim.TILES[dose]
+	var mist_spec: Dictionary = ArenaSim.TILES[mist]
+	var allies := ["apothecary", "warden", "duelist"]
+	var edge: int = dose_spec.width * BEAT
+	var focused := _fixture([[_tile(dose, 0)], [], []], allies)
+	focused.units[0].hp = 70
+	focused.units[1].hp = 20
+	focused.units[2].hp = 60
+	_advance(focused, edge - 1)
+	_check(focused.units[1].hp == 20 and focused.units[1].guard == 0, "%s must wait for its right edge." % dose)
+	focused.step()
+	_check(focused.units[0].hp == 70 and focused.units[1].hp == 20 + dose_spec.heal
+		and focused.units[1].guard == dose_spec.guard and focused.units[2].hp == 60,
+		"%s should concentrate healing and Guard on the lowest-HP hero." % dose)
+	focused.units[1].guard = 0
+	_advance(focused, edge + ArenaSim.LOOP_TICKS)
+	_check(focused.units[1].hp == 20 + dose_spec.heal and focused.units[1].guard == dose_spec.guard,
+		"%s should still grant Guard on the second loop without repeating the heal." % dose)
+
+	var shared := _fixture([[_tile(mist, 0)], [], []], allies)
+	shared.units[0].hp = 50
+	shared.units[1].hp = 100
+	shared.units[2].hp = 0
+	_advance(shared, edge)
+	_check(shared.units[0].hp == 50 + mist_spec.heal and shared.units[1].hp == 100
+		and shared.units[1].guard == mist_spec.guard and shared.units[2].hp == 0 and shared.units[2].guard == 0,
+		"%s should heal injured living heroes, guard the living party, and leave fallen heroes down." % mist)
+	shared.units[0].hp = 45
+	shared.units[1].hp = 55
+	shared.units[0].guard = 0
+	_advance(shared, edge + ArenaSim.LOOP_TICKS)
+	_check(shared.units[0].hp == 45 and shared.units[0].guard == mist_spec.guard
+		and shared.units[1].hp == 55 + mist_spec.heal and shared.units[2].hp == 0,
+		"%s should heal a previously full hero on a later loop without healing the same hero twice." % mist)
+
+
+func _push_fixture(id: String, hero: String) -> ArenaSim:
+	var sim := _fixture([[_tile(id, 0)]], [hero], "elite")
+	_move(sim.units[0], Vector2(250, 240))
+	_move(sim.units[1], Vector2(370, 240))
+	_move(sim.units[2], Vector2(510, 240))
+	_move(sim.units[3], Vector2(750, 395))
+	return sim
 
 
 func _pull_fixture(id: String) -> ArenaSim:
