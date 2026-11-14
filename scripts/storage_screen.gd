@@ -1,11 +1,12 @@
 extends Control
 
 const GameIcons = preload("res://scripts/game_icons.gd")
+const TilePacking = preload("res://scripts/tile_packing.gd")
 
-const COLUMNS := 8
-const ROWS := 3
-const TILE_HEIGHT := 56.0
-const COMBINE_HEIGHT := 36.0
+const COLUMNS := TilePacking.STORAGE_COLUMNS
+const ROWS := TilePacking.STORAGE_ROWS
+const TILE_HEIGHT := 36.0
+const COMBINE_HEIGHT := 29.0
 const INK := Color("#101820")
 const PANEL := Color("#192732")
 const EDGE := Color("#3c505b")
@@ -31,6 +32,7 @@ var _preview: Control
 var _preview_row: Control
 var _preview_key: Array = []
 var _dragged_card: Control
+var _focused_cell := Vector2i(-1, -1)
 
 
 func configure(host: Control) -> void:
@@ -40,6 +42,8 @@ func configure(host: Control) -> void:
 
 
 func render(rows: Array, selected: Dictionary, offers: Array, camp := false) -> void:
+	var focus := get_viewport().gui_get_focus_owner()
+	_focused_cell = focus.get_meta("storage_cell", Vector2i(-1, -1)) if is_instance_valid(focus) else Vector2i(-1, -1)
 	_selected = selected.duplicate()
 	_end_drag()
 	for child in _board.get_children():
@@ -50,15 +54,15 @@ func render(rows: Array, selected: Dictionary, offers: Array, camp := false) -> 
 		var tiles: Array = rows[row_index] if row_index < rows.size() else []
 		used += _build_row(row_index, tiles, offers)
 	_capacity.text = "%d / %d cells used" % [used, COLUMNS * ROWS]
-	_send.disabled = int(_selected.get("row", -1)) < 0 or int(_selected.get("lane", 0)) != -1
-	_discard.disabled = _send.disabled
+	_send.disabled = not _selected.has("row")
+	_discard.disabled = not _selected.has("lane")
 	_forge.visible = camp
-	_forge.disabled = _send.disabled
+	_forge.disabled = not _selected.has("lane")
 	if _selected.is_empty():
-		show_message("Drag a tile to make room in a row, or select it and choose an empty cell.")
+		show_message("Drag between storage and the timeline.")
 	else:
 		var tile: Dictionary = _host.tile_spec(_selected.id)
-		show_message("%s selected · choose a starting cell." % tile.get("label", _selected.id))
+		show_message("%s selected" % tile.get("label", _selected.id))
 
 
 func show_message(message: String) -> void:
@@ -67,61 +71,49 @@ func show_message(message: String) -> void:
 
 
 func _build() -> void:
-	var background := ColorRect.new()
-	background.color = INK
-	background.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(background)
-	background.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-
-	var margin := MarginContainer.new()
-	for side in ["left", "right", "top", "bottom"]:
-		margin.add_theme_constant_override("margin_" + side, 24)
-	add_child(margin)
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	name = "TileStoragePopup"
+	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	var stage := CenterContainer.new()
+	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(stage)
+	stage.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var frame := PanelContainer.new()
+	frame.custom_minimum_size.x = 740
+	frame.add_theme_stylebox_override("panel", _box(PANEL, GOLD_DARK, 12))
+	stage.add_child(frame)
 	var layout := VBoxContainer.new()
-	layout.add_theme_constant_override("separation", 15)
-	margin.add_child(layout)
+	layout.add_theme_constant_override("separation", 5)
+	frame.add_child(layout)
 
 	var header := HBoxContainer.new()
 	header.add_theme_constant_override("separation", 12)
 	layout.add_child(header)
-	var heading := _label("Tile storage", 28, GOLD)
+	var heading := _label("Tile storage", 22, GOLD)
 	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(heading)
-	header.add_child(_button("Back to arena", func(): _host.storage_close()))
-	layout.add_child(_label("Pack tiles in rows. Three touching copies of the same tile can combine.", 15, MUTED))
-
-	var stage := CenterContainer.new()
-	stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	stage.use_top_left = false
-	layout.add_child(stage)
-	var frame := PanelContainer.new()
-	frame.custom_minimum_size.x = 740
-	frame.add_theme_stylebox_override("panel", _box(PANEL, EDGE, 12))
-	stage.add_child(frame)
-	var inset := MarginContainer.new()
-	for side in ["left", "right", "top", "bottom"]:
-		inset.add_theme_constant_override("margin_" + side, 16)
-	frame.add_child(inset)
-	var contents := VBoxContainer.new()
-	contents.add_theme_constant_override("separation", 8)
-	inset.add_child(contents)
 	_capacity = _label("", 14, TEAL)
-	contents.add_child(_capacity)
+	_capacity.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	header.add_child(_capacity)
+	var close := _button("Close", func(): _host.storage_close())
+	close.name = "CloseStorage"
+	header.add_child(close)
 	_board = VBoxContainer.new()
-	_board.add_theme_constant_override("separation", 6)
-	contents.add_child(_board)
+	_board.add_theme_constant_override("separation", 4)
+	layout.add_child(_board)
 
 	var footer := HBoxContainer.new()
 	footer.add_theme_constant_override("separation", 12)
 	layout.add_child(footer)
-	_status = _label("", 15, MUTED)
+	_status = _label("", 14, MUTED)
+	_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_status.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	footer.add_child(_status)
-	_send = _button("Transfer selected to timeline", func(): _host.storage_send_to_timeline())
+	_send = _button("To timeline", func(): _host.storage_send_to_timeline())
 	_send.disabled = true
 	footer.add_child(_send)
 	_discard = _button("Discard selected", func(): _host.storage_discard())
+	_discard.name = "DiscardSelected"
 	_discard.disabled = true
 	footer.add_child(_discard)
 	_forge = _button("Forge selected", func(): _host.storage_forge())
@@ -131,13 +123,14 @@ func _build() -> void:
 
 func _build_row(row_index: int, tiles: Array, offers: Array) -> int:
 	var band := VBoxContainer.new()
-	band.add_theme_constant_override("separation", 3)
+	band.add_theme_constant_override("separation", 1)
 	_board.add_child(band)
 	var offer_strip := Control.new()
-	offer_strip.custom_minimum_size.y = COMBINE_HEIGHT
 	band.add_child(offer_strip)
+	offer_strip.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	for offer: Dictionary in offers:
 		if int(offer.get("row", -1)) == row_index:
+			offer_strip.custom_minimum_size.y = COMBINE_HEIGHT
 			_build_offer(offer_strip, row_index, offer)
 
 	var row := Control.new()
@@ -165,6 +158,7 @@ func _build_row(row_index: int, tiles: Array, offers: Array) -> int:
 		cell.add_theme_stylebox_override("normal", _box(EMPTY, EDGE, 3))
 		cell.tooltip_text = "Storage row %d, column %d" % [row_index + 1, column + 1]
 		_span(row, cell, column, 1)
+		_keep_cell_focus(cell, row_index, column)
 		_drop_target(cell, row, row_index, tiles)
 	return used
 
@@ -174,22 +168,34 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 	var chosen := int(_selected.get("row", -1)) == row_index and int(_selected.get("start", -1)) == int(item.start)
 	var name := String(tile.get("label", item.id))
 	var width: int = tile.width
-	var card := _button(name, func(): _host.storage_pick(row_index, item))
+	var damage := int(tile.get("damage", 0))
+	var card := _button("%s · %d" % [name, damage] if damage > 0 else name, func(): _host.storage_pick(row_index, item))
 	GameIcons.decorate(card, GameIcons.tile(item.id, tile), 22)
 	card.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	card.tooltip_text = "%s · width %d\n%s" % [name, width, tile.get("description", "")]
+	card.tooltip_text = "%s · %s\n%s" % [name, GameIcons.tile_stats(tile), tile.get("description", "")]
 	card.add_theme_stylebox_override("normal", _box(SELECTED if chosen else STORED, GOLD if chosen else TEAL))
 	card.add_theme_stylebox_override("hover", _box(STORED.lightened(0.16), GOLD))
 	card.add_theme_stylebox_override("pressed", _box(SELECTED, GOLD))
 	_span(row, card, int(item.start), width)
+	_keep_cell_focus(card, row_index, item.start)
 	_drop_target(card, row, row_index, tiles, payload)
+
+
+func _keep_cell_focus(button: Button, row: int, column: int) -> void:
+	var cell := Vector2i(column, row)
+	button.set_meta("storage_cell", cell)
+	if cell == _focused_cell:
+		button.grab_focus()
 
 
 func _build_offer(strip: Control, row_index: int, offer: Dictionary) -> void:
 	var start := int(offer.start)
 	var width := int(offer.width)
 	var wrapper := PanelContainer.new()
-	wrapper.add_theme_stylebox_override("panel", _box(GOLD_DARK, GOLD))
+	var backing := _box(GOLD_DARK, GOLD)
+	backing.content_margin_top = 0
+	backing.content_margin_bottom = 0
+	wrapper.add_theme_stylebox_override("panel", backing)
 	var actions := HBoxContainer.new()
 	actions.alignment = BoxContainer.ALIGNMENT_CENTER
 	actions.add_theme_constant_override("separation", 5)
@@ -199,6 +205,12 @@ func _build_offer(strip: Control, row_index: int, offer: Dictionary) -> void:
 	var decline := _button("No", func(): _host.storage_combine(row_index, start, false))
 	accept.add_theme_stylebox_override("normal", _box(GOLD, GOLD))
 	accept.add_theme_color_override("font_color", INK)
+	for button: Button in [accept, decline]:
+		button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		for state: String in ["normal", "hover", "pressed", "focus"]:
+			var style := button.get_theme_stylebox(state) as StyleBoxFlat
+			style.content_margin_top = 1
+			style.content_margin_bottom = 1
 	actions.add_child(accept)
 	actions.add_child(decline)
 	wrapper.add_child(actions)

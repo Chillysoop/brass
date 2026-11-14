@@ -5,6 +5,12 @@ const HEROES = ArenaSim.HERO_CLASSES
 const BASE_TILES := ["bash", "shot", "slam", "pull", "guard", "blink"]
 const STARTER_TILES := ["bash", "shot", "slam"]
 const STARTER_RELICS := ["pocket_bell", "copper_compass", "quartermasters_coin"]
+const BUILD_RELICS := ["towline_knot", "bridgeplate", "brass_metronome"]
+const RELIC_STARTERS := {
+	"towline_knot": ["bash", "pull", "shot"],
+	"bridgeplate": ["shield_ram", "bash", "shot"],
+	"brass_metronome": ["shot", "slam", "bash"],
+}
 const FORGE_UNLOCKS := {"blink": "blink_artifice", "shot": "shot_artifice", "guard": "guard_artifice"}
 const RELICS := {
 	"pocket_bell": {"label": "Pocket Bell", "description": "Gain guard at the start of each combat loop."},
@@ -12,6 +18,9 @@ const RELICS := {
 	"quartermasters_coin": {"label": "Quartermaster's Coin", "description": "Gain 3 extra gold when you skip a combat tile reward."},
 	"trail_ration": {"label": "Trail Ration", "description": "Recover 5 HP after each victory."},
 	"wayfarers_pin": {"label": "Wayfarer's Pin", "description": "Each hero gains 6 guard on their first successful teleport each loop."},
+	"towline_knot": {"label": "Towline Knot", "description": "The first push or pull each loop marks its target. A separate tile that hits it within 2 beats deals 9 bonus damage."},
+	"bridgeplate": {"label": "Bridgeplate", "description": "When a hero's Guard absorbs damage, their next tile hit that loop deals 8 bonus damage. Once per hero per loop."},
+	"brass_metronome": {"label": "Brass Metronome", "description": "Leave an empty beat before a tile. Its hit deals 8 bonus damage. Once per loop."},
 }
 const META_NODES := {
 	"stout_start": {"label": "Stout Start", "description": "Begin each run with 8% more maximum HP.", "cost": 5, "requires": []},
@@ -141,19 +150,50 @@ func load_save(path := "user://frontier-save.json") -> bool:
 	loadout = {}
 	profile = DEFAULT_PROFILE.duplicate(true)
 	for candidate in [save_path, save_path + ".bak"]:
-		if not FileAccess.file_exists(candidate):
-			continue
-		var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(candidate))
-		if not parsed is Dictionary or parsed.get("version") != VERSION:
-			continue
-		if not parsed.get("profile") is Dictionary or not parsed.get("run") is Dictionary or not parsed.get("loadout") is Dictionary:
+		var parsed := _read_save(candidate)
+		if parsed.is_empty():
 			continue
 		profile.merge(parsed.profile, true)
 		data = parsed.run
 		loadout = parsed.loadout
 		_restore_integers()
+		_restore_brass_medium_unlocks(candidate == save_path)
 		return true
 	return false
+
+
+func _read_save(path: String) -> Dictionary:
+	if not FileAccess.file_exists(path):
+		return {}
+	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	if not parsed is Dictionary or parsed.get("version") != VERSION:
+		return {}
+	if not parsed.get("profile") is Dictionary or not parsed.get("run") is Dictionary or not parsed.get("loadout") is Dictionary:
+		return {}
+	return parsed
+
+
+func _restore_brass_medium_unlocks(from_primary: bool) -> void:
+	var completed := bool(profile.hard_unlocked or profile.glass_easy_unlocked or profile.brass_hard_cleared)
+	completed = completed or _is_brass_medium_victory(data)
+	if not completed and from_primary and data.is_empty():
+		# Returning to title after a recap keeps that finished run in the previous snapshot.
+		var previous := _read_save(save_path + ".bak")
+		completed = _is_brass_medium_victory(previous.get("run", {}))
+	if completed:
+		profile.medium_unlocked = true
+		profile.hard_unlocked = true
+		profile.glass_easy_unlocked = true
+
+
+func _is_brass_medium_victory(record: Dictionary) -> bool:
+	if record.get("location") != "brass" or record.get("difficulty") != "medium" or record.get("result") != "victory":
+		return false
+	var node: Variant = record.get("node")
+	var layers: Variant = record.get("layers")
+	return (node is Dictionary and layers is Array and not layers.is_empty()
+		and node.get("type") == "boss" and node.get("boss_id") == "gilded_marshal"
+		and node.get("row") == layers.size() - 1)
 
 
 func save() -> bool:
@@ -246,16 +286,26 @@ func choose_hero(id: String) -> bool:
 	data.offers = _sample(pool, 3, int(data.seed), 21)
 	if offer_pin:
 		data.offers.append("wayfarers_pin")
+	var combat_classics := ["pocket_bell", "copper_compass"]
+	if offer_pin:
+		combat_classics.append("wayfarers_pin")
+	var combat_draft := _sample(BUILD_RELICS, 2, int(data.seed), 22) + _sample(combat_classics, 1, int(data.seed), 23)
+	data.build_relic_offers = _sample(combat_draft, 3, int(data.seed), 24)
 	save()
 	return true
 
 
+func build_relic_offers() -> Array:
+	return data.get("build_relic_offers", []) if data.get("phase") == "relic" else []
+
+
 func choose_relic(id: String) -> bool:
-	if not _is_offer("relic", id):
+	if not _is_offer("relic", id) and id not in build_relic_offers():
 		return false
 	data.relics.append(id)
 	data.phase = "starter"
-	data.offers = _sample(STARTER_TILES, 3, int(data.seed), 31)
+	data.erase("build_relic_offers")
+	data.offers = _sample(RELIC_STARTERS.get(id, STARTER_TILES), 3, int(data.seed), 31)
 	save()
 	return true
 
@@ -266,6 +316,8 @@ func choose_starter(id: String) -> bool:
 	if not _is_offer("starter", id):
 		return false
 	loadout.lanes = [_starter_lane(id)]
+	if "brass_metronome" in data.relics:
+		loadout.lanes[0][0].start = 1
 	data.phase = "combat"
 	data.offers = []
 	save()
@@ -328,6 +380,7 @@ func choose_node(id: String) -> bool:
 	data.segment = 1 + floori(float(selected.row) / NODES_PER_SEGMENT)
 	data.visited.append(id)
 	data.node_notice = ""
+	data.erase("reward_hints")
 	var midpoint := floori(float(data.layers.size() - 1) / 2.0)
 	if not data.midpoint_paid and int(selected.row) >= midpoint:
 		data.midpoint_paid = true
@@ -350,18 +403,38 @@ func choose_node(id: String) -> bool:
 func encounter() -> Dictionary:
 	if data.get("phase") != "combat":
 		return {}
-	var kind: String = data.node.get("encounter_override", data.node.type)
+	return _encounter_for(data.node, int(data.segment))
+
+
+func _encounter_for(node: Dictionary, segment: int) -> Dictionary:
+	var kind: String = node.get("encounter_override", node.type)
 	var roster: Array = []
 	for hero: Dictionary in data.heroes:
 		roster.append({"id": hero.id, "hero": hero.id, "hp": int(hero.hp), "max_hp": int(hero.max_hp)})
 	return {
-		"encounter": kind, "kind": kind, "id": data.node.id,
-		"seed": int(data.seed) ^ _node_salt(71), "hero": data.hero, "hp": int(data.hp),
+		"encounter": kind, "kind": kind, "id": node.id,
+		"seed": int(data.seed) ^ _node_salt(71, node), "hero": data.hero, "hp": int(data.hp),
 		"max_hp": int(data.max_hp), "relic": data.relics.front() if not data.relics.is_empty() else "",
-		"relics": data.relics.duplicate(), "heroes": roster, "segment": data.segment,
+		"relics": data.relics.duplicate(), "heroes": roster, "segment": segment,
 		"difficulty": data.difficulty, "location": data.location,
-		"boss_id": data.node.get("boss_id", ""), "final_boss": is_final_boss(),
+		"boss_id": node.get("boss_id", ""), "final_boss": node.type == "boss" and int(node.row) == data.layers.size() - 1,
 	}
+
+
+func elite_preview(node: Dictionary) -> Dictionary:
+	if node.get("type") != "elite" or not available_nodes().any(func(option: Dictionary): return option.id == node.id):
+		return {}
+	var tile := _elite_preview_tile(node)
+	var segment := 1 + floori(float(node.row) / NODES_PER_SEGMENT)
+	return {"encounter": _encounter_for(node, segment), "tile": tile, "reward_family": ArenaSim.TILES[tile].family}
+
+
+func _elite_preview_tile(node: Dictionary) -> String:
+	# The advertised offer is stable even if the player edits their inventory before the fight.
+	var baseline: Array = ArenaSim.BASH_TIERS[1] + ArenaSim.BASH_TIERS[2] + ArenaSim.BASH_TIERS[3]
+	for tier in range(1, 4):
+		baseline.append_array(_specialist_pool(tier))
+	return _sample(baseline, 1, int(data.seed), _node_salt(81, node))[0]
 
 
 func is_final_boss() -> bool:
@@ -394,6 +467,10 @@ func finish_combat(victory: bool, hp: Variant) -> bool:
 			data.gold += 20
 			_grant_marks(2)
 			data.offers = _tier_rewards(_tier_pool(1) + _tier_pool(2) + _tier_pool(3), 3, 81)
+			if data.node.type == "elite":
+				var guaranteed := _elite_preview_tile(data.node)
+				if guaranteed not in data.offers:
+					data.offers[-1] = guaranteed
 			var relic_pool := _available_relics()
 			if not relic_pool.is_empty():
 				var found: String = _sample(relic_pool, 1, int(data.seed), _node_salt(82))[0]
@@ -481,6 +558,7 @@ func _resolve_boss() -> void:
 func reward(id: String) -> bool:
 	if data.get("phase") != "reward" or (id != "skip" and id not in data.offers):
 		return false
+	data.erase("reward_hints")
 	if is_final_boss():
 		data.trophy = "" if id == "skip" else id
 		data.phase = "result"
@@ -539,7 +617,7 @@ func shop_buy_relic() -> bool:
 
 
 func leave_node() -> bool:
-	if data.get("phase") not in ["shop", "rest"]:
+	if data.get("phase") not in ["shop", "rest", "event"]:
 		return false
 	data.phase = "map"
 	data.offers = []
@@ -878,9 +956,20 @@ func _node(kind: String, label: String, row: int, column: int) -> Dictionary:
 
 func _standard_rewards() -> Array:
 	var rewards: Array = []
+	var hints := {}
 	var owned := _owned_reward(_normal_pool() + _tier_pool(1) + _tier_pool(2), 83)
 	if not owned.is_empty():
 		rewards.append(owned)
+		var copies := _owned_tile_count(owned)
+		var spec: Dictionary = ArenaSim.TILES[owned]
+		hints[owned] = "Owned copy" if copies > 0 else "Owned family"
+		if copies == 2 and forge_family_available(spec.get("family", "")) and spec.get("rarity", "common") != "legendary":
+			hints[owned] = "Third copy"
+	var bridge := _relic_bridge(rewards)
+	if not bridge.is_empty():
+		rewards.append(bridge.tile)
+		hints[bridge.tile] = bridge.hint
+	data.reward_hints = hints
 	var rng := _rng(int(data.seed), _node_salt(84))
 	while rewards.size() < 3:
 		var roll := rng.randi_range(1, 100)
@@ -899,16 +988,76 @@ func _standard_rewards() -> Array:
 	return _sample(rewards, 3, int(data.seed), _node_salt(85))
 
 
+func reward_hint(id: String) -> String:
+	if data.get("phase") != "reward":
+		return ""
+	return data.get("reward_hints", {}).get(id, "")
+
+
+func _owned_tile_count(id: String) -> int:
+	var count := 0
+	for items: Array in loadout.lanes + loadout.storage:
+		for tile: Dictionary in items:
+			if tile.id == id:
+				count += 1
+	return count
+
+
+func _relic_bridge(excluded: Array) -> Dictionary:
+	var starter: String = data.relics.front() if not data.relics.is_empty() else ""
+	var candidates: Array
+	var hint: String
+	match starter:
+		"towline_knot":
+			var has_displacement := _has_build_tile(func(id: String, spec: Dictionary):
+				return id in ["pull", "gravity_hook"] or spec.get("family") == "bash" or spec.has("push"))
+			candidates = ["shot", "blink"] if has_displacement else ["pull", "bash"]
+			hint = "Follow a push or pull" if has_displacement else "Sets up Towline Knot"
+		"bridgeplate":
+			var has_guard := _has_build_tile(func(id: String, spec: Dictionary):
+				return spec.has("guard") or id in ["shield_ram", "bulwark_charge", "sunwall", "dawn_bastion"])
+			candidates = ["shot", "bash", "slam"] if has_guard else ["guard"]
+			hint = "Follow absorbed Guard" if has_guard else "Sets up Bridgeplate"
+		"brass_metronome":
+			candidates = ["slam", "shot", "blink"]
+			hint = "Leave one beat empty before it"
+		_:
+			return {}
+	var eligible := candidates.filter(func(id: String): return id not in excluded)
+	if eligible.is_empty():
+		return {}
+	var id: String = eligible[0] if data.node.type == "opening" else _sample(eligible, 1, int(data.seed), _node_salt(86))[0]
+	return {"tile": id, "hint": hint}
+
+
+func _has_build_tile(matches: Callable) -> bool:
+	for items: Array in loadout.lanes + loadout.storage:
+		for tile: Dictionary in items:
+			if matches.call(tile.id, ArenaSim.TILES[tile.id]):
+				return true
+	return false
+
+
 func _tier_pool(tier: int) -> Array:
 	var pool: Array = ArenaSim.BASH_TIERS[tier].duplicate()
 	if tier == 4:
 		pool.append("meteor_seal")
+	if _owns_slam_family():
+		pool.append_array(ArenaSim.SLAM_TIERS[tier])
 	pool.append_array(_specialist_pool(tier))
 	return pool
 
 
+func _owns_slam_family() -> bool:
+	for items: Array in loadout.get("lanes", []) + loadout.get("storage", []):
+		for tile: Dictionary in items:
+			if ArenaSim.TILES.get(tile.id, {}).get("family") == "slam":
+				return true
+	return false
+
+
 func forge_family_available(family: String) -> bool:
-	return family == "bash" or (FORGE_UNLOCKS.has(family) and FORGE_UNLOCKS[family] in profile.meta)
+	return family in ["bash", "slam"] or (FORGE_UNLOCKS.has(family) and FORGE_UNLOCKS[family] in profile.meta)
 
 
 func _specialist_pool(tier: int) -> Array:
@@ -955,6 +1104,7 @@ func _owned_reward(pool: Array, salt: int, favor_owned_family := true) -> String
 				var tier := TILE_RARITIES.find(spec.rarity)
 				family_tiers[spec.family] = maxi(tier, int(family_tiers.get(spec.family, -1)))
 	var focused: bool = profile.meta.any(func(id: String): return id in FORGE_UNLOCKS.values())
+	var prioritize_forge: bool = focused or data.get("relics", []).any(func(id: String): return id in BUILD_RELICS)
 	var candidates: Array = []
 	var best_priority := -1
 	for id: String in counts:
@@ -962,7 +1112,7 @@ func _owned_reward(pool: Array, salt: int, favor_owned_family := true) -> String
 			continue
 		var priority := 0
 		var spec: Dictionary = ArenaSim.TILES[id]
-		if focused and forge_family_available(spec.get("family", "")) and spec.rarity != "legendary" and counts[id] < 3:
+		if prioritize_forge and forge_family_available(spec.get("family", "")) and spec.rarity != "legendary" and counts[id] < 3:
 			# Complete pairs first, then prefer useful copies at higher rarities.
 			priority = int(counts[id]) * TILE_RARITIES.size() + TILE_RARITIES.find(spec.rarity)
 		if priority > best_priority:
@@ -1073,8 +1223,9 @@ func _restore_node(node: Dictionary) -> void:
 		node.boss_id = BOSS_LABELS.find_key(node.label)
 
 
-func _node_salt(salt: int) -> int:
-	return salt + int(data.node.row) * 1009 + int(data.node.column) * 89
+func _node_salt(salt: int, node := {}) -> int:
+	var position: Dictionary = data.node if node.is_empty() else node
+	return salt + int(position.row) * 1009 + int(position.column) * 89
 
 
 func _rng(seed_value: int, salt: int) -> RandomNumberGenerator:

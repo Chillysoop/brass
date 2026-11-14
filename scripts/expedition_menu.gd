@@ -26,7 +26,7 @@ const REGIONS := {
 	"glass": {
 		"name": "Glass Foundry", "art": "region-glass.webp", "fallback": "glass-map.webp",
 		"description": "Enter a furnace district of glass hunters and molten automata.",
-		"unlock": "Clear Brass Frontier Medium to unlock.", "implemented": true
+		"unlock": "Defeat the Gilded Marshal in Brass Frontier Medium.", "implemented": true
 	},
 	"crown": {
 		"name": "Crown Relay", "art": "region-crown.webp", "fallback": "crown-map.webp",
@@ -130,7 +130,7 @@ func _title() -> void:
 		left.add_child(resume)
 		_focus_target = resume
 		left.add_child(_label(_resume_caption(), 16, TEAL))
-	var start := _button("New Expedition", func(): _show_page("regions"), not resumable)
+	var start := _button("New Expedition", func(): _show_page("regions", _latest_region()), not resumable)
 	GameIcons.decorate(start, "route", 24)
 	start.name = "NewExpedition"
 	left.add_child(start)
@@ -190,6 +190,13 @@ func _regions() -> void:
 func _select_region(location: String) -> void:
 	if _run.can_start("easy", location):
 		_show_page("difficulty", location)
+
+
+func _latest_region() -> String:
+	for id in ["moonwreck", "crown", "glass"]:
+		if _run.can_start("easy", id):
+			return id
+	return "brass"
 
 
 func _difficulty() -> void:
@@ -318,6 +325,8 @@ func _difficulty_hint(difficulty: String) -> String:
 		return "Begin a solo expedition."
 	if difficulty == "medium":
 		return "Clear %s Easy to unlock." % REGIONS[_location].name
+	if _location == "brass":
+		return "Defeat the Gilded Marshal in Brass Frontier Medium."
 	return "Clear %s Medium to unlock." % REGIONS[_location].name
 
 

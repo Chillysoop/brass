@@ -6,13 +6,17 @@ The Windows playtest includes Easy, Medium, and Hard expeditions in Brass Fronti
 
 From the title screen, choose **New Expedition**, select **Brass Frontier**, and start on **Easy** to draft a hero, relic, and starting tile. You can enter an optional seed on the difficulty screen. Win the opening fight, pick rewards, then travel a seeded route through battles, elites, shops, events, and a rest site. Health, relics, gold, and tile layouts carry between stops. The game saves between fights and after loadout changes. **Continue** picks up from the saved checkpoint.
 
-Open **Battle review** after a fight to inspect activations, misses, and boss counters. Selecting an activation highlights the tile and its firing beat. Expedition defeats open the review automatically.
+Enemies fill a charge gauge above their heads before an attack. Tiles show damage and fire on their right edge. Each hero's timeline shows a portrait, live health, and targeting buttons. The left and right arrows select nearest and farthest. The solid and hollow hearts select highest and lowest HP. The **All** buttons apply the same rule to compatible tiles on the lane.
+
+Open **Battle review** after a fight to inspect activations, misses, relic bonuses, and boss counters. Selecting an activation highlights the tile and its firing beat. Expedition defeats open the review automatically. **Retry in Practice** replays the original encounter with an editable copy of your equipment and pre-fight health.
 
 Defeat the Tollkeeper on Easy to bank Aether Marks and unlock **Medium**. Open the **Aether Chart** from the title or after a run to inspect prerequisites and spend Marks on permanent upgrades between expeditions.
 
 In the **Artifice** branch, unlock **Gravity Hook**, then **Blink Artifice** to forge the Blink family and add its upgrades to future rewards. Three touching copies of the same tile open both choices at the next rarity. A camp can advance one eligible tile instead of healing the party. **Wayfarer's Pin** adds a starter relic choice that grants each hero 6 Guard on their first successful teleport each loop. It can also appear in shops and elite rewards.
 
 **Marksman's Arsenal** unlocks precision fire and shots that hit clustered enemies. Precision tiles let heroes keep their distance when the lane has no melee attacks. **Bastion Workshop** unlocks counters fueled by Guard and tiles that shield vulnerable allies. Shops offer one specialist upgrade from the unlocked families, from Uncommon on the first leg to Rare on the second and Epic on the third. **Pathfinder's Chart** adds seeded mystery encounters with gold wagers, relic brokers, and optional elite bounties.
+
+The starter relic draft rotates build options. **Towline Knot** rewards following displacement with a hit on the same enemy, **Bridgeplate** turns absorbed damage into a counter, and **Brass Metronome** rewards leaving a beat of space before a damaging tile. Their icons flash when they trigger. Battle rewards can offer a copy of an owned tile, a relic-compatible tile, and a wildcard. Hover or focus a reachable elite to preview its formation and a guaranteed reward choice.
 
 Seeded battle and elite formations can include a Rivet Bombardier, Kiln Duelist, Relay Mender, or Dock Corsair. The encounter preview shows who you will face.
 
@@ -42,10 +46,10 @@ Brass Frontier Hard has three legs. Recruit after the Tollkeeper and the Gilded 
 
 1. Start with **Two heroes**. The preset schedules Hexwright's **Pull · Farthest** at beat 4 and Warden's **Bash · Nearest** at beat 6. Start the battle and watch the tether bring the distant clockwork within striking distance.
 2. **Reset fight**, change Pull's rule to **Nearest**, and compare the target and follow-up. Each tile previews its target in setup and chooses again when it fires.
-3. Drag a tile into position on a timeline or within storage. Neighboring tiles shift in the preview if they fit. Drop to commit the arrangement. You can also select a tile and click a clear starting beat. **Set all targets** applies a rule to compatible tiles on that lane.
+3. Open **Tile storage** above the timeline. Drag tiles in either direction while the popup is open. Neighbors shift in the preview if they fit. You can also select a tile and click a clear starting beat or storage cell. Use the popup to discard a selected tile.
 4. Try **Solo hero**, 2× speed, or a layout using Blink. Reset returns to setup and retains the current layout. Changing fixtures loads that fixture's preset.
-5. Open **Tile storage** to find three touching Bash tiles. Use **Combine → Yes**, inspect any rarity, then confirm one of the two upgrades offered at the next rarity. Select the result and use **Transfer selected to timeline** to equip it.
-6. Choose **Forge practice** from the fixture picker to start with three Epic Sunwalls on Warden's lane. Combine them into either Legendary, then try the result in battle or move it into storage. To move a tile to storage, select it on the timeline, open **Tile storage**, then choose an empty starting cell.
+5. Open **Tile storage** to find three touching Bash tiles. Use **Combine → Yes**, inspect any rarity, then confirm one of the two upgrades offered at the next rarity. Three four-beat Slams fit together on a full timeline. In an expedition, a camp can also advance a single Slam if the upgrade fits.
+6. Choose **Forge practice** from the fixture picker to start with three Epic Sunwalls on Warden's lane. Combine them into either Legendary, then try the result in battle or move it into storage.
 7. Choose **Blink forge practice** to inspect the full Blink family and try its teleport upgrades without spending Aether Marks.
 8. Choose **Shot and Guard practice** to forge ranged and defensive tiles and try them in the arena.
 

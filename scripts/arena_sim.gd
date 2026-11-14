@@ -73,7 +73,16 @@ const GUARD_TIERS := [
 	["iron_rebuke", "shield_chorus"],
 	["last_stand", "aegis_network"],
 ]
-const FORGE_FAMILIES := {"bash": BASH_TIERS, "blink": BLINK_TIERS, "shot": SHOT_TIERS, "guard": GUARD_TIERS}
+const SLAM_TIERS := [
+	["slam"],
+	["shockwave", "sundering_slam"],
+	["quake", "armor_crush"],
+	["fault_line", "hammerfall"],
+	["worldbreaker", "skybreaker"],
+]
+const FORGE_FAMILIES := {
+	"bash": BASH_TIERS, "blink": BLINK_TIERS, "shot": SHOT_TIERS, "guard": GUARD_TIERS, "slam": SLAM_TIERS,
+}
 const HERO_CLASSES := {
 	"warden": {"label": "Warden", "description": "Gain 4 guard on the first Bash-family hit each loop."},
 	"bulwark": {"label": "Bulwark", "description": "Once per loop, intercept an ally's incoming strike and reduce it by 6. Alone, reduce your first strike."},
@@ -319,7 +328,48 @@ const TILES := {
 	},
 	"slam": {
 		"label": "Slam", "width": 4, "range": 190.0, "damage": 20,
+		"family": "slam", "rarity": "common", "radius": 115.0, "push": 520.0,
 		"targets": TARGET_RULES, "description": "Strike near the target and push every enemy caught in the impact."
+	},
+	"shockwave": {
+		"label": "Shockwave", "width": 4, "range": 205.0, "damage": 24,
+		"family": "slam", "rarity": "uncommon", "radius": 160.0, "push": 630.0,
+		"targets": TARGET_RULES, "description": "Strike and push enemies in a wider area around the target."
+	},
+	"sundering_slam": {
+		"label": "Sundering Slam", "width": 4, "range": 200.0, "damage": 28,
+		"family": "slam", "rarity": "uncommon", "radius": 115.0, "push": 545.0, "guard_break": 10,
+		"targets": TARGET_RULES, "description": "Remove up to 10 Guard from each enemy caught in the impact, then strike and push them."
+	},
+	"quake": {
+		"label": "Quake", "width": 4, "range": 225.0, "damage": 28,
+		"family": "slam", "rarity": "rare", "radius": 190.0, "push": 710.0,
+		"targets": TARGET_RULES, "description": "Strike and push enemies in a broad area around the target."
+	},
+	"armor_crush": {
+		"label": "Armor Crush", "width": 4, "range": 215.0, "damage": 34,
+		"family": "slam", "rarity": "rare", "radius": 125.0, "push": 570.0, "guard_break": 16,
+		"targets": TARGET_RULES, "description": "Remove up to 16 Guard from each enemy caught in the impact, then strike and push them."
+	},
+	"fault_line": {
+		"label": "Fault Line", "width": 4, "range": 245.0, "damage": 32,
+		"family": "slam", "rarity": "epic", "radius": 220.0, "push": 790.0,
+		"targets": TARGET_RULES, "description": "Strike and shove enemies across a wide area around the target."
+	},
+	"hammerfall": {
+		"label": "Hammerfall", "width": 4, "range": 230.0, "damage": 40,
+		"family": "slam", "rarity": "epic", "radius": 140.0, "push": 640.0, "guard_break": 22,
+		"targets": TARGET_RULES, "description": "Remove up to 22 Guard from each enemy caught in the impact, then strike and push them."
+	},
+	"worldbreaker": {
+		"label": "Worldbreaker", "width": 5, "range": 280.0, "damage": 43,
+		"family": "slam", "rarity": "legendary", "radius": 260.0, "push": 910.0,
+		"targets": TARGET_RULES, "description": "Strike and scatter enemies in a large area around the target."
+	},
+	"skybreaker": {
+		"label": "Skybreaker", "width": 5, "range": 250.0, "damage": 52,
+		"family": "slam", "rarity": "legendary", "radius": 160.0, "push": 760.0, "guard_break": 28,
+		"targets": TARGET_RULES, "description": "Remove up to 28 Guard from each enemy caught in the impact, then strike and push them."
 	},
 	"shield_ram": {
 		"label": "Shield Ram", "width": 2, "range": 160.0, "damage": 21,
@@ -378,6 +428,9 @@ var _lanes: Array[Array] = []
 var _events: Array[Dictionary] = []
 var _activation: Dictionary = {}
 var _compass_loop := -1
+var _towline_loop := -1
+var _towline_mark: Dictionary = {}
+var _metronome_loop := -1
 
 
 static func default_lanes(fixture: String = "duo") -> Array:
@@ -413,6 +466,9 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 	_events.clear()
 	_lanes.clear()
 	_compass_loop = -1
+	_towline_loop = -1
+	_towline_mark.clear()
+	_metronome_loop = -1
 	if not options.is_empty():
 		_start_campaign(options)
 	elif fixture == "solo":
@@ -420,6 +476,7 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 		units.append(_unit("clockwork", "Clockwork", "enemy", -1, Vector2(715, 254), 273, 32.0, 75.0, 112.0))
 	else:
 		units.append(_unit("hero_1", "Hexwright", "hero", 0, Vector2(220, 228), 74, 20.0, 90.0, 225.0))
+		units[0]["sprite"] = "hexwright"
 		units.append(_unit("hero_2", "Warden", "hero", 1, Vector2(270, 302), 100, 23.0, 122.0, 96.0))
 		units.append(_unit("clockwork", "Clockwork", "enemy", -1, Vector2(720, 251), 265, 32.0, 68.0, 108.0))
 		units.append(_unit("scout", "Clockwork Scout", "enemy", -1, Vector2(490, 154), 49, 17.0, 40.0, 155.0))
@@ -1067,8 +1124,6 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 			_guard_allies(actor, tile_id, 22)
 		"event_horizon":
 			_gravity_strike(actor, target, tile_id, 245.0, true)
-		"slam":
-			_area_push(actor, target, tile_id, tile.damage, 115.0, 520.0)
 		"meteor_seal":
 			for enemy in _enemies_in_area(actor, target.pos, 175.0):
 				_damage(actor, enemy, tile.damage, tile_id)
@@ -1076,6 +1131,7 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 			match tile.get("family", ""):
 				"blink": _cast_blink(actor, target, tile_id, tile)
 				"shot": _cast_shot(actor, target, tile_id, tile)
+				"slam": _area_push(actor, target, tile_id, tile.damage, tile.radius, tile.push, tile.get("guard_break", 0))
 	if tile.get("family") == "bash":
 		_warden_guard(actor, tile_id)
 
@@ -1188,8 +1244,12 @@ func _strike_and_push(actor: Dictionary, target: Dictionary, tile_id: String, da
 		_displace("push", actor, target, tile_id, target.pos - actor.pos, force)
 
 
-func _area_push(actor: Dictionary, target: Dictionary, tile_id: String, damage: int, radius: float, force: float) -> void:
+func _area_push(actor: Dictionary, target: Dictionary, tile_id: String, damage: int, radius: float, force: float, guard_break := 0) -> void:
 	for enemy in _enemies_in_area(actor, target.pos, radius):
+		var stripped := mini(enemy.guard, guard_break)
+		if stripped > 0:
+			enemy.guard -= stripped
+			_emit("guard_break", "%s strips %d Guard from %s." % [TILES[tile_id].label, stripped, enemy.name], actor, enemy, tile_id, stripped)
 		_strike_and_push(actor, enemy, tile_id, damage, force)
 
 
@@ -1268,6 +1328,13 @@ func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: Str
 	var endpoint := _bounded(start_position + launch.normalized() * (launch.length_squared() / (2.0 * IMPULSE_DECAY)), target.radius)
 	var action := "pulls" if kind == "pull" else "knocks back"
 	_emit(kind, "%s %s %s." % [actor.name, action, target.name], actor, target, tile_id, roundi(force), start_position, endpoint)
+	if not _activation.is_empty() and actor.side == "hero" and target.side == "enemy" and target.hp > 0 \
+			and force > 0.0 and _has_relic(actor, "towline_knot") and _towline_loop != _loop_index():
+		_towline_loop = _loop_index()
+		_towline_mark = {
+			"target": target.id, "expires": tick + 2 * TICKS_PER_BEAT, "order": _activation.order,
+			"source": TILES[tile_id].label, "source_beat": _activation.beat,
+		}
 	_break_displaced_relay_link(target, endpoint, actor if actor.side == "hero" else {})
 	if target.get("marshal_plated", false) and actor.side == "hero" and force > 100.0:
 		_expose_marshal(actor, target)
@@ -2011,6 +2078,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		return
 	if TILES.has(tile_id):
 		amount = _class_attack_damage(actor, target, amount)
+		if not _activation.is_empty() and actor.side == "hero" and target.side == "enemy":
+			amount += _relic_attack_bonus(actor, target)
 		if target.get("marshal_plated", false) and actor.side == "hero":
 			amount = _marshal_damage(actor, target, amount)
 		elif target.get("prism_warded", false) and actor.side == "hero":
@@ -2036,6 +2105,9 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		amount = maxi(0, amount - 6)
 	var blocked := mini(amount, target.guard)
 	target.guard -= blocked
+	if blocked > 0 and actor.side == "enemy" and target.side == "hero" and _has_relic(target, "bridgeplate"):
+		if int(target.get("bridgeplate_used_loop", -1)) != _loop_index():
+			target["bridgeplate_ready_loop"] = _loop_index()
 	var dealt := mini(amount - blocked, target.hp)
 	target.hp -= dealt
 	var action: String = TILES[tile_id].label if TILES.has(tile_id) else "Strike"
@@ -2100,6 +2172,41 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		target["regent_contributors"] = []
 		_guard(target, 22, "regent_seals")
 		_emit("intent", "The Regent raises three seals. Land a hit from each hero within 4 beats to break them.", target, actor, "regent_seals")
+
+
+func _relic_attack_bonus(actor: Dictionary, target: Dictionary) -> int:
+	var bonus := 0
+	if target.id == _towline_mark.get("target") and tick <= _towline_mark.expires and _activation.order != _towline_mark.order:
+		bonus += _relic_proc("towline_knot", "Towline Knot", 9, actor, target, _towline_mark.source, _towline_mark.source_beat)
+		_towline_mark.clear()
+	if int(actor.get("bridgeplate_ready_loop", -1)) == _loop_index():
+		actor["bridgeplate_ready_loop"] = -1
+		actor["bridgeplate_used_loop"] = _loop_index()
+		bonus += _relic_proc("bridgeplate", "Bridgeplate", 8, actor, target, "Guard absorbed a hit")
+	if _has_relic(actor, "brass_metronome") and _metronome_loop != _loop_index() and _has_gap_before_activation():
+		_metronome_loop = _loop_index()
+		bonus += _relic_proc("brass_metronome", "Brass Metronome", 8, actor, target, "Empty beat before the tile")
+	return bonus
+
+
+func _has_gap_before_activation() -> bool:
+	var start: int = _activation.start
+	if start == 0 and tick <= LOOP_TICKS:
+		return false
+	var previous_edge := BEATS if start == 0 else start
+	return not _lanes[_activation.lane].any(func(tile: Dictionary): return tile.end == previous_edge)
+
+
+func _relic_proc(id: String, label: String, amount: int, actor: Dictionary, target: Dictionary, source: String, source_beat := 0) -> int:
+	if not _activation.has("relics"):
+		_activation["relics"] = []
+	_activation.relics.append({"id": id, "amount": amount, "target_name": target.name, "source": source, "source_beat": source_beat})
+	_emit("relic_proc", "%s · +%d damage" % [label, amount], actor, target, id, amount)
+	var event: Dictionary = trace.back()
+	event["source_tile"] = _activation.tile
+	event["lane"] = _activation.lane
+	event["start"] = _activation.start
+	return amount
 
 
 func _regent_damage(actor: Dictionary, regent: Dictionary, amount: int) -> int:

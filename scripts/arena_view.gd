@@ -95,6 +95,7 @@ const FLOATING_CUES := {
 
 var units: Array = []
 var combat_tick := 0
+var _windups: Dictionary = {}
 var location := "brass"
 var _textures: Dictionary = {}
 var _positions: Dictionary = {}
@@ -117,6 +118,7 @@ func _ready() -> void:
 func reset_view(units_data: Array) -> void:
 	units = units_data
 	combat_tick = 0
+	_windups.clear()
 	_effects.clear()
 	_positions.clear()
 	_facing.clear()
@@ -129,6 +131,12 @@ func reset_view(units_data: Array) -> void:
 func present(units_data: Array, events: Array, tick := 0) -> void:
 	units = units_data
 	combat_tick = tick
+	for unit: Dictionary in units:
+		var finish := int(unit.get("intent_tick", 0))
+		if unit.side != "enemy" or unit.hp <= 0 or str(unit.get("intent", "")).is_empty() or finish <= tick:
+			_windups.erase(unit.id)
+		elif int(_windups.get(unit.id, Vector2i.ZERO).y) != finish:
+			_windups[unit.id] = Vector2i(tick, finish)
 	for event in events:
 		var tile: String = event.get("tile", "")
 		if tile == "relay_link_broken" and str(event.target).begins_with("crown_regent"):
@@ -231,7 +239,7 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		accent = Color("#c4fff0")
 	var art_key := String(unit.get("sprite", unit.id))
 	if friendly:
-		art_key = GameIcons.portrait(unit.get("class", "warden"))
+		art_key = unit.get("sprite", GameIcons.portrait(unit.get("class", "warden")))
 	var texture: Texture2D = _textures.get(art_key)
 	if texture == null and friendly:
 		texture = _textures.get("warden")
@@ -267,7 +275,6 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 			bounce += hit_direction * recoil * 7.0
 			lean += hit_direction.x * recoil * 0.08
 	_draw_ellipse(point + Vector2(1.5, 2.0), Vector2(radius * 1.2, radius * 0.36), Color(0.1, 0.09, 0.08, 0.43))
-	draw_line(point + Vector2(-radius * 0.55, 2.0), point + Vector2(radius * 0.55, 2.0), accent, 2.0, true)
 	if texture:
 		var width := art_height * texture.get_size().aspect()
 		var flip := 1.0 if (facing > 0.0) == friendly else -1.0
@@ -288,13 +295,21 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		var initial := String(unit.name).left(1)
 		_draw_centered(initial, body_center + Vector2(0.0, 5.0), 15, WHITE)
 	var health_width := clampf(radius * 2.7, 31.0, 58.0)
-	var bar := Rect2(point + Vector2(-health_width * 0.5, -art_height - 7.0), Vector2(health_width, 5.0))
+	var bar_offset := 7.0 if friendly else 13.0
+	var bar := Rect2(point + Vector2(-health_width * 0.5, -art_height - bar_offset), Vector2(health_width, 5.0))
 	draw_rect(bar.grow(1.0), Color("#202923"))
 	draw_rect(bar, accent.darkened(0.71))
 	var health_ratio := clampf(float(unit.hp) / maxf(1.0, float(unit.max_hp)), 0.0, 1.0)
 	draw_rect(Rect2(bar.position, Vector2(bar.size.x * health_ratio, bar.size.y)), accent)
 	if float(unit.get("guard", 0)) > 0.0:
 		draw_line(bar.position + Vector2(0.0, -2.0), bar.position + Vector2(bar.size.x, -2.0), GOLD, 2.0, true)
+	if _windups.has(unit.id):
+		var window: Vector2i = _windups[unit.id]
+		var charge := clampf(inverse_lerp(float(window.x), float(window.y), float(combat_tick)), 0.0, 1.0)
+		var gauge := Rect2(bar.position + Vector2(0, 9), Vector2(bar.size.x, 4))
+		draw_rect(gauge.grow(1), INK)
+		draw_rect(gauge, Color("#593b29"))
+		draw_rect(Rect2(gauge.position, Vector2(gauge.size.x * charge, gauge.size.y)), GOLD.lerp(ENEMY_COLOR, charge * charge))
 	if unit.get("marshal_plated", false):
 		var exposed: bool = int(unit.get("marshal_exposed_until", 0)) > 0
 		var plate_color := HERO_COLOR if exposed else GOLD

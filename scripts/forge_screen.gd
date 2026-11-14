@@ -164,7 +164,7 @@ func _add_tier(tier: int) -> void:
 	column.add_child(options)
 	for id: String in ids:
 		var tile: Dictionary = _host.tile_spec(id)
-		var card := _button("%s\n%d beats" % [tile.label, tile.width], func(): _inspect(id))
+		var card := _button("%s\n%s" % [tile.label, GameIcons.tile_stats(tile)], func(): _inspect(id))
 		GameIcons.decorate(card, GameIcons.tile(id, tile), 25)
 		card.custom_minimum_size.y = 88
 		card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -202,16 +202,23 @@ func _inspect(id: String) -> void:
 	var targeting := PackedStringArray()
 	for rule: String in tile.get("targets", []):
 		targeting.append(TARGETS.get(rule, rule.capitalize()))
-	var stats := PackedStringArray([rarity, "%d beats" % tile.width, "%d damage" % tile.damage])
+	var stats := PackedStringArray([rarity, GameIcons.tile_stats(tile)])
 	if not targeting.is_empty():
 		stats.append(", ".join(targeting))
+	var can_choose := id in _next_ids
+	var fits: bool = not can_choose or _host.forge_can_fit(id)
+	if can_choose and fits:
+		var beat: int = _host.forge_firing_beat(id)
+		if beat > 0:
+			stats.append("Fires on beat %d" % beat)
 	_detail_name.text = tile.label
 	_detail_stats.text = "  ·  ".join(stats)
 	_detail_description.text = tile.description
-	var can_choose := id in _next_ids
-	_confirm.disabled = not can_choose
+	_confirm.disabled = not can_choose or not fits
 	var prompt := "Combine into " if _is_combine else "Upgrade to "
 	_confirm.text = prompt + tile.label if can_choose else "Choose a next-tier tile"
+	if not fits:
+		_confirm.text = "Needs more room"
 	_confirm.add_theme_stylebox_override("normal", _box(Color("#5b442a"), GOLD))
 	_confirm.add_theme_stylebox_override("hover", _box(Color("#715637"), GOLD))
 	_confirm.add_theme_stylebox_override("pressed", _box(Color("#45311d"), GOLD))

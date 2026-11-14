@@ -2,6 +2,7 @@ extends SceneTree
 
 const Arena := preload("res://arena.tscn")
 const FrontierRun := preload("res://scripts/frontier_run.gd")
+const TilePacking := preload("res://scripts/tile_packing.gd")
 const TEST_SEED := 81243
 
 var failures: Array[String] = []
@@ -29,6 +30,9 @@ func _run() -> void:
 	if menu != null and chart != null:
 		await _check_navigation()
 		await _check_chart()
+		await _check_brass_medium_routes()
+		await _check_slam_at_rest()
+		await _check_practice_retry()
 		await _check_crown_entry()
 		await _check_moonwreck_entry()
 		await _check_glass_hard_entry()
@@ -133,6 +137,108 @@ func _check_chart() -> void:
 		"Artifice purchases persist across reload.")
 	await _press_named(chart, "ChartBack")
 	_check(menu.is_visible_in_tree() and not chart.is_visible_in_tree(), "Chart Back returns to the title.")
+
+
+func _check_brass_medium_routes() -> void:
+	game.run.profile.medium_unlocked = true
+	game.run.profile.hard_unlocked = true
+	game.run.profile.glass_easy_unlocked = true
+	game.run_menu()
+	await _press_named(menu, "NewExpedition")
+	var glass := menu.find_child("Region_glass", true, false) as Button
+	_check(glass != null and glass.has_focus() and not glass.disabled, "The new region should receive focus after a Brass Medium clear.")
+	await _press_named(menu, "Region_glass")
+	await _press_named(menu, "Difficulty_easy")
+	_check(game.run.data.get("location") == "glass" and game.run.data.get("difficulty") == "easy",
+		"The new Glass Foundry Easy route should open from the title.")
+	_check(game.run.abandon_run(), "Close the test Glass expedition.")
+	game.run_menu()
+	await _press_named(menu, "NewExpedition")
+	await _press_named(menu, "Region_brass")
+	await _press_named(menu, "Difficulty_hard")
+	_check(game.run.data.get("location") == "brass" and game.run.data.get("difficulty") == "hard",
+		"Brass Frontier Hard should open from the title after Medium.")
+	_check(game.run.abandon_run(), "Close the test Brass Hard expedition.")
+
+
+func _check_practice_retry() -> void:
+	var run = game.run
+	_check(run.start_run(TEST_SEED), "Start a seeded expedition for practice retry.")
+	_check(run.choose_hero(run.data.offers.front()) and run.choose_relic(run.data.offers.front())
+		and run.choose_starter(run.data.offers.front()), "Draft the party for a practice retry.")
+	game.run_return()
+	await _press_named(game.frontier_screen, "Continue")
+	_check(game.campaign and game.encounter_setup, "Continue on the battle preview should open the arena.")
+	var original: Dictionary = run.loadout.duplicate(true)
+	var formation: Array = game.sim.units.duplicate(true)
+	game._action()
+	for step in range(6000):
+		game._physics_process(1.0 / 60.0)
+		if game.state == "finished":
+			break
+	_check(game.state == "finished", "The expedition fight must finish before practice retry.")
+	var resolved: Dictionary = run.data.duplicate(true)
+	var profile: Dictionary = run.profile.duplicate(true)
+	game._open_review()
+	await _press_text(game.battle_review, "Retry in Practice")
+	_check(game.state == "setup" and not game.campaign and not game.fixture_picker.visible,
+		"Retry should open an editable practice with the expedition's inventory only.")
+	_check(game.sim.units == formation and game.lanes == original.lanes and game.storage_rows == original.storage,
+		"Retry should use the same seeded formation, health, party, and pre-fight inventory.")
+	game._place({"id": game.lanes[0][0].id, "lane": 0, "start": game.lanes[0][0].start}, 0, 7)
+	game._action()
+	for step in range(6000):
+		game._physics_process(1.0 / 60.0)
+		if game.state == "finished":
+			break
+	_check(run.data == resolved and run.profile == profile and run.loadout == original,
+		"Edits and combat in practice must preserve the expedition result, profile, and equipment.")
+	await _press_text(game.arena_screen, "Back to expedition")
+	_check(game.frontier_screen.visible and run.data == resolved, "Leaving practice restores the actual expedition checkpoint.")
+	if resolved.phase == "reward":
+		var advance := game.frontier_screen.find_child("Continue", true, false) as Button
+		_check(advance != null and advance.disabled, "Reward Continue waits for a tile selection.")
+		await _press_text(game.frontier_screen, "Select")
+		_check(not advance.disabled and run.data.phase == "reward", "Selecting a reward should enable Continue without claiming it.")
+		await _press_named(game.frontier_screen, "Continue")
+		_check(run.data.phase == "map", "Continue should claim the reward and return to the route.")
+	run.abandon_run()
+
+
+func _check_slam_at_rest() -> void:
+	game.run.profile.meta.clear()
+	_check(game.run.start_run(42), "The Slam rest test needs a fresh expedition.")
+	game.run.choose_hero(game.run.data.offers[0])
+	game.run.choose_relic("pocket_bell")
+	game.run.choose_starter(game.run.data.offers[0])
+	game.run.data.phase = "rest"
+	game.run.loadout.lanes[0].assign([game._entry("slam", 0, "nearest"),
+		game._entry("slam", 4, "nearest"), game._entry("slam", 8, "nearest")])
+	game.run_return()
+	await _press_text(game.frontier_screen, "Open forge")
+	var offers: Array = game._combine_offers(game.lanes[0])
+	_check(offers.size() == 1 and offers[0].id == "slam", "Three touching Slams should offer a combine at the camp forge.")
+	await _press_text(game.arena_screen, "Yes")
+	_check(game.forge_screen.visible and game.forge_screen._cards.size() == 9,
+		"Common Slam should show all nine tiles in its forge tree on a fresh profile.")
+	game.forge_choose("shockwave")
+	_check(game.lanes[0] == [game._entry("shockwave", 0, "nearest")] and game.run.data.phase == "rest",
+		"Combining three Slams should save the chosen tile without consuming the rest action.")
+	_check(TilePacking.next_options("shockwave") == TilePacking.next_options("sundering_slam")
+		and TilePacking.next_options("quake") == TilePacking.next_options("armor_crush")
+		and TilePacking.next_options("fault_line") == TilePacking.next_options("hammerfall"),
+		"Slam's two options must lead to the same next tier from either branch.")
+	game.storage_rows[0].assign([game._entry("slam", 0, "nearest")])
+	game._open_storage()
+	game.storage_pick(0, game.storage_rows[0][0])
+	game.storage_forge()
+	_check(game.forge_screen.visible, "The camp action should open the forge for a single stored Slam.")
+	game.forge_choose("sundering_slam")
+	var restored := FrontierRun.new()
+	_check(restored.load_save(save_path) and restored.data.phase == "map"
+		and restored.loadout.storage[0] == [game._entry("sundering_slam", 0, "nearest")],
+		"Using the camp action should upgrade the stored Slam, save the result and return to the map.")
+	_check(game.run.abandon_run(), "Close the test Slam expedition.")
 
 
 func _check_crown_entry() -> void:

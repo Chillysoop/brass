@@ -48,10 +48,8 @@ func _run() -> void:
 	await process_frame
 	_check(lab.lanes[1].size() == 4, "Dragging the palette tile to an open span should place it.")
 	await _check_nudge(lab)
-	lab._load_fixture("duo")
-	lab._set_all(1, "lowest_hp")
-	_check(lab.lanes[1][0].target == "self", "Set all must preserve Guard's target.")
-	_check(lab.lanes[1][1].target == "lowest_hp", "Set all should update compatible tiles.")
+	await _check_target_icons(lab)
+	_check_enemy_windup(lab)
 	lab._load_fixture("duo")
 	var original: Array = lab.lanes.duplicate(true)
 	lab._place({"id": "pull"}, 0, 11)
@@ -101,6 +99,7 @@ func _run() -> void:
 	_check(lab.state == "setup" and lab.lanes == original, "Reset should return to setup and retain the edited layout.")
 	lab._load_fixture("solo")
 	_check(lab.lanes.size() == 1, "Solo setup should switch to one lane.")
+	await _check_storage_popup(lab)
 	_check_forge(lab)
 	_check_blink_forge(lab)
 	if failures.is_empty():
@@ -146,6 +145,102 @@ func _check_nudge(lab: Control) -> void:
 	await process_frame
 	_check(lab.lanes == blocked and lab.drag_overlay == null, "Releasing a drag outside the lanes should cancel it cleanly.")
 	lab._load_fixture("duo")
+
+
+func _check_target_icons(lab: Control) -> void:
+	lab._load_fixture("duo")
+	await process_frame
+	var bash: Control = lab.tile_cards[1][4]
+	var farthest: Button = bash.find_child("Target_farthest", true, false)
+	_click(farthest.get_global_rect().get_center())
+	await process_frame
+	_check(farthest.button_pressed and lab.lanes[1][1].target == "farthest" and lab.lanes[1][2].target == "nearest",
+		"Clicking the farthest icon changes only the tile that owns it.")
+	var identity: Control = lab.lane_stack.get_child(1).get_child(0)
+	var lowest: Button = identity.find_child("Target_lowest_hp", true, false)
+	_click(lowest.get_global_rect().get_center())
+	await process_frame
+	identity = lab.lane_stack.get_child(1).get_child(0)
+	lowest = identity.find_child("Target_lowest_hp", true, false)
+	_check(lowest.button_pressed and lab.defaults[1] == "lowest_hp" and lab.lanes[1][0].target == "self"
+		and lab.lanes[1][1].target == "lowest_hp" and lab.lanes[1][2].target == "lowest_hp"
+		and lab.lanes[0][0].target == "farthest",
+		"Clicking the hero's lowest HP icon updates their compatible tiles and preserves Guard and the other hero.")
+
+
+func _check_enemy_windup(lab: Control) -> void:
+	lab._load_fixture("duo")
+	lab.lanes[0].clear()
+	lab.lanes[1].clear()
+	lab.speed = 1
+	lab._action()
+	var window := Vector2i.ZERO
+	for step_index in range(360):
+		lab._physics_process(1.0 / 60.0)
+		if lab.arena._windups.has("scout"):
+			window = lab.arena._windups.scout
+			break
+	_check(window.x > 0 and window.x == lab.sim.tick and window.y > window.x,
+		"The Scout's windup should display as soon as the combat simulation announces its attack.")
+	if window == Vector2i.ZERO:
+		return
+	var halfway := window.x + floori((window.y - window.x) * 0.5)
+	for tick in range(window.x, halfway):
+		lab._physics_process(1.0 / 60.0)
+	_check(lab.arena._windups.get("scout") == window and lab.arena.combat_tick == halfway,
+		"The windup gauge should progress against its original start and attack ticks.")
+	for tick in range(halfway, window.y):
+		lab._physics_process(1.0 / 60.0)
+	_check(lab.arena.combat_tick == window.y and not lab.arena._windups.has("scout"),
+		"The Scout's windup gauge should clear on the attack tick.")
+
+
+func _check_storage_popup(lab: Control) -> void:
+	lab._load_fixture("duo")
+	lab.storage_rows[0].assign([lab._entry("bash", 0, "farthest"), lab._entry("bash", 2, "nearest")])
+	lab._open_storage()
+	await process_frame
+	await process_frame
+	var popup = lab.storage_screen
+	var row: Control = popup._board.get_child(0).get_child(1)
+	var bash: Control = lab.tile_cards[1][4].get_child(0)
+	var origin := bash.get_global_rect().position + Vector2(bash.size.x * 0.25, bash.size.y * 0.5)
+	var destination := _cell_point(row, 4, TilePacking.STORAGE_COLUMNS)
+	_check(popup.is_visible_in_tree() and lab.arena.is_visible_in_tree() and bash.is_visible_in_tree(),
+		"Opening storage keeps the arena and its timeline visible.")
+	_drag(origin, destination)
+	_check(lab.storage_rows[0].size() == 2, "Dragging above storage must leave the source in place until drop.")
+	_button_input(destination, false)
+	await process_frame
+	await process_frame
+	_check(popup.visible and lab.storage_rows[0].size() == 3 and not lab.tile_cards[1].has(4),
+		"A timeline-to-storage drop should move the tile while leaving the popup open.")
+	_check(popup._board.get_child(0).get_child(0).get_child_count() == 1,
+		"The third touching copy should immediately show a storage Combine prompt.")
+	row = popup._board.get_child(0).get_child(1)
+	var timeline: Control = lab.lane_stack.get_child(1).get_child(1)
+	origin = _cell_point(row, 4, TilePacking.STORAGE_COLUMNS)
+	destination = _cell_point(timeline, 4, ArenaSim.BEATS)
+	_drag(origin, destination)
+	_button_input(destination, false)
+	await process_frame
+	await process_frame
+	_check(lab.storage_rows[0].size() == 2 and lab.tile_cards[1].has(4),
+		"A storage-to-timeline drop should remove the stored copy and equip it.")
+	_check(popup._board.get_child(0).get_child(0).get_child_count() == 0,
+		"Breaking the triple should remove the storage Combine prompt.")
+	lab.storage_close()
+	lab._load_fixture("solo")
+
+func _cell_point(row: Control, index: int, columns: int) -> Vector2:
+	return row.get_global_rect().position + Vector2(row.size.x * (index + 0.5) / float(columns), row.size.y * 0.4)
+
+func _drag(origin: Vector2, destination: Vector2) -> void:
+	_motion(origin, origin, false)
+	_button_input(origin, true)
+	var midpoint := origin.lerp(destination, 0.5)
+	_motion(origin, midpoint, true)
+	_motion(midpoint, destination, true)
 
 func _check_forge(lab: Control) -> void:
 	lab._open_storage()

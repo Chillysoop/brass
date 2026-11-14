@@ -120,6 +120,8 @@ func _initialize() -> void:
 	_check_artifice(path)
 	_check_specialist_drafts(path)
 	_check_navigation(path)
+	_check_legacy_medium_unlocks()
+	_check_slam_pool()
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
@@ -278,6 +280,48 @@ func _check_medium(path: String) -> void:
 		"First Medium clear must grant boss, completion and first-clear marks and open both gates.")
 	check(not restored.finish_combat(true, [0, 50]), "Resuming the final reward must not pay again.")
 	check(restored.reward("skip") and restored.data.phase == "result", "Final Legendary choice must lead to the recap.")
+
+
+func _check_legacy_medium_unlocks() -> void:
+	var path := "user://frontier-legacy-medium-test-%d.json" % Time.get_ticks_usec()
+	var old_run := FrontierRun.new()
+	old_run.load_save(path)
+	old_run.profile.medium_unlocked = true
+	old_run.start_run(42, "medium")
+	old_run.data.phase = "result"
+	old_run.data.node = old_run.data.layers[6][0]
+	old_run.data.result = "defeat"
+	old_run.save()
+	var restored := FrontierRun.new()
+	check(restored.load_save(path) and not restored.can_start("hard") and not restored.can_start("easy", "glass"),
+		"A saved defeat at the first Medium boss must keep both gates locked.")
+	old_run.data.node = old_run.data.layers[-1][0]
+	old_run.data.result = "victory"
+	old_run.data.segment = 2
+	old_run.profile.erase("hard_unlocked")
+	old_run.profile.erase("glass_easy_unlocked")
+	old_run.save()
+	check(restored.load_save(path) and restored.can_start("hard") and restored.can_start("easy", "glass"),
+		"A saved victory at the final Medium boss must restore both gates without paying Marks again.")
+	check(old_run.finish_run(), "An old title save may have archived the completed recap without either unlock.")
+	check(restored.load_save(path) and restored.data.is_empty() and restored.can_start("hard") and restored.can_start("easy", "glass"),
+		"The backed-up recap must recover a verified final Medium victory on the title screen.")
+	check(restored.profile.marks == 0 and restored.start_run(42, "easy", "glass"),
+		"Recovering an unlock must leave the recorded Marks unchanged and allow the newly unlocked route.")
+	check(old_run.load_save(path) and old_run.can_start("hard") and old_run.can_start("easy", "glass"),
+		"Both restored unlocks must persist after starting a new route.")
+	for suffix in ["", ".bak", ".tmp"]:
+		if FileAccess.file_exists(path + suffix):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
+
+
+func _check_slam_pool() -> void:
+	var run := FrontierRun.new()
+	check(run.forge_family_available("slam"), "Slam's forge should be available on a fresh profile.")
+	check("shockwave" not in run._tier_pool(1), "Slam upgrades should leave an unrelated run's pool intact.")
+	run.loadout = {"lanes": [[{"id": "slam"}]], "storage": []}
+	check("shockwave" in run._tier_pool(1) and "skybreaker" in run._tier_pool(4),
+		"Carrying a Slam should add its family to rarity-appropriate rewards.")
 
 
 func _check_hard_and_glass(path: String) -> void:

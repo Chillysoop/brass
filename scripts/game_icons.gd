@@ -1,6 +1,7 @@
 extends RefCounted
 
-const FAMILY_ICONS := {"bash": "push", "blink": "teleport", "shot": "shot", "guard": "guard"}
+const FAMILY_ICONS := {"bash": "push", "blink": "teleport", "shot": "shot", "guard": "guard", "slam": "area"}
+const RELIC_ICONS := {"towline_knot": "pull", "bridgeplate": "guard", "brass_metronome": "review"}
 const TILE_ICONS := {"pull": "pull", "gravity_hook": "pull", "slam": "area", "meteor_seal": "area",
 	"hook_bash": "pull", "graviton": "pull", "event_horizon": "pull",
 	"split_shot": "area", "volley": "area", "flak_burst": "area", "meteor_volley": "area",
@@ -15,10 +16,15 @@ const RARITY_COLORS := {
 	"common": Color("#acbac0"), "uncommon": Color("#8dd6b2"), "rare": Color("#8fbbff"),
 	"epic": Color("#d3a4f1"), "legendary": Color("#ecc482")
 }
+const RARITIES := ["common", "uncommon", "rare", "epic", "legendary"]
 
 
 static func tile(id: String, spec: Dictionary) -> String:
 	return TILE_ICONS.get(id, FAMILY_ICONS.get(spec.get("family", id), "battle"))
+
+
+static func relic(id: String) -> String:
+	return RELIC_ICONS.get(id, "relic")
 
 
 static func icon(key: String) -> Texture2D:
@@ -38,3 +44,14 @@ static func portrait(class_id: String) -> String:
 
 static func rarity(spec: Dictionary) -> Color:
 	return RARITY_COLORS.get(spec.get("rarity", "common"), RARITY_COLORS.common)
+
+
+static func tile_stats(spec: Dictionary) -> String:
+	var stats := PackedStringArray(["%d beats" % int(spec.width)])
+	if int(spec.get("damage", 0)) > 0:
+		stats.append("%d damage" % int(spec.damage))
+	return " · ".join(stats)
+
+
+static func rarity_pips(spec: Dictionary) -> String:
+	return "•".repeat(maxi(1, RARITIES.find(spec.get("rarity", "common")) + 1))

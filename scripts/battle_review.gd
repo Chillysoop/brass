@@ -1,9 +1,11 @@
 extends PanelContainer
 
 signal close_requested
+signal retry_requested
 signal event_selected(event: Dictionary)
 
 const ArenaSim = preload("res://scripts/arena_sim.gd")
+const FrontierRun = preload("res://scripts/frontier_run.gd")
 const INK := Color("#101820")
 const PANEL := Color("#192732")
 const EDGE := Color("#3c505b")
@@ -75,10 +77,11 @@ var _stamp: Label
 var _title: Label
 var _detail: Label
 var _hint: Label
+var _retry: Button
 var _focus_misses := false
 
 
-func open(activations: Array, boss_events: Array, outcome: String, encounter := "") -> void:
+func open(activations: Array, boss_events: Array, outcome: String, encounter := "", can_retry := false) -> void:
 	if _list == null:
 		_build()
 	_events.clear()
@@ -106,6 +109,7 @@ func open(activations: Array, boss_events: Array, outcome: String, encounter := 
 	if counts.unavailable > 0:
 		results += "   ·   %d skipped after a hero fell" % counts.unavailable
 	_summary.text = results
+	_retry.visible = can_retry
 	_filters.boss.visible = not boss_events.is_empty()
 	_focus_misses = outcome == "defeat"
 	show()
@@ -132,9 +136,6 @@ func _build() -> void:
 	_encounter.size_flags_horizontal = SIZE_EXPAND_FILL
 	_encounter.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	header.add_child(_encounter)
-	var close := _button("Back to arena", func(): close_requested.emit())
-	close.name = "CloseBattleReview"
-	header.add_child(close)
 
 	var filters := HBoxContainer.new()
 	filters.add_theme_constant_override("separation", 6)
@@ -190,6 +191,16 @@ func _build() -> void:
 	for label in [_stamp, _title, _detail, _hint]:
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		details.add_child(label)
+	var footer := HBoxContainer.new()
+	footer.alignment = BoxContainer.ALIGNMENT_END
+	footer.add_theme_constant_override("separation", 8)
+	column.add_child(footer)
+	var close := _button("Back to arena", func(): close_requested.emit())
+	close.name = "CloseBattleReview"
+	footer.add_child(close)
+	_retry = _button("Retry in Practice", func(): retry_requested.emit())
+	_retry.tooltip_text = "Replay this fight with the original party and inventory."
+	footer.add_child(_retry)
 
 
 func _show_filter(filter: String) -> void:
@@ -237,6 +248,12 @@ func _select(index: int) -> void:
 		_hint.text = "Triggered by %s on lane %d." % [source.label, event.lane + 1] if not source.is_empty() and event.get("lane", -1) >= 0 else ""
 	else:
 		_detail.text = event.reason
+		for proc: Dictionary in event.get("relics", []):
+			var label: String = FrontierRun.RELICS.get(proc.id, {}).get("label", proc.id)
+			var source: String = proc.source
+			if int(proc.get("source_beat", 0)) > 0:
+				source += " on beat %d" % int(proc.source_beat)
+			_detail.text += "\n%s · +%d damage to %s\n%s" % [label, proc.amount, proc.target_name, source]
 		var rule: String = RULE_NAMES.get(event.rule, str(event.rule).capitalize())
 		var target: String = event.get("target_name", "")
 		_hint.text = "Targeting: %s" % rule if target.is_empty() else "Targeting: %s  ·  %s" % [rule, target]
