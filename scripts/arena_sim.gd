@@ -1315,6 +1315,7 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 	if tile.get("charge", false) and not _charge(actor, target, tile_id):
 		_emit("miss", "%s: %s has no clear path." % [actor.name, tile.label], actor, target, tile_id)
 		return
+	var impact: Vector2 = target.pos
 	_prepare_siege_fuse(actor, target, tile_id)
 	var damage: int = tile.damage + _distance_bonus(actor, target, tile)
 	if target.hp * 2 < target.max_hp:
@@ -1325,6 +1326,13 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 		damage += int(tile.get("guard_bonus", 0))
 	if tick <= target.get("displaced_until", -1):
 		damage += int(tile.get("displaced_bonus", 0))
+	var spent_guard := mini(actor.guard, int(tile.get("guard_spend", 0)))
+	if spent_guard > 0:
+		actor.guard -= spent_guard
+		var bonus := spent_guard * 2
+		damage += bonus
+		_emit("guard_spent", "%s spends %d Guard for %d extra damage." % [actor.name, spent_guard, bonus],
+			actor, actor, tile_id, spent_guard)
 	var pull_first: bool = tile.get("pull_before_hit", false)
 	if pull_first:
 		_pull_toward(actor, target, tile_id, _attack_origin(actor), tile.pull)
@@ -1337,15 +1345,47 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 		if tile.has("pull") and not pull_first:
 			_pull_toward(actor, target, tile_id, _attack_origin(actor), tile.pull)
 		if tile.has("mark_bonus") and not _activation.is_empty():
-			target["arsenal_mark"] = {
-				"bonus": tile.mark_bonus, "expires": tick + tile.mark_beats * TICKS_PER_BEAT,
-				"order": _activation.order,
-			}
-			_emit("mark", "%s marks %s for %d beats." % [tile.label, target.name, tile.mark_beats], actor, target, tile_id, tile.mark_bonus)
+			_apply_arsenal_mark(actor, target, tile_id, tile)
+	if tile.has("cluster_pull_radius"):
+		_cluster_pull(actor, target, tile_id, impact, tile.cluster_pull_radius, tile.cluster_pull_force)
 	if tile.has("retreat"):
 		_retreat_from(actor, target, tile_id, tile.retreat)
 	if tile.has("guard"):
 		_apply_arsenal_support(actor, _arsenal_support_target(actor, tile), tile_id, tile)
+	if tile.has("ally_guard"):
+		_guard(_weakest_other_ally(actor), tile.ally_guard, tile_id, actor)
+
+
+func _weakest_other_ally(actor: Dictionary) -> Dictionary:
+	var recipient := {}
+	for ally: Dictionary in units:
+		if ally.side == actor.side and ally.id != actor.id and ally.hp > 0:
+			if recipient.is_empty() or ally.hp < recipient.hp:
+				recipient = ally
+	return actor if recipient.is_empty() else recipient
+
+
+func _cluster_pull(actor: Dictionary, target: Dictionary, tile_id: String, impact: Vector2, radius: float, force: float) -> void:
+	var pulled := 0
+	for neighbor: Dictionary in _enemies_in_area(actor, impact, radius):
+		if neighbor.id != target.id and _pull_toward(actor, neighbor, tile_id, impact, force):
+			pulled += 1
+	if pulled > 0:
+		var count := "one nearby enemy" if pulled == 1 else "%d nearby enemies" % pulled
+		_emit("cluster_pull", "%s pulls %s toward the impact." % [TILES[tile_id].label, count],
+			actor, target, tile_id, pulled, impact, impact)
+
+
+func _apply_arsenal_mark(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
+	var for_ally: bool = tile.get("ally_only_mark", false)
+	target["ally_mark" if for_ally else "arsenal_mark"] = {
+		"bonus": tile.mark_bonus, "expires": tick + tile.mark_beats * TICKS_PER_BEAT,
+		"order": _activation.order, "marker": actor.id,
+	}
+	var message := "%s marks %s for %d beats." % [tile.label, target.name, tile.mark_beats]
+	if for_ally:
+		message += " Only another hero can spend it."
+	_emit("mark", message, actor, target, tile_id, tile.mark_bonus)
 
 
 func _retreat_from(actor: Dictionary, target: Dictionary, tile_id: String, distance: float) -> void:
@@ -1511,10 +1551,12 @@ func _gravity_strike(actor: Dictionary, target: Dictionary, tile_id: String, rad
 		_pull_toward(actor, enemy, tile_id, center, 990.0 if collapse else 860.0)
 
 
-func _pull_toward(actor: Dictionary, enemy: Dictionary, tile_id: String, center: Vector2, force: float) -> void:
+func _pull_toward(actor: Dictionary, enemy: Dictionary, tile_id: String, center: Vector2, force: float) -> bool:
 	var offset: Vector2 = center - enemy.pos
-	if enemy.hp > 0 and offset.length_squared() > 0.001:
-		_displace("pull", actor, enemy, tile_id, offset, force + (90.0 if actor.get("class") == "hexwright" else 0.0))
+	if enemy.hp <= 0 or offset.length_squared() <= 0.001:
+		return false
+	_displace("pull", actor, enemy, tile_id, offset, force + (90.0 if actor.get("class") == "hexwright" else 0.0))
+	return true
 
 
 func _charge(actor: Dictionary, target: Dictionary, tile_id: String) -> bool:
@@ -2405,14 +2447,21 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 
 
 func _consume_arsenal_mark(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
-	var mark: Dictionary = target.get("arsenal_mark", {})
-	if mark.is_empty() or mark.order == _activation.order:
-		return 0
-	target.erase("arsenal_mark")
-	if mark.expires < tick:
-		return 0
-	_emit("mark_spent", "Mark on %s adds %d damage." % [target.name, mark.bonus], actor, target, tile_id, mark.bonus)
-	return mark.bonus
+	for key: String in ["ally_mark", "arsenal_mark"]:
+		var mark: Dictionary = target.get(key, {})
+		if mark.is_empty():
+			continue
+		if mark.expires < tick:
+			target.erase(key)
+			continue
+		if mark.order == _activation.order or (key == "ally_mark" and mark.marker == actor.id):
+			continue
+		target.erase(key)
+		var label := "Ally mark" if key == "ally_mark" else "Mark"
+		_emit("mark_spent", "%s on %s adds %d damage." % [label, target.name, mark.bonus],
+			actor, target, tile_id, mark.bonus)
+		return mark.bonus
+	return 0
 
 
 func _relic_attack_bonus(actor: Dictionary, target: Dictionary) -> int:
@@ -2684,10 +2733,10 @@ func _emit(kind: String, message: String, actor: Dictionary = {}, target: Dictio
 				_activation.damage += amount
 			"guard":
 				_activation.guard += amount
-			"heal", "retreat", "charge", "mark", "mark_spent", "guard_break":
-				if not _activation.has("effect_details"):
-					_activation["effect_details"] = []
-				_activation.effect_details.append(message)
+				if actor.id != target.id and TILES[tile_id].has("ally_guard"):
+					_activation.get_or_add("effect_details", []).append(message)
+			"heal", "retreat", "charge", "mark", "mark_spent", "guard_break", "guard_spent", "cluster_pull":
+				_activation.get_or_add("effect_details", []).append(message)
 	if kind in ["intent", "interrupt", "miss"] and BOSS_REVIEW_STAGES.has(tile_id):
 		_review_boss_event(BOSS_REVIEW_STAGES[tile_id], tile_id, message, actor, target, kind)
 	elif tile_id == "enemy_attack" and actor.get("name") == "The Tollkeeper":

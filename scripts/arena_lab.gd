@@ -11,6 +11,8 @@ const FrontierRun = preload("res://scripts/frontier_run.gd")
 const FrontierScreen = preload("res://scripts/frontier_screen.gd")
 const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
 const ClassExpansionTiles = preload("res://scripts/class_expansion_tiles.gd")
+const ClassDecks = preload("res://scripts/class_decks.gd")
+const UniversalTileUpgrades = preload("res://scripts/universal_tile_upgrades.gd")
 const PRACTICE_TILES := ["pull", "bash", "guard", "shot", "blink", "slam"]
 const INK := Color("#101820")
 const PANEL := Color("#192732")
@@ -803,6 +805,7 @@ func _build_practice_arsenal() -> void:
 	collection.name = "PracticeTileCollection"
 	collection.add_item("Arsenal")
 	collection.add_item("Class expansion")
+	collection.add_item("Signature upgrades")
 	header.add_child(collection)
 	header.add_child(_button("Close", arsenal_panel.hide))
 	var pages: Array[VBoxContainer] = []
@@ -814,6 +817,18 @@ func _build_practice_arsenal() -> void:
 		pages.append(page)
 		layout.add_child(page)
 		_add_practice_tiles(page, pools)
+	var signatures := VBoxContainer.new()
+	signatures.add_theme_constant_override("separation", 5)
+	signatures.hide()
+	pages.append(signatures)
+	layout.add_child(signatures)
+	for hero_id: String in FrontierRun.HEROES:
+		var signature := ClassDecks.signature(hero_id)
+		if not UniversalTileUpgrades.AUTHORED_SIGNATURES.has(signature):
+			continue
+		signatures.add_child(_label(FrontierRun.HEROES[hero_id].label, 15, GOLD))
+		var tiers := TilePacking.forge_tiers(signature)
+		_add_practice_tiles(signatures, [tiers[2] + tiers[3] + tiers[4]])
 	collection.item_selected.connect(func(index: int):
 		for page_index in range(pages.size()):
 			pages[page_index].visible = page_index == index

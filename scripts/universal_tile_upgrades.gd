@@ -8,6 +8,50 @@ const TECHNIQUE_GAINS := {
 	"low_hp_bonus": 3, "guard_break": 3, "guard": 2, "mark_bonus": 2, "splash_damage": 2,
 	"splash": 12.0, "push": 38.0, "pull": 38.0, "retreat": 10.0,
 }
+const AUTHORED_SIGNATURES := {
+	"rampart_counter": {
+		"power": [
+			{"label": "Shield Reckoning", "damage": 19, "range": 158.0, "guard_spend": 5, "icon": "battle"},
+			{"label": "Iron Reckoning", "damage": 22, "range": 164.0, "guard_spend": 8, "icon": "battle"},
+			{"label": "Last Reckoning", "damage": 25, "range": 170.0, "guard_spend": 10, "icon": "battle"},
+		],
+		"technique": [
+			{"label": "Stand Together", "damage": 16, "range": 158.0, "guard_bonus": 9, "ally_guard": 6},
+			{"label": "Aegis Relay", "damage": 19, "range": 164.0, "guard_bonus": 11, "ally_guard": 9},
+			{"label": "Aegis Pact", "damage": 22, "range": 170.0, "guard_bonus": 13, "ally_guard": 12},
+		],
+	},
+	"gravity_spike": {
+		"power": [
+			{"label": "Anchor Spike", "damage": 19, "range": 505.0, "displaced_bonus": 12, "pull": 860.0},
+			{"label": "Anchor Breaker", "damage": 23, "range": 540.0, "displaced_bonus": 15, "pull": 900.0},
+			{"label": "Anchorfall", "damage": 27, "range": 575.0, "displaced_bonus": 18, "pull": 980.0},
+		],
+		"technique": [
+			{"label": "Gravity Net", "damage": 17, "range": 475.0, "displaced_bonus": 10, "pull": 720.0,
+				"cluster_pull_radius": 110.0, "cluster_pull_force": 370.0, "icon": "area"},
+			{"label": "Gravity Well", "damage": 20, "range": 500.0, "displaced_bonus": 12, "pull": 760.0,
+				"cluster_pull_radius": 145.0, "cluster_pull_force": 475.0, "icon": "area"},
+			{"label": "Gravity Vortex", "damage": 23, "range": 525.0, "displaced_bonus": 14, "pull": 800.0,
+				"cluster_pull_radius": 175.0, "cluster_pull_force": 570.0, "icon": "area"},
+		],
+	},
+	"horizon_round": {
+		"power": [
+			{"label": "Skyline Shot", "damage": 24, "range": 750.0, "distance_bonus": 23},
+			{"label": "Far Horizon", "damage": 27, "range": 785.0, "distance_bonus": 30},
+			{"label": "Daybreak Shot", "damage": 28, "range": 820.0, "distance_bonus": 32},
+		],
+		"technique": [
+			{"label": "Spotter Round", "damage": 22, "range": 720.0, "distance_bonus": 10,
+				"mark_bonus": 16, "mark_beats": 4, "ally_only_mark": true},
+			{"label": "Beacon Round", "damage": 24, "range": 740.0, "distance_bonus": 12,
+				"mark_bonus": 22, "mark_beats": 5, "ally_only_mark": true},
+			{"label": "Signal Lance", "damage": 27, "range": 760.0, "distance_bonus": 14,
+				"mark_bonus": 27, "mark_beats": 5, "ally_only_mark": true},
+		],
+	},
+}
 
 
 static func build(base_tiles: Dictionary) -> Dictionary:
@@ -42,6 +86,17 @@ static func _upgrade(id: String, base: Dictionary, tier: int, ranks: int, techni
 	var tile := base.duplicate()
 	tile.base_tile = id
 	tile.rarity = RARITIES[tier]
+	if AUTHORED_SIGNATURES.has(id):
+		var choice := "technique" if technique else "power"
+		if not technique:
+			if id == "rampart_counter":
+				tile.erase("guard_bonus")
+			elif id == "horizon_round":
+				tile.erase("mark_bonus")
+				tile.erase("mark_beats")
+		tile.merge(AUTHORED_SIGNATURES[id][choice][ranks - 1], true)
+		tile.description = _describe_upgrade(tile)
+		return tile
 	var style: String
 	if tile.damage > 0:
 		style = "Keen" if technique else "Heavy"
@@ -85,9 +140,11 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 			lines.append("Rush the target if the path is clear.")
 		lines.append("%d reach." % int(tile.range))
 		if tile.has("pull_before_hit"):
-			lines.append("Pull the target with %d force before the hit." % int(tile.pull))
+			lines.append("Pull the target toward you with %d force before the hit." % int(tile.pull))
 		if tile.has("guard_break"):
 			lines.append("Strip up to %d Guard before the hit." % tile.guard_break)
+		if tile.has("guard_spend"):
+			lines.append("On hit, spend up to %d Guard for 2 extra damage per Guard spent." % tile.guard_spend)
 		for bonus in [
 			["guard_bonus", "while you have Guard"],
 			["displaced_bonus", "if the target was pushed or pulled in the last 3 beats"],
@@ -102,11 +159,17 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 		if tile.has("push"):
 			lines.append("Push the target with %d force." % int(tile.push))
 		if tile.has("pull") and not tile.has("pull_before_hit"):
-			lines.append("Pull the target with %d force." % int(tile.pull))
+			lines.append("Pull the target toward you with %d force." % int(tile.pull))
+		if tile.has("cluster_pull_radius"):
+			lines.append("Pull other enemies within %d range toward the impact point with %d force." % [
+				int(tile.cluster_pull_radius), int(tile.cluster_pull_force)])
 		if tile.has("retreat"):
 			lines.append("Back away by up to %d." % int(tile.retreat))
 		if tile.has("mark_bonus"):
-			lines.append("The next hit on the target within %d beats deals %d extra damage." % [tile.mark_beats, tile.mark_bonus])
+			var follow_up := "The next hit from another hero" if tile.get("ally_only_mark", false) else "The next hit"
+			lines.append("%s on the target within %d beats deals %d extra damage." % [follow_up, tile.mark_beats, tile.mark_bonus])
+	if tile.has("ally_guard"):
+		lines.append("On hit, give %d Guard to the living ally with the lowest HP. Gain it yourself if no ally is alive." % tile.ally_guard)
 	if tile.has("guard"):
 		var when := " on hit." if tile.damage > 0 else "."
 		match tile.get("support", ""):

@@ -545,7 +545,7 @@ func _reward() -> void:
 		var hint: String = _run.reward_hint(id)
 		if _host.run_can_combine_reward(id):
 			hint = "Combine with 2 owned copies" if hint in ["", "Third copy", "Owned copy"] else "%s · Combine with 2 owned copies" % hint
-		if lane >= 0 and lane < party.size() and id == ClassDecks.signature(party[lane].id):
+		if lane >= 0 and lane < party.size() and tile.get("base_tile", id) == ClassDecks.signature(party[lane].id):
 			var signature := "%s signature" % _hero_name(party[lane].id)
 			hint = signature if hint.is_empty() else "%s · %s" % [signature, hint]
 		var card := _choice(cards, tile.label, _tile_info(tile) + ("\n\n" + hint if not hint.is_empty() else ""), "Select", func():

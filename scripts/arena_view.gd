@@ -73,6 +73,8 @@ const EFFECT_LENGTHS := {
 	"mark": 0.36,
 	"mark_spent": 0.32,
 	"guard_break": 0.34,
+	"guard_spent": 0.34,
+	"cluster_pull": 0.46,
 }
 const MARK_COLOR := Color("#e4adff")
 const ELITE_RELIC_EFFECTS := ["afterimage", "barrage_rack", "siege_fuse"]
@@ -570,12 +572,12 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			var shimmer := Color(TELEPORT_COLOR.lightened(0.15), opacity)
 			draw_dashed_line(from_point + lift, to_point + lift, shimmer, 2.0, 7.0)
 			draw_arc(from_point, 9.0 + progress * 14.0, 0.0, TAU, 24, shimmer, 2.5, true)
-		"barrage_rack", "guard_break":
+		"barrage_rack", "guard_break", "guard_spent":
 			var center := to_point - Vector2(0.0, 16.0)
 			for index in range(5):
 				var ray := Vector2.RIGHT.rotated(index * TAU / 5.0)
 				draw_line(center + ray * (5.0 + progress * 13.0), center + ray * (13.0 + progress * 19.0), Color(GOLD, opacity), 2.5, true)
-		"siege_fuse":
+		"siege_fuse", "cluster_pull":
 			var radius := lerpf(36.0, 10.0, progress)
 			for index in range(6):
 				var angle := index * TAU / 6.0

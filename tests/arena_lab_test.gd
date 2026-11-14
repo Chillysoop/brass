@@ -142,6 +142,19 @@ func _check_practice_arsenal(lab: Control) -> void:
 	await process_frame
 	_check(lab.tile_cards[1].has(target_start) and lab.tile_cards[1][target_start].get_meta("tile").id == "watchfire",
 		"An Uncommon tile should drag directly from the picker onto a timeline.")
+	if not lab.arsenal_panel.visible:
+		_click(lab.arsenal_button.get_global_rect().get_center())
+	await process_frame
+	var collection := lab.arsenal_panel.find_child("PracticeTileCollection", true, false) as OptionButton
+	collection.select(2)
+	collection.item_selected.emit(2)
+	await process_frame
+	var upgrade_id: String = TilePacking.next_options("gravity_spike")[1]
+	var upgrade := lab.arsenal_panel.find_child("PracticeTile_" + upgrade_id, true, false) as Button
+	_check(upgrade != null and upgrade.is_visible_in_tree(), "The signature page should expose upgraded tiles in Practice.")
+	if upgrade != null:
+		_click(upgrade.get_global_rect().get_center())
+		_check(lab.selected.get("id") == upgrade_id, "A signature upgrade should be available to place from Practice.")
 
 func _check_nudge(lab: Control) -> void:
 	lab.lanes[0].assign([lab._entry("bash", 1, "nearest"), lab._entry("shot", 3, "lowest_hp"), lab._entry("bash", 7, "farthest")])

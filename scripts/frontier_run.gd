@@ -4,6 +4,7 @@ const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
+const UniversalTileUpgrades = preload("res://scripts/universal_tile_upgrades.gd")
 const HEROES = ArenaSim.HERO_CLASSES
 const BASE_TILES := ["bash", "shot", "slam", "pull", "guard", "blink"]
 const STARTER_RELICS := ["pocket_bell", "copper_compass", "quartermasters_coin"]
@@ -1192,7 +1193,8 @@ func _combat_reward_draft(kind: String, lane: int) -> Dictionary:
 	if kind == "elite":
 		var pool := _class_reward_pool(hero_id, 1, rows) + _class_reward_pool(hero_id, 2, rows) + _class_reward_pool(hero_id, 3, rows)
 		var fixed: Array = []
-		if not elite_relic_offers().is_empty():
+		var first_elite := not elite_relic_offers().is_empty()
+		if first_elite:
 			fixed.append(ClassDecks.signature(hero_id))
 		elif lane == 0 and data.node.type == "elite":
 			fixed.append(_class_elite_preview_tile(data.node))
@@ -1202,10 +1204,29 @@ func _combat_reward_draft(kind: String, lane: int) -> Dictionary:
 			if owned not in fixed:
 				fixed.append(owned)
 			hints[owned] = _copy_reward_hint(owned, rows)
+		if not first_elite:
+			var signature_offer := _elite_signature_offer(hero_id, lane, salt)
+			if not signature_offer.is_empty() and signature_offer not in fixed:
+				fixed.append(signature_offer)
 		var remaining := pool.filter(func(id: String): return id not in fixed)
 		fixed.append_array(_sample(remaining, 3 - fixed.size(), int(data.seed), _node_salt(81 + salt)))
 		return {"offers": _sample(fixed, 3, int(data.seed), _node_salt(85 + salt)), "hints": hints}
 	return _normal_reward_draft(lane, rows)
+
+
+func _elite_signature_offer(hero_id: String, lane: int, salt: int) -> String:
+	var signature := ClassDecks.signature(hero_id)
+	if not UniversalTileUpgrades.AUTHORED_SIGNATURES.has(signature):
+		return ""
+	var owned_tier := 0
+	var tiers := TilePacking.forge_tiers(signature)
+	for items: Array in [loadout.lanes[lane]] + loadout.storage:
+		for item: Dictionary in items:
+			if ArenaSim.TILES[item.id].get("family") == signature:
+				owned_tier = maxi(owned_tier, TILE_RARITIES.find(ArenaSim.TILES[item.id].rarity))
+	if owned_tier >= 3:
+		return ""
+	return _sample(tiers[owned_tier + 1], 1, int(data.seed), _node_salt(185 + salt))[0]
 
 
 func _activate_reward_draft(draft: Dictionary) -> void:

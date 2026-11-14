@@ -5,6 +5,7 @@ const ArenaSim := preload("res://scripts/arena_sim.gd")
 const FrontierRun := preload("res://scripts/frontier_run.gd")
 const ClassDecks := preload("res://scripts/class_decks.gd")
 const ClassExpansionTiles := preload("res://scripts/class_expansion_tiles.gd")
+const TilePacking := preload("res://scripts/tile_packing.gd")
 const ORIGINAL_STARTERS := {
 	"warden": "shield_tap", "bulwark": "pike_thrust", "breaker": "breaker_maul", "hexwright": "grapple",
 	"wayfarer": "blink", "lancer": "retreat_shot", "cantor": "signal_flare", "apothecary": "snap_shot",
@@ -26,6 +27,7 @@ func _run() -> void:
 	game.set_physics_process(false)
 	game.run.load_save(save_path)
 	_check_class_decks()
+	_check_signature_elite_progression()
 	await _check_medium_rewards(game)
 	game.queue_free()
 	await process_frame
@@ -98,6 +100,52 @@ func _check_class_decks() -> void:
 				break
 		_check(seen.size() == class_pool.size(), "%s must be able to draw every class tile across seeded victories." % class_id)
 		run.abandon_run()
+
+
+func _check_signature_elite_progression() -> void:
+	var run := FrontierRun.new()
+	run.load_save(save_path)
+	run.profile.medium_unlocked = true
+	if not run.start_run(42, "medium"):
+		_check(false, "Expected a new run for signature upgrade rewards.")
+		return
+	run.data.offers = ["warden"]
+	var started := run.choose_hero("warden") and run.choose_relic("pocket_bell") \
+		and run.choose_starter("shield_tap") and run.finish_combat(true, 100) and run.reward("skip")
+	_enter_boss(run, false)
+	started = started and run.finish_combat(true, 100) and run.reward("skip")
+	run.data.offers = ["starshot"]
+	started = started and run.choose_recruit("starshot") and run.choose_recruit_starter("rivet_bolt")
+	_check(started, "Expected a two-hero party for signature upgrade rewards.")
+	if not started:
+		return
+
+	var rampart := ClassDecks.signature("warden")
+	var horizon := ClassDecks.signature("starshot")
+	var warden_rare: String = TilePacking.next_options(rampart)[0]
+	var warden_epics := TilePacking.next_options(warden_rare)
+	run.data.elite_relic_drafted = true
+	run.loadout.lanes[0] = [_signature_tile(rampart, 0), _signature_tile(rampart, 2)]
+	run.loadout.lanes[1] = [_signature_tile(horizon, 0)]
+	run.loadout.storage[0] = [_signature_tile(warden_rare, 0)]
+	var row := FrontierRun.NODES_PER_SEGMENT + 3
+	var elite: Dictionary = run.data.layers[row].filter(func(node: Dictionary): return node.type == "elite")[0]
+	run.data.node = run.data.layers[row - 1][elite.column]
+	var preview := run.elite_preview(elite)
+	var won := run.choose_node(elite.id) and run.finish_combat(true, [100, 100])
+	_check(won and run.data.offers.size() == 3 and preview.get("tile") in run.data.offers
+		and rampart in run.data.offers and run.reward_hint(rampart) == "Third copy"
+		and run.data.offers.any(func(id: String): return id in warden_epics),
+		"Later elites retain the advertised tile and third copy, and offer an Epic for an owned Rare in storage.")
+	_check(won and run.reward("skip") and run.reward_lane() == 1
+		and run.data.offers.any(func(id: String): return id in TilePacking.next_options(horizon))
+		and not run.data.offers.any(func(id: String): return id in warden_epics),
+		"The recruit gets a chance to draft their own Rare signature upgrade.")
+	run.abandon_run()
+
+
+func _signature_tile(id: String, start: int) -> Dictionary:
+	return {"id": id, "start": start, "target": ArenaSim.TILES[id].targets[0]}
 
 
 func _check_medium_rewards(game: Control) -> void:
