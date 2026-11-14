@@ -47,7 +47,7 @@ func _run() -> void:
 						if preferred in run.data.offers:
 							id = preferred
 							break
-				if not game.run_claim_reward(id):
+				if not _claim_tile_for_build(game, id):
 					_check(game.run_claim_reward("skip"), "Skip a reward if its tile cannot fit.")
 			"map":
 				var next: Array = run.available_nodes()
@@ -192,7 +192,7 @@ func _medium_playthrough(game: Control) -> Dictionary:
 				while run.data.phase == "reward":
 					var id: String = _preferred_offer(run.data.offers,
 						["dawn_bastion", "shield_ram", "hook_bash", "bash", "shot", "slam"])
-					if game.run_claim_reward(id):
+					if _claim_tile_for_build(game, id):
 						if run.data.phase == "recruit":
 							middle_reward = id
 					elif not _skip_reward(game):
@@ -279,6 +279,8 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 				game.run_show_arena()
 				_equip_stored_rewards(game)
 				var final: bool = run.is_final_boss()
+				if crown_hard and run.data.node.get("boss_id") == "relay_marshal":
+					_arrange_crown_combo(game)
 				if final and location == "crown":
 					if crown_medium:
 						_arrange_crown_combo(game)
@@ -374,7 +376,7 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 					var chosen: String = _preferred_offer(run.data.offers, priorities)
 					if (crown_medium or crown_hard or moonwreck_hard) and _pull_tiles(game).size() < (2 if crown_hard else 1):
 						chosen = _preferred_offer(run.data.offers, ["pull", "grapple", "hook_bash"], chosen)
-					if not game.run_claim_reward(chosen) and not _skip_reward(game):
+					if not _claim_tile_for_build(game, chosen) and not _skip_reward(game):
 						break
 			"map":
 				var options: Array = run.available_nodes()
@@ -603,6 +605,27 @@ func _preferred_offer(offers: Array, priorities: Array, fallback := "") -> Strin
 		if id in offers:
 			return id
 	return offers[0] if fallback.is_empty() else fallback
+
+func _claim_tile_for_build(game: Control, id: String) -> bool:
+	if not game.run_claim_reward(id):
+		return false
+	if not game.run.data.has("reward_combine"):
+		return true
+	game.run_return()
+	var run_data: Dictionary = game.run.data
+	if id == "bash" and run_data.location == "crown" and int(run_data.segment) >= 2:
+		var hooks_needed := 2 if int(run_data.segment) == 3 else 1
+		# The Marshal needs a strong pull. The Regent needs one on each side.
+		if _pull_tiles(game).count("hook_bash") < hooks_needed:
+			game.forge_choose("hook_bash")
+			if not game.run.data.has("reward_combine"):
+				return true
+	# Keep the individual copy so these builds exercise their intended boss timing.
+	if game.run_keep_reward_tile():
+		return true
+	game.forge_close()
+	return false
+
 
 func _skip_reward(game: Control) -> bool:
 	var skipped: bool = game.run_claim_reward("skip")

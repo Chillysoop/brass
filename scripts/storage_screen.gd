@@ -27,6 +27,7 @@ var _capacity: Label
 var _send: Button
 var _discard: Button
 var _forge: Button
+var _combine: Button
 var _selected: Dictionary = {}
 var _preview: Control
 var _preview_row: Control
@@ -41,7 +42,7 @@ func configure(host: Control) -> void:
 		_build()
 
 
-func render(rows: Array, selected: Dictionary, offers: Array, camp := false) -> void:
+func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can_combine := false) -> void:
 	var focus := get_viewport().gui_get_focus_owner()
 	_focused_cell = focus.get_meta("storage_cell", Vector2i(-1, -1)) if is_instance_valid(focus) else Vector2i(-1, -1)
 	_selected = selected.duplicate()
@@ -58,6 +59,7 @@ func render(rows: Array, selected: Dictionary, offers: Array, camp := false) -> 
 	_discard.disabled = not _selected.has("lane")
 	_forge.visible = camp
 	_forge.disabled = not _selected.has("lane")
+	_combine.visible = can_combine
 	if _selected.is_empty():
 		show_message("Drag between storage and the timeline.")
 	else:
@@ -119,6 +121,11 @@ func _build() -> void:
 	_forge = _button("Forge selected", func(): _host.storage_forge())
 	_forge.hide()
 	footer.add_child(_forge)
+	_combine = _button("Combine 3", func(): _host.storage_combine_selected())
+	_combine.name = "CombineSelected"
+	_combine.tooltip_text = "Combine three matching copies from your timelines or storage."
+	_combine.hide()
+	footer.add_child(_combine)
 
 
 func _build_row(row_index: int, tiles: Array, offers: Array) -> int:

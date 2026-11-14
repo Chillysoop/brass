@@ -322,13 +322,7 @@ func _show_class_deck(hero_id: String) -> void:
 			tile.focus_entered.connect(func(): details.text = detail_copy)
 			grid.add_child(tile)
 	deck.add_child(details)
-	var forge_names := PackedStringArray()
-	for family: String in ClassDecks.forge_families(hero_id):
-		if _run.forge_family_available(family):
-			forge_names.append(family.capitalize())
-		else:
-			forge_names.append("%s (Aether Chart)" % family.capitalize())
-	deck.add_child(_label("Forge families  ·  " + ", ".join(forge_names), 15, MUTED))
+	deck.add_child(_label("Combine 3 matching tiles to choose an upgrade.", 15, MUTED))
 	dialog.popup_centered(Vector2i(1030, 530))
 
 
@@ -549,6 +543,8 @@ func _reward() -> void:
 	for id: String in _run.data.get("offers", []):
 		var tile: Dictionary = ArenaSim.TILES[id]
 		var hint: String = _run.reward_hint(id)
+		if _host.run_can_combine_reward(id):
+			hint = "Combine with 2 owned copies" if hint in ["", "Third copy", "Owned copy"] else "%s · Combine with 2 owned copies" % hint
 		if lane >= 0 and lane < party.size() and id == ClassDecks.signature(party[lane].id):
 			var signature := "%s signature" % _hero_name(party[lane].id)
 			hint = signature if hint.is_empty() else "%s · %s" % [signature, hint]
@@ -648,7 +644,7 @@ func _claim_reward(id: String, notice: Label) -> void:
 	if _host.run_claim_reward(id):
 		_host.run_return()
 	else:
-		notice.text = "No room for this tile. Manage tiles to free a continuous span."
+		notice.text = _run.save_error if not _run.save_error.is_empty() else "No room for this tile. Manage tiles to free a continuous span."
 
 
 func _shop() -> void:
@@ -822,8 +818,8 @@ func _chart() -> void:
 			"kind": {
 				"stout_start": "Starting health", "purse": "Starting gold",
 				"curated_cache": "Tile unlock", "relic_archive": "Relic unlock",
-				"blink_artifice": "Forge family", "wayfarers_pin": "Relic unlock", "navigation": "Event unlock",
-				"shot_artifice": "Forge family", "guard_artifice": "Forge family"
+				"blink_artifice": "Camp and reward unlock", "wayfarers_pin": "Relic unlock", "navigation": "Event unlock",
+				"shot_artifice": "Camp and reward unlock", "guard_artifice": "Camp and reward unlock"
 			}.get(id, "Upgrade")
 		})
 	_aether_chart.render(int(_run.profile.get("marks", 0)), entries, _run.data.is_empty())

@@ -361,8 +361,10 @@ func _check_blink_forge(lab: Control) -> void:
 		lab._entry("blink", 3, "nearest"), lab._entry("blink", 6, "nearest")])
 	lab.run_show_arena()
 	lab._offer_combine(-1, 0, 0, true)
-	_check(not lab.forge_screen.visible and lab.lanes[0].size() == 3,
-		"A fresh expedition must keep the existing Blink tile without granting its forge tree.")
+	_check(lab.forge_screen.visible, "A fresh expedition can combine three matching Blink tiles.")
+	lab.forge_choose("ward_step")
+	_check(lab.lanes[0].size() == 1 and lab.lanes[0][0].id == "ward_step",
+		"Blink's three-copy upgrade works before unlocking its single-tile rest action.")
 
 	lab.run.data.phase = "rest"
 	lab.run.loadout.storage[0].assign([lab._entry("blink", 0, "self")])

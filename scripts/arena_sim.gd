@@ -2,6 +2,7 @@ extends RefCounted
 
 const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
 const ClassExpansionTiles = preload("res://scripts/class_expansion_tiles.gd")
+const UniversalTileUpgrades = preload("res://scripts/universal_tile_upgrades.gd")
 
 const BEATS := 12
 const TICKS_PER_BEAT := 21
@@ -87,7 +88,7 @@ const SLAM_TIERS := [
 	["fault_line", "hammerfall"],
 	["worldbreaker", "skybreaker"],
 ]
-const FORGE_FAMILIES := {
+const CORE_FORGE_FAMILIES := {
 	"bash": BASH_TIERS, "blink": BLINK_TIERS, "shot": SHOT_TIERS, "guard": GUARD_TIERS, "slam": SLAM_TIERS,
 }
 const HERO_CLASSES := {
@@ -426,6 +427,7 @@ const CORE_TILES := {
 
 static var _arsenal_tiles: Dictionary = ArsenalTiles.SPECS.merged(ClassExpansionTiles.SPECS)
 static var TILES: Dictionary = CORE_TILES.merged(_arsenal_tiles)
+static var FORGE_FAMILIES: Dictionary = CORE_FORGE_FAMILIES.duplicate()
 
 var units: Array[Dictionary] = []
 var trace: Array[Dictionary] = []
@@ -447,8 +449,15 @@ var _healed_tiles: Dictionary = {}
 
 
 static func _static_init() -> void:
+	var upgrades := UniversalTileUpgrades.build(TILES)
+	TILES.merge(upgrades.specs, true)
+	FORGE_FAMILIES.merge(upgrades.families)
+	for id: String in upgrades.specs:
+		if not CORE_TILES.has(id):
+			_arsenal_tiles[id] = TILES[id]
 	_arsenal_tiles.make_read_only()
 	TILES.make_read_only()
+	FORGE_FAMILIES.make_read_only()
 
 
 static func is_ranged_tile(tile_id: String) -> bool:
@@ -1316,13 +1325,16 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 		damage += int(tile.get("guard_bonus", 0))
 	if tick <= target.get("displaced_until", -1):
 		damage += int(tile.get("displaced_bonus", 0))
+	var pull_first: bool = tile.get("pull_before_hit", false)
+	if pull_first:
+		_pull_toward(actor, target, tile_id, _attack_origin(actor), tile.pull)
 	_strip_guard(actor, target, tile_id, int(tile.get("guard_break", 0)))
 	_damage(actor, target, damage, tile_id)
 	_apply_splash(actor, target, tile_id, tile)
 	if target.hp > 0:
 		if tile.has("push"):
 			_displace("push", actor, target, tile_id, target.pos - _attack_origin(actor), tile.push)
-		if tile.has("pull"):
+		if tile.has("pull") and not pull_first:
 			_pull_toward(actor, target, tile_id, _attack_origin(actor), tile.pull)
 		if tile.has("mark_bonus") and not _activation.is_empty():
 			target["arsenal_mark"] = {

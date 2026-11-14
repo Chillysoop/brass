@@ -1346,7 +1346,7 @@ func _render_storage() -> void:
 		for offer in _combine_offers(storage_rows[row]):
 			offer.row = row
 			all_offers.append(offer)
-	storage_screen.render(storage_rows, selected, all_offers, camp_forge)
+	storage_screen.render(storage_rows, selected, all_offers, camp_forge, not _selected_combine_copies().is_empty())
 
 func storage_pick(row: int, item: Dictionary) -> void:
 	var payload := {"id": item.id, "lane": -1, "row": row, "start": item.start}
@@ -1401,6 +1401,35 @@ func storage_forge() -> void:
 func storage_combine(row: int, start: int, accept: bool) -> void:
 	_offer_combine(row, -1, start, accept)
 
+func _selected_combine_copies() -> Array:
+	if not selected.has("lane") or suppressed_combines.has(selected.id):
+		return []
+	return TilePacking.find_copies(lanes, storage_rows, selected.id, 3, range(lanes.size()), selected)
+
+func storage_combine_selected() -> void:
+	if state != "setup" or not storage_screen.visible:
+		return
+	var copies := _selected_combine_copies()
+	if copies.is_empty():
+		return
+	pending_forge = {"inventory_copies": copies, "storage_open": true}
+	arena_screen.hide()
+	storage_screen.hide()
+	forge_screen.open(selected.id)
+
+func _commit_inventory_combine(id: String) -> void:
+	var copies: Array = pending_forge.inventory_copies
+	var destination := TilePacking.combine_destination(lanes, storage_rows, copies, id, range(lanes.size()))
+	if destination.is_empty():
+		return
+	var target := _combine_target(lanes, storage_rows, copies, destination, id)
+	if not TilePacking.apply_combination(lanes, storage_rows, copies, destination, id, target):
+		return
+	suppressed_combines.erase(id)
+	selected.clear()
+	_save_loadout()
+	forge_close()
+
 func _combine_prompt(row: int, lane: int, offer: Dictionary) -> Control:
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override("panel", _box(Color("#3a3024"), GOLD))
@@ -1420,7 +1449,7 @@ func _forge_family_available(id: String) -> bool:
 	return (not campaign and retry_options.is_empty()) or run.forge_family_available(family)
 
 func _combine_offers(items: Array) -> Array[Dictionary]:
-	return TilePacking.offers(items, suppressed_combines).filter(func(offer: Dictionary): return _forge_family_available(offer.id))
+	return TilePacking.offers(items, suppressed_combines)
 
 func _offer_combine(row: int, lane: int, start: int, accept: bool) -> void:
 	if state != "setup":
@@ -1456,6 +1485,13 @@ func _decline_combine() -> void:
 func forge_choose(id: String) -> void:
 	if pending_forge.is_empty() or not forge_screen.visible:
 		return
+	if pending_forge.has("reward"):
+		_claim_reward_upgrade(id)
+		return
+	if pending_forge.has("inventory_copies"):
+		if id in TilePacking.next_options(pending_forge.inventory_copies[0].id):
+			_commit_inventory_combine(id)
+		return
 	if pending_forge.has("camp"):
 		_commit_camp_forge(id)
 		return
@@ -1482,6 +1518,10 @@ func forge_choose(id: String) -> void:
 	forge_close()
 
 func forge_can_fit(id: String) -> bool:
+	if pending_forge.has("reward"):
+		return not _reward_upgrade_destination(pending_forge.copies, id).is_empty()
+	if pending_forge.has("inventory_copies"):
+		return not TilePacking.combine_destination(lanes, storage_rows, pending_forge.inventory_copies, id, range(lanes.size())).is_empty()
 	if pending_forge.has("camp"):
 		var source: Dictionary = pending_forge.camp
 		var stored := source.has("row")
@@ -1491,12 +1531,27 @@ func forge_can_fit(id: String) -> bool:
 	return int(ArenaSim.TILES[id].width) <= int(pending_forge.offer.width)
 
 func forge_firing_beat(id: String) -> int:
+	if pending_forge.has("reward"):
+		var destination := _reward_upgrade_destination(pending_forge.copies, id)
+		return 0 if destination.is_empty() or destination.has("row") else int(destination.start) + int(ArenaSim.TILES[id].width)
+	if pending_forge.has("inventory_copies"):
+		var destination := TilePacking.combine_destination(lanes, storage_rows, pending_forge.inventory_copies, id, range(lanes.size()))
+		return 0 if destination.is_empty() or destination.has("row") else int(destination.start) + int(ArenaSim.TILES[id].width)
 	if pending_forge.has("camp"):
 		var source: Dictionary = pending_forge.camp
 		return 0 if source.has("row") else int(source.start) + int(ArenaSim.TILES[id].width)
 	return 0 if int(pending_forge.row) >= 0 else int(pending_forge.offer.start) + int(ArenaSim.TILES[id].width)
 
 func forge_close() -> void:
+	if pending_forge.has("reward"):
+		var pending: Dictionary = run.data.get("reward_combine", {})
+		run.data.erase("reward_combine")
+		if run.save():
+			run_return()
+		else:
+			run.data.reward_combine = pending
+			forge_screen.show_error(run.save_error)
+		return
 	var from_storage: bool = pending_forge.get("storage_open", false)
 	pending_forge.clear()
 	forge_screen.hide()
@@ -1540,6 +1595,9 @@ func _show_frontier(page := "") -> void:
 	arsenal_panel.hide()
 	storage_screen.hide()
 	forge_screen.hide()
+	pending_forge.clear()
+	if page.is_empty() and _open_reward_combine():
+		return
 	frontier_screen.show()
 	frontier_screen.render(run, page)
 
@@ -1637,6 +1695,14 @@ func _forge_target(id: String, previous: String) -> String:
 	var valid: Array = ArenaSim.TILES[id].targets
 	return previous if previous in valid or (previous in ArenaSim.CROWN_TARGET_RULES and "nearest" in valid) else valid[0]
 
+func _combine_target(owned_lanes: Array, owned_storage: Array, copies: Array, destination: Dictionary, id: String) -> String:
+	var source: Dictionary = destination if destination in copies else copies[0]
+	var items: Array = owned_storage[source.row] if source.has("row") else owned_lanes[source.lane]
+	for item: Dictionary in items:
+		if item.start == source.start and item.id == source.id:
+			return _forge_target(id, item.target)
+	return ArenaSim.TILES[id].targets[0]
+
 func _show_inventory_message(message: String) -> void:
 	if storage_screen.visible:
 		storage_screen.show_message(message)
@@ -1680,9 +1746,87 @@ func _claim_loot(id: String, commit: Callable, reward_lane := -1) -> bool:
 	return false
 
 func run_claim_reward(id: String) -> bool:
+	if not _pending_reward_id().is_empty():
+		return false
 	if id == "skip" or run.is_final_boss():
 		return run.reward(id)
+	if run_can_combine_reward(id):
+		run.data.reward_combine = {"id": id}
+		if run.save():
+			return true
+		run.data.erase("reward_combine")
+		return false
 	return _claim_loot(id, run.reward, run.reward_lane())
+
+func _pending_reward_id() -> String:
+	return run.data.get("reward_combine", {}).get("id", "") if run.data.get("phase") == "reward" else ""
+
+func _reward_combine_copies(id: String) -> Array:
+	if run.data.get("phase") != "reward" or run.is_final_boss() or id not in run.data.offers or not run.elite_relic_offers().is_empty():
+		return []
+	return TilePacking.find_copies(run.loadout.lanes, run.loadout.storage, id, 2, _reward_combine_lanes())
+
+func _reward_combine_lanes() -> Array:
+	var lane: int = run.reward_lane()
+	return range(run.loadout.lanes.size()) if lane < 0 else [lane]
+
+func _reward_upgrade_destination(copies: Array, id: String) -> Dictionary:
+	return TilePacking.combine_destination(run.loadout.lanes, run.loadout.storage, copies, id, _reward_combine_lanes())
+
+func run_can_combine_reward(id: String) -> bool:
+	var copies := _reward_combine_copies(id)
+	return copies.size() == 2 and TilePacking.next_options(id).any(
+		func(upgrade: String): return not _reward_upgrade_destination(copies, upgrade).is_empty()
+	)
+
+func _open_reward_combine() -> bool:
+	var id := _pending_reward_id()
+	if id.is_empty():
+		return false
+	if not run_can_combine_reward(id):
+		run.data.erase("reward_combine")
+		run.save()
+		return false
+	pending_forge = {"reward": id, "copies": _reward_combine_copies(id)}
+	frontier_screen.hide()
+	forge_screen.open(id, 3, true, not _loot_destination(id, run.reward_lane()).is_empty())
+	return true
+
+func run_keep_reward_tile() -> bool:
+	var id := _pending_reward_id()
+	if id.is_empty() or _loot_destination(id, run.reward_lane()).is_empty():
+		return false
+	return _finish_reward_combine(func(): return _claim_loot(id, run.reward, run.reward_lane()))
+
+func _claim_reward_upgrade(id: String) -> void:
+	var source_id := _pending_reward_id()
+	var copies: Array = pending_forge.copies
+	if id not in TilePacking.next_options(source_id):
+		return
+	var destination := _reward_upgrade_destination(copies, id)
+	if destination.is_empty():
+		forge_screen.show_error("Make room for the upgrade or return to the reward choices.")
+		return
+	var target := _combine_target(run.loadout.lanes, run.loadout.storage, copies, destination, id)
+	_finish_reward_combine(func():
+		if not TilePacking.apply_combination(run.loadout.lanes, run.loadout.storage, copies, destination, id, target):
+			return false
+		run.loadout.suppressed.erase(source_id)
+		run.loadout.suppressed.erase(id)
+		return run.reward(source_id)
+	)
+
+func _finish_reward_combine(claim: Callable) -> bool:
+	var pending: Dictionary = run.data.reward_combine
+	var inventory: Dictionary = run.loadout.duplicate(true)
+	run.data.erase("reward_combine")
+	if claim.call():
+		run_return()
+		return true
+	run.data.reward_combine = pending
+	run.loadout = inventory
+	forge_screen.show_error(run.save_error if not run.save_error.is_empty() else "This reward could not be claimed.")
+	return false
 
 func run_buy_shop(id: String) -> bool:
 	if not ArenaSim.TILES.has(id):

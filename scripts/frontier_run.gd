@@ -3,6 +3,7 @@ extends RefCounted
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
+const TilePacking = preload("res://scripts/tile_packing.gd")
 const HEROES = ArenaSim.HERO_CLASSES
 const BASE_TILES := ["bash", "shot", "slam", "pull", "guard", "blink"]
 const STARTER_RELICS := ["pocket_bell", "copper_compass", "quartermasters_coin"]
@@ -28,10 +29,10 @@ const META_NODES := {
 	"purse": {"label": "Well-stocked Purse", "description": "Begin each run with 8 extra gold.", "cost": 5, "requires": []},
 	"curated_cache": {"label": "Gravity Hook", "description": "Permanently add Gravity Hook to normal drafts and shops.", "cost": 8, "requires": ["stout_start"]},
 	"relic_archive": {"label": "Relic Archive", "description": "Permanently add Trail Ration to the starter relic draft.", "cost": 8, "requires": ["purse"]},
-	"blink_artifice": {"label": "Blink Artifice", "description": "Unlock the full Blink forge family. Its upgrades enter future reward and shop pools.", "cost": 18, "requires": ["curated_cache"]},
+	"blink_artifice": {"label": "Blink Artifice", "description": "Upgrade a single Blink tile at camp and find Blink upgrades in rewards and shops.", "cost": 18, "requires": ["curated_cache"]},
 	"wayfarers_pin": {"label": "Wayfarer's Pin", "description": "Add Wayfarer's Pin to future relic drafts, shops and elite rewards. Each hero gains 6 guard on their first successful teleport each loop.", "cost": 14, "requires": ["blink_artifice"]},
-	"shot_artifice": {"label": "Marksman's Arsenal", "description": "Unlock the Shot forge family for precision hits and ranged area damage.", "cost": 14, "requires": ["purse"]},
-	"guard_artifice": {"label": "Bastion Workshop", "description": "Unlock the Guard forge family for counterattacks and party protection.", "cost": 14, "requires": ["stout_start"]},
+	"shot_artifice": {"label": "Marksman's Arsenal", "description": "Upgrade a single Shot tile at camp and find Shot upgrades in rewards and shops.", "cost": 14, "requires": ["purse"]},
+	"guard_artifice": {"label": "Bastion Workshop", "description": "Upgrade a single Guard tile at camp and find Guard upgrades in rewards and shops.", "cost": 14, "requires": ["stout_start"]},
 	"navigation": {"label": "Pathfinder's Chart", "description": "Find wagers, relic brokers, and optional elite bounties at mystery nodes.", "cost": 12, "requires": ["purse"]},
 }
 const TILE_RARITIES := ["common", "uncommon", "rare", "epic", "legendary"]
@@ -747,8 +748,9 @@ func reward_skip_gold() -> int:
 func reward(id: String) -> bool:
 	if data.get("phase") != "reward" or (id != "skip" and id not in data.offers):
 		return false
-	if not elite_relic_offers().is_empty():
+	if not elite_relic_offers().is_empty() or data.has("reward_combine"):
 		return false
+	var before := data.duplicate(true)
 	var lane := reward_lane()
 	if is_final_boss():
 		var trophy := "" if id == "skip" else id
@@ -767,8 +769,7 @@ func reward(id: String) -> bool:
 	if lane >= 0 and not data.reward_remaining.is_empty():
 		data.reward_lane = lane + 1
 		_activate_reward_draft(data.reward_remaining.pop_front())
-		save()
-		return true
+		return _save_reward(before)
 	data.erase("reward_lane")
 	data.erase("reward_remaining")
 	data.erase("reward_gold_paid")
@@ -781,13 +782,18 @@ func reward(id: String) -> bool:
 			classes.erase(hero.id)
 		data.phase = "recruit"
 		data.offers = _sample(classes, 3, int(data.seed), _node_salt(94))
-		save()
-		return true
+		return _save_reward(before)
 	else:
 		data.phase = "map"
 	data.offers = []
-	save()
-	return true
+	return _save_reward(before)
+
+
+func _save_reward(before: Dictionary) -> bool:
+	if save():
+		return true
+	data = before
+	return false
 
 
 func shop_price(id: String) -> int:
@@ -1212,9 +1218,13 @@ func _reward_inventory(lane: int) -> Array:
 		return loadout.lanes + loadout.storage
 	var equipped: Array = loadout.lanes[lane]
 	var equipped_ids := equipped.map(func(tile: Dictionary): return tile.id)
+	var shared_counts := {}
+	for row: Array in loadout.storage:
+		for tile: Dictionary in row:
+			shared_counts[tile.id] = int(shared_counts.get(tile.id, 0)) + 1
 	var rows: Array = [equipped]
 	for row: Array in loadout.storage:
-		rows.append(row.filter(func(tile: Dictionary): return tile.id in equipped_ids))
+		rows.append(row.filter(func(tile: Dictionary): return tile.id in equipped_ids or shared_counts[tile.id] >= 2))
 	return rows
 
 
@@ -1236,7 +1246,7 @@ func _class_reward_pool(hero_id: String, tier: int, rows: Array) -> Array:
 	for items: Array in rows:
 		for tile: Dictionary in items:
 			var family: String = ArenaSim.TILES[tile.id].get("family", "")
-			if family not in families and forge_family_available(family):
+			if family not in families and forge_family_available(family) and _can_draft_owned_tile(tile.id, hero_id):
 				families.append(family)
 	var pool := _class_forge_tier(families, tier)
 	if tier == 1:
@@ -1244,6 +1254,11 @@ func _class_reward_pool(hero_id: String, tier: int, rows: Array) -> Array:
 	if tier == 4:
 		pool.append("meteor_seal")
 	return pool
+
+
+func _can_draft_owned_tile(id: String, hero_id: String) -> bool:
+	var root: String = ArenaSim.TILES[id].get("base_tile", id)
+	return not ClassDecks.is_signature(root) or root == ClassDecks.signature(hero_id)
 
 
 func _standard_rewards() -> Array:
@@ -1264,9 +1279,9 @@ func _normal_reward_draft(lane: int, rows: Array) -> Dictionary:
 	for items: Array in rows:
 		for tile: Dictionary in items:
 			var rarity: String = ArenaSim.TILES[tile.id].get("rarity", "common")
-			if ClassDecks.is_signature(tile.id) and tile.id != ClassDecks.signature(hero_id):
+			if not _can_draft_owned_tile(tile.id, hero_id):
 				continue
-			if rarity in ["common", "uncommon", "rare"] and tile.id not in repeat_pool:
+			if rarity != "legendary" and tile.id not in repeat_pool:
 				repeat_pool.append(tile.id)
 	var owned := _owned_reward(repeat_pool, 83 + salt, false, rows)
 	if not owned.is_empty():
@@ -1297,8 +1312,7 @@ func _normal_reward_draft(lane: int, rows: Array) -> Dictionary:
 
 func _copy_reward_hint(id: String, rows: Array) -> String:
 	var copies := _count_matching_tiles(rows, func(tile_id: String): return tile_id == id)
-	var spec: Dictionary = ArenaSim.TILES[id]
-	if copies == 2 and forge_family_available(spec.get("family", "")) and spec.get("rarity", "common") != "legendary":
+	if copies == 2 and not TilePacking.next_options(id).is_empty():
 		return "Third copy"
 	return "Owned copy"
 
@@ -1391,7 +1405,7 @@ func _owns_slam_family() -> bool:
 
 
 func forge_family_available(family: String) -> bool:
-	return family in ["bash", "slam"] or (FORGE_UNLOCKS.has(family) and FORGE_UNLOCKS[family] in profile.meta)
+	return ArenaSim.FORGE_FAMILIES.has(family) and (not FORGE_UNLOCKS.has(family) or FORGE_UNLOCKS[family] in profile.meta)
 
 
 func _specialist_pool(tier: int) -> Array:
@@ -1448,8 +1462,9 @@ func _owned_reward(pool: Array, salt: int, favor_owned_family := true, inventory
 			continue
 		var priority := 0
 		var spec: Dictionary = ArenaSim.TILES[id]
-		if (counts[id] == 2 or prioritize_forge) and forge_family_available(spec.get("family", "")) \
-				and spec.rarity != "legendary" and counts[id] < 3:
+		var established_family: bool = ArenaSim.CORE_FORGE_FAMILIES.has(spec.get("family", "")) and forge_family_available(spec.family)
+		if (counts[id] == 2 or (prioritize_forge and established_family)) and counts[id] < 3 \
+				and not TilePacking.next_options(id).is_empty():
 			# Complete pairs first, then prefer useful copies at higher rarities.
 			priority = int(counts[id]) * TILE_RARITIES.size() + TILE_RARITIES.find(spec.rarity)
 		if priority > best_priority:

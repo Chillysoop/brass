@@ -22,6 +22,7 @@ var _next_ids: Array = []
 var _inspected_id := ""
 var _is_combine := true
 var _cards: Dictionary = {}
+var _title: Label
 var _subtitle: Label
 var _columns: HBoxContainer
 var _links: Control
@@ -29,6 +30,9 @@ var _detail_name: Label
 var _detail_stats: Label
 var _detail_description: Label
 var _confirm: Button
+var _keep_reward: Button
+var _save_reward: Button
+var _error: Label
 
 
 func configure(host: Control) -> void:
@@ -37,23 +41,37 @@ func configure(host: Control) -> void:
 		_build()
 
 
-func open(source_id: String, copies := 3) -> void:
+func open(source_id: String, copies := 3, reward := false, can_keep_reward := false) -> void:
 	_source_id = source_id
 	_tiers = TilePacking.forge_tiers(source_id)
 	_next_ids = TilePacking.next_options(source_id)
 	_is_combine = copies == 3
 	var source: Dictionary = _host.tile_spec(source_id)
+	_title.text = "Combine tiles" if reward else "Tile forge"
 	_subtitle.text = "Combine 3 × %s" % source.label if _is_combine else "Upgrade %s" % source.label
+	if reward:
+		_subtitle.text = "%s · uses the reward and two owned copies" % _subtitle.text
+	_keep_reward.visible = reward
+	_keep_reward.disabled = not can_keep_reward
+	_keep_reward.tooltip_text = "No room for the original tile." if not can_keep_reward else "Claim the tile without combining."
+	_save_reward.visible = reward
+	_error.hide()
 	for child in _columns.get_children():
 		_columns.remove_child(child)
 		child.queue_free()
 	_cards.clear()
 	for tier in range(_tiers.size()):
-		_add_tier(tier)
+		if not _tiers[tier].is_empty():
+			_add_tier(tier)
 	_inspect(source_id)
 	show()
 	_links.queue_redraw()
 	(_cards[source_id] as Button).grab_focus()
+
+
+func show_error(message: String) -> void:
+	_error.text = message
+	_error.show()
 
 
 func _build() -> void:
@@ -76,10 +94,15 @@ func _build() -> void:
 
 	var header := HBoxContainer.new()
 	layout.add_child(header)
-	var title := _label("Tile forge", 34, GOLD)
-	title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(title)
+	_title = _label("Tile forge", 34, GOLD)
+	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(_title)
+	_save_reward = _button("Save & title", func(): _host.run_menu())
+	_save_reward.name = "SaveRewardCombine"
+	_save_reward.custom_minimum_size = Vector2(112, 40)
+	header.add_child(_save_reward)
 	var back := _button("Back", func(): _host.forge_close())
+	back.name = "BackFromForge"
 	back.custom_minimum_size = Vector2(100, 40)
 	header.add_child(back)
 	_subtitle = _label("", 16, MUTED)
@@ -135,10 +158,21 @@ func _build() -> void:
 	_detail_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	copy.add_child(_detail_description)
 
+	var actions := VBoxContainer.new()
+	actions.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	actions.add_theme_constant_override("separation", 7)
+	detail_row.add_child(actions)
 	_confirm = _button("Choose a next-tier tile", _confirm_upgrade)
 	_confirm.custom_minimum_size = Vector2(240, 48)
-	_confirm.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	detail_row.add_child(_confirm)
+	actions.add_child(_confirm)
+	_keep_reward = _button("Keep original tile", func(): _host.run_keep_reward_tile())
+	_keep_reward.name = "KeepRewardTile"
+	_keep_reward.custom_minimum_size.y = 34
+	actions.add_child(_keep_reward)
+	_error = _label("", 15, Color("#e8a28b"))
+	_error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	layout.add_child(_error)
+	_error.hide()
 
 
 func _add_tier(tier: int) -> void:
