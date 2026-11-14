@@ -127,12 +127,20 @@ func _check_crown_entry() -> void:
 	game.run_menu()
 	await _press_named(menu, "NewExpedition")
 	await _press_named(menu, "Region_crown")
-	_check_disabled(menu, "Difficulty_medium", "Coming soon")
+	_check_disabled(menu, "Difficulty_medium", "Locked")
 	_check_disabled(menu, "Difficulty_hard", "Coming soon")
 	await _press_named(menu, "Difficulty_easy")
 	_check(game.run.data.get("phase") == "hero" and game.run.data.get("location") == "crown"
 		and game.run.data.get("difficulty") == "easy", "Crown Easy should start from the expedition menu after its unlock.")
 	_check(game.run.abandon_run(), "Close the test Crown expedition.")
+	game.run.profile.crown_medium_unlocked = true
+	game.run_menu()
+	await _press_named(menu, "NewExpedition")
+	await _press_named(menu, "Region_crown")
+	await _press_named(menu, "Difficulty_medium")
+	_check(game.run.data.get("phase") == "hero" and game.run.data.get("location") == "crown"
+		and game.run.data.get("difficulty") == "medium", "Crown Medium should start from the expedition menu after its unlock.")
+	_check(game.run.abandon_run(), "Close the test Crown Medium expedition.")
 
 
 func _check_glass_hard_entry() -> void:

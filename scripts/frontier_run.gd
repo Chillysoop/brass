@@ -53,26 +53,36 @@ const CROWN_NODE_LABELS := {
 	"event": ["Beacon Intercept", "Signal Cache", "Signal Scriptorium"],
 	"rest": ["Signalkeeper's Loft", "Cloudbreak Lookout"],
 }
+const CROWN_HIGH_RELAY_NODE_LABELS := {
+	"battle": ["Spire Causeway", "Cable Gallery", "Stormline Walk", "Semaphore Terrace", "Crown Signal Array"],
+	"elite": ["High Relay Watch", "The Royal Signal Corps"],
+	"shop": ["Liftmaster's Supply", "Semaphore Exchange"],
+	"event": ["Signalman's Infirmary", "Lost Dispatch", "Storm Cache"],
+	"rest": ["Windbreak Station", "Upper Beacon Shelter"],
+}
 const EVENT_KINDS := {
 	"Jammed Crane": "salvage", "Loaded Beacon": "ambush", "Relay Auction": "trade",
 	"Cracked Mold": "salvage", "Smelter Relay": "ambush", "Cinder Exchange": "trade",
 	"Steam Infirmary": "infirmary", "Lenswright's Bench": "lenswright", "Prism Cache": "prism_cache",
 	"Beacon Intercept": "ambush", "Signal Cache": "signal_cache", "Signal Scriptorium": "trade",
+	"Signalman's Infirmary": "infirmary", "Lost Dispatch": "lenswright", "Storm Cache": "prism_cache",
 }
-const LOCATION_LABELS := {"brass": "Brass Frontier", "glass": "Glass Foundry", "crown": "Crown Relay"}
+const LOCATION_LABELS := {"brass": "Brass Frontier", "glass": "Glass Foundry", "crown": "Crown Relay", "moonwreck": "Moonwreck Docks"}
 const BOSS_LABELS := {
 	"tollkeeper": "The Tollkeeper", "gilded_marshal": "The Gilded Marshal",
 	"iron_regent": "The Iron Regent", "crucible_twins": "The Crucible Twins", "prism_warden": "The Prism Warden",
 	"tempered_colossus": "The Tempered Colossus",
-	"relay_captain": "The Relay Captain",
+	"relay_captain": "The Relay Captain", "relay_marshal": "The Relay Marshal",
 }
 const BRASS_BOSSES := ["tollkeeper", "gilded_marshal", "iron_regent"]
 const GLASS_BOSSES := ["crucible_twins", "prism_warden", "tempered_colossus"]
+const CROWN_BOSSES := ["relay_captain", "relay_marshal"]
 const SEGMENT_COUNTS := {"easy": 1, "medium": 2, "hard": 3}
 const DEFAULT_PROFILE := {
 	"marks": 0, "medium_unlocked": false, "hard_unlocked": false, "glass_easy_unlocked": false,
 	"brass_hard_cleared": false, "glass_medium_unlocked": false, "glass_hard_unlocked": false,
-	"glass_hard_cleared": false, "crown_easy_unlocked": false, "crown_medium_unlocked": false, "meta": [],
+	"glass_hard_cleared": false, "crown_easy_unlocked": false, "crown_medium_unlocked": false,
+	"crown_hard_unlocked": false, "moonwreck_easy_unlocked": false, "meta": [],
 }
 const NODES_PER_SEGMENT := 7
 const VERSION := 1
@@ -156,7 +166,10 @@ func start_run(seed_value := 0, difficulty := "easy", location := "brass") -> bo
 
 func can_start(difficulty: String, location := "brass") -> bool:
 	if location == "crown":
-		return difficulty == "easy" and profile.crown_easy_unlocked
+		match difficulty:
+			"easy": return profile.crown_easy_unlocked
+			"medium": return profile.crown_medium_unlocked
+		return false
 	if location == "glass":
 		match difficulty:
 			"easy": return profile.glass_easy_unlocked
@@ -351,7 +364,13 @@ func _resolve_boss() -> void:
 		data.node_notice = "%s fell. Choose a Legendary and draft a %s hero." % [data.node.label, rank]
 		return
 	data.result = "victory"
-	if data.location == "crown":
+	if data.location == "crown" and data.difficulty == "medium":
+		var first_clear := not bool(profile.crown_hard_unlocked)
+		_grant_marks(30 if first_clear else 20)
+		profile.crown_hard_unlocked = true
+		profile.moonwreck_easy_unlocked = true
+		data.node_notice = "Crown Relay Medium cleared. Hard and Moonwreck Docks Easy unlocked." if first_clear else "Crown Relay Medium cleared."
+	elif data.location == "crown":
 		var first_clear := not bool(profile.crown_medium_unlocked)
 		_grant_marks(15 if first_clear else 10)
 		profile.crown_medium_unlocked = true
@@ -483,6 +502,9 @@ func event_text() -> String:
 		"Beacon Intercept": return "A loose banner is relaying your position to a Crown patrol. The keeper offers to jam the signal for a fee."
 		"Signal Cache": return "A runner offers to buy the coordinates of a dropped signal case. Opening it yourself would trigger a ward."
 		"Signal Scriptorium": return "A signalwright offers a choice of Rare tiles in exchange for your first relic."
+		"Signalman's Infirmary": return "The upper relay's medic can patch up both heroes for a fee."
+		"Lost Dispatch": return "A courier offers two Rare tiles in exchange for the fare to recover a lost dispatch."
+		"Storm Cache": return "A salvager will pay for a storm-lashed cache's location. Its contents are valuable, but the lightning ward is still live."
 	return ""
 
 
@@ -622,13 +644,15 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 			["battle", "elite", "shop"], ["event", "battle", "battle"], ["rest", "rest", "rest"],
 		]
 	_append_layers(layers, first_leg, labels, rng, used_events)
-	var bosses := ["relay_captain"] if crown else (GLASS_BOSSES if glass else BRASS_BOSSES)
+	var bosses := CROWN_BOSSES if crown else (GLASS_BOSSES if glass else BRASS_BOSSES)
 	_append_boss(layers, bosses[0])
 	var segments: int = SEGMENT_COUNTS[difficulty]
 	for segment in range(1, segments):
 		var gate := "Upper Gate Patrol" if segment == 1 else "Regent's Outer Guard"
 		if glass:
 			gate = "Annealing Hall" if segment == 1 else "Tempering Causeway"
+		elif crown:
+			gate = "High Relay Gate"
 		layers.append([_node("battle", gate, layers.size(), 1)])
 		var leg := [
 			["battle", "event" if segment == 1 else "battle", "battle"],
@@ -647,6 +671,12 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 				leg_labels = GLASS_UPPER_NODE_LABELS
 			else:
 				leg_labels = GLASS_TEMPERING_NODE_LABELS
+		elif crown:
+			leg = [
+				["battle", "shop", "battle"], ["elite", "battle", "event"],
+				["battle", "event", "battle"], ["shop", "battle", "elite"], ["rest", "rest", "rest"],
+			]
+			leg_labels = CROWN_HIGH_RELAY_NODE_LABELS
 		_append_layers(layers, leg, leg_labels, rng, used_events)
 		_append_boss(layers, bosses[segment])
 	for row in range(layers.size() - 1):

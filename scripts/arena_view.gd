@@ -26,6 +26,7 @@ const SPRITE_PATHS := {
 	"tempered_colossus": "res://assets/tempered_colossus.png",
 	"relay_guard": "res://assets/relay_guard.png",
 	"relay_captain": "res://assets/relay_captain.png",
+	"relay_marshal": "res://assets/relay_marshal.png",
 	"glass_arena": "res://assets/glass-arena.webp",
 	"crown_arena": "res://assets/crown-arena.webp",
 }
@@ -39,6 +40,13 @@ const EFFECT_LENGTHS := {
 	"defeat_unit": 0.46,
 	"relay_interrupted": 0.65,
 	"relay_link_broken": 0.42,
+	"relay_marshal_separated": 0.55,
+}
+const RELAY_EFFECTS := {
+	"relay_interrupted": "relay_interrupted",
+	"relay_link_broken": "relay_link_broken",
+	"relay_marshal_interrupted": "relay_interrupted",
+	"relay_marshal_separated": "relay_marshal_separated",
 }
 
 var units: Array = []
@@ -76,9 +84,14 @@ func present(units_data: Array, events: Array) -> void:
 	units = units_data
 	for event in events:
 		var tile: String = event.get("tile", "")
-		var kind: String = tile if tile in ["relay_interrupted", "relay_link_broken"] else event.get("kind", "")
+		var kind: String = RELAY_EFFECTS.get(tile, event.get("kind", ""))
 		if not EFFECT_LENGTHS.has(kind):
 			continue
+		if kind in ["relay_marshal_separated", "relay_interrupted"]:
+			for index in range(_effects.size() - 1, -1, -1):
+				var older := _effects[index]
+				if older.target == event.target and older.kind in ["relay_link_broken", "relay_marshal_separated"]:
+					_effects.remove_at(index)
 		if kind == "teleport":
 			_positions[event.actor] = event.to
 		var effect: Dictionary = event.duplicate()
@@ -172,7 +185,7 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	var model_height := 132.0
 	if art_key == "tempered_colossus":
 		model_height = 218.0
-	elif art_key in ["marshal", "regent", "glass_twin", "prism_warden", "relay_captain"]:
+	elif art_key in ["marshal", "regent", "glass_twin", "prism_warden", "relay_captain", "relay_marshal"]:
 		model_height = 191.0
 	elif art_key == "clockwork":
 		model_height = 154.0
@@ -235,12 +248,27 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	if art_key == "tempered_colossus":
 		_draw_colossus_stage(unit, point, radius, bar)
 	if unit.get("relay_charge_active", false):
-		_draw_centered("RELAY CHARGE", bar.get_center() - Vector2(0.0, 9.0), 14, GOLD)
-		draw_arc(point, radius * 1.45, 0.0, TAU, 28, GOLD, 2.5, true)
+		_draw_relay_charge(unit, point, radius, bar)
 	if not str(unit.get("relay_shield_source", "")).is_empty():
 		var position := point - Vector2(0.0, art_height * 0.38)
 		draw_arc(position, art_height * 0.40, 0.0, TAU, 28, Color(RELAY_SHIELD_COLOR, 0.78), 2.0, true)
 		_draw_shield_mark(Vector2(bar.end.x + 9.0, bar.get_center().y), RELAY_SHIELD_COLOR)
+
+
+func _draw_relay_charge(unit: Dictionary, point: Vector2, radius: float, bar: Rect2) -> void:
+	var stage: int = unit.get("relay_combo_stage", 0)
+	var caption := "RELAY CHARGE"
+	if unit.get("sprite") == "relay_marshal":
+		match stage:
+			1: caption = "LINKED CHARGE · SEPARATE"
+			2: caption = "LINKED CHARGE · FOLLOW UP"
+			_: caption = "LINKED CHARGE · INTERRUPT"
+	_draw_centered(caption, bar.get_center() - Vector2(0.0, 9.0), 14, GOLD)
+	if stage in [1, 2]:
+		draw_arc(point, radius * 1.45, 0.0, PI - 0.18, 18, HERO_COLOR if stage == 2 else GOLD, 3.0, true)
+		draw_arc(point, radius * 1.45, PI, TAU - 0.18, 18, GOLD if stage == 2 else GOLD.darkened(0.6), 3.0, true)
+	else:
+		draw_arc(point, radius * 1.45, 0.0, TAU, 28, GOLD, 2.5, true)
 
 
 func _draw_shield_mark(center: Vector2, color: Color) -> void:
@@ -342,24 +370,24 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			draw_dashed_line(from_point, to_point, Color(TELEPORT_COLOR, opacity * 0.75), 2.0, 6.0)
 			draw_arc(from_point, 7.0 + progress * 18.0, 0.0, TAU, 24, Color(TELEPORT_COLOR, opacity), 2.0, true)
 			draw_arc(to_point, 8.0 + opacity * 14.0, 0.0, TAU, 24, Color(TELEPORT_COLOR, opacity), 2.0, true)
-		"guard", "defeat_unit", "relay_interrupted", "relay_link_broken":
+		"guard", "defeat_unit", "relay_interrupted", "relay_link_broken", "relay_marshal_separated":
 			var color := GOLD if kind == "guard" else ENEMY_COLOR
-			if kind in ["relay_interrupted", "relay_link_broken"]:
+			if kind in ["relay_interrupted", "relay_link_broken", "relay_marshal_separated"]:
 				color = RELAY_SHIELD_COLOR
 			draw_arc(to_point, 7.0 + progress * 24.0, 0.0, TAU, 24, Color(color, opacity), 2.0, true)
 
 
 func _draw_feedback(effect: Dictionary, field: Rect2) -> void:
 	var kind: String = effect.kind
-	if kind not in ["hit", "miss", "relay_interrupted", "relay_link_broken"]:
+	if kind not in ["hit", "miss", "relay_interrupted", "relay_link_broken", "relay_marshal_separated"]:
 		return
 	var point := _project(effect.to, field)
 	var progress := float(effect.age) / float(EFFECT_LENGTHS[kind])
 	var opacity := 1.0 - progress
 	var label := "MISS"
 	var color := WHITE
-	if kind == "relay_interrupted" or kind == "relay_link_broken":
-		label = "INTERRUPTED" if kind == "relay_interrupted" else "LINK BROKEN"
+	if kind in ["relay_interrupted", "relay_link_broken", "relay_marshal_separated"]:
+		label = {"relay_interrupted": "INTERRUPTED", "relay_link_broken": "LINK BROKEN", "relay_marshal_separated": "SEPARATED"}[kind]
 		color = RELAY_SHIELD_COLOR
 	if kind == "hit":
 		color = GOLD if String(effect.actor).begins_with("hero") else ENEMY_COLOR.lightened(0.19)

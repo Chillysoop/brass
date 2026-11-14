@@ -372,28 +372,36 @@ func _update_relay_status() -> void:
 	relay_status.hide()
 	if not campaign or not encounter_setup or run.data.get("location") != "crown":
 		return
-	var captain: Dictionary = {}
+	var leader: Dictionary = {}
 	var guard_alive := false
 	var protected := PackedStringArray()
 	for unit: Dictionary in sim.units:
 		if unit.hp <= 0:
 			continue
-		if unit.get("sprite") == "relay_captain":
-			captain = unit
+		if unit.get("sprite") in ["relay_captain", "relay_marshal"]:
+			leader = unit
 		if unit.has("relay_link_target"):
 			guard_alive = true
 		if not str(unit.get("relay_shield_source", "")).is_empty():
 			protected.append(unit.name)
-	if captain.is_empty() and not guard_alive:
+	if leader.is_empty() and not guard_alive:
 		return
 	var cues := PackedStringArray()
 	var color := TEAL
-	if captain.get("relay_charge_active", false):
-		var remaining := maxi(0, int(captain.get("intent_tick", 0)) - sim.tick)
-		cues.append("Relay Charge · Push or pull the Captain · %.1f beats left" % (float(remaining) / ArenaSim.TICKS_PER_BEAT))
+	var marshal: bool = leader.get("sprite") == "relay_marshal"
+	if leader.get("relay_charge_active", false):
+		var remaining := maxi(0, int(leader.get("intent_tick", 0)) - sim.tick)
+		var beat_time := "%.1f beats left" % (float(remaining) / ArenaSim.TICKS_PER_BEAT)
+		if marshal:
+			cues.append("Linked Charge · %s · %s" % [_marshal_charge_instruction(leader), beat_time])
+		else:
+			cues.append("Relay Charge · Push or pull the Captain · " + beat_time)
 		color = RUST if remaining <= 2 * ArenaSim.TICKS_PER_BEAT else GOLD
-	elif not captain.is_empty():
-		cues.append("Relay Charge · Interrupt with a push or pull when it begins.")
+	elif not leader.is_empty():
+		if marshal:
+			cues.append("Linked Charge · Separate the Marshal from the Guard, then push the Marshal with another hero.")
+		else:
+			cues.append("Relay Charge · Interrupt with a push or pull when it begins.")
 	if not protected.is_empty():
 		cues.append("Shielded: " + ", ".join(protected))
 	elif guard_alive:
@@ -403,6 +411,20 @@ func _update_relay_status() -> void:
 	relay_status.tooltip_text = instruction
 	relay_status.add_theme_color_override("font_color", color)
 	relay_status.show()
+
+func _marshal_charge_instruction(marshal: Dictionary) -> String:
+	match int(marshal.get("relay_combo_stage", 0)):
+		1:
+			return "1 of 2 · Pull or push the pair apart"
+		2:
+			var eligible := PackedStringArray()
+			for hero: Dictionary in sim.units:
+				if hero.side == "hero" and hero.hp > 0 and hero.id != marshal.get("relay_breaker", ""):
+					eligible.append(hero.name)
+			if not eligible.is_empty():
+				return "2 of 2 · Push the Marshal with " + " or ".join(eligible)
+			return "2 of 2 · A different hero must push the Marshal"
+	return "Push the Marshal with any hero"
 
 func _party_has_tiles() -> bool:
 	for index in range(lanes.size()):

@@ -44,6 +44,10 @@ const BOSS_BRIEFS := {
 	"relay_captain": {
 		"portrait": "relay_captain",
 		"hint": "Relay Charge begins on beat 2 and strikes at the end of beat 7. Land Bash or another push or pull within that window to interrupt it."
+	},
+	"relay_marshal": {
+		"portrait": "relay_marshal",
+		"hint": "When Linked Charge starts, use Pull to separate the Marshal from its Guard. Then land Bash with your other hero before the charge finishes. Pushes can also separate the pair, and if the Guard falls, any hero can interrupt with a push."
 	}
 }
 const MAP_ART := {

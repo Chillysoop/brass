@@ -25,6 +25,11 @@ func _initialize() -> void:
 		_check_map(crown, 1, "relay_captain")
 		check(crown == run._make_map(seed_value, "easy", "crown"), "Crown Relay maps must be deterministic.")
 		_check_crown_nodes(crown)
+		var crown_medium := run._make_map(seed_value, "medium", "crown")
+		_check_map(crown_medium, 2, "relay_marshal")
+		check(crown_medium.slice(0, 7) == _with_gate_link(crown, crown_medium[7][0].id),
+			"Crown Medium must keep the first leg and connect the Captain to the second leg.")
+		_check_crown_medium_nodes(crown_medium)
 	check(run._make_map(1) != run._make_map(2), "Distinct seeds should vary routes.")
 
 	var path := "user://frontier-model-test-%d.json" % Time.get_ticks_usec()
@@ -88,6 +93,7 @@ func _initialize() -> void:
 	_check_hard_and_glass(path)
 	_check_glass_hard(path)
 	_check_crown_easy(path)
+	_check_crown_medium(path)
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
@@ -153,6 +159,19 @@ func _check_crown_nodes(layers: Array) -> void:
 			check(node.label in FrontierRun.CROWN_NODE_LABELS[node.type], "Crown Relay must use distinct route names.")
 			if node.type == "event":
 				check(node.label not in events, "Crown events must not repeat on one route.")
+				events.append(node.label)
+
+
+func _check_crown_medium_nodes(layers: Array) -> void:
+	check(layers[7][0].label == "High Relay Gate", "Crown Medium must open leg two at High Relay Gate.")
+	var events: Array[String] = []
+	for row in range(1, 13):
+		for node: Dictionary in layers[row]:
+			if row > 7:
+				check(node.label in FrontierRun.CROWN_HIGH_RELAY_NODE_LABELS[node.type],
+					"Crown Medium leg two must use its own route names.")
+			if node.type == "event":
+				check(node.label not in events, "Crown Medium events must not repeat across its two legs.")
 				events.append(node.label)
 
 
@@ -330,6 +349,7 @@ func _check_glass_hard(path: String) -> void:
 func _check_crown_easy(path: String) -> void:
 	var run := FrontierRun.new()
 	check(not run.can_start("easy", "crown"), "Crown Easy must require a Glass Medium clear.")
+	check(not run.can_start("medium", "crown"), "Crown Medium must require a Crown Easy clear.")
 	check(run.load_save(path), "Load a profile that cleared Glass Medium.")
 	run.abandon_run()
 	check(run.can_start("easy", "crown") and run.start_run(983, "easy", "crown"), "The Prism Warden clear must open Crown Easy.")
@@ -345,8 +365,8 @@ func _check_crown_easy(path: String) -> void:
 	check(restored.is_final_boss() and restored.encounter().boss_id == "relay_captain", "The Relay Captain must finish Crown Easy.")
 	var marks: int = restored.profile.marks
 	check(restored.finish_combat(true, [71]), "Resolve the Crown boss.")
-	check(restored.profile.crown_medium_unlocked and not restored.can_start("medium", "crown") and restored.profile.marks == marks + 19,
-		"The first Crown clear must bank its boss payout and record the future Medium unlock.")
+	check(restored.profile.crown_medium_unlocked and restored.can_start("medium", "crown") and restored.profile.marks == marks + 19,
+		"The first Crown clear must bank its boss payout and unlock Medium.")
 	check(restored.data.offers.size() == 3, "Crown's final reward must offer three choices.")
 	for id: String in restored.data.offers:
 		check(ArenaSim.TILES[id].rarity == "legendary", "Crown's final reward must be Legendary.")
@@ -371,6 +391,53 @@ func _check_crown_easy(path: String) -> void:
 	marks = restored.profile.marks
 	check(restored.finish_combat(true, [71]) and restored.profile.marks == marks + 14,
 		"A repeat Crown clear must award the repeat payout.")
+
+
+func _check_crown_medium(path: String) -> void:
+	var run := FrontierRun.new()
+	check(run.load_save(path), "Crown Medium must read its unlock from a saved profile.")
+	run.abandon_run()
+	check(run.start_run(983, "medium", "crown"), "The Captain's Easy clear must open Crown Medium.")
+	run.choose_hero(run.data.offers[0])
+	run.choose_relic("pocket_bell")
+	run.choose_starter("shot")
+	_reach_boss(run)
+	check(run.encounter().boss_id == "relay_captain" and run.encounter().segment == 1 and not run.is_final_boss(),
+		"The Relay Captain must end leg one without ending Crown Medium.")
+	var marks: int = run.profile.marks
+	check(run.finish_combat(true, [61]) and run.profile.marks == marks + 4,
+		"The Captain's intermediate defeat must pay only the boss payout.")
+	check(not run.profile.crown_hard_unlocked and not run.profile.moonwreck_easy_unlocked,
+		"The Captain must not open the Medium clear gates.")
+	check(run.reward(run.data.offers[0]) and run.data.phase == "recruit" and run.data.hero not in run.data.offers,
+		"Taking the Captain's Legendary must offer a distinct second hero.")
+	check(run.choose_recruit(run.data.offers[0]), "Choose a Crown recruit.")
+	var restored := FrontierRun.new()
+	check(restored.load_save(path) and restored.data.phase == "recruit_starter" and restored.choose_recruit_starter("slam"),
+		"The Crown Medium recruit's starter draft must resume from disk.")
+	check(restored.data.heroes.size() == 2 and restored.loadout.lanes.size() == 2 and restored.data.hp == 61,
+		"Crown Medium recruitment must carry HP and add a second hero and timeline.")
+	check(restored.available_nodes()[0].label == "High Relay Gate", "Recruiting a second hero must open High Relay Gate.")
+	_reach_boss(restored)
+	check(restored.is_final_boss() and restored.encounter().boss_id == "relay_marshal" and restored.encounter().heroes.size() == 2,
+		"The Relay Marshal must end the two-hero second leg.")
+	marks = restored.profile.marks
+	check(restored.finish_combat(true, [42, 71]) and restored.profile.marks == marks + 34,
+		"The first Marshal clear must grant the first-clear payout.")
+	check(restored.profile.crown_hard_unlocked and restored.profile.moonwreck_easy_unlocked,
+		"The Marshal must unlock Crown Hard and Moonwreck Docks Easy.")
+	check(not restored.can_start("hard", "crown") and not restored.can_start("easy", "moonwreck"),
+		"Future routes must remain unavailable in this build.")
+	check(not restored.finish_combat(true, [42, 71]) and restored.reward(restored.data.offers[0]) and restored.finish_run(),
+		"The final payout must be recorded once and the trophy must lead to a recap.")
+	check(restored.start_run(983, "medium", "crown"), "Crown Medium must be replayable.")
+	restored.choose_hero(restored.data.offers[0])
+	restored.choose_relic("pocket_bell")
+	restored.choose_starter("shot")
+	restored.data.node = restored.data.layers.back()[0]
+	marks = restored.profile.marks
+	check(restored.finish_combat(true, [71]) and restored.profile.marks == marks + 24,
+		"A repeated Marshal clear must omit the first-clear bonus.")
 
 
 func _reach_boss(run: RefCounted) -> void:

@@ -283,12 +283,14 @@ func _region_status(id: String, available: bool) -> String:
 
 
 func _region_hint(id: String) -> String:
+	if id == "moonwreck" and _run.profile.get("moonwreck_easy_unlocked", false):
+		return "Easy unlocked. Moonwreck Docks arrives in a future build."
 	return REGIONS[id].unlock
 
 
 func _difficulty_status(difficulty: String, available: bool) -> String:
 	if not available:
-		if _location == "crown" and difficulty != "easy":
+		if _location == "crown" and difficulty == "hard":
 			return "Coming soon"
 		return "Locked"
 	var profile_key := ""
@@ -298,7 +300,7 @@ func _difficulty_status(difficulty: String, available: bool) -> String:
 		"glass":
 			profile_key = {"easy": "glass_medium_unlocked", "medium": "glass_hard_unlocked", "hard": "glass_hard_cleared"}[difficulty]
 		"crown":
-			profile_key = "crown_medium_unlocked" if difficulty == "easy" else ""
+			profile_key = {"easy": "crown_medium_unlocked", "medium": "crown_hard_unlocked"}.get(difficulty, "")
 	if _run.profile.get(profile_key, false):
 		return "Mastered" if _location == "glass" and difficulty == "hard" else "Cleared"
 	return "Available"
@@ -307,8 +309,8 @@ func _difficulty_status(difficulty: String, available: bool) -> String:
 func _difficulty_hint(difficulty: String) -> String:
 	if difficulty == "easy":
 		return "Begin a solo expedition."
-	if _location == "crown" and difficulty == "medium" and _run.profile.get("crown_medium_unlocked", false):
-		return "Unlock earned by defeating the Relay Captain. Available in a future build."
+	if _location == "crown" and difficulty == "hard" and _run.profile.get("crown_hard_unlocked", false):
+		return "Unlock earned by defeating the Relay Marshal. Available in a future build."
 	if difficulty == "medium":
 		return "Clear %s Easy to unlock." % REGIONS[_location].name
 	return "Clear %s Medium to unlock." % REGIONS[_location].name

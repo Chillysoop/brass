@@ -37,6 +37,7 @@ func _initialize() -> void:
 	_check_prism_ward()
 	_check_tempered_colossus()
 	_check_crown_coordination()
+	_check_crown_marshal_combo()
 	_check_regent_seals()
 	for failure in failures:
 		printerr(failure)
@@ -203,6 +204,53 @@ func _check_crown_coordination() -> void:
 		sim.step()
 	_check(_has_event(sim, "intent", "relay_discharge") and not _has_event(sim, "interrupt", "relay_interrupted"),
 		"Damage without displacement does not stop the charged strike")
+
+
+func _check_crown_marshal_combo() -> void:
+	var options := {"location": "crown", "difficulty": "medium", "segment": 2, "encounter": "boss",
+		"boss_id": "relay_marshal", "seed": 42, "heroes": [{"hero": "hexwright"}, {"hero": "warden"}]}
+	var sim := ArenaSim.new()
+	sim.start([[{"id": "pull", "start": 0}], [{"id": "bash", "start": 3, "target": "farthest"}]], "solo", options)
+	var marshal: Dictionary = sim.units[2]
+	var guard: Dictionary = sim.units[3]
+	_check(marshal.get("sprite") == "relay_marshal" and marshal.relay_shield_source == guard.id,
+		"Crown Medium's Marshal starts with a live Relay Guard link")
+	for frame in range(22):
+		sim.step()
+	_check(marshal.relay_charge_active and marshal.relay_combo_stage == 1 and marshal.intent_tick == 189,
+		"Linked Charge warns from beat 2 through beat 9 while shielded")
+	for frame in range(41):
+		sim.step()
+	_check(marshal.relay_combo_stage == 2 and marshal.relay_breaker == "hero_1",
+		"First hero's common Pull separates the link")
+	for frame in range(42):
+		sim.step()
+	var interrupted: Array = sim.trace.filter(func(event: Dictionary) -> bool: return event.tile == "relay_marshal_interrupted")
+	_check(interrupted.size() == 1 and interrupted[0].amount == 1 and interrupted[0].actor == "hero_2",
+		"Different hero's common Bash completes the linked interrupt")
+	_check(not marshal.relay_charge_active and marshal.intent_tick == 0,
+		"Interrupt cancels Linked Charge and clears the countdown")
+
+	sim.start([[], []], "solo", options)
+	marshal = sim.units[2]
+	guard = sim.units[3]
+	for frame in range(22):
+		sim.step()
+	sim._displace("pull", sim.units[0], marshal, "pull", Vector2.LEFT, 950.0)
+	sim._displace("push", sim.units[0], marshal, "bash", Vector2.RIGHT, 600.0)
+	_check(marshal.relay_charge_active and marshal.relay_combo_stage == 2,
+		"Same hero cannot both separate the link and interrupt")
+	guard.pos = marshal.pos + Vector2(78.0, 0.0)
+	guard.relay_relink_tick = sim.tick
+	sim._refresh_relay_links()
+	_check(marshal.relay_combo_stage == 1 and marshal.relay_breaker == "",
+		"Reforming the relay shield closes the Bash window")
+	sim._damage(sim.units[0], guard, 1000, "shot")
+	_check(marshal.relay_combo_stage == 3, "Defeating the Guard leaves an unshielded interrupt path")
+	sim._displace("push", sim.units[0], marshal, "bash", Vector2.RIGHT, 600.0)
+	interrupted = sim.trace.filter(func(event: Dictionary) -> bool: return event.tile == "relay_marshal_interrupted")
+	_check(interrupted.size() == 1 and interrupted[0].amount == 0 and not marshal.relay_charge_active,
+		"Any hero can Bash an unshielded Marshal without counting a linked combo")
 
 
 func _fight(hero: String, encounter: String, hp: int, tile_ids: Array, relics: Array) -> RefCounted:

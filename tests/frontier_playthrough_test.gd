@@ -93,6 +93,8 @@ func _run() -> void:
 	_check(game.run.finish_run(), "Close the Glass Foundry Medium victory recap.")
 	var crown_fights := _new_route_playthrough(game, "easy", "crown")
 	_check(game.run.finish_run(), "Close the Crown Relay victory recap.")
+	var crown_medium_fights := _new_route_playthrough(game, "medium", "crown")
+	_check(game.run.finish_run(), "Close the Crown Relay Medium victory recap.")
 	var glass_hard_fights := _new_route_playthrough(game, "hard", "glass")
 	_check(game.run.finish_run(), "Close the Glass Foundry Hard victory recap.")
 	var hard_fights := _new_route_playthrough(game, "hard", "brass")
@@ -102,8 +104,8 @@ func _run() -> void:
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Playthroughs passed: Brass Easy %d fights (%d HP), Medium %d (%d HP combined), Brass Hard %d, Glass Easy %d, Glass Medium %d, Glass Hard %d, Crown Easy %d." % [
-			battles, easy_hp, medium.fights, medium.hp, hard_fights, glass_fights, glass_medium_fights, glass_hard_fights, crown_fights])
+		print("Playthroughs passed: Brass Easy %d fights (%d HP), Medium %d (%d HP combined), Brass Hard %d, Glass Easy %d, Glass Medium %d, Glass Hard %d, Crown Easy %d, Crown Medium %d." % [
+			battles, easy_hp, medium.fights, medium.hp, hard_fights, glass_fights, glass_medium_fights, glass_hard_fights, crown_fights, crown_medium_fights])
 	game.queue_free()
 	await process_frame
 	quit(0 if failures.is_empty() else 1)
@@ -236,6 +238,7 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 	var fights := 0
 	var boss_party_sizes: Array[int] = []
 	var glass_hard := location == "glass" and difficulty == "hard"
+	var crown_medium := location == "crown" and difficulty == "medium"
 	var recruit_checkpoints := 0
 	for step in range(100):
 		match run.data.phase:
@@ -252,20 +255,23 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 				run.choose_starter("bash")
 			"recruit_starter":
 				run.choose_starter("shot")
-				if glass_hard:
+				if glass_hard or crown_medium:
 					var saved := FrontierRun.new()
 					_check(saved.load_save(save_path) and saved.data.segment == run.data.segment
 						and saved.data.heroes == run.data.heroes and saved.loadout.lanes == run.loadout.lanes,
-						"Glass Hard must save the party and timelines after each recruitment.")
+						"The expedition must save the party and timelines after each recruitment.")
 					recruit_checkpoints += 1
 			"combat":
 				game.run_show_arena()
 				_equip_stored_rewards(game)
 				var final: bool = run.is_final_boss()
 				if final and location == "crown":
+					if crown_medium:
+						_arrange_crown_combo(game)
 					var saved := FrontierRun.new()
-					_check(saved.load_save(save_path) and saved.encounter().get("boss_id") == "relay_captain"
-						and saved.loadout.lanes == run.loadout.lanes, "Crown Easy must resume its saved boss setup.")
+					var boss_id := "relay_marshal" if crown_medium else "relay_captain"
+					_check(saved.load_save(save_path) and saved.encounter().get("boss_id") == boss_id
+						and saved.loadout.lanes == run.loadout.lanes, "Crown Relay must resume its saved boss setup.")
 				if run.data.node.type == "boss":
 					boss_party_sizes.append(game.lanes.size())
 				game._action()
@@ -295,8 +301,10 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 						contributors[event.actor] = true
 					_check(contributors.size() == 3, "A different hero must contribute each step of the combo.")
 				if final and location == "crown":
-					_check(game.sim.trace.any(func(event: Dictionary): return event.tile == "relay_interrupted"),
-						"The expedition loadout should interrupt the Relay Captain.")
+					var interruption := "relay_marshal_interrupted" if crown_medium else "relay_interrupted"
+					_check(game.sim.trace.any(func(event: Dictionary):
+						return event.tile == interruption and (not crown_medium or event.amount == 1)),
+						"The expedition loadout should interrupt the final Crown Relay boss.")
 				game._action()
 			"reward":
 				var chosen: String = run.data.offers[0]
@@ -304,6 +312,8 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 					if preferred in run.data.offers:
 						chosen = preferred
 						break
+				if crown_medium and run.data.node.row == 0 and "pull" in run.data.offers:
+					chosen = "pull"
 				if not game.run_claim_reward(chosen):
 					run.reward("skip")
 			"map":
@@ -343,7 +353,14 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 					"Crown Easy should save its victory and the Crown Medium unlock.")
 			else:
 				_check(run.profile.glass_medium_unlocked, "Glass Easy should unlock Glass Medium.")
-		"medium": _check(run.profile.glass_hard_unlocked and run.profile.crown_easy_unlocked, "Glass Medium should unlock Glass Hard and Crown Easy.")
+		"medium":
+			if crown_medium:
+				var saved := FrontierRun.new()
+				_check(recruit_checkpoints == 1 and saved.load_save(save_path) and saved.profile.crown_hard_unlocked
+					and saved.profile.moonwreck_easy_unlocked and saved.data.get("result") == "victory",
+					"Crown Medium should save its victory and both unlocks.")
+			else:
+				_check(run.profile.glass_hard_unlocked and run.profile.crown_easy_unlocked, "Glass Medium should unlock Glass Hard and Crown Easy.")
 		"hard":
 			if glass_hard:
 				var saved := FrontierRun.new()
@@ -352,6 +369,39 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 			else:
 				_check(run.profile.brass_hard_cleared, "Brass Hard should record its clear.")
 	return fights
+
+func _arrange_crown_combo(game: Control) -> void:
+	var pull: Dictionary = {}
+	var bash: Dictionary = {}
+	for item: Dictionary in game.lanes[0]:
+		if item.id == "pull":
+			pull = item
+		elif item.id == "bash" and bash.is_empty():
+			bash = item
+	_check(not pull.is_empty() and not bash.is_empty(), "Crown Medium needs its starter Bash and earned Pull.")
+	if pull.is_empty() or bash.is_empty():
+		return
+	game.lanes[0].erase(pull)
+	game.lanes[0].erase(bash)
+	var remaining: Array = game.lanes[0] + game.lanes[1]
+	for row: Array in game.storage_rows:
+		remaining.append_array(row)
+		row.clear()
+	pull.start = 0
+	bash.start = 2
+	bash.target = "highest_hp"
+	game.lanes[0].assign([pull])
+	game.lanes[1].assign([bash])
+	remaining.sort_custom(func(left: Dictionary, right: Dictionary):
+		return ArenaSim.TILES[left.id].damage > ArenaSim.TILES[right.id].damage)
+	for item: Dictionary in remaining:
+		var destination: Dictionary = game._loot_destination(item.id)
+		_check(not destination.is_empty(), "The Crown Medium test should retain all earned tiles.")
+		if not destination.is_empty():
+			item.start = destination.start
+			destination.items.append(item)
+	game._save_loadout()
+
 
 func _equip_stored_rewards(game: Control) -> void:
 	for row in range(game.storage_rows.size()):
