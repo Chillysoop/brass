@@ -27,9 +27,9 @@ const REGIONS := {
 		"unlock": "Clear Brass Frontier Medium to unlock.", "implemented": true
 	},
 	"crown": {
-		"name": "Crown Relay", "art": "region-crown.webp", "fallback": "",
+		"name": "Crown Relay", "art": "region-crown.webp", "fallback": "crown-map.webp",
 		"description": "Storm a skyborne relay guarded by the Crown's signal keepers.",
-		"unlock": "Clear Glass Foundry Medium to unlock.", "implemented": false
+		"unlock": "Clear Glass Foundry Medium to unlock.", "implemented": true
 	},
 	"moonwreck": {
 		"name": "Moonwreck Docks", "art": "region-moonwreck.webp", "fallback": "",
@@ -283,13 +283,13 @@ func _region_status(id: String, available: bool) -> String:
 
 
 func _region_hint(id: String) -> String:
-	if id == "crown" and _run.profile.get("crown_easy_unlocked", false):
-		return "Unlocked. This region arrives in a future update."
 	return REGIONS[id].unlock
 
 
 func _difficulty_status(difficulty: String, available: bool) -> String:
 	if not available:
+		if _location == "crown" and difficulty != "easy":
+			return "Coming soon"
 		return "Locked"
 	var profile_key := ""
 	match _location:
@@ -297,6 +297,8 @@ func _difficulty_status(difficulty: String, available: bool) -> String:
 			profile_key = {"easy": "medium_unlocked", "medium": "hard_unlocked", "hard": "brass_hard_cleared"}[difficulty]
 		"glass":
 			profile_key = {"easy": "glass_medium_unlocked", "medium": "glass_hard_unlocked", "hard": "glass_hard_cleared"}[difficulty]
+		"crown":
+			profile_key = "crown_medium_unlocked" if difficulty == "easy" else ""
 	if _run.profile.get(profile_key, false):
 		return "Mastered" if _location == "glass" and difficulty == "hard" else "Cleared"
 	return "Available"
@@ -305,6 +307,8 @@ func _difficulty_status(difficulty: String, available: bool) -> String:
 func _difficulty_hint(difficulty: String) -> String:
 	if difficulty == "easy":
 		return "Begin a solo expedition."
+	if _location == "crown" and difficulty == "medium" and _run.profile.get("crown_medium_unlocked", false):
+		return "Unlock earned by defeating the Relay Captain. Available in a future build."
 	if difficulty == "medium":
 		return "Clear %s Easy to unlock." % REGIONS[_location].name
 	return "Clear %s Medium to unlock." % REGIONS[_location].name

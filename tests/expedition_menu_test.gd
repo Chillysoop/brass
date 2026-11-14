@@ -29,6 +29,7 @@ func _run() -> void:
 	if menu != null and chart != null:
 		await _check_navigation()
 		await _check_chart()
+		await _check_crown_entry()
 		await _check_glass_hard_entry()
 	game.queue_free()
 	await process_frame
@@ -47,7 +48,7 @@ func _check_navigation() -> void:
 	await _press_named(menu, "NewExpedition")
 	_check(game.run.data.is_empty(), "Starting from the title must open region selection before creating a run.")
 	_check_disabled(menu, "Region_glass", "Locked")
-	_check_disabled(menu, "Region_crown", "Coming soon")
+	_check_disabled(menu, "Region_crown", "Locked")
 	_check_disabled(menu, "Region_moonwreck", "Coming soon")
 	await _press_named(menu, "Back")
 	await _press_named(menu, "NewExpedition")
@@ -119,6 +120,19 @@ func _check_chart() -> void:
 		"Chart purchases persist across reload.")
 	await _press_named(chart, "ChartBack")
 	_check(menu.is_visible_in_tree() and not chart.is_visible_in_tree(), "Chart Back returns to the title.")
+
+
+func _check_crown_entry() -> void:
+	game.run.profile.crown_easy_unlocked = true
+	game.run_menu()
+	await _press_named(menu, "NewExpedition")
+	await _press_named(menu, "Region_crown")
+	_check_disabled(menu, "Difficulty_medium", "Coming soon")
+	_check_disabled(menu, "Difficulty_hard", "Coming soon")
+	await _press_named(menu, "Difficulty_easy")
+	_check(game.run.data.get("phase") == "hero" and game.run.data.get("location") == "crown"
+		and game.run.data.get("difficulty") == "easy", "Crown Easy should start from the expedition menu after its unlock.")
+	_check(game.run.abandon_run(), "Close the test Crown expedition.")
 
 
 func _check_glass_hard_entry() -> void:

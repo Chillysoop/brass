@@ -36,6 +36,7 @@ func _initialize() -> void:
 	_check_glass_targeting()
 	_check_prism_ward()
 	_check_tempered_colossus()
+	_check_crown_coordination()
 	_check_regent_seals()
 	for failure in failures:
 		printerr(failure)
@@ -154,6 +155,54 @@ func _check_tempered_colossus() -> void:
 	_check(boss.colossus_stage == 0 and boss.colossus_first == "" and boss.colossus_second == "",
 		"A missed Forge Sweep window resets progress")
 	_check(_has_event(sim, "intent", "colossus_forge_sweep"), "Incomplete sequence releases the attack")
+
+
+func _check_crown_coordination() -> void:
+	var options := {"location": "crown", "difficulty": "easy", "segment": 1, "encounter": "battle",
+		"seed": 42, "heroes": [{"hero": "warden"}]}
+	var sim := ArenaSim.new()
+	sim.start([[]], "solo", options)
+	var ally: Dictionary = sim.units[1]
+	var guard: Dictionary = sim.units[2]
+	_check(guard.get("sprite") == "relay_guard" and guard.relay_link_target == ally.id
+		and ally.relay_shield_source == guard.id, "A Relay Guard initially links to its nearby partner")
+	var before: int = ally.hp
+	sim._damage(sim.units[0], ally, 20, "shot")
+	_check(before - ally.hp == 11 and _has_event(sim, "guard", "relay_absorb"),
+		"A relay link protects against 45% of tile damage")
+	var away: Vector2 = (ally.pos - guard.pos).normalized()
+	sim._displace("pull", sim.units[0], ally, "pull", away, 850.0)
+	_check(guard.relay_link_target == "" and ally.relay_shield_source == ""
+		and _has_event(sim, "interrupt", "relay_link_broken"), "Pull can separate and break a relay link")
+	var unshielded_hp: int = ally.hp
+	sim._damage(sim.units[0], ally, 20, "shot")
+	_check(unshielded_hp - ally.hp == 20, "The separated ally takes full tile damage")
+
+	sim.start([[]], "solo", options)
+	ally = sim.units[1]
+	guard = sim.units[2]
+	sim._damage(sim.units[0], guard, 1000, "shot")
+	_check(guard.relay_link_target == "" and ally.relay_shield_source == "",
+		"Defeating the Guard immediately drops its partner's protection")
+
+	options.encounter = "boss"
+	options.boss_id = "relay_captain"
+	sim.start([[{"id": "bash", "start": 1}]], "solo", options)
+	var captain: Dictionary = sim.units[1]
+	for frame in range(ArenaSim.TICKS_PER_BEAT + 1):
+		sim.step()
+	_check(captain.get("sprite") == "relay_captain" and captain.relay_charge_active and captain.intent_tick == 147,
+		"The Relay Captain opens a predictable beat-2 charge")
+	for frame in range(140):
+		sim.step()
+	_check(not captain.relay_charge_active and captain.intent_tick == 0 and _has_event(sim, "interrupt", "relay_interrupted"),
+		"Common Bash on beat 3 interrupts the Relay Charge")
+	_check(not _has_event(sim, "intent", "relay_discharge"), "An interrupted charge does not fire")
+	sim.start([[{"id": "shot", "start": 1}]], "solo", options)
+	for frame in range(147):
+		sim.step()
+	_check(_has_event(sim, "intent", "relay_discharge") and not _has_event(sim, "interrupt", "relay_interrupted"),
+		"Damage without displacement does not stop the charged strike")
 
 
 func _fight(hero: String, encounter: String, hp: int, tile_ids: Array, relics: Array) -> RefCounted:

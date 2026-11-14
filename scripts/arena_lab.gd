@@ -55,6 +55,7 @@ var action: Button
 var status: Label
 var log_text: Label
 var colossus_status: Label
+var relay_status: Label
 var setup_hint: Label
 var playheads: Array[ColorRect] = []
 var log_lines: Array[String] = []
@@ -173,6 +174,11 @@ func _build() -> void:
 	colossus_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	colossus_status.hide()
 	stack.add_child(colossus_status)
+	relay_status = _label("", 15, TEAL)
+	relay_status.name = "RelayStatus"
+	relay_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	relay_status.hide()
+	stack.add_child(relay_status)
 	lane_stack = VBoxContainer.new()
 	lane_stack.add_theme_constant_override("separation", 5)
 	stack.add_child(lane_stack)
@@ -318,6 +324,7 @@ func _update_controls() -> void:
 	else:
 		log_text.tooltip_text = ""
 	_update_colossus_status()
+	_update_relay_status()
 	for head in playheads:
 		var board := head.get_parent() as Control
 		head.visible = state != "setup"
@@ -360,6 +367,42 @@ func _update_colossus_status() -> void:
 		colossus_status.tooltip_text = instruction
 		colossus_status.add_theme_color_override("font_color", color)
 		return
+
+func _update_relay_status() -> void:
+	relay_status.hide()
+	if not campaign or not encounter_setup or run.data.get("location") != "crown":
+		return
+	var captain: Dictionary = {}
+	var guard_alive := false
+	var protected := PackedStringArray()
+	for unit: Dictionary in sim.units:
+		if unit.hp <= 0:
+			continue
+		if unit.get("sprite") == "relay_captain":
+			captain = unit
+		if unit.has("relay_link_target"):
+			guard_alive = true
+		if not str(unit.get("relay_shield_source", "")).is_empty():
+			protected.append(unit.name)
+	if captain.is_empty() and not guard_alive:
+		return
+	var cues := PackedStringArray()
+	var color := TEAL
+	if captain.get("relay_charge_active", false):
+		var remaining := maxi(0, int(captain.get("intent_tick", 0)) - sim.tick)
+		cues.append("Relay Charge · Push or pull the Captain · %.1f beats left" % (float(remaining) / ArenaSim.TICKS_PER_BEAT))
+		color = RUST if remaining <= 2 * ArenaSim.TICKS_PER_BEAT else GOLD
+	elif not captain.is_empty():
+		cues.append("Relay Charge · Interrupt with a push or pull when it begins.")
+	if not protected.is_empty():
+		cues.append("Shielded: " + ", ".join(protected))
+	elif guard_alive:
+		cues.append("Relay Guard · Links a nearby ally")
+	var instruction := "  /  ".join(cues)
+	relay_status.text = instruction
+	relay_status.tooltip_text = instruction
+	relay_status.add_theme_color_override("font_color", color)
+	relay_status.show()
 
 func _party_has_tiles() -> bool:
 	for index in range(lanes.size()):

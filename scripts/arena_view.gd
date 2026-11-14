@@ -9,6 +9,8 @@ const ENEMY_COLOR := Color("#df8262")
 const GOLD := Color("#f3cb80")
 const WHITE := Color("#fff0d2")
 const TELEPORT_COLOR := Color("#b2afd9")
+const RELAY_SHIELD_COLOR := Color("#91e2f4")
+const ARENA_TEXTURES := {"glass": "glass_arena", "crown": "crown_arena"}
 const SPRITE_PATHS := {
 	"arena": "res://assets/arena.webp",
 	"warden": "res://assets/warden.png",
@@ -22,7 +24,10 @@ const SPRITE_PATHS := {
 	"glass_twin": "res://assets/glass_twin.png",
 	"prism_warden": "res://assets/prism_warden.png",
 	"tempered_colossus": "res://assets/tempered_colossus.png",
+	"relay_guard": "res://assets/relay_guard.png",
+	"relay_captain": "res://assets/relay_captain.png",
 	"glass_arena": "res://assets/glass-arena.webp",
+	"crown_arena": "res://assets/crown-arena.webp",
 }
 const EFFECT_LENGTHS := {
 	"pull": 0.42,
@@ -32,6 +37,8 @@ const EFFECT_LENGTHS := {
 	"guard": 0.36,
 	"miss": 0.42,
 	"defeat_unit": 0.46,
+	"relay_interrupted": 0.65,
+	"relay_link_broken": 0.42,
 }
 
 var units: Array = []
@@ -68,12 +75,14 @@ func reset_view(units_data: Array) -> void:
 func present(units_data: Array, events: Array) -> void:
 	units = units_data
 	for event in events:
-		var kind: String = event.get("kind", "")
+		var tile: String = event.get("tile", "")
+		var kind: String = tile if tile in ["relay_interrupted", "relay_link_broken"] else event.get("kind", "")
 		if not EFFECT_LENGTHS.has(kind):
 			continue
 		if kind == "teleport":
 			_positions[event.actor] = event.to
 		var effect: Dictionary = event.duplicate()
+		effect["kind"] = kind
 		effect["age"] = 0.0
 		_effects.append(effect)
 	queue_redraw()
@@ -110,9 +119,12 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), INK)
 	var board_size := Vector2(minf(size.x - 4.0, (size.y - 4.0) * 2.36), size.y - 4.0)
 	var board := Rect2((size - board_size) * 0.5, board_size)
-	var field := Rect2(board.position + board.size * Vector2(0.10, 0.27), board.size * Vector2(0.80, 0.60))
+	var field_top := 0.40 if location == "crown" else 0.27
+	var field := Rect2(board.position + board.size * Vector2(0.10, field_top), board.size * Vector2(0.80, 0.87 - field_top))
 	var sprite_scale := minf(field.size.x / WORLD_SIZE.x, field.size.y / WORLD_SIZE.y)
 	_draw_arena(board)
+	if location == "crown":
+		_draw_relay_links(field)
 	_draw_intents(field)
 	for effect in _effects:
 		_draw_ground_effect(effect, field)
@@ -128,7 +140,7 @@ func _draw() -> void:
 
 
 func _draw_arena(board: Rect2) -> void:
-	var background: Texture2D = _textures.get("glass_arena", _textures.get("arena")) if location == "glass" else _textures.get("arena")
+	var background: Texture2D = _textures.get(ARENA_TEXTURES.get(location, "arena"), _textures.get("arena"))
 	if background:
 		draw_texture_rect(background, board, false)
 	else:
@@ -160,7 +172,7 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	var model_height := 132.0
 	if art_key == "tempered_colossus":
 		model_height = 218.0
-	elif art_key in ["marshal", "regent", "glass_twin", "prism_warden"]:
+	elif art_key in ["marshal", "regent", "glass_twin", "prism_warden", "relay_captain"]:
 		model_height = 191.0
 	elif art_key == "clockwork":
 		model_height = 154.0
@@ -222,6 +234,39 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		draw_arc(point, radius * 1.4, 0.0, TAU, 32, Color(ward_color, 0.8), 2.0, true)
 	if art_key == "tempered_colossus":
 		_draw_colossus_stage(unit, point, radius, bar)
+	if unit.get("relay_charge_active", false):
+		_draw_centered("RELAY CHARGE", bar.get_center() - Vector2(0.0, 9.0), 14, GOLD)
+		draw_arc(point, radius * 1.45, 0.0, TAU, 28, GOLD, 2.5, true)
+	if not str(unit.get("relay_shield_source", "")).is_empty():
+		var position := point - Vector2(0.0, art_height * 0.38)
+		draw_arc(position, art_height * 0.40, 0.0, TAU, 28, Color(RELAY_SHIELD_COLOR, 0.78), 2.0, true)
+		_draw_shield_mark(Vector2(bar.end.x + 9.0, bar.get_center().y), RELAY_SHIELD_COLOR)
+
+
+func _draw_shield_mark(center: Vector2, color: Color) -> void:
+	var points := PackedVector2Array([
+		center + Vector2(-4, -4), center + Vector2(4, -4), center + Vector2(4, 0),
+		center + Vector2(0, 5), center + Vector2(-4, 0), center + Vector2(-4, -4)
+	])
+	draw_colored_polygon(points, Color(INK, 0.9))
+	draw_polyline(points, color, 1.5, true)
+
+
+func _draw_relay_links(field: Rect2) -> void:
+	for guard: Dictionary in units:
+		var target_id: String = guard.get("relay_link_target", "")
+		if guard.hp <= 0 or target_id.is_empty():
+			continue
+		for ally: Dictionary in units:
+			if ally.id != target_id or ally.hp <= 0:
+				continue
+			var start := _project(_positions.get(guard.id, guard.pos), field)
+			var end := _project(_positions.get(ally.id, ally.pos), field)
+			var lift := Vector2(0.0, -11.0)
+			draw_line(start + lift, end + lift, Color(INK, 0.70), 6.0, true)
+			_draw_arrow(start + lift, end + lift, RELAY_SHIELD_COLOR)
+			draw_arc(end, 13.0, 0.0, TAU, 24, RELAY_SHIELD_COLOR, 2.0, true)
+			break
 
 
 func _draw_colossus_stage(unit: Dictionary, point: Vector2, radius: float, bar: Rect2) -> void:
@@ -257,7 +302,9 @@ func _draw_intents(field: Rect2) -> void:
 				continue
 			var end := _project(_positions.get(target.id, target.pos), field)
 			var warning := ENEMY_COLOR.darkened(0.34)
-			if target.id == secondary:
+			if unit.get("relay_charge_active", false):
+				warning = GOLD
+			elif target.id == secondary:
 				warning = TELEPORT_COLOR.darkened(0.21)
 			draw_dashed_line(start, end, Color(warning, 0.8), 2.0, 6.0)
 			draw_arc(end, 14.0 + sin(_animation_time * 22.0) * 2.0, 0.0, TAU, 24, warning, 2.0, true)
@@ -295,20 +342,25 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			draw_dashed_line(from_point, to_point, Color(TELEPORT_COLOR, opacity * 0.75), 2.0, 6.0)
 			draw_arc(from_point, 7.0 + progress * 18.0, 0.0, TAU, 24, Color(TELEPORT_COLOR, opacity), 2.0, true)
 			draw_arc(to_point, 8.0 + opacity * 14.0, 0.0, TAU, 24, Color(TELEPORT_COLOR, opacity), 2.0, true)
-		"guard", "defeat_unit":
+		"guard", "defeat_unit", "relay_interrupted", "relay_link_broken":
 			var color := GOLD if kind == "guard" else ENEMY_COLOR
+			if kind in ["relay_interrupted", "relay_link_broken"]:
+				color = RELAY_SHIELD_COLOR
 			draw_arc(to_point, 7.0 + progress * 24.0, 0.0, TAU, 24, Color(color, opacity), 2.0, true)
 
 
 func _draw_feedback(effect: Dictionary, field: Rect2) -> void:
 	var kind: String = effect.kind
-	if kind != "hit" and kind != "miss":
+	if kind not in ["hit", "miss", "relay_interrupted", "relay_link_broken"]:
 		return
 	var point := _project(effect.to, field)
 	var progress := float(effect.age) / float(EFFECT_LENGTHS[kind])
 	var opacity := 1.0 - progress
 	var label := "MISS"
 	var color := WHITE
+	if kind == "relay_interrupted" or kind == "relay_link_broken":
+		label = "INTERRUPTED" if kind == "relay_interrupted" else "LINK BROKEN"
+		color = RELAY_SHIELD_COLOR
 	if kind == "hit":
 		color = GOLD if String(effect.actor).begins_with("hero") else ENEMY_COLOR.lightened(0.19)
 		label = str(effect.amount)

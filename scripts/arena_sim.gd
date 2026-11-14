@@ -10,6 +10,9 @@ const IMPULSE_CAP := 1000.0
 const IMPULSE_DECAY := 1850.0
 const COLOSSUS_SWEEP_BEATS := 9
 const COLOSSUS_EXTRA_REACH := 110.0
+const RELAY_LINK_REACH := 115.0
+const RELAY_BREAK_REACH := 162.0
+const RELAY_CHARGE_BEATS := 6
 const TARGET_RULES := ["nearest", "farthest", "lowest_hp", "highest_hp"]
 const RANGED_TILES := ["pull", "gravity_hook", "shot", "hook_bash", "graviton", "event_horizon", "meteor_seal"]
 const BASH_TIERS := [
@@ -67,7 +70,18 @@ const CAMPAIGN_ENEMIES := {
 		"target": "ranged_damage", "push": 320.0, "displacement": 0.82},
 	"tempered_colossus": {"name": "The Tempered Colossus", "art": "tempered_colossus", "hp": 1220, "radius": 52.0, "speed": 86.0,
 		"spacing": 130.0, "reach": 232.0, "damage": 39, "first": 116, "cooldown": 117, "windup": 48,
-		"target": "ranged_damage", "push": 335.0, "displacement": 0.66}
+		"target": "ranged_damage", "push": 335.0, "displacement": 0.66},
+	"relay_recruit": {"name": "Relay Initiate", "art": "scout", "hp": 34, "radius": 21.0, "speed": 91.0,
+		"spacing": 83.0, "reach": 128.0, "damage": 4, "first": 118, "cooldown": 174, "windup": 30},
+	"relay_runner": {"name": "Relay Runner", "art": "scout", "hp": 59, "radius": 19.0, "speed": 101.0,
+		"spacing": 88.0, "reach": 149.0, "damage": 8, "first": 124, "cooldown": 155, "windup": 27},
+	"relay_guard": {"name": "Relay Guard", "art": "relay_guard", "hp": 62, "radius": 25.0, "speed": 80.0,
+		"spacing": 105.0, "reach": 145.0, "damage": 4, "first": 150, "cooldown": 186, "windup": 33, "support": true},
+	"relay_lancer": {"name": "Crown Lancer", "art": "clockwork", "hp": 130, "radius": 31.0, "speed": 90.0,
+		"spacing": 105.0, "reach": 171.0, "damage": 11, "first": 120, "cooldown": 151, "windup": 33, "push": 215.0},
+	"relay_captain": {"name": "The Relay Captain", "art": "relay_captain", "hp": 380, "radius": 42.0, "speed": 91.0,
+		"spacing": 108.0, "reach": 190.0, "damage": 14, "first": 121, "cooldown": 128, "windup": 33, "push": 270.0,
+		"displacement": 0.58}
 }
 
 const TILES := {
@@ -238,6 +252,9 @@ func _start_campaign(options: Dictionary) -> void:
 	if options.get("location", "brass") == "glass":
 		_start_glass_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""))
 		return
+	if options.get("location", "brass") == "crown":
+		_start_crown_encounter(encounter, rng, y)
+		return
 	var health_scale: float = {"medium": [1.12, 2.15, 2.15], "hard": [1.21, 2.35, 3.0]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	var damage_scale: float = {"medium": [1.07, 1.58, 1.58], "hard": [1.10, 1.64, 1.80]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	match encounter:
@@ -324,11 +341,32 @@ func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_sca
 		enemy["colossus_first"] = ""
 		enemy["colossus_second"] = ""
 		enemy["colossus_shattered"] = false
+	elif kind == "relay_guard":
+		enemy["relay_link_target"] = ""
+	elif kind == "relay_captain":
+		enemy["relay_charge_active"] = false
 	if kind == "regent":
 		enemy["regent_sealed"] = false
 		enemy["regent_seals_left"] = 0
 		enemy["regent_window_until"] = 0
 	units.append(enemy)
+
+
+func _start_crown_encounter(encounter: String, rng: RandomNumberGenerator, y: float) -> void:
+	match encounter:
+		"battle":
+			var partner := "relay_runner" if rng.randi_range(0, 1) == 0 else "relay_lancer"
+			var lancer := partner == "relay_lancer"
+			_add_campaign_enemy(partner, Vector2(603, y - 15.0), 0, 0.54 if lancer else 1.0, 0.81 if lancer else 1.0)
+			_add_campaign_enemy("relay_guard", Vector2(668, y + 46.0), 22)
+		"elite":
+			_add_campaign_enemy("relay_lancer", Vector2(623, y - 12.0))
+			_add_campaign_enemy("relay_guard", Vector2(692, y + 44.0), 15, 1.25)
+		"boss":
+			_add_campaign_enemy("relay_captain", Vector2(622, y))
+		_:
+			_add_campaign_enemy("relay_recruit", Vector2(522, y))
+	_refresh_relay_links(false)
 
 
 func step() -> Array[Dictionary]:
@@ -353,6 +391,7 @@ func step() -> Array[Dictionary]:
 			if unit.hp > 0 and _has_relic(unit, "pocket_bell"):
 				_guard(unit, 5, "pocket_bell")
 	_move_units()
+	_refresh_relay_links()
 	if tick % TICKS_PER_BEAT == 0:
 		_activate_lanes()
 	_run_enemies()
@@ -422,7 +461,9 @@ func _move_units() -> void:
 			continue
 		var focus := _select(unit, _attack_target_rule(unit))
 		var drive := Vector2.ZERO
-		if not focus.is_empty() and unit.intent == "":
+		if unit.intent == "" and unit.get("attack", {}).get("support", false):
+			drive = _relay_support_drive(unit, focus)
+		elif not focus.is_empty() and unit.intent == "":
 			var offset: Vector2 = focus.pos - position
 			var distance := offset.length()
 			var speed: float = unit.speed
@@ -491,6 +532,66 @@ func _select(actor: Dictionary, rule: String, reach: float = INF) -> Dictionary:
 
 func _attack_target_rule(unit: Dictionary) -> String:
 	return unit.get("attack", {}).get("target", "nearest")
+
+
+func _refresh_relay_links(emit_events := true) -> void:
+	for guard in units:
+		if not guard.has("relay_link_target"):
+			continue
+		var current := _find_unit(guard.relay_link_target)
+		if not current.is_empty():
+			var origin: Vector2 = guard.pos
+			if guard.hp > 0 and current.hp > 0 and origin.distance_squared_to(current.pos) <= RELAY_BREAK_REACH * RELAY_BREAK_REACH:
+				continue
+			_break_relay_link(guard)
+		if guard.hp <= 0 or tick < guard.get("relay_relink_tick", 0):
+			continue
+		var ally := _relay_ally(guard, RELAY_LINK_REACH)
+		if ally.is_empty():
+			continue
+		guard.relay_link_target = ally.id
+		ally["relay_shield_source"] = guard.id
+		if emit_events:
+			_emit("guard", "%s links a shield to %s." % [guard.name, ally.name], guard, ally, "relay_link")
+
+
+func _relay_ally(guard: Dictionary, reach: float = INF) -> Dictionary:
+	var best := {}
+	var best_distance := reach * reach
+	var origin: Vector2 = guard.pos
+	for ally in units:
+		if ally.side != guard.side or ally.hp <= 0 or ally.has("relay_link_target"):
+			continue
+		var source: String = ally.get("relay_shield_source", "")
+		if source != "" and source != guard.id:
+			continue
+		var distance := origin.distance_squared_to(ally.pos)
+		if distance <= best_distance and (best.is_empty() or distance < best_distance):
+			best = ally
+			best_distance = distance
+	return best
+
+
+func _break_relay_link(guard: Dictionary) -> void:
+	var ally := _find_unit(guard.relay_link_target)
+	guard.relay_link_target = ""
+	guard["relay_relink_tick"] = tick + TICKS_PER_BEAT * 2
+	if not ally.is_empty() and ally.get("relay_shield_source", "") == guard.id:
+		ally.relay_shield_source = ""
+		_emit("interrupt", "%s loses its relay shield." % ally.name, guard, ally, "relay_link_broken")
+
+
+func _relay_support_drive(guard: Dictionary, focus: Dictionary) -> Vector2:
+	var ally := _relay_ally(guard)
+	var origin: Vector2 = guard.pos
+	if not ally.is_empty():
+		var offset: Vector2 = ally.pos - origin
+		if offset.length() > 77.0:
+			return offset.normalized() * clampf((offset.length() - 77.0) * 4.0, 0.0, guard.speed)
+	if focus.is_empty():
+		return Vector2.ZERO
+	var toward_hero: Vector2 = focus.pos - origin
+	return toward_hero.normalized() * clampf((toward_hero.length() - guard.preferred_range) * 4.0, 0.0, guard.speed)
 
 
 func _activate_lanes() -> void:
@@ -609,7 +710,7 @@ func _gravity_strike(actor: Dictionary, target: Dictionary, tile_id: String, rad
 	for enemy in _enemies_in_area(actor, impact, radius):
 		if enemy.id == target.id or collapse:
 			_damage(actor, enemy, TILES[tile_id].damage, tile_id)
-		if collapse and enemy.intent != "" and enemy.get("colossus_stage", 0) == 0:
+		if collapse and enemy.intent != "" and enemy.get("colossus_stage", 0) == 0 and not enemy.get("relay_charge_active", false):
 			enemy.intent = ""
 			enemy.next_attack = tick + TICKS_PER_BEAT * 3
 			_emit("interrupt", "%s interrupts %s." % [TILES[tile_id].label, enemy.name], actor, enemy, tile_id)
@@ -669,6 +770,13 @@ func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: Str
 		target.colossus_first = actor.id
 		_emit("interrupt", "%s displaces the Colossus. Hit it with a different hero." % actor.name,
 			actor, target, "colossus_displaced")
+	elif target.get("relay_charge_active", false) and actor.side == "hero" and force > 100.0:
+		target.relay_charge_active = false
+		target.intent = ""
+		target.intent_tick = 0
+		target.next_attack = tick + TICKS_PER_BEAT * 5
+		_emit("interrupt", "%s interrupts the Relay Captain's charge." % actor.name, actor, target, "relay_interrupted")
+	_break_displaced_relay_link(target, endpoint)
 
 
 func _teleport(actor: Dictionary, target: Dictionary) -> bool:
@@ -708,6 +816,9 @@ func _run_enemies() -> void:
 			if tick > LOOP_TICKS and tick % LOOP_TICKS == 1:
 				_begin_forge_sweep(enemy)
 				continue
+		elif enemy.get("sprite") == "relay_captain" and tick % LOOP_TICKS == TICKS_PER_BEAT + 1:
+			_begin_relay_charge(enemy)
+			continue
 		if enemy.intent != "":
 			if tick >= enemy.intent_tick:
 				_resolve_intent(enemy)
@@ -744,6 +855,17 @@ func _resolve_intent(enemy: Dictionary) -> void:
 	var attack: Dictionary = enemy.get("attack", {})
 	enemy.intent = ""
 	enemy.next_attack = tick + int(attack.get("cooldown", 116 if enemy.id == "scout" else 138))
+	if enemy.get("relay_charge_active", false):
+		enemy.relay_charge_active = false
+		enemy.intent_tick = 0
+		var marked := _find_unit(intent)
+		_emit("intent", "The Relay Captain releases its charged strike.", enemy, marked, "relay_discharge")
+		if not marked.is_empty() and marked.hp > 0:
+			var defender := _intercept_target(marked)
+			_damage(enemy, defender, 32, "enemy_attack")
+			if defender.hp > 0:
+				_displace("push", enemy, defender, "enemy_attack", defender.pos - enemy.pos, 345.0)
+		return
 	if enemy.get("colossus_stage", 0) > 0:
 		_reset_colossus_sequence(enemy)
 		_emit("intent", "The Tempered Colossus releases its Forge Sweep.", enemy, enemy, "colossus_forge_sweep")
@@ -787,6 +909,29 @@ func _sweep(enemy: Dictionary, attack: Dictionary, extra_reach: float, bonus_dam
 			_displace("push", enemy, target, "enemy_attack", target.pos - enemy.pos, attack.push)
 	if affected.is_empty():
 		_emit("miss", "%s's sweep hits no one." % enemy.name, enemy, enemy, "enemy_attack")
+
+
+func _begin_relay_charge(enemy: Dictionary) -> void:
+	var target := _select(enemy, "nearest")
+	if target.is_empty():
+		return
+	enemy.intent = target.id
+	enemy.intent_tick = tick + TICKS_PER_BEAT * RELAY_CHARGE_BEATS - 1
+	enemy.relay_charge_active = true
+	_emit("intent", "Relay Charge in 6 beats. Interrupt it with Bash or another push or pull.",
+		enemy, target, "relay_charge")
+
+
+func _break_displaced_relay_link(target: Dictionary, endpoint: Vector2) -> void:
+	var guard := target if target.has("relay_link_target") else _find_unit(target.get("relay_shield_source", ""))
+	if guard.is_empty() or guard.relay_link_target == "":
+		return
+	var ally := _find_unit(guard.relay_link_target)
+	if ally.is_empty():
+		return
+	var stationary: Vector2 = ally.pos if target.id == guard.id else guard.pos
+	if endpoint.distance_squared_to(stationary) > RELAY_BREAK_REACH * RELAY_BREAK_REACH:
+		_break_relay_link(guard)
 
 
 func _begin_forge_sweep(enemy: Dictionary) -> void:
@@ -907,6 +1052,12 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 			amount = _regent_damage(actor, target, amount)
 		elif target.get("colossus_stage", 0) > 0 and actor.side == "hero":
 			amount = _colossus_damage(actor, target, amount)
+		if target.get("relay_shield_source", "") != "":
+			var prevented := mini(amount - 1, roundi(amount * 0.45))
+			if prevented > 0:
+				amount -= prevented
+				_emit("guard", "%s's relay shield blocks %d damage." % [target.name, prevented],
+					_find_unit(target.relay_shield_source), target, "relay_absorb", prevented)
 	if tile_id == "enemy_attack" and target.get("class") == "bulwark" and target.get("bulwark_loop", -1) != _loop_index():
 		target["bulwark_loop"] = _loop_index()
 		amount = maxi(0, amount - 6)
@@ -926,6 +1077,9 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		target.velocity = Vector2.ZERO
 		target.impulse = Vector2.ZERO
 		target.intent = ""
+		var relay := target if target.has("relay_link_target") else _find_unit(target.get("relay_shield_source", ""))
+		if not relay.is_empty():
+			_break_relay_link(relay)
 		_emit("defeat_unit", "%s falls." % target.name, actor, target, tile_id)
 		if target.get("attack", {}).get("twin", false):
 			_rally_twin(target)

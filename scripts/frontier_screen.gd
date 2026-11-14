@@ -40,7 +40,21 @@ const BOSS_BRIEFS := {
 	"tempered_colossus": {
 		"portrait": "tempered_colossus",
 		"hint": "When Forge Sweep begins, push or pull the Colossus with one hero. Hit with a different hero, then with your third hero. All three actions must land in order during the same nine-beat window. Shatter its armor to stop the sweep."
+	},
+	"relay_captain": {
+		"portrait": "relay_captain",
+		"hint": "Relay Charge begins on beat 2 and strikes at the end of beat 7. Land Bash or another push or pull within that window to interrupt it."
 	}
+}
+const MAP_ART := {
+	"brass": "res://assets/frontier-map.webp",
+	"glass": "res://assets/glass-map.webp",
+	"crown": "res://assets/crown-map.webp",
+}
+const ENCOUNTER_ART := {
+	"brass": "clockwork",
+	"glass": "glass_hunter",
+	"crown": "relay_guard",
 }
 
 var _host
@@ -235,7 +249,7 @@ func _map() -> void:
 
 
 func _map_board() -> Control:
-	var map_art := "res://assets/glass-map.webp" if _run.data.get("location") == "glass" else "res://assets/frontier-map.webp"
+	var map_art: String = MAP_ART.get(_run.data.get("location", "brass"), MAP_ART.brass)
 	var board := _board(Vector2(655, 500), map_art)
 	var layers: Array = _run.data.get("layers", [])
 	var leg_start := (_leg_number() - 1) * FrontierRun.NODES_PER_SEGMENT
@@ -308,9 +322,13 @@ func _combat() -> void:
 	var region := _cards_row()
 	var boss_id: String = node.get("boss_id", "")
 	var brief: Dictionary = BOSS_BRIEFS.get(boss_id, {})
-	var instruction: String = brief.get("hint", "Arrange tiles, choose targeting rules, and check your storage before you start.")
+	var location: String = _run.data.get("location", "brass")
+	var default_hint := "Arrange tiles, choose targeting rules, and check your storage before you start."
+	if location == "crown":
+		default_hint = "Relay Guards protect nearby allies. Push or pull either fighter out of range to break the link, or take out the Guard."
+	var instruction: String = brief.get("hint", default_hint)
 	var detail := _choice(region, "Prepare for battle", instruction, "Open arena", func(): _host.run_show_arena())
-	var default_portrait := "glass_hunter" if _run.data.get("location") == "glass" else "clockwork"
+	var default_portrait: String = ENCOUNTER_ART.get(location, ENCOUNTER_ART.brass)
 	_add_portrait(detail, brief.get("portrait", default_portrait))
 
 
