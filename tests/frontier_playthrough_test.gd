@@ -189,16 +189,14 @@ func _medium_playthrough(game: Control) -> Dictionary:
 				game._action()
 			"reward":
 				_pick_elite_relic(run)
-				var id: String = run.data.offers[0]
-				for preferred in ["dawn_bastion", "shield_ram", "hook_bash", "bash", "shot", "slam"]:
-					if preferred in run.data.offers:
-						id = preferred
+				while run.data.phase == "reward":
+					var id: String = _preferred_offer(run.data.offers,
+						["dawn_bastion", "shield_ram", "hook_bash", "bash", "shot", "slam"])
+					if game.run_claim_reward(id):
+						if run.data.phase == "recruit":
+							middle_reward = id
+					elif not _skip_reward(game):
 						break
-				if game.run_claim_reward(id):
-					if run.data.phase == "recruit":
-						middle_reward = id
-				else:
-					run.reward("skip")
 			"map":
 				var available: Array = run.available_nodes()
 				if available.is_empty():
@@ -369,23 +367,15 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 				game._action()
 			"reward":
 				_pick_elite_relic(run)
-				var chosen: String = run.data.offers[0]
 				var priorities := ["dawn_bastion", "event_horizon", "bulwark_charge", "shield_ram", "hook_bash", "bash", "shot", "slam"]
 				if brass_hard:
 					priorities = ["dawn_bastion", "event_horizon", "shield_ram", "hook_bash", "scattershot", "finishing_cut", "slam", "guard", "shot", "bash"]
-				for preferred in priorities:
-					if preferred in run.data.offers:
-						chosen = preferred
+				while run.data.phase == "reward":
+					var chosen: String = _preferred_offer(run.data.offers, priorities)
+					if (crown_medium or crown_hard or moonwreck_hard) and _pull_tiles(game).size() < (2 if crown_hard else 1):
+						chosen = _preferred_offer(run.data.offers, ["pull", "grapple", "hook_bash"], chosen)
+					if not game.run_claim_reward(chosen) and not _skip_reward(game):
 						break
-				if (crown_medium or crown_hard) and _pull_tiles(game).size() < (2 if crown_hard else 1):
-					for pull: String in ["pull", "grapple", "hook_bash"]:
-						if pull in run.data.offers:
-							chosen = pull
-							break
-				if "pull" in run.data.offers and moonwreck_hard and run.data.node.row == 0:
-					chosen = "pull"
-				if not game.run_claim_reward(chosen):
-					run.reward("skip")
 			"map":
 				var options: Array = run.available_nodes()
 				if options.is_empty():
@@ -529,9 +519,9 @@ func _arrange_crown_hard_combo(game: Control) -> void:
 	var second := "grapple" if "grapple" in pulls else pulls[0]
 	_arrange_hard_combo(game, [
 		{"id": first, "start": 3 - ArenaSim.TILES[first].width, "target": "relay_left"},
-		{"id": second, "start": 7 - ArenaSim.TILES[second].width, "target": "relay_right"},
-		{"id": "bash", "start": 5, "target": "relay_regent"},
-	], 7, true)
+		{"id": second, "start": 4 - ArenaSim.TILES[second].width, "target": "relay_right"},
+		{"id": "bash", "start": 2, "target": "relay_regent"},
+	], 4)
 
 
 func _pull_tiles(game: Control) -> Array[String]:
@@ -543,7 +533,7 @@ func _pull_tiles(game: Control) -> Array[String]:
 	return ids
 
 
-func _arrange_hard_combo(game: Control, combo: Array, first_free_beat: int, discard_overflow := false) -> void:
+func _arrange_hard_combo(game: Control, combo: Array, first_free_beat: int) -> void:
 	var remaining: Array = []
 	for lane: Array in game.lanes + game.storage_rows:
 		remaining.append_array(lane)
@@ -557,6 +547,7 @@ func _arrange_hard_combo(game: Control, combo: Array, first_free_beat: int, disc
 		game.lanes[index].assign([combo[index]])
 	for row: Array in game.storage_rows:
 		row.clear()
+	# Reserve the required opening beats and keep the strongest of the remaining tiles.
 	remaining.sort_custom(func(left: Dictionary, right: Dictionary):
 		return ArenaSim.TILES[left.id].damage > ArenaSim.TILES[right.id].damage)
 	for tile: Dictionary in remaining:
@@ -582,8 +573,6 @@ func _arrange_hard_combo(game: Control, combo: Array, first_free_beat: int, disc
 					break
 			if equipped:
 				break
-		# Crown's later combo reserves more early beats, so keep the strongest tiles that still fit.
-		_check(equipped or discard_overflow, "The Hard combo should fit alongside the rest of the earned tiles.")
 	game._save_loadout()
 
 
@@ -607,6 +596,17 @@ func _pick_elite_relic(run: RefCounted) -> void:
 	var draft: Array = run.elite_relic_offers()
 	if not draft.is_empty():
 		_check(run.choose_elite_relic(draft[0].id), "Choose a first-elite relic before claiming its tile.")
+
+func _preferred_offer(offers: Array, priorities: Array, fallback := "") -> String:
+	for id: String in priorities:
+		if id in offers:
+			return id
+	return offers[0] if fallback.is_empty() else fallback
+
+func _skip_reward(game: Control) -> bool:
+	var skipped: bool = game.run_claim_reward("skip")
+	_check(skipped, "Skip an individual reward that cannot fit and advance to the next pick.")
+	return skipped
 
 func _write_legacy_easy_save(run: RefCounted) -> void:
 	var legacy_run: Dictionary = run.data.duplicate(true)

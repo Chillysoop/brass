@@ -6,6 +6,8 @@ The Windows playtest includes Easy, Medium, and Hard expeditions in Brass Fronti
 
 From the title screen, choose **New Expedition**, select **Brass Frontier**, and start on **Easy** to draft a hero, relic, and starting tile. You can enter an optional seed on the difficulty screen. Win the opening fight, pick rewards, then travel a seeded route through battles, elites, shops, events, and a rest site. Health, relics, gold, and tile layouts carry between stops. The game saves between fights and after loadout changes. **Continue** picks up from the saved checkpoint.
 
+Each class has its own combat reward deck. Use **View class deck** on a hero or recruit card to see its Common and Uncommon tiles. After combat, choose or skip a tile for each hero in party order. Tiles go to that hero's timeline when space allows, then to shared storage. The expedition saves after each pick. Recruits enter with one starter tile after the current party takes its boss rewards.
+
 Enemies fill a charge gauge above their heads before an attack. Tiles show damage and fire on their right edge. Each hero's timeline shows a portrait, live health, and targeting buttons. The left and right arrows select nearest and farthest. The solid and hollow hearts select highest and lowest HP. The **All** buttons apply the same rule to compatible tiles on the lane.
 
 Open **Battle review** after a fight to inspect activations, misses, relic bonuses, and boss counters. Selecting an activation highlights the tile and its firing beat. Expedition defeats open the review automatically. **Retry in Practice** replays the original encounter with an editable copy of your equipment and pre-fight health.
@@ -24,7 +26,7 @@ Your first elite victory offers a relic draft before the usual tile reward. The 
 
 Seeded battle and elite formations can include a Rivet Bombardier, Kiln Duelist, Relay Mender, or Dock Corsair. The encounter preview shows who you will face.
 
-Medium starts solo. After the Tollkeeper, take a Legendary tile into your build and recruit a second hero with a starter tile. Both lanes fire on the same beat clock. Push or pull the Gilded Marshal to expose its armor, then land a hit with the other hero before it closes. Defeating the Marshal unlocks Brass Frontier Hard and Glass Foundry Easy.
+Medium starts solo. After the Tollkeeper, take a Legendary tile into your build and recruit a second hero with a starter tile. Both lanes fire on the same beat clock. Push or pull the Gilded Marshal to expose its armor, then land a hit with the other hero before it closes. Defeating the Marshal unlocks Brass Frontier Hard and Glass Foundry Easy. Each hero can take a Legendary trophy after the final boss.
 
 Glass Foundry Easy is a solo route that ends at the Crucible Twins. Hunters prioritize the hero with the most ranged tile damage. Skirmishers prioritize the hero with the lowest current HP. The clear awards Aether Marks and records the unlock for Glass Foundry Medium.
 

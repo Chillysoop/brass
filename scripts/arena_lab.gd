@@ -1621,11 +1621,14 @@ func _show_inventory_message(message: String) -> void:
 	else:
 		setup_hint.text = message
 
-func _loot_destination(id: String) -> Dictionary:
+func _loot_destination(id: String, reward_lane := -1) -> Dictionary:
 	var owned: Dictionary = run.loadout
 	var heroes: Array = run.data.get("heroes", [])
-	for lane in range(owned.lanes.size()):
-		if lane < heroes.size() and int(heroes[lane].hp) <= 0:
+	var destinations := range(owned.lanes.size()) if reward_lane < 0 else [reward_lane]
+	for lane: int in destinations:
+		if lane >= owned.lanes.size():
+			continue
+		if reward_lane < 0 and lane < heroes.size() and int(heroes[lane].hp) <= 0:
 			continue
 		for beat in range(ArenaSim.BEATS):
 			if TilePacking.can_place(owned.lanes[lane], id, beat, ArenaSim.BEATS):
@@ -1636,10 +1639,10 @@ func _loot_destination(id: String) -> Dictionary:
 				return {"items": row, "start": column}
 	return {}
 
-func _claim_loot(id: String, commit: Callable) -> bool:
+func _claim_loot(id: String, commit: Callable, reward_lane := -1) -> bool:
 	if not ArenaSim.TILES.has(id):
 		return false
-	var destination := _loot_destination(id)
+	var destination := _loot_destination(id, reward_lane)
 	if destination.is_empty():
 		return false
 	var entry := _entry(id, destination.start, ArenaSim.TILES[id].targets[0])
@@ -1657,7 +1660,7 @@ func _claim_loot(id: String, commit: Callable) -> bool:
 func run_claim_reward(id: String) -> bool:
 	if id == "skip" or run.is_final_boss():
 		return run.reward(id)
-	return _claim_loot(id, run.reward)
+	return _claim_loot(id, run.reward, run.reward_lane())
 
 func run_buy_shop(id: String) -> bool:
 	if not ArenaSim.TILES.has(id):

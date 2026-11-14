@@ -3,6 +3,7 @@ extends SceneTree
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
+const ClassDecks = preload("res://scripts/class_decks.gd")
 var failures: Array[String] = []
 
 
@@ -62,7 +63,7 @@ func _initialize() -> void:
 	check(run.loadout.lanes[0][0].id == "bash", "Starter tile must be equipped before opening battle.")
 	check(run.finish_combat(true, 90), "Opening resolution failed.")
 	check(run.data.offers.size() == 3 and "bash" in run.data.offers, "Normal reward must include three tiles and an owned duplicate.")
-	check(run.reward("skip"), "Opening skip failed.")
+	check(_finish_rewards(run, "skip"), "Opening skip failed.")
 	check(run.data.gold == 33, "Combat and Quartermaster skip payouts were incorrect.")
 
 	var resumed := FrontierRun.new()
@@ -94,7 +95,7 @@ func _initialize() -> void:
 					for id: String in resumed.data.offers:
 						check(ArenaSim.TILES[id].rarity == "legendary", "Boss rewards must be Legendary.")
 					check(not resumed.finish_combat(true, 100), "Repeated completion must not pay twice.")
-				resumed.reward("skip")
+				_finish_rewards(resumed, "skip")
 			"event": resumed.event_choice(0)
 			"shop":
 				var tile: String = resumed.data.offers[0]
@@ -247,6 +248,15 @@ func _check_moonwreck_hard_leg(layers: Array) -> void:
 				"Moonwreck Hard leg three must use its own route names.")
 
 
+func _finish_rewards(run: FrontierRun, id: String) -> bool:
+	while run.data.get("phase") == "reward":
+		if not run.reward(id):
+			return false
+		if id != "skip" and run.data.phase == "reward":
+			id = run.data.offers[0]
+	return true
+
+
 func _check_medium(path: String) -> void:
 	var run := FrontierRun.new()
 	run.load_save(path)
@@ -265,7 +275,7 @@ func _check_medium(path: String) -> void:
 	var marks: int = run.profile.marks
 	check(run.finish_combat(true, [68]), "Medium boss must read per-hero HP.")
 	check(run.profile.marks == marks + 4 and not run.profile.hard_unlocked, "First boss must bank only its boss payout.")
-	check(run.reward(run.data.offers[0]), "Intermediate Legendary choice must succeed.")
+	check(_finish_rewards(run, run.data.offers[0]), "Intermediate Legendary choice must succeed.")
 	check(run.data.phase == "recruit" and run.data.offers.size() == 3 and hero not in run.data.offers,
 		"Second draft must offer three different choices from the lead hero.")
 	check(run.choose_recruit(run.data.offers[0]), "Choose a recruit.")
@@ -284,7 +294,15 @@ func _check_medium(path: String) -> void:
 	check(restored.profile.marks == marks + 34 and restored.profile.hard_unlocked and restored.profile.glass_easy_unlocked,
 		"First Medium clear must grant boss, completion and first-clear marks and open both gates.")
 	check(not restored.finish_combat(true, [0, 50]), "Resuming the final reward must not pay again.")
-	check(restored.reward("skip") and restored.data.phase == "result", "Final Legendary choice must lead to the recap.")
+	check(restored.reward_count() == 2 and restored.reward_lane() == 0,
+		"Both heroes, including a fallen lead, should earn a final Legendary pick.")
+	check(restored.reward("skip") and restored.reward_lane() == 1 and restored.data.phase == "reward",
+		"The first hero's skip must keep the recruit's final reward pending.")
+	var second_trophy: String = restored.data.offers[0]
+	var second_hero: String = restored.data.heroes[1].id
+	check(restored.reward(second_trophy) and restored.data.phase == "result"
+		and restored.data.trophy == "" and restored.data.trophies == {second_hero: second_trophy},
+		"Final rewards must record each hero's trophy and lead to the recap.")
 
 
 func _check_legacy_medium_unlocks() -> void:
@@ -347,7 +365,7 @@ func _check_hard_and_glass(path: String) -> void:
 	var marks: int = run.profile.marks
 	run.finish_combat(true, [70])
 	check(run.profile.glass_medium_unlocked and run.profile.marks == marks + 19, "Glass Easy must bank its own first-clear payout.")
-	run.reward("skip")
+	_finish_rewards(run, "skip")
 	run.finish_run()
 	_check_glass_medium(path)
 	check(run.load_save(path) and run.finish_run(), "Return to the hub after the saved Glass Medium clear.")
@@ -363,7 +381,7 @@ func _check_hard_and_glass(path: String) -> void:
 		var remaining := [51, 66, 82].slice(0, encounter.heroes.size())
 		marks = run.profile.marks
 		run.finish_combat(true, remaining)
-		run.reward("skip")
+		_finish_rewards(run, "skip")
 		if boss_id == "iron_regent":
 			check(run.data.phase == "result" and run.profile.brass_hard_cleared and run.profile.marks == marks + 54,
 				"The Iron Regent must complete Hard and bank the first-clear payout.")
@@ -372,7 +390,7 @@ func _check_hard_and_glass(path: String) -> void:
 			check(hero.id not in run.data.offers, "Recruitment must exclude every current hero.")
 		run.choose_recruit(run.data.offers[0])
 		var restored := FrontierRun.new()
-		check(restored.load_save(path) and restored.choose_recruit_starter("slam"), "Hard recruitment must resume from disk.")
+		check(restored.load_save(path) and restored.choose_recruit_starter(ClassDecks.starter(restored.data.pending_recruit)), "Hard recruitment must resume from disk.")
 		run = restored
 		var team_size: int = run.data.heroes.size()
 		check(team_size == encounter.segment + 1 and run.loadout.lanes.size() == team_size, "Each recruit must add exactly one lane.")
@@ -392,11 +410,11 @@ func _check_glass_medium(path: String) -> void:
 	run.finish_combat(true, [53])
 	check(run.profile.marks == marks + 4 and not run.profile.glass_hard_unlocked and not run.profile.crown_easy_unlocked,
 		"The first boss must grant its own marks and leave later routes locked.")
-	run.reward(run.data.offers[0])
+	_finish_rewards(run, run.data.offers[0])
 	check(run.data.phase == "recruit" and run.data.hero not in run.data.offers, "Glass Medium must draft a different recruit after the Twins.")
 	run.choose_recruit(run.data.offers[0])
 	var restored := FrontierRun.new()
-	check(restored.load_save(path) and restored.choose_recruit_starter("slam"), "Resume and finish the Glass Medium recruit's draft.")
+	check(restored.load_save(path) and restored.choose_recruit_starter(ClassDecks.starter(restored.data.pending_recruit)), "Resume and finish the Glass Medium recruit's draft.")
 	check(restored.data.heroes.size() == 2 and restored.data.hp == 53, "Glass Medium must retain lead HP and add a second hero.")
 	check(restored.available_nodes()[0].label == "Annealing Hall", "Recruitment must open the Foundry's upper leg.")
 	_reach_boss(restored)
@@ -405,7 +423,7 @@ func _check_glass_medium(path: String) -> void:
 	restored.finish_combat(true, [27, 61])
 	check(restored.profile.marks == marks + 34 and restored.profile.glass_hard_unlocked and restored.profile.crown_easy_unlocked,
 		"A first Prism Warden clear must grant its payout and unlock both future routes.")
-	check(restored.reward("skip") and restored.data.phase == "result", "The final reward must lead to the Glass Medium recap.")
+	check(_finish_rewards(restored, "skip") and restored.data.phase == "result", "The final reward must lead to the Glass Medium recap.")
 
 
 func _check_glass_hard(path: String) -> void:
@@ -437,16 +455,16 @@ func _check_glass_hard(path: String) -> void:
 			before.glass_hard_cleared = true
 			check(run.profile == before, "First Glass Hard clear must award 54 marks and record mastery without changing unlocks.")
 			check(not run.finish_combat(true, remaining), "The Colossus payout must not be applied twice.")
-			check(run.reward(run.data.offers[0]) and run.data.phase == "result", "The Colossus trophy must open the recap.")
+			check(_finish_rewards(run, run.data.offers[0]) and run.data.phase == "result", "The Colossus trophy must open the recap.")
 			break
 		check(not run.is_final_boss() and not run.profile.glass_hard_cleared and run.profile.marks == marks + 4,
 			"Intermediate Glass Hard bosses must grant only the boss payout.")
-		check(run.reward(run.data.offers[0]) and run.data.phase == "recruit", "Recruit after each intermediate Glass Hard boss.")
+		check(_finish_rewards(run, run.data.offers[0]) and run.data.phase == "recruit", "Recruit after each intermediate Glass Hard boss.")
 		for hero: Dictionary in run.data.heroes:
 			check(hero.id not in run.data.offers, "Glass Hard must not draft a current party member.")
 		run.choose_recruit(run.data.offers[0])
 		var restored := FrontierRun.new()
-		check(restored.load_save(path) and restored.choose_recruit_starter("slam"), "Glass Hard recruitment must resume from disk.")
+		check(restored.load_save(path) and restored.choose_recruit_starter(ClassDecks.starter(restored.data.pending_recruit)), "Glass Hard recruitment must resume from disk.")
 		run = restored
 		check(run.loadout.lanes.size() == encounter.segment + 1 and run.data.heroes[0].hp == remaining[0],
 			"Resumed Glass Hard recruitment must preserve carried HP and add exactly one timeline.")
@@ -485,7 +503,7 @@ func _check_crown_easy(path: String) -> void:
 	for id: String in restored.data.offers:
 		check(ArenaSim.TILES[id].rarity == "legendary", "Crown's final reward must be Legendary.")
 	check(not restored.finish_combat(true, [71]), "Crown's first-clear payout must not be applied twice.")
-	check(restored.reward(restored.data.offers[0]) and restored.finish_run(), "Crown Easy must return to the hub after its trophy.")
+	check(_finish_rewards(restored, restored.data.offers[0]) and restored.finish_run(), "Crown Easy must return to the hub after its trophy.")
 	check(restored.start_run(983, "easy", "crown"), "Crown Easy must be replayable.")
 	restored.choose_hero(restored.data.offers[0])
 	restored.choose_relic("pocket_bell")
@@ -499,7 +517,7 @@ func _check_crown_easy(path: String) -> void:
 	var expected_hp: int = int(restored.data.hp) - ceili(float(restored.data.max_hp) * 0.12)
 	check(restored.event_choice(1) and restored.data.hp == expected_hp and restored.data.phase == "reward" and restored.data.offers.size() == 2,
 		"Opening the Signal Cache must cost 12% max HP and offer two choices.")
-	restored.reward("skip")
+	_finish_rewards(restored, "skip")
 	restored.data.node = restored.data.layers.back()[0]
 	restored.data.phase = "combat"
 	marks = restored.profile.marks
@@ -525,11 +543,11 @@ func _check_crown_medium(path: String) -> void:
 		"The Captain's intermediate defeat must pay only the boss payout.")
 	check(not run.profile.crown_hard_unlocked and not run.profile.moonwreck_easy_unlocked,
 		"The Captain must not open the Medium clear gates.")
-	check(run.reward(run.data.offers[0]) and run.data.phase == "recruit" and run.data.hero not in run.data.offers,
+	check(_finish_rewards(run, run.data.offers[0]) and run.data.phase == "recruit" and run.data.hero not in run.data.offers,
 		"Taking the Captain's Legendary must offer a distinct second hero.")
 	check(run.choose_recruit(run.data.offers[0]), "Choose a Crown recruit.")
 	var restored := FrontierRun.new()
-	check(restored.load_save(path) and restored.data.phase == "recruit_starter" and restored.choose_recruit_starter("slam"),
+	check(restored.load_save(path) and restored.data.phase == "recruit_starter" and restored.choose_recruit_starter(ClassDecks.starter(restored.data.pending_recruit)),
 		"The Crown Medium recruit's starter draft must resume from disk.")
 	check(restored.data.heroes.size() == 2 and restored.loadout.lanes.size() == 2 and restored.data.hp == 61,
 		"Crown Medium recruitment must carry HP and add a second hero and timeline.")
@@ -544,7 +562,7 @@ func _check_crown_medium(path: String) -> void:
 		"The Marshal must unlock Crown Hard and Moonwreck Docks Easy.")
 	check(restored.can_start("hard", "crown") and restored.can_start("easy", "moonwreck"),
 		"Crown Hard and Moonwreck Easy must both be playable after their unlock.")
-	check(not restored.finish_combat(true, [42, 71]) and restored.reward(restored.data.offers[0]) and restored.finish_run(),
+	check(not restored.finish_combat(true, [42, 71]) and _finish_rewards(restored, restored.data.offers[0]) and restored.finish_run(),
 		"The final payout must be recorded once and the trophy must lead to a recap.")
 	check(restored.start_run(983, "medium", "crown"), "Crown Medium must be replayable.")
 	restored.choose_hero(restored.data.offers[0])
@@ -580,17 +598,17 @@ func _check_crown_hard(path: String) -> void:
 			before.crown_hard_cleared = true
 			check(run.profile == before, "The first Crown Hard clear must grant 54 marks and record mastery without opening new gates.")
 			check(not run.finish_combat(true, remaining), "The Regent's payout must not be applied twice.")
-			check(run.reward(run.data.offers[0]) and run.data.phase == "result", "The Regent's trophy must open the recap.")
+			check(_finish_rewards(run, run.data.offers[0]) and run.data.phase == "result", "The Regent's trophy must open the recap.")
 			break
 		check(not run.is_final_boss() and not run.profile.crown_hard_cleared and run.profile.marks == before.marks + 4,
 			"Intermediate Crown Hard bosses must grant only the boss payout.")
-		check(run.data.offers.size() == 3 and run.reward(run.data.offers[0]) and run.data.phase == "recruit",
+		check(run.data.offers.size() == 3 and _finish_rewards(run, run.data.offers[0]) and run.data.phase == "recruit",
 			"An intermediate Legendary reward must open recruitment.")
 		for hero: Dictionary in run.data.heroes:
 			check(hero.id not in run.data.offers, "Crown Hard must not draft a current party member.")
 		run.choose_recruit(run.data.offers[0])
 		var restored := FrontierRun.new()
-		check(restored.load_save(path) and restored.data.phase == "recruit_starter" and restored.choose_recruit_starter("slam"),
+		check(restored.load_save(path) and restored.data.phase == "recruit_starter" and restored.choose_recruit_starter(ClassDecks.starter(restored.data.pending_recruit)),
 			"Both Crown Hard recruitment stages must resume from disk.")
 		run = restored
 		check(run.loadout.lanes.size() == encounter.segment + 1 and run.data.heroes[0].hp == remaining[0],
@@ -632,7 +650,7 @@ func _check_moonwreck_easy(path: String) -> void:
 	for id: String in restored.data.offers:
 		check(ArenaSim.TILES[id].rarity == "legendary", "The Wreckmaster's final reward must be Legendary.")
 	check(not restored.finish_combat(true, [67]), "Moonwreck's first-clear payout must not be applied twice.")
-	check(restored.reward(restored.data.offers[0]) and restored.finish_run(), "Moonwreck Easy must return to the hub after its trophy.")
+	check(_finish_rewards(restored, restored.data.offers[0]) and restored.finish_run(), "Moonwreck Easy must return to the hub after its trophy.")
 	check(restored.start_run(9142, "easy", "moonwreck"), "Moonwreck Easy must be replayable.")
 	restored.choose_hero(restored.data.offers[0])
 	restored.choose_relic("pocket_bell")
@@ -670,11 +688,11 @@ func _check_moonwreck_medium(path: String) -> void:
 	check(run.data.offers.size() == 3, "The Wreckmaster must offer three intermediate rewards.")
 	for id: String in run.data.offers:
 		check(ArenaSim.TILES[id].rarity == "legendary", "The Wreckmaster's intermediate rewards must be Legendary.")
-	check(run.reward(run.data.offers[0]) and run.data.phase == "recruit" and run.data.hero not in run.data.offers,
+	check(_finish_rewards(run, run.data.offers[0]) and run.data.phase == "recruit" and run.data.hero not in run.data.offers,
 		"Taking the Wreckmaster's Legendary must offer a distinct second hero.")
 	check(run.choose_recruit(run.data.offers[0]), "Choose a Moonwreck recruit.")
 	var restored := FrontierRun.new()
-	check(restored.load_save(path) and restored.data.phase == "recruit_starter" and restored.choose_recruit_starter("slam"),
+	check(restored.load_save(path) and restored.data.phase == "recruit_starter" and restored.choose_recruit_starter(ClassDecks.starter(restored.data.pending_recruit)),
 		"The Moonwreck recruit's starter draft must resume from disk.")
 	check(restored.data.heroes.size() == 2 and restored.loadout.lanes.size() == 2 and restored.data.hp == 61,
 		"Moonwreck recruitment must carry HP and add a second hero and timeline.")
@@ -688,7 +706,7 @@ func _check_moonwreck_medium(path: String) -> void:
 	before.moonwreck_hard_unlocked = true
 	check(restored.profile == before and restored.can_start("hard", "moonwreck"),
 		"The first Tidekeeper clear must pay 34 marks and open only the Hard route.")
-	check(not restored.finish_combat(true, [42, 71]) and restored.reward(restored.data.offers[0]) and restored.finish_run(),
+	check(not restored.finish_combat(true, [42, 71]) and _finish_rewards(restored, restored.data.offers[0]) and restored.finish_run(),
 		"The final payout must be recorded once and the trophy must lead to a recap.")
 	var finished := FrontierRun.new()
 	check(finished.load_save(path) and finished.can_start("hard", "moonwreck"),
@@ -730,16 +748,16 @@ func _check_moonwreck_hard(path: String) -> void:
 			before.moonwreck_hard_cleared = true
 			check(run.profile == before, "The first Moonwreck Hard clear must grant 54 marks and record mastery.")
 			check(not run.finish_combat(true, remaining), "The Drowned Admiral's payout must not be applied twice.")
-			check(run.reward(run.data.offers[0]) and run.data.phase == "result", "The Drowned Admiral's trophy must open the recap.")
+			check(_finish_rewards(run, run.data.offers[0]) and run.data.phase == "result", "The Drowned Admiral's trophy must open the recap.")
 			break
 		check(not run.is_final_boss() and not run.profile.moonwreck_hard_cleared and run.profile.marks == before.marks + 4,
 			"Intermediate Moonwreck Hard bosses must grant only the boss payout.")
-		check(run.reward(run.data.offers[0]) and run.data.phase == "recruit", "An intermediate Legendary reward must open recruitment.")
+		check(_finish_rewards(run, run.data.offers[0]) and run.data.phase == "recruit", "An intermediate Legendary reward must open recruitment.")
 		for hero: Dictionary in run.data.heroes:
 			check(hero.id not in run.data.offers, "Moonwreck Hard must not draft a current party member.")
 		run.choose_recruit(run.data.offers[0])
 		var restored := FrontierRun.new()
-		check(restored.load_save(path) and restored.data.phase == "recruit_starter" and restored.choose_recruit_starter("slam"),
+		check(restored.load_save(path) and restored.data.phase == "recruit_starter" and restored.choose_recruit_starter(ClassDecks.starter(restored.data.pending_recruit)),
 			"Both Moonwreck Hard recruitment stages must resume from disk.")
 		run = restored
 		check(run.loadout.lanes.size() == encounter.segment + 1 and run.data.heroes[0].hp == remaining[0],
@@ -761,7 +779,7 @@ func _check_moonwreck_hard(path: String) -> void:
 
 func _check_artifice(path: String) -> void:
 	var run := FrontierRun.new()
-	check(run.load_save(path) and run.reward("skip") and run.finish_run(),
+	check(run.load_save(path) and _finish_rewards(run, "skip") and run.finish_run(),
 		"Return from the Moonwreck Hard recap before purchasing Artifice.")
 	check(not run.buy_meta("wayfarers_pin"), "Wayfarer's Pin must require Blink Artifice.")
 	var marks: int = run.profile.marks
@@ -820,7 +838,7 @@ func _check_artifice(path: String) -> void:
 			if leg == 1:
 				check(stock[3] == "phase_cut", "A matching shop upgrade should favor completing a pair.")
 	check(offered_normal.has_all(ArenaSim.BLINK_TIERS[1] + ArenaSim.BLINK_TIERS[2]),
-		"Normal drafts can offer both Uncommon and both Rare Blink upgrades.")
+		"Personal drafts can offer both Uncommon and both Rare upgrades from an owned, unlocked family.")
 	check(offered_elite.has_all(ArenaSim.BLINK_TIERS[1] + ArenaSim.BLINK_TIERS[2] + ArenaSim.BLINK_TIERS[3]),
 		"Elites can offer all Uncommon through Epic Blink upgrades.")
 	check(offered_boss.has_all(ArenaSim.BLINK_TIERS[4]) and offered_boss.size() == 5,
@@ -866,9 +884,12 @@ func _check_specialist_drafts(path: String) -> void:
 			legendary[id] = true
 		for id: String in run._standard_rewards():
 			normal[id] = true
+	var active_families: Array = ClassDecks.forge_families(run.data.hero) + ["shot"]
 	for family in ["shot", "guard"]:
-		check(stocked.has_all(ArenaSim.FORGE_FAMILIES[family][1]) and normal.has_all(ArenaSim.FORGE_FAMILIES[family][1]),
-			"Each new family can enter shops and combat drafts.")
+		check(stocked.has_all(ArenaSim.FORGE_FAMILIES[family][1]),
+			"Each unlocked family can enter shops.")
+		check(normal.has_all(ArenaSim.FORGE_FAMILIES[family][1]) == active_families.has(family),
+			"An unlocked family enters combat rewards when the hero uses it or has it in their class deck.")
 		check(legendary.has_all(ArenaSim.FORGE_FAMILIES[family][4]), "Each new Legendary can appear as a boss reward.")
 
 
@@ -894,8 +915,9 @@ func _check_arsenal_rewards() -> void:
 		for id: String in stock:
 			shop_tiles[id] = true
 	var added_tiles := ArsenalTiles.COMMON_IDS + ArsenalTiles.UNCOMMON_IDS
-	check(run._normal_pool().size() == 22 and battle_tiles.has_all(added_tiles) and shop_tiles.has_all(added_tiles),
-		"Fresh runs can find all 24 new tiles in both fights and shops.")
+	var class_tiles: Array = ClassDecks.common(run.data.hero) + ClassDecks.uncommon(run.data.hero)
+	check(battle_tiles.has_all(class_tiles) and shop_tiles.has_all(added_tiles),
+		"Fresh runs can find their class deck in battle rewards and all 24 arsenal tiles in shops.")
 	check(run.finish_combat(true, 90), "The expanded pool is active at the opening fight.")
 	var restored := FrontierRun.new()
 	check(restored.load_save(path) and restored.data.offers == run.data.offers and restored.reward_hint("bash") == "Third copy",
@@ -969,7 +991,7 @@ func _reach_boss(run: RefCounted) -> void:
 				var draft: Array = run.elite_relic_offers()
 				if not draft.is_empty():
 					check(run.choose_elite_relic(draft[0].id), "Choose the elite relic before traveling on.")
-				run.reward("skip")
+				_finish_rewards(run, "skip")
 			"shop": run.leave_node()
 			"event": run.event_choice(0)
 			"rest": run.rest("heal")

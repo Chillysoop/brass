@@ -5,6 +5,7 @@ const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ExpeditionMenu = preload("res://scripts/expedition_menu.gd")
 const AetherChartMenu = preload("res://scripts/aether_chart_menu.gd")
 const GameIcons = preload("res://scripts/game_icons.gd")
+const ClassDecks = preload("res://scripts/class_decks.gd")
 const INK := Color("#101820")
 const PANEL := Color("#182632")
 const PANEL_DARK := Color("#111f2a")
@@ -83,11 +84,6 @@ const ENEMY_HINTS := {
 }
 const ELITE_RELIC_TONES := {
 	"afterimage": Color("#c8b7ec"), "barrage_rack": Color("#efbe8a"), "siege_fuse": Color("#9ddbd1"),
-}
-const ARCHETYPES := {
-	"warden": "Vanguard", "bulwark": "Vanguard", "breaker": "Displacement", "hexwright": "Displacement",
-	"wayfarer": "Mobility", "lancer": "Mobility", "cantor": "Support", "apothecary": "Support",
-	"rune_smith": "Heavy tiles", "starshot": "Ranged", "cinder_mage": "Displacement", "duelist": "Focus fire",
 }
 
 var _host
@@ -228,6 +224,8 @@ func _draft(phase: String) -> void:
 	var subtitle: String = {
 		"recruit": "New recruits join at full health.",
 	}.get(phase, "")
+	if phase in ["starter", "recruit_starter"]:
+		subtitle = _hero_name(_run.data.get("pending_recruit", _run.data.get("hero", "")))
 	_page_title(title, subtitle)
 	var cards := _cards_row()
 	var offers: Array = _run.data.get("offers", [])
@@ -261,13 +259,64 @@ func _add_draft_cards(cards: HBoxContainer, offers: Array, phase: String) -> voi
 		var card := _choice(cards, entry.label, info, "Choose", func(): _pick_draft(phase, id))
 		if phase in ["hero", "recruit"]:
 			_add_portrait(card, GameIcons.portrait(id), 205)
-			var role := _label(ARCHETYPES[id], 14, TEAL)
-			card.add_child(role)
-			card.move_child(role, 2)
+			var deck := _label(ClassDecks.summary(id), 15, TEAL)
+			deck.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			card.add_child(deck)
+			card.move_child(deck, 2)
+			var deck_button := _button("View class deck", func(): _show_class_deck(id))
+			deck_button.name = "ClassDeck_" + id
+			GameIcons.decorate(deck_button, "review", 17)
+			card.add_child(deck_button)
+			card.move_child(deck_button, card.get_child_count() - 2)
 		elif phase == "relic":
 			_add_card_icon(card, GameIcons.relic(id))
 		else:
 			_add_card_icon(card, GameIcons.tile(id, entry), GameIcons.rarity(entry))
+			var hero_id: String = _run.data.get("pending_recruit", _run.data.get("hero", ""))
+			if id == ClassDecks.starter(hero_id):
+				var badge := _label("%s starter" % _hero_name(hero_id), 15, TEAL)
+				card.add_child(badge)
+				card.move_child(badge, 2)
+
+
+func _show_class_deck(hero_id: String) -> void:
+	var dialog := AcceptDialog.new()
+	dialog.title = "%s deck" % _hero_name(hero_id)
+	dialog.ok_button_text = "Close"
+	dialog.confirmed.connect(dialog.queue_free)
+	dialog.canceled.connect(dialog.queue_free)
+	dialog.add_theme_stylebox_override("panel", _box(PANEL_DARK, EDGE, 10, 17))
+	add_child(dialog)
+	var deck := VBoxContainer.new()
+	deck.add_theme_constant_override("separation", 7)
+	dialog.add_child(deck)
+	var common: Array = ClassDecks.common(hero_id)
+	var uncommon: Array = ClassDecks.uncommon(hero_id)
+	for pool in [{"title": "Common", "ids": common}, {"title": "Uncommon", "ids": uncommon}]:
+		deck.add_child(_label(pool.title, 16, GOLD))
+		var grid := GridContainer.new()
+		grid.columns = 2
+		grid.add_theme_constant_override("h_separation", 9)
+		grid.add_theme_constant_override("v_separation", 4)
+		deck.add_child(grid)
+		for tile_id: String in pool.ids:
+			var spec: Dictionary = ArenaSim.TILES[tile_id]
+			var tile := Button.new()
+			tile.text = "%s  ·  %s" % [spec.label, GameIcons.tile_stats(spec)]
+			tile.focus_mode = FOCUS_NONE
+			tile.size_flags_horizontal = SIZE_EXPAND_FILL
+			tile.tooltip_text = spec.description
+			tile.mouse_default_cursor_shape = CURSOR_HELP
+			GameIcons.decorate(tile, GameIcons.tile(tile_id, spec), 18)
+			grid.add_child(tile)
+	var forge_names := PackedStringArray()
+	for family: String in ClassDecks.forge_families(hero_id):
+		if _run.forge_family_available(family):
+			forge_names.append(family.capitalize())
+		else:
+			forge_names.append("%s (Aether Chart)" % family.capitalize())
+	deck.add_child(_label("Forge families  ·  " + ", ".join(forge_names), 15, MUTED))
+	dialog.popup_centered(Vector2i(800, 365))
 
 
 func _pick_draft(phase: String, id: String) -> void:
@@ -396,6 +445,8 @@ func _elite_preview_copy(node: Dictionary) -> String:
 	if not threat.is_empty():
 		formation += "\n" + threat
 	var reward := "%s (%s)" % [tile.label, str(tile.rarity).capitalize()]
+	if _party().size() > 1:
+		reward += " · " + _hero_name(_party()[0].id)
 	if info.get("relic_draft", false):
 		reward += "\nChoose a relic after victory"
 	return "%s\n%s\n\nReward choice · %s" % [node.label, formation, reward]
@@ -469,7 +520,13 @@ func _reward() -> void:
 	var milestone := ""
 	if boss:
 		milestone = str(_run.data.get("node_notice", "")) if final_boss else "Leg %d cleared · Recruit for Leg %d next" % [_leg_number(), _leg_number() + 1]
-	_page_title(title, milestone)
+	var lane: int = _run.reward_lane()
+	var party := _party()
+	if lane >= 0 and lane < party.size():
+		var hero_id: String = party[lane].id
+		_reward_heading(title, milestone, hero_id)
+	else:
+		_page_title(title, milestone)
 	var cards := _cards_row()
 	var notice := _notice()
 	var selected := {"id": ""}
@@ -490,14 +547,37 @@ func _reward() -> void:
 		select_tile.button_group = group
 		_add_card_icon(card, GameIcons.tile(id, tile), GameIcons.rarity(tile))
 	_layout.add_child(notice)
+	var actions := _footer_actions()
 	if not final_boss:
-		var actions := _footer_actions()
 		actions.add_child(_button("Manage tiles", func(): _host.run_show_arena()))
-		if boss:
-			actions.add_child(_button("Skip reward", func(): _claim_reward("skip", notice)))
-		else:
-			var bonus := 9 if "quartermasters_coin" in _run.data.get("relics", []) else 6
-			actions.add_child(_button("Skip for +%d gold" % bonus, func(): _claim_reward("skip", notice)))
+	var bonus: int = _run.reward_skip_gold()
+	var skip := _button("Skip for +%d gold" % bonus if bonus > 0 else "Skip reward", func(): _claim_reward("skip", notice))
+	skip.name = "SkipReward"
+	actions.add_child(skip)
+
+
+func _reward_heading(title: String, milestone: String, hero_id: String) -> void:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 13)
+	_layout.add_child(row)
+	var art := load("res://assets/%s.png" % GameIcons.portrait(hero_id)) as Texture2D
+	if art:
+		row.add_child(_icon_view(art, 54))
+	var hero := _label(_hero_name(hero_id), 34, CREAM, true)
+	hero.name = "RewardHero"
+	row.add_child(hero)
+	var context := _label(title, 18, MUTED)
+	context.size_flags_horizontal = SIZE_EXPAND_FILL
+	context.size_flags_vertical = SIZE_SHRINK_CENTER
+	row.add_child(context)
+	var count: int = _run.reward_count()
+	if count > 1:
+		var progress := _label("Pick %d of %d" % [_run.reward_position() + 1, count], 17, GOLD)
+		progress.name = "RewardProgress"
+		progress.size_flags_vertical = SIZE_SHRINK_CENTER
+		row.add_child(progress)
+	if not milestone.is_empty():
+		_layout.add_child(_label(milestone, 17, MUTED))
 
 
 func _elite_relic_draft(offers: Array) -> void:
@@ -635,9 +715,15 @@ func _result() -> void:
 		var notice: String = _run.data.get("node_notice", "")
 		if not notice.is_empty():
 			detail += "\n" + notice
-	var chosen: String = _run.data.get("trophy", "")
-	if victory and ArenaSim.TILES.has(chosen):
-		detail += "\nVictory reward  ·  " + ArenaSim.TILES[chosen].label
+	if victory:
+		var trophies: Dictionary = _run.data.get("trophies", {})
+		for member: Dictionary in _party():
+			var tile_id: String = trophies.get(member.id, "")
+			if ArenaSim.TILES.has(tile_id):
+				detail += "\n%s  ·  %s" % [_hero_name(member.id), ArenaSim.TILES[tile_id].label]
+		var legacy_trophy: String = _run.data.get("trophy", "")
+		if trophies.is_empty() and ArenaSim.TILES.has(legacy_trophy):
+			detail += "\nVictory reward  ·  " + ArenaSim.TILES[legacy_trophy].label
 	detail += "\n+%d Aether Marks this run." % int(_run.data.get("marks_earned", 0))
 	detail += "\n%d Aether Marks available." % int(_run.profile.get("marks", 0))
 	_choice(cards, "Victory" if victory else "Defeat", detail, "", Callable())
