@@ -25,6 +25,18 @@ const TIDEKEEPER_SLAM_BEATS := 5
 const TIDEKEEPER_SLAM_RADIUS := 310.0
 const ADMIRAL_SWEEP_BEATS := 6
 const ADMIRAL_SWEEP_RADIUS := 330.0
+const BOSS_REVIEW_STAGES := {
+	"marshal_plate": "start", "marshal_exposed": "progress", "marshal_shattered": "success",
+	"regent_seals": "start", "regent_seal_struck": "progress", "regent_shattered": "success",
+	"crucible_rally": "progress", "prism_ward": "start", "prism_exposed": "progress", "prism_shattered": "success",
+	"colossus_forging": "start", "colossus_displaced": "progress", "colossus_cracked": "progress", "colossus_shattered": "success",
+	"relay_charge": "start", "relay_interrupted": "success", "relay_discharge": "miss",
+	"relay_marshal_charge": "start", "relay_marshal_separated": "progress", "relay_marshal_interrupted": "success",
+	"crown_regent_charge": "start", "crown_link_separated": "progress", "crown_regent_interrupted": "success",
+	"wreckmaster_slam_windup": "start", "wreckmaster_slam_miss": "success",
+	"tidekeeper_slam_windup": "start", "tidekeeper_unanchored": "progress", "tidekeeper_interrupted": "success",
+	"admiral_sweep_windup": "start", "admiral_unanchored": "progress", "admiral_reversed": "progress", "admiral_interrupted": "success",
+}
 const TARGET_RULES := ["nearest", "farthest", "lowest_hp", "highest_hp"]
 const RANGED_TILES := [
 	"pull", "gravity_hook", "shot", "hook_bash", "graviton", "event_horizon", "meteor_seal",
@@ -246,11 +258,14 @@ const TILES := {
 
 var units: Array[Dictionary] = []
 var trace: Array[Dictionary] = []
+var activations: Array[Dictionary] = []
+var boss_events: Array[Dictionary] = []
 var tick := 0
 var outcome := ""
 
 var _lanes: Array[Array] = []
 var _events: Array[Dictionary] = []
+var _activation: Dictionary = {}
 var _compass_loop := -1
 
 
@@ -281,6 +296,9 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 	outcome = ""
 	units.clear()
 	trace.clear()
+	activations.clear()
+	boss_events.clear()
+	_activation = {}
 	_events.clear()
 	_lanes.clear()
 	_compass_loop = -1
@@ -545,11 +563,25 @@ func step() -> Array[Dictionary]:
 		var exposure: int = unit.get("marshal_exposed_until", 0)
 		if exposure > 0 and tick > exposure:
 			unit.marshal_exposed_until = 0
+			if unit.hp > 0:
+				_review_boss_event("miss", "marshal_window_missed", "The Marshal's plating closed before another hero landed a hit. Move that hero's strike within three beats of the push or pull.", unit)
 		var prism_window: int = unit.get("prism_window_until", 0)
 		if prism_window > 0 and tick > prism_window:
 			unit.prism_window_until = 0
+			if unit.hp > 0:
+				_review_boss_event("miss", "prism_window_missed", "The Prism Warden's ward closed before the other hero landed a hit. Bring that hero's strike closer to the push or pull.", unit)
 		var seal_window: int = unit.get("regent_window_until", 0)
 		if seal_window > 0 and tick > seal_window:
+			if unit.hp > 0:
+				var contributors: Array = unit.regent_contributors
+				var missing := PackedStringArray()
+				for hero in units:
+					if hero.side == "hero" and hero.id not in contributors:
+						missing.append(hero.name if hero.hp > 0 else "%s (fallen)" % hero.name)
+				var message := "The Regent's seals reset. %d of 3 heroes landed a hit in the four-beat window." % contributors.size()
+				if not missing.is_empty():
+					message += " Still needed a hit from %s." % ", ".join(missing)
+				_review_boss_event("miss", "regent_window_missed", message, unit)
 			unit.regent_window_until = 0
 			unit.regent_seals_left = 3
 			unit.regent_contributors.clear()
@@ -819,26 +851,47 @@ func _activate_lanes() -> void:
 	var current_beat := _beat()
 	for lane in range(_lanes.size()):
 		var actor: Dictionary = units[lane]
-		if actor.hp <= 0:
-			continue
 		for tile in _lanes[lane]:
-			if tile.end == current_beat:
+			if tile.end != current_beat:
+				continue
+			_activation = {
+				"order": activations.size() + boss_events.size(), "tick": tick, "beat": current_beat, "loop": _loop_index() + 1,
+				"lane": lane, "tile": tile.id, "start": tile.start, "actor": actor.id, "hero": actor.name, "rule": tile.target,
+				"status": "landed", "reason": "", "target": "", "target_name": "", "damage": 0, "guard": 0,
+			}
+			activations.append(_activation)
+			if actor.hp <= 0:
+				_activation.status = "unavailable"
+				_activation.reason = "%s had already fallen." % actor.name
+			else:
 				_cast(actor, tile.id, tile.target)
 				if actor.get("class") == "rune_smith" and TILES[tile.id].width >= 3:
 					actor["rune_charged"] = true
+				if _activation.status == "landed":
+					_activation.reason = _activation_result(_activation)
+			_activation = {}
 
 
 func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 	var tile: Dictionary = TILES[tile_id]
 	if tile_id == "guard":
+		_review_activation_target(actor)
 		_guard(actor, 10, tile_id)
 		return
 	var target := _select(actor, rule, tile.range)
 	if target.is_empty():
 		var out_of_range := _select(actor, rule)
 		if not out_of_range.is_empty():
+			_review_activation_target(out_of_range)
 			_emit("miss", "%s: %s was out of range." % [actor.name, tile.label], actor, out_of_range, tile_id)
+			if not _activation.is_empty():
+				var position: Vector2 = actor.pos
+				_activation.reason = "%s was out of range (%d away, %d reach)." % [out_of_range.name, roundi(position.distance_to(out_of_range.pos)), int(tile.range)]
+		elif not _activation.is_empty():
+			_activation.status = "miss"
+			_activation.reason = "No eligible enemy remained when the tile finished."
 		return
+	_review_activation_target(target)
 	match tile_id:
 		"pull", "gravity_hook":
 			var force := 935.0 if tile_id == "gravity_hook" else 735.0
@@ -888,6 +941,25 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 				_cast_blink(actor, target, tile_id, tile)
 	if tile.get("family") == "bash":
 		_warden_guard(actor, tile_id)
+
+
+func _review_activation_target(target: Dictionary) -> void:
+	if not _activation.is_empty():
+		_activation.target = target.id
+		_activation.target_name = target.name
+
+
+func _activation_result(activation: Dictionary) -> String:
+	var parts := PackedStringArray()
+	if activation.damage > 0:
+		parts.append("%d damage dealt" % activation.damage)
+	if activation.guard > 0:
+		parts.append("%d Guard granted" % activation.guard)
+	if not parts.is_empty():
+		return ", ".join(parts) + "."
+	if activation.tile == "guard":
+		return "Guard was already full."
+	return "The tile connected. The target blocked all damage."
 
 
 func _cast_blink(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
@@ -1143,11 +1215,14 @@ func _resolve_intent(enemy: Dictionary) -> void:
 		enemy.intent_tick = 0
 		var marked := _find_unit(intent)
 		if enemy.get("sprite") == "crown_regent":
+			_review_boss_event("miss", "crown_regent_discharge", "Crown Charge released before the counter landed. Check whether two different heroes broke the live links and a third pushed the Regent before either link reformed.", enemy, marked)
 			enemy.crown_breakers.clear()
 			_emit("intent", "The Crown Regent releases Crown Charge.", enemy, marked, "crown_regent_discharge")
 			_sweep(enemy, attack, 125.0, 11)
 			return
 		if marshal:
+			var next_step := "Separate the shield before the charge ends." if enemy.relay_combo_stage == 1 else "Move the follow-up push earlier, and use a different hero if someone broke the link."
+			_review_boss_event("miss", "relay_marshal_discharge", "Linked Charge released. " + next_step, enemy, marked)
 			enemy.relay_combo_stage = 0
 			enemy.relay_breaker = ""
 			_emit("intent", "The Relay Marshal releases Linked Charge.", enemy, marked, "relay_marshal_discharge")
@@ -1161,6 +1236,8 @@ func _resolve_intent(enemy: Dictionary) -> void:
 				_displace("push", enemy, defender, "enemy_attack", defender.pos - enemy.pos, 345.0)
 		return
 	if enemy.get("colossus_stage", 0) > 0:
+		var next_step: String = ["", "Move a push or pull into the windup.", "Land a hit with a second hero after moving the Colossus.", "Move the remaining hero's hit into the windup."][enemy.colossus_stage]
+		_review_boss_event("miss", "colossus_forge_sweep", "Forge Sweep released. " + next_step, enemy)
 		_reset_colossus_sequence(enemy)
 		_emit("intent", "The Tempered Colossus releases its Forge Sweep.", enemy, enemy, "colossus_forge_sweep")
 		_sweep(enemy, attack, COLOSSUS_EXTRA_REACH, 8)
@@ -1274,6 +1351,8 @@ func _resolve_wreckmaster(enemy: Dictionary, intent: String) -> void:
 	var affected := _enemies_in_area(enemy, enemy.pos, enemy.wreckmaster_slam_radius)
 	if affected.is_empty():
 		_emit("miss", "Deck Slam misses. No hero is close enough.", enemy, target, "wreckmaster_slam_miss")
+	else:
+		_review_boss_event("miss", "wreckmaster_slam", "Deck Slam caught %s. Schedule a push between the harpoon and the end of beat 6, or add Guard before impact." % affected[0].name, enemy, affected[0])
 	for hero in affected:
 		_damage(enemy, hero, 15, "enemy_attack")
 
@@ -1310,8 +1389,13 @@ func _resolve_tidekeeper(enemy: Dictionary, intent: String, attack: Dictionary) 
 		_emit("intent", "Breakwater Slam in %d beats. Push the Tidekeeper off its anchor." % TIDEKEEPER_SLAM_BEATS,
 			enemy, enemy, "tidekeeper_slam_windup")
 		return
-	_clear_tidekeeper_intent(enemy)
 	var affected := _enemies_in_area(enemy, enemy.pos, enemy.tidekeeper_slam_radius)
+	if affected.is_empty():
+		_review_boss_event("success", "tidekeeper_slam_dodged", "Breakwater Slam released, but the whole party was outside its range.", enemy)
+	else:
+		var next_step := "Push the Tidekeeper after the harpoons land." if enemy.tidekeeper_phase == 2 else "Follow the first push with a push or pull from the other hero."
+		_review_boss_event("miss", "tidekeeper_slam", "Breakwater Slam hit %d. %s" % [affected.size(), next_step], enemy)
+	_clear_tidekeeper_intent(enemy)
 	_emit("intent", "The Tidekeeper releases Breakwater Slam.", enemy, enemy, "tidekeeper_slam", affected.size())
 	for hero in affected:
 		_damage(enemy, hero, attack.damage + 7, "enemy_attack")
@@ -1376,8 +1460,13 @@ func _resolve_admiral(enemy: Dictionary, intent: String, attack: Dictionary) -> 
 		_emit("intent", "Undertow Sweep in %d beats. Push the Admiral off its anchor." % ADMIRAL_SWEEP_BEATS,
 			enemy, enemy, "admiral_sweep_windup")
 		return
-	_clear_admiral_intent(enemy)
 	var affected := _enemies_in_area(enemy, enemy.pos, enemy.admiral_sweep_radius)
+	if affected.is_empty():
+		_review_boss_event("success", "admiral_sweep_dodged", "Undertow Sweep released, but the whole party was outside its range.", enemy)
+	else:
+		var next_step: String = ["", "", "Push to break the anchor.", "Pull with a different hero to reverse the undertow.", "Push with the remaining hero before the sweep releases."][enemy.admiral_phase]
+		_review_boss_event("miss", "admiral_sweep", "Undertow Sweep hit %d. %s" % [affected.size(), next_step], enemy)
+	_clear_admiral_intent(enemy)
 	_emit("intent", "The Drowned Admiral releases Undertow Sweep.", enemy, enemy, "admiral_sweep", affected.size())
 	for hero in affected:
 		_damage(enemy, hero, attack.damage + 7, "enemy_attack")
@@ -1696,6 +1785,7 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		target.next_attack = mini(target.next_attack, tick + 20)
 		_guard(target, 11, "tollkeeper_rallies")
 		_emit("intent", "The Tollkeeper rallies. Its strikes now hit harder.", target, actor, "enemy_attack")
+		_review_boss_event("progress", "tollkeeper_rallies", "The Tollkeeper gained Guard and its strikes now hit harder. Time a push to open space or add Guard before its next strike.", target, actor)
 	elif target.get("sprite") == "marshal" and target.hp * 5 <= target.max_hp * 3 and not target.get("marshal_raised", false):
 		target["marshal_raised"] = true
 		target.marshal_plated = true
@@ -1897,8 +1987,16 @@ func _check_outcome() -> void:
 		_emit("outcome", "Victory. The arena is clear." if outcome == "victory" else "Defeat. The crew has fallen.")
 
 
+static func _tick_in_loop(at_tick: int) -> int:
+	return 0 if at_tick <= 0 else (at_tick - 1) % LOOP_TICKS + 1
+
+
+static func loop_progress(at_tick: int) -> float:
+	return float(_tick_in_loop(at_tick)) / LOOP_TICKS
+
+
 func _beat() -> int:
-	return 0 if tick == 0 else floori(float((tick - 1) % LOOP_TICKS) / TICKS_PER_BEAT) + 1
+	return ceili(float(_tick_in_loop(tick)) / TICKS_PER_BEAT)
 
 
 func _emit(kind: String, message: String, actor: Dictionary = {}, target: Dictionary = {}, tile_id: String = "", amount: int = 0, start_position: Vector2 = Vector2.INF, end_position: Vector2 = Vector2.INF) -> void:
@@ -1910,3 +2008,34 @@ func _emit(kind: String, message: String, actor: Dictionary = {}, target: Dictio
 	}
 	trace.append(event)
 	_events.append(event)
+	if not _activation.is_empty() and actor.get("id") == _activation.actor and tile_id == _activation.tile:
+		match kind:
+			"miss":
+				_activation.status = "miss"
+				_activation.reason = message.get_slice(": ", 1)
+			"hit":
+				_activation.damage += amount
+			"guard":
+				_activation.guard += amount
+	if kind in ["intent", "interrupt", "miss"] and BOSS_REVIEW_STAGES.has(tile_id):
+		_review_boss_event(BOSS_REVIEW_STAGES[tile_id], tile_id, message, actor, target, kind)
+	elif tile_id == "enemy_attack" and actor.get("name") == "The Tollkeeper":
+		match kind:
+			"hit":
+				_review_boss_event("miss", "tollkeeper_hit", message + " Try a push during its windup or time Guard before impact.", actor, target, kind)
+			"miss":
+				_review_boss_event("success", "tollkeeper_miss", message, actor, target, kind)
+
+
+func _review_boss_event(stage: String, tile_id: String, message: String, actor: Dictionary, target: Dictionary = {}, kind := "intent") -> void:
+	var event := {
+		"order": activations.size() + boss_events.size(), "tick": tick, "beat": _beat(), "loop": _loop_index() + 1,
+		"stage": stage, "kind": kind, "tile": tile_id, "message": message,
+		"actor": actor.get("id", ""), "actor_name": actor.get("name", ""),
+		"target": target.get("id", ""), "target_name": target.get("name", ""),
+	}
+	if not _activation.is_empty():
+		event["source_tile"] = _activation.tile
+		event["lane"] = _activation.lane
+		event["start"] = _activation.start
+	boss_events.append(event)

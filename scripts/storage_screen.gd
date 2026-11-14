@@ -25,8 +25,10 @@ var _send: Button
 var _discard: Button
 var _forge: Button
 var _selected: Dictionary = {}
-var _preview: Panel
+var _preview: Control
 var _preview_row: Control
+var _preview_key: Array = []
+var _dragged_card: Control
 
 
 func configure(host: Control) -> void:
@@ -37,7 +39,7 @@ func configure(host: Control) -> void:
 
 func render(rows: Array, selected: Dictionary, offers: Array, camp := false) -> void:
 	_selected = selected.duplicate()
-	_clear_preview()
+	_end_drag()
 	for child in _board.get_children():
 		_board.remove_child(child)
 		child.queue_free()
@@ -51,7 +53,7 @@ func render(rows: Array, selected: Dictionary, offers: Array, camp := false) -> 
 	_forge.visible = camp
 	_forge.disabled = _send.disabled
 	if _selected.is_empty():
-		show_message("Select a tile to move it, or drag it to an empty cell.")
+		show_message("Drag a tile to make room in a row, or select it and choose an empty cell.")
 	else:
 		var tile: Dictionary = _host.tile_spec(_selected.id)
 		show_message("%s selected · choose a starting cell." % tile.get("label", _selected.id))
@@ -139,8 +141,8 @@ func _build_row(row_index: int, tiles: Array, offers: Array) -> int:
 	var row := Control.new()
 	row.custom_minimum_size.y = TILE_HEIGHT
 	row.mouse_filter = Control.MOUSE_FILTER_PASS
-	row.mouse_exited.connect(_clear_preview)
 	band.add_child(row)
+	_drop_target(row, row, row_index, tiles)
 	var occupied := PackedByteArray()
 	occupied.resize(COLUMNS)
 	var used := 0
@@ -152,7 +154,7 @@ func _build_row(row_index: int, tiles: Array, offers: Array) -> int:
 			continue
 		for column in range(start, start + width):
 			occupied[column] = 1
-		_build_tile(row, row_index, item, tile)
+		_build_tile(row, row_index, item, tile, tiles)
 		used += width
 	for column in range(COLUMNS):
 		if occupied[column] == 1:
@@ -161,11 +163,11 @@ func _build_row(row_index: int, tiles: Array, offers: Array) -> int:
 		cell.add_theme_stylebox_override("normal", _box(EMPTY, EDGE, 3))
 		cell.tooltip_text = "Storage row %d, column %d" % [row_index + 1, column + 1]
 		_span(row, cell, column, 1)
-		_drop_target(cell, row, row_index, column, 1)
+		_drop_target(cell, row, row_index, tiles)
 	return used
 
 
-func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionary) -> void:
+func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionary, tiles: Array) -> void:
 	var payload := {"id": item.id, "lane": -1, "row": row_index, "start": item.start}
 	var chosen := int(_selected.get("row", -1)) == row_index and int(_selected.get("start", -1)) == int(item.start)
 	var name := String(tile.get("label", item.id))
@@ -177,7 +179,7 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 	card.add_theme_stylebox_override("hover", _box(STORED.lightened(0.16), GOLD))
 	card.add_theme_stylebox_override("pressed", _box(SELECTED, GOLD))
 	_span(row, card, int(item.start), width)
-	_drop_target(card, row, row_index, int(item.start), width, payload)
+	_drop_target(card, row, row_index, tiles, payload)
 
 
 func _build_offer(strip: Control, row_index: int, offer: Dictionary) -> void:
@@ -218,53 +220,93 @@ func _place_selected(row: int, start: int) -> void:
 		show_message("Select a tile first.")
 
 
-func _drop_target(control: Control, row: Control, row_index: int, column: int, span: int, payload := {}) -> void:
-	var column_at := func(point: Vector2) -> int:
-		return column + clampi(floori(point.x / row.size.x * COLUMNS), 0, span - 1)
-	var approved_column := [-1]
+func _drop_target(control: Control, row: Control, row_index: int, tiles: Array, payload := {}) -> void:
+	var drop_start := func(data: Dictionary, width: int) -> int:
+		var local: Vector2 = row.get_global_transform_with_canvas().affine_inverse() * _host.drag_pointer
+		return clampi(floori(local.x * COLUMNS / row.size.x) - int(data.get("grab_offset", 0)), 0, COLUMNS - width)
 	var get_data := Callable()
 	if not payload.is_empty():
-		get_data = func(_point: Vector2):
+		get_data = func(point: Vector2):
 			var tile: Dictionary = _host.tile_spec(payload.id)
-			var preview := _label(tile.get("label", payload.id), 16, GOLD)
+			var preview := Control.new()
+			var caption := _label(tile.label, 16, GOLD)
+			caption.position = Vector2(13, -32)
+			preview.add_child(caption)
+			var dragged := payload.duplicate()
+			var local: Vector2 = row.get_global_transform().affine_inverse() * (control.get_global_transform() * point)
+			dragged.grab_offset = clampi(floori(local.x * COLUMNS / row.size.x) - int(payload.start), 0, int(tile.width) - 1)
 			control.set_drag_preview(preview)
-			return payload
+			_dragged_card = control
+			_dragged_card.modulate.a = 0.25
+			return dragged
 	control.set_drag_forwarding(
 		get_data,
-		func(point: Vector2, data: Variant) -> bool:
+		func(_point: Vector2, data: Variant) -> bool:
 			if not data is Dictionary:
 				return false
-			var start: int = column_at.call(point)
-			var allowed: bool = _host.storage_can_place(row_index, start, data)
-			approved_column[0] = start if allowed else -1
 			var tile: Dictionary = _host.tile_spec(data.get("id", ""))
-			var width := mini(int(tile.get("width", 0)), COLUMNS - start)
-			if width > 0:
-				_show_preview(row, start, width, allowed)
-			return allowed,
+			var width := int(tile.get("width", 0))
+			if width < 1 or width > COLUMNS:
+				return false
+			var start: int = drop_start.call(data, width)
+			var plan: Dictionary = _host.storage_nudge_plan(row_index, start, data)
+			var ignored_start: int = data.get("start", -1) if data.get("row", -1) == row_index else -1
+			_show_preview(row, tiles, start, tile, ignored_start, plan)
+			return not plan.is_empty(),
 		func(_point: Vector2, data: Variant):
-			_clear_preview()
-			if approved_column[0] >= 0:
-				_host.storage_place(row_index, approved_column[0], data)
+			var tile: Dictionary = _host.tile_spec(data.id)
+			var start: int = drop_start.call(data, tile.width)
+			_end_drag()
+			_host.storage_place(row_index, start, data, true)
 	)
 
 
-func _show_preview(row: Control, start: int, width: int, allowed: bool) -> void:
-	if _preview == null or _preview_row != row:
-		_clear_preview()
-		_preview = Panel.new()
-		_preview.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		_preview_row = row
-		row.add_child(_preview)
-	_preview.anchor_left = float(start) / COLUMNS
-	_preview.anchor_right = float(start + width) / COLUMNS
-	_preview.anchor_bottom = 1.0
-	_preview.offset_left = 2.0
-	_preview.offset_right = -2.0
-	_preview.offset_top = 1.0
-	_preview.offset_bottom = -1.0
-	var tint := TEAL if allowed else RUST
-	_preview.add_theme_stylebox_override("panel", _box(Color(tint, 0.22), tint))
+func _show_preview(row: Control, tiles: Array, start: int, incoming: Dictionary, ignored_start: int, plan: Dictionary) -> void:
+	var key := [row, start, incoming.label, ignored_start, plan]
+	if _preview_key == key:
+		return
+	_clear_preview()
+	_preview_key = key
+	_preview_row = row
+	if plan.is_empty():
+		_preview = _preview_card("No room", Color(RUST, 0.25), RUST)
+		_span(row, _preview, start, incoming.width)
+		return
+
+	var backdrop := ColorRect.new()
+	backdrop.color = PANEL
+	backdrop.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_preview = backdrop
+	row.add_child(backdrop)
+	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var occupied := PackedByteArray()
+	occupied.resize(COLUMNS)
+	var moves: Dictionary = plan.moves
+	for item: Dictionary in tiles:
+		if item.start == ignored_start:
+			continue
+		var tile: Dictionary = _host.tile_spec(item.id)
+		var position: int = moves.get(item.start, item.start)
+		for column in range(position, position + int(tile.width)):
+			occupied[column] = 1
+		var accent := GOLD if position != item.start else TEAL
+		_span(backdrop, _preview_card(tile.label, STORED, accent), position, tile.width)
+	for column in range(start, start + int(incoming.width)):
+		occupied[column] = 1
+	_span(backdrop, _preview_card(incoming.label, SELECTED, GOLD), start, incoming.width)
+	for column in range(COLUMNS):
+		if occupied[column] == 0:
+			_span(backdrop, _preview_card("", EMPTY, EDGE), column, 1)
+
+
+func _preview_card(value: String, fill: Color, edge: Color) -> Label:
+	var card := _label(value, 14, CREAM)
+	card.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	card.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	card.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	card.add_theme_stylebox_override("normal", _box(fill, edge))
+	card.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	return card
 
 
 func _clear_preview() -> void:
@@ -273,11 +315,29 @@ func _clear_preview() -> void:
 		_preview.queue_free()
 	_preview = null
 	_preview_row = null
+	_preview_key.clear()
+
+
+func _process(_delta: float) -> void:
+	if not is_visible_in_tree():
+		if _dragged_card != null or _preview != null:
+			_end_drag()
+	elif _preview_row != null:
+		var hovered := get_viewport().gui_get_hovered_control()
+		if hovered == null or (hovered != _preview_row and not _preview_row.is_ancestor_of(hovered)):
+			_clear_preview()
 
 
 func _notification(what: int) -> void:
 	if what == NOTIFICATION_DRAG_END:
-		_clear_preview()
+		_end_drag()
+
+
+func _end_drag() -> void:
+	if is_instance_valid(_dragged_card):
+		_dragged_card.modulate.a = 1.0
+	_dragged_card = null
+	_clear_preview()
 
 
 func _button(value: String, callback: Callable) -> Button:

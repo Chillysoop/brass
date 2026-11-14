@@ -1,6 +1,7 @@
 extends SceneTree
 
 const ArenaScene = preload("res://arena.tscn")
+const ArenaSim = preload("res://scripts/arena_sim.gd")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 
@@ -46,6 +47,7 @@ func _run() -> void:
 	_button_input(to, false)
 	await process_frame
 	_check(lab.lanes[1].size() == 4, "Dragging the palette tile to an open span should place it.")
+	await _check_nudge(lab)
 	lab._load_fixture("duo")
 	lab._set_all(1, "lowest_hp")
 	_check(lab.lanes[1][0].target == "self", "Set all must preserve Guard's target.")
@@ -69,11 +71,32 @@ func _run() -> void:
 	lab._physics_process(1.0 / 60.0)
 	_check(lab.sim.tick == 2, "Pause should preserve the simulation tick.")
 	lab._action()
+	await process_frame
 	for step_index in range(3000):
 		lab._physics_process(1.0 / 60.0)
+		if lab.sim.tick == 84:
+			var head: Control = lab.playheads[0]
+			var marker: Control = lab.tile_cards[0][1].get_meta("timing_marker")
+			_check(marker.visible and absf(head.get_global_rect().get_center().x - marker.get_global_rect().end.x) <= 1.0,
+				"The playhead and firing tile must share the same right edge at 2×.")
 		if lab.state == "finished":
 			break
 	_check(lab.sim.outcome == "victory", "The full fight should finish through the arena controls.")
+	await process_frame
+	_click(lab.review_button.get_global_rect().get_center())
+	await process_frame
+	_check(lab.battle_review.visible and not lab.arena.visible, "Battle review should open from the finished fight.")
+	var reviewed: Dictionary = lab.reviewed_event
+	if reviewed.get("lane", -1) >= 0:
+		var card: Control = lab.tile_cards[reviewed.lane][reviewed.start]
+		_check(card.get_meta("timing_marker").visible, "Selecting a review event should highlight the exact tile.")
+	else:
+		_check(false, "Opening the review should select an activation when the fight has no boss events.")
+	var close: Button = lab.battle_review.find_child("CloseBattleReview", true, false)
+	if close != null:
+		_click(close.get_global_rect().get_center())
+	await process_frame
+	_check(not lab.battle_review.visible and lab.arena.visible, "Closing review should return to the finished arena.")
 	lab._reset_fight()
 	_check(lab.state == "setup" and lab.lanes == original, "Reset should return to setup and retain the edited layout.")
 	lab._load_fixture("solo")
@@ -88,6 +111,41 @@ func _run() -> void:
 	lab.queue_free()
 	await process_frame
 	quit(0 if failures.is_empty() else 1)
+
+func _check_nudge(lab: Control) -> void:
+	lab.lanes[0].assign([lab._entry("bash", 1, "nearest"), lab._entry("shot", 3, "lowest_hp"), lab._entry("bash", 7, "farthest")])
+	lab._reset_fight()
+	await process_frame
+	var board: Control = lab.tile_cards[0][3].get_parent()
+	var palette_tile: Button = lab.palette.get_child(4)
+	var origin := palette_tile.get_global_rect().get_center()
+	var destination := board.get_global_rect().position + Vector2(board.size.x * 2.5 / ArenaSim.BEATS, 12)
+	var before: Array = lab.lanes.duplicate(true)
+	_button_input(origin, true)
+	_motion(origin, origin.lerp(destination, 0.5), true)
+	_motion(origin.lerp(destination, 0.5), destination, true)
+	_check(lab.lanes == before and lab.drag_overlay != null and lab.drag_overlay.get_child_count() == 3,
+		"Dragging onto an occupied span should preview the incoming tile and both nudged neighbors without editing inventory.")
+	_button_input(destination, false)
+	await process_frame
+	_check(lab.lanes[0] == [lab._entry("bash", 0, "nearest"), lab._entry("blink", 2, "nearest"),
+		lab._entry("shot", 5, "lowest_hp"), lab._entry("bash", 7, "farthest")],
+		"Dropping commits the preview and retains each moved tile's target rule.")
+	_check(lab.drag_overlay == null, "A completed drop clears the drag overlay.")
+	var blocked: Array = lab.lanes.duplicate(true)
+	lab._place({"id": "event_horizon"}, 0, 0, true)
+	_check(lab.lanes == blocked, "A full lane should reject the drop without moving any tile.")
+	var blink: Control = lab.tile_cards[0][2]
+	var blink_button: Control = blink.get_child(0)
+	origin = blink_button.get_global_rect().position + Vector2(blink.size.x * 0.82, 12)
+	destination = Vector2(12, 12)
+	_button_input(origin, true)
+	_motion(origin, origin.lerp(destination, 0.5), true)
+	_motion(origin.lerp(destination, 0.5), destination, true)
+	_button_input(destination, false)
+	await process_frame
+	_check(lab.lanes == blocked and lab.drag_overlay == null, "Releasing a drag outside the lanes should cancel it cleanly.")
+	lab._load_fixture("duo")
 
 func _check_forge(lab: Control) -> void:
 	lab._open_storage()

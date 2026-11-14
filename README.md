@@ -6,6 +6,8 @@ The Windows playtest includes Easy, Medium, and Hard expeditions in Brass Fronti
 
 From the title screen, choose **New Expedition**, select **Brass Frontier**, and start on **Easy** to draft a hero, relic, and starting tile. You can enter an optional seed on the difficulty screen. Win the opening fight, pick rewards, then travel a seeded route through battles, elites, shops, events, and a rest site. Health, relics, gold, and tile layouts carry between stops. The game saves between fights and after loadout changes. **Continue** picks up from the saved checkpoint.
 
+Open **Battle review** after a fight to inspect activations, misses, and boss counters. Selecting an activation highlights the tile and its firing beat. Expedition defeats open the review automatically.
+
 Defeat the Tollkeeper on Easy to bank Aether Marks and unlock **Medium**. Open the **Aether Chart** from the title or after a run to inspect prerequisites and spend Marks on permanent upgrades between expeditions.
 
 In the **Artifice** branch, unlock **Gravity Hook**, then **Blink Artifice** to forge the Blink family and add its upgrades to future rewards. Each shop adds a Blink upgrade to its regular stock, from Uncommon on the first leg to Rare on the second and Epic on the third. Three touching copies of the same tile open both choices at the next rarity. A camp can advance one eligible tile instead of healing the party. **Wayfarer's Pin** adds a starter relic choice that grants each hero 6 Guard on their first successful teleport each loop. It can also appear in shops and elite rewards.
@@ -36,13 +38,13 @@ Brass Frontier Hard has three legs. Recruit after the Tollkeeper and the Gilded 
 
 1. Start with **Two heroes**. The preset schedules Hexwright's **Pull · Farthest** at beat 4 and Warden's **Bash · Nearest** at beat 6. Start the battle and watch the tether bring the distant clockwork within striking distance.
 2. **Reset fight**, change Pull's rule to **Nearest**, and compare the target and follow-up. Each tile previews its target in setup and chooses again when it fires.
-3. Drag from the tile palette to an empty starting beat, or select a tile and then a beat. Select an equipped tile to move or remove it. **Set all targets** applies a rule to compatible tiles on that lane.
+3. Drag a tile into position on a timeline or within storage. Neighboring tiles shift in the preview if they fit. Drop to commit the arrangement. You can also select a tile and click a clear starting beat. **Set all targets** applies a rule to compatible tiles on that lane.
 4. Try **Solo hero**, 2× speed, or a layout using Blink. Reset returns to setup and retains the current layout. Changing fixtures loads that fixture's preset.
 5. Open **Tile storage** to find three touching Bash tiles. Use **Combine → Yes**, inspect any rarity, then confirm one of the two upgrades offered at the next rarity. Select the result and use **Transfer selected to timeline** to equip it.
 6. Choose **Forge practice** from the fixture picker to start with three Epic Sunwalls on Warden's lane. Combine them into either Legendary, then try the result in battle or move it into storage. To move a tile to storage, select it on the timeline, open **Tile storage**, then choose an empty starting cell.
 7. Choose **Blink forge practice** to inspect the full Blink family and try its teleport upgrades without spending Aether Marks.
 
-The simulation runs at 60 ticks per second, with 21 ticks per beat and 12 beats per loop. Same-tick activations run in hero order. The arena is continuous and uses scripted movement and separation, capped displacement, and checked teleport destinations.
+The simulation runs at 60 ticks per second, with 21 ticks per beat and 12 beats per loop. Each tile fires at its right edge, including at beat 12 before the playhead wraps. Same-tick activations run in hero order. The arena is continuous and uses scripted movement and separation, capped displacement, and checked teleport destinations.
 
 The practice palette supplies unlimited base tiles. Switching practice fixtures resets their inventory.
 
