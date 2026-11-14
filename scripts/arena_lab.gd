@@ -241,8 +241,8 @@ func _reset_fight() -> void:
 func _action() -> void:
 	match state:
 		"setup":
-			if campaign and (not encounter_setup or lanes[0].is_empty()):
-				setup_hint.text = "Equip a tile before starting the battle."
+			if campaign and (not encounter_setup or not _party_has_tiles()):
+				setup_hint.text = "Equip a tile on a living hero before starting the battle."
 				return
 			selected.clear()
 			log_lines.clear()
@@ -274,7 +274,10 @@ func _physics_process(_delta: float) -> void:
 		if not sim.outcome.is_empty():
 			state = "finished"
 			if campaign:
-				run.finish_combat(sim.outcome == "victory", sim.units[0].hp)
+				var remaining_hp: Array[int] = []
+				for index in range(lanes.size()):
+					remaining_hp.append(sim.units[index].hp)
+				run.finish_combat(sim.outcome == "victory", remaining_hp)
 			break
 	_update_controls()
 
@@ -298,7 +301,7 @@ func _update_controls() -> void:
 	match state:
 		"setup":
 			status.text = "PRE-FIGHT SETUP" if not campaign or encounter_setup else "MANAGE TILES"
-			log_text.text = "Try Pull · Farthest at beat 4, then Bash · Nearest at beat 6." if not campaign else "%s  ·  %d / %d HP  ·  %d gold" % [sim.units[0].name, run.data.hp, run.data.max_hp, run.data.gold]
+			log_text.text = "Try Pull · Farthest at beat 4, then Bash · Nearest at beat 6." if not campaign else _party_status()
 		"finished":
 			status.text = "%s · %.1fs" % [sim.outcome.to_upper(), elapsed / 60.0]
 		_:
@@ -314,6 +317,20 @@ func _update_controls() -> void:
 		var progress := 0 if elapsed == 0 else 1 + (elapsed - 1) % cycle
 		head.position.x = clampf(board.size.x * float(progress) / cycle, 0, maxf(0, board.size.x - 2))
 		head.size.y = board.size.y
+
+func _party_has_tiles() -> bool:
+	for index in range(lanes.size()):
+		if int(sim.units[index].hp) > 0 and not lanes[index].is_empty():
+			return true
+	return false
+
+func _party_status() -> String:
+	var parts := PackedStringArray()
+	for index in range(lanes.size()):
+		var hero: Dictionary = sim.units[index]
+		parts.append("%s %d/%d HP" % [hero.name, hero.hp, hero.max_hp])
+	parts.append("%d gold" % int(run.data.gold))
+	return "  ·  ".join(parts)
 
 func _rebuild_loadout() -> void:
 	for child in lane_stack.get_children():
@@ -346,7 +363,8 @@ func _build_lane(lane_index: int) -> void:
 	identity.add_theme_constant_override("separation", 1)
 	row.add_child(identity)
 	var hero: Dictionary = sim.units[lane_index]
-	identity.add_child(_label(hero.name, 16, TEAL))
+	var identity_label := "%s · Down" % hero.name if campaign and hero.hp <= 0 else str(hero.name)
+	identity.add_child(_label(identity_label, 16, TEAL))
 	var all := OptionButton.new()
 	all.add_theme_font_size_override("font_size", 12)
 	all.add_item("Set all targets")
@@ -706,7 +724,8 @@ func _start_sim() -> void:
 		if options.is_empty():
 			options = {
 				"encounter": "opening", "hero": run.data.hero, "hp": run.data.hp,
-				"max_hp": run.data.max_hp, "relics": run.data.relics,
+				"max_hp": run.data.max_hp, "heroes": run.data.get("heroes", []),
+				"difficulty": run.data.get("difficulty", "easy"), "relics": run.data.relics,
 				"relic": run.data.relics[0] if not run.data.relics.is_empty() else ""
 			}
 		sim.start(lanes, "solo", options)
@@ -744,9 +763,11 @@ func run_show_chart() -> void:
 func run_return() -> void:
 	_show_frontier()
 
-func run_start(seed_value := 0) -> void:
-	run.start_run(seed_value)
-	run_return()
+func run_start(seed_value := 0, difficulty := "easy") -> void:
+	if run.start_run(seed_value, difficulty):
+		run_return()
+	else:
+		run_menu()
 
 func run_resume() -> void:
 	run_return()
@@ -815,9 +836,13 @@ func _show_inventory_message(message: String) -> void:
 
 func _loot_destination(id: String) -> Dictionary:
 	var owned: Dictionary = run.loadout
-	for beat in range(ArenaSim.BEATS):
-		if TilePacking.can_place(owned.lanes[0], id, beat, ArenaSim.BEATS):
-			return {"items": owned.lanes[0], "start": beat}
+	var heroes: Array = run.data.get("heroes", [])
+	for lane in range(owned.lanes.size()):
+		if lane < heroes.size() and int(heroes[lane].hp) <= 0:
+			continue
+		for beat in range(ArenaSim.BEATS):
+			if TilePacking.can_place(owned.lanes[lane], id, beat, ArenaSim.BEATS):
+				return {"items": owned.lanes[lane], "start": beat}
 	for row: Array in owned.storage:
 		for column in range(TilePacking.STORAGE_COLUMNS):
 			if TilePacking.can_place(row, id, column, TilePacking.STORAGE_COLUMNS):
@@ -843,7 +868,7 @@ func _claim_loot(id: String, commit: Callable) -> bool:
 	return false
 
 func run_claim_reward(id: String) -> bool:
-	if id == "skip" or run.data.get("node", {}).get("type") == "boss":
+	if id == "skip" or run.is_final_boss():
 		return run.reward(id)
 	return _claim_loot(id, run.reward)
 

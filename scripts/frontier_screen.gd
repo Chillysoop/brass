@@ -47,7 +47,7 @@ func render(model, page_override: String = "") -> void:
 	_shell(phase)
 	match phase:
 		"menu": _main_menu()
-		"hero", "relic", "starter": _draft(phase)
+		"hero", "relic", "starter", "recruit", "recruit_starter": _draft(phase)
 		"map": _map()
 		"combat": _combat()
 		"reward": _reward()
@@ -83,9 +83,12 @@ func _shell(phase: String) -> void:
 	title.size_flags_horizontal = SIZE_EXPAND_FILL
 	bar.add_child(title)
 	if phase != "chart" and phase != "result":
-		var hp: int = _run.data.get("hp", 0)
-		if hp > 0:
-			bar.add_child(_label("HP %d / %d" % [hp, int(_run.data.get("max_hp", hp))], 15, TEAL))
+		for member: Dictionary in _party():
+			var member_id: String = member.get("id", "")
+			var hp_text := "%d / %d HP" % [int(member.hp), int(member.max_hp)]
+			if not member_id.is_empty():
+				hp_text = _hero_name(member_id) + "  " + hp_text
+			bar.add_child(_label(hp_text, 15, TEAL if int(member.hp) > 0 else RUST))
 		bar.add_child(_label("%d gold" % int(_run.data.get("gold", 0)), 15, GOLD))
 	var back_caption := "Title" if phase in ["chart", "result"] else "Save & title"
 	if phase == "result":
@@ -122,16 +125,21 @@ func _main_menu() -> void:
 	copy.custom_minimum_size.x = 510
 	copy.add_child(_label("Brass & Aether", 56, CREAM, true))
 	copy.add_child(_label("Brass Frontier", 27, GOLD, true))
-	copy.add_child(_label("Easy  ·  Six encounters and the Tollkeeper", 16, MUTED))
+	copy.add_child(_label("Easy  ·  Six encounters and one boss", 16, MUTED))
 	var space := Control.new()
 	space.custom_minimum_size.y = 21
 	copy.add_child(space)
 	var resumable: bool = not _run.data.is_empty()
 	var result_pending: bool = _run.data.get("phase") == "result"
 	if resumable:
-		copy.add_child(_button("View run result" if result_pending else "Resume run", func(): _host.run_resume(), true))
-	var begin := _button("Start Easy run", func(): _start_new_run(0, resumable), not resumable)
+		var resume_text := "View run result" if result_pending else "Resume %s run" % _difficulty_name()
+		copy.add_child(_button(resume_text, func(): _host.run_resume(), true))
+	var medium: bool = _run.profile.get("medium_unlocked", false)
+	var begin := _button("Start Easy run", func(): _start_new_run(0, resumable, "easy"), not resumable)
 	copy.add_child(begin)
+	if medium:
+		copy.add_child(_button("Start Medium run", func(): _start_new_run(0, resumable, "medium"), not resumable))
+		copy.add_child(_label("Medium  ·  Two bosses. Recruit a second hero after the first.", 14, TEAL))
 	var seed_row := HBoxContainer.new()
 	seed_row.add_theme_constant_override("separation", 8)
 	copy.add_child(seed_row)
@@ -140,7 +148,13 @@ func _main_menu() -> void:
 	seed_input.max_length = 10
 	seed_input.size_flags_horizontal = SIZE_EXPAND_FILL
 	seed_row.add_child(seed_input)
-	var seed_button := _button("Play seed", func(): _start_new_run(int(seed_input.text), resumable))
+	var seed_difficulty := OptionButton.new()
+	seed_difficulty.add_item("Easy")
+	if medium:
+		seed_difficulty.add_item("Medium")
+	seed_difficulty.visible = medium
+	seed_row.add_child(seed_difficulty)
+	var seed_button := _button("Play seed", func(): _start_new_run(int(seed_input.text), resumable, "medium" if seed_difficulty.selected == 1 else "easy"))
 	seed_button.disabled = true
 	seed_input.text_changed.connect(func(value: String):
 		seed_button.disabled = not value.is_valid_int() or int(value) < 1 or int(value) > 4294967295
@@ -151,8 +165,10 @@ func _main_menu() -> void:
 	copy.add_child(options)
 	options.add_child(_button("Aether Chart", func(): _host.run_show_chart()))
 	options.add_child(_button("Arena practice", func(): _host.run_practice()))
-	var medium: bool = _run.profile.get("medium_unlocked", false)
-	copy.add_child(_label("Medium unlocked · Playable in a future build" if medium else "Clear Easy to unlock Medium.", 14, TEAL if medium else MUTED))
+	if _run.profile.get("hard_unlocked", false):
+		copy.add_child(_label("Hard and Glass Foundry Easy unlocked for future builds.", 14, TEAL))
+	elif not medium:
+		copy.add_child(_label("Clear Easy to unlock Medium.", 14, MUTED))
 	var marks: int = _run.profile.get("marks", 0)
 	var footer := _label("%d Aether Marks" % marks, 16, GOLD)
 	_layout.add_child(footer)
@@ -160,13 +176,13 @@ func _main_menu() -> void:
 		_layout.add_child(_label(_run.save_error, 15, RUST))
 
 
-func _start_new_run(seed_value: int, resumable: bool) -> void:
+func _start_new_run(seed_value: int, resumable: bool, difficulty: String) -> void:
 	if not resumable:
-		_host.run_start(seed_value)
+		_host.run_start(seed_value, difficulty)
 		return
 	if _run.data.get("phase") == "result":
 		_run.finish_run()
-		_host.run_start(seed_value)
+		_host.run_start(seed_value, difficulty)
 		return
 	var dialog := ConfirmationDialog.new()
 	dialog.title = "Start a new run?"
@@ -174,7 +190,7 @@ func _start_new_run(seed_value: int, resumable: bool) -> void:
 	dialog.ok_button_text = "Start new run"
 	dialog.confirmed.connect(func():
 		_run.abandon_run()
-		_host.run_start(seed_value)
+		_host.run_start(seed_value, difficulty)
 	)
 	dialog.canceled.connect(dialog.queue_free)
 	add_child(dialog)
@@ -182,23 +198,28 @@ func _start_new_run(seed_value: int, resumable: bool) -> void:
 
 
 func _draft(phase: String) -> void:
-	var title: String = {"hero": "Choose your hero", "relic": "Choose a starter relic", "starter": "Choose your first tile"}[phase]
+	var title: String = {
+		"hero": "Choose your hero", "relic": "Choose a starter relic", "starter": "Choose your first tile",
+		"recruit": "Recruit your second hero", "recruit_starter": "Equip your recruit"
+	}[phase]
 	var subtitle: String = {
 		"hero": "Each hero brings a passive to the arena.",
 		"relic": "Your relic stays with you for the expedition.",
-		"starter": "Your starter tile begins on your combat timeline."
+		"starter": "Your starter tile begins on your combat timeline.",
+		"recruit": "Your new hero joins at full health. Your first hero carries their current HP into leg two.",
+		"recruit_starter": "This tile starts on the second hero's timeline. Both timelines play in sync."
 	}[phase]
 	_page_title(title, subtitle)
 	var cards := _cards_row()
 	for id: String in _run.data.get("offers", []):
 		var entry: Dictionary
 		match phase:
-			"hero": entry = FrontierRun.HEROES[id]
+			"hero", "recruit": entry = FrontierRun.HEROES[id]
 			"relic": entry = FrontierRun.RELICS[id]
 			_: entry = ArenaSim.TILES[id]
-		var info := _tile_info(entry) if phase == "starter" else str(entry.get("description", ""))
+		var info := _tile_info(entry) if phase in ["starter", "recruit_starter"] else str(entry.get("description", ""))
 		var card := _choice(cards, entry.label, info, "Choose", func(): _pick_draft(phase, id))
-		if phase == "hero":
+		if phase in ["hero", "recruit"]:
 			_add_portrait(card, id)
 
 
@@ -207,11 +228,13 @@ func _pick_draft(phase: String, id: String) -> void:
 		"hero": _run.choose_hero(id)
 		"relic": _run.choose_relic(id)
 		"starter": _run.choose_starter(id)
+		"recruit": _run.choose_recruit(id)
+		"recruit_starter": _run.choose_recruit_starter(id)
 	_host.run_return()
 
 
 func _map() -> void:
-	_page_title("Brass Frontier", "Easy  ·  Seed %s" % str(_run.data.get("seed", "")))
+	_page_title("Brass Frontier", _route_caption())
 	var region := HBoxContainer.new()
 	region.add_theme_constant_override("separation", 15)
 	region.size_flags_vertical = SIZE_EXPAND_FILL
@@ -220,8 +243,9 @@ func _map() -> void:
 	region.add_child(map)
 	var sidebar := _panel_stack(region, Vector2(270, 0))
 	sidebar.add_child(_label("Expedition", 24, CREAM, true))
-	var hero_id: String = _run.data.get("hero", "")
-	sidebar.add_child(_label(FrontierRun.HEROES.get(hero_id, {}).get("label", hero_id.capitalize()), 18, TEAL))
+	for member: Dictionary in _party():
+		var member_label := "%s  ·  %d / %d HP" % [_hero_name(member.id), int(member.hp), int(member.max_hp)]
+		sidebar.add_child(_label(member_label, 16, TEAL if int(member.hp) > 0 else RUST))
 	var relic_names := PackedStringArray()
 	for id: String in _run.data.get("relics", []):
 		relic_names.append(FrontierRun.RELICS.get(id, {}).get("label", id.capitalize()))
@@ -245,6 +269,9 @@ func _map() -> void:
 func _map_board() -> Control:
 	var board := _board(Vector2(655, 500), "res://assets/frontier-map.webp")
 	var layers: Array = _run.data.get("layers", [])
+	if _difficulty_name() == "Medium" and layers.size() > 7:
+		var start := 6 if _leg_number() == 2 else 0
+		layers = layers.slice(start, 14 if _leg_number() == 2 else 7)
 	var nodes := {}
 	var points := {}
 	var active := {}
@@ -252,11 +279,12 @@ func _map_board() -> Control:
 	var current_id: String = _run.data.get("node", {}).get("id", "")
 	for node: Dictionary in _run.available_nodes():
 		active[node.id] = true
-	for layer in layers:
+	for row_index in range(layers.size()):
+		var layer: Array = layers[row_index]
 		for index in range(layer.size()):
 			var node: Dictionary = layer[index]
 			var x := 0.5 if layer.size() == 1 else lerpf(0.22, 0.78, float(index) / (layer.size() - 1))
-			var y := lerpf(0.91, 0.10, float(node.row) / maxf(1.0, layers.size() - 1))
+			var y := lerpf(0.91, 0.10, float(row_index) / maxf(1.0, layers.size() - 1))
 			points[node.id] = Vector2(x, y)
 			nodes[node.id] = node
 	var lines := _ink_layer(board)
@@ -307,28 +335,39 @@ func _choose_node(id: String) -> void:
 func _combat() -> void:
 	var node: Dictionary = _run.data.get("node", {})
 	var type: String = node.get("type", "battle")
-	_page_title(node.get("label", "Opening battle"), TYPE_NAMES.get(type, "Battle"))
+	_page_title(node.get("label", "Opening battle"), "%s  ·  %s" % [TYPE_NAMES.get(type, "Battle"), _route_caption()])
 	var region := _cards_row()
-	var detail := _choice(region, "Prepare for battle", "Arrange tiles, choose targeting rules, and check your storage before you start.", "Open arena", func(): _host.run_show_arena())
-	_add_portrait(detail, "clockwork")
+	var instruction := "Arrange tiles, choose targeting rules, and check your storage before you start."
+	var marshal: bool = type == "boss" and _difficulty_name() == "Medium" and _run.is_final_boss()
+	if marshal:
+		instruction = "A push or pull exposes the Marshal's plating for three beats. Land a hit with your other hero during that window to shatter it."
+	var detail := _choice(region, "Prepare for battle", instruction, "Open arena", func(): _host.run_show_arena())
+	_add_portrait(detail, "marshal" if marshal else "clockwork")
 
 
 func _reward() -> void:
 	var boss: bool = _run.data.get("node", {}).get("type") == "boss"
-	_page_title("Legendary reward" if boss else "Choose a reward", "Choose a trophy for the victory recap. It takes no inventory space." if boss else "Choose one tile to equip or store, or take bonus gold.")
+	var final_boss: bool = boss and _run.is_final_boss()
+	var instruction := "Choose one tile to equip or store, or take bonus gold."
+	if boss:
+		instruction = "Choose a trophy for the victory recap. It takes no inventory space." if final_boss else "Choose a Legendary tile for the second leg, then recruit your next hero."
+	_page_title("Legendary reward" if boss else "Choose a reward", instruction)
 	var cards := _cards_row()
 	var notice := _notice()
 	for id: String in _run.data.get("offers", []):
 		var tile: Dictionary = ArenaSim.TILES[id]
-		_choice(cards, tile.label, _tile_info(tile), "Choose", func(): _claim_reward(id, notice))
+		_choice(cards, tile.label, _tile_info(tile), "Choose trophy" if final_boss else "Choose", func(): _claim_reward(id, notice))
 	_layout.add_child(notice)
-	if not boss:
+	if not final_boss:
 		var actions := HBoxContainer.new()
 		actions.add_theme_constant_override("separation", 8)
 		_layout.add_child(actions)
 		actions.add_child(_button("Manage tiles", func(): _host.run_show_arena()))
-		var bonus := 9 if "quartermasters_coin" in _run.data.get("relics", []) else 6
-		actions.add_child(_button("Skip for +%d gold" % bonus, func(): _claim_reward("skip", notice)))
+		if boss:
+			actions.add_child(_button("Skip reward", func(): _claim_reward("skip", notice)))
+		else:
+			var bonus := 9 if "quartermasters_coin" in _run.data.get("relics", []) else 6
+			actions.add_child(_button("Skip for +%d gold" % bonus, func(): _claim_reward("skip", notice)))
 
 
 func _claim_reward(id: String, notice: Label) -> void:
@@ -353,11 +392,12 @@ func _shop() -> void:
 	actions.add_theme_constant_override("separation", 8)
 	_layout.add_child(actions)
 	actions.add_child(_button("Manage tiles", func(): _host.run_show_arena()))
-	var healing := _button("Heal 15 HP · 12 gold", func():
+	var heal_label := "Heal 15 HP each · 12 gold" if _party().size() > 1 else "Heal 15 HP · 12 gold"
+	var healing := _button(heal_label, func():
 		if _run.shop_heal():
 			_host.run_return()
 	)
-	healing.disabled = int(_run.data.get("gold", 0)) < 12 or _run.data.get("shop_healed", false) or _run.data.get("hp") >= _run.data.get("max_hp")
+	healing.disabled = int(_run.data.get("gold", 0)) < 12 or _run.data.get("shop_healed", false) or not _party_needs_healing()
 	actions.add_child(healing)
 	var relic_id: String = _run.data.get("shop_relic", "")
 	if FrontierRun.RELICS.has(relic_id):
@@ -396,7 +436,7 @@ func _pick_event(index: int) -> void:
 func _rest() -> void:
 	_page_title(_run.data.get("node", {}).get("label", "Rest site"), "Choose one use of this camp.")
 	var cards := _cards_row()
-	_choice(cards, "Rest", "Recover 30% of your maximum HP.", "Heal", func(): _run.rest("heal"); _host.run_return())
+	_choice(cards, "Rest", "Each hero recovers 30% of their maximum HP.", "Heal", func(): _run.rest("heal"); _host.run_return())
 	_choice(cards, "Forge", "Advance one eligible Bash family tile to the next rarity.", "Open forge", func(): _host.run_rest_forge())
 	_layout.add_child(_button("Leave camp", _leave))
 
@@ -408,12 +448,17 @@ func _leave() -> void:
 
 func _result() -> void:
 	var victory: bool = _run.data.get("result", "") == "victory"
-	_page_title("Brass Frontier cleared" if victory else "Expedition ended", "Easy  ·  Seed %s" % str(_run.data.get("seed", "")))
+	_page_title("Brass Frontier cleared" if victory else "Expedition ended", _route_caption())
 	var cards := _cards_row()
-	var detail := "You defeated the Tollkeeper. Medium is unlocked." if victory else "Your run is over. Aether Marks earned during the run are banked."
+	var detail := "Aether Marks earned during the run are banked."
+	if victory:
+		var boss_name: String = _run.data.get("node", {}).get("label", "the final boss")
+		var unlocks := "Hard and Glass Foundry Easy are unlocked." if _difficulty_name() == "Medium" else "Medium is unlocked."
+		detail = "You defeated %s. %s" % [boss_name, unlocks]
 	var chosen: String = _run.data.get("trophy", "")
 	if victory and ArenaSim.TILES.has(chosen):
 		detail += "\nVictory reward  ·  " + ArenaSim.TILES[chosen].label
+	detail += "\n+%d Aether Marks this run." % int(_run.data.get("marks_earned", 0))
 	detail += "\n%d Aether Marks available." % int(_run.profile.get("marks", 0))
 	_choice(cards, "Victory" if victory else "Defeat", detail, "Open Aether Chart", func(): _finish(true))
 	_layout.add_child(_button("Return to title", func(): _finish(false)))
@@ -425,6 +470,45 @@ func _finish(show_chart: bool) -> void:
 			_host.run_show_chart()
 		else:
 			_host.run_menu()
+
+
+func _difficulty_name() -> String:
+	return str(_run.data.get("difficulty", "easy")).capitalize()
+
+
+func _route_caption() -> String:
+	var parts := PackedStringArray([_difficulty_name()])
+	if _difficulty_name() == "Medium":
+		parts.append("Leg %d of 2" % _leg_number())
+	parts.append("Seed %s" % str(_run.data.get("seed", "")))
+	return "  ·  ".join(parts)
+
+
+func _leg_number() -> int:
+	if _difficulty_name() == "Medium" and _party().size() > 1:
+		return 2
+	return int(_run.data.get("segment", 1))
+
+
+func _hero_name(id: String) -> String:
+	return FrontierRun.HEROES.get(id, {}).get("label", id.capitalize())
+
+
+func _party() -> Array:
+	var members: Array = _run.data.get("heroes", [])
+	if not members.is_empty() or not _run.data.has("hp"):
+		return members
+	return [{
+		"id": _run.data.get("hero", ""), "hp": int(_run.data.hp),
+		"max_hp": int(_run.data.get("max_hp", _run.data.hp))
+	}]
+
+
+func _party_needs_healing() -> bool:
+	for member: Dictionary in _party():
+		if int(member.hp) < int(member.max_hp):
+			return true
+	return false
 
 
 func _chart() -> void:

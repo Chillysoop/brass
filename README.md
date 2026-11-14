@@ -1,12 +1,14 @@
 # Brass & Aether
 
-The Windows playtest includes a complete Brass Frontier Easy run and a separate practice arena. Open `project.godot` in Godot 4.7.2 and press F5.
+The Windows playtest includes Brass Frontier Easy, Brass Frontier Medium, and a separate practice arena. Open `project.godot` in Godot 4.7.2 and press F5.
 
 ## Playtest
 
 Choose **Start Easy run** to draft a hero, relic, and starting tile. Win the opening fight, pick rewards, then travel a seeded route through battles, elites, shops, events, and a rest site. Health, relics, gold, and tile layouts carry between stops. The game saves between fights and after loadout changes. **Resume** picks up from the saved checkpoint.
 
-Defeat the Tollkeeper to bank Aether Marks and record the Medium unlock. Close the victory recap to spend Marks in the **Aether Chart**. Medium is the next playable difficulty milestone.
+Defeat the Tollkeeper on Easy to bank Aether Marks and unlock **Start Medium run**. Close the victory recap to spend Marks in the **Aether Chart**.
+
+Medium starts solo. After the Tollkeeper, take a Legendary tile into your build and recruit a second hero with a starter tile. Both lanes fire on the same beat clock. Push or pull the Gilded Marshal to expose its armor, then land a hit from each hero before it closes. Defeating the Marshal unlocks Brass Frontier Hard and Glass Foundry Easy for a future build.
 
 ## Arena practice
 

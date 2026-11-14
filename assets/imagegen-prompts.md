@@ -17,3 +17,7 @@ A landscape background plate for a route map in original indie game Brass & Aeth
 ## aether-sky
 
 Background plate for the Aether Chart of Brass & Aether, a dramatic celestial brass star map in the dark atmospheric style of a high fantasy passive skill constellation. Deep near-black indigo night, subtle pinprick stars, pale wisps of cosmic dust, muted glowing cyan nebula along a corner, aged engraved astrolabe circles in the far margins, warm bronze light only at the distant edges. Main center is an even dark field for native constellation lines and nodes. Original dark fantasy engraving, elegant and restrained. 16:9 wide. No text, no UI, no nodes, no icons or figures.
+
+## Gilded Marshal
+
+Production-ready transparent sprite, original indie videogame Brass & Aether. One full-body left-facing clockwork gladiator boss, tall brass furnace armor, rusty crimson accents, heavy fists, single bright cyan eye and circular teal gyroscopic counterweight at chest. Hand-drawn restrained screen-print art, bold dark contours, flat muted colors, elevated three-quarter fixed camera, readable silhouette, original design, transparent background, nothing else. No text or floor.

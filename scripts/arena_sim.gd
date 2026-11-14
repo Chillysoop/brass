@@ -18,7 +18,7 @@ const BASH_TIERS := [
 ]
 const HERO_CLASSES := {
 	"warden": {"label": "Warden", "description": "Gain 4 guard on the first Bash-family hit each loop."},
-	"bulwark": {"label": "Bulwark", "description": "Reduce the first strike you take each loop by 6."},
+	"bulwark": {"label": "Bulwark", "description": "Once per loop, intercept an ally's incoming strike and reduce it by 6. Alone, reduce your first strike."},
 	"breaker": {"label": "Breaker", "description": "A push that sends a foe into another deals 5 extra damage to both."},
 	"hexwright": {"label": "Hexwright", "description": "Pull tiles draw enemies in with extra force."},
 	"wayfarer": {"label": "Wayfarer", "description": "Move faster for three beats after teleporting."},
@@ -40,7 +40,9 @@ const CAMPAIGN_ENEMIES := {
 	"veteran": {"name": "Rivet Captain", "art": "clockwork", "hp": 168, "radius": 33.0, "speed": 83.0,
 		"spacing": 95.0, "reach": 171.0, "damage": 14, "first": 116, "cooldown": 129, "windup": 31, "push": 310.0},
 	"boss": {"name": "The Tollkeeper", "art": "clockwork", "hp": 330, "radius": 40.0, "speed": 86.0,
-		"spacing": 107.0, "reach": 204.0, "damage": 16, "first": 125, "cooldown": 123, "windup": 39, "push": 345.0}
+		"spacing": 107.0, "reach": 204.0, "damage": 16, "first": 125, "cooldown": 123, "windup": 39, "push": 345.0, "displacement": 0.55},
+	"marshal": {"name": "The Gilded Marshal", "art": "marshal", "hp": 860, "radius": 48.0, "speed": 89.0,
+		"spacing": 122.0, "reach": 227.0, "damage": 38, "first": 110, "cooldown": 105, "windup": 49, "push": 415.0, "displacement": 0.7}
 }
 
 const TILES := {
@@ -126,6 +128,7 @@ var outcome := ""
 
 var _lanes: Array[Array] = []
 var _events: Array[Dictionary] = []
+var _compass_loop := -1
 
 
 static func default_lanes(fixture: String = "duo") -> Array:
@@ -157,10 +160,10 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 	trace.clear()
 	_events.clear()
 	_lanes.clear()
-	var solo := fixture == "solo" or not options.is_empty()
+	_compass_loop = -1
 	if not options.is_empty():
 		_start_campaign(options)
-	elif solo:
+	elif fixture == "solo":
 		units.append(_unit("hero_1", "Warden", "hero", 0, Vector2(270, 270), 165, 23.0, 122.0, 92.0))
 		units.append(_unit("clockwork", "Clockwork", "enemy", -1, Vector2(715, 254), 273, 32.0, 75.0, 112.0))
 	else:
@@ -168,50 +171,73 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 		units.append(_unit("hero_2", "Warden", "hero", 1, Vector2(270, 302), 100, 23.0, 122.0, 96.0))
 		units.append(_unit("clockwork", "Clockwork", "enemy", -1, Vector2(720, 251), 265, 32.0, 68.0, 108.0))
 		units.append(_unit("scout", "Clockwork Scout", "enemy", -1, Vector2(490, 154), 49, 17.0, 40.0, 155.0))
-	for lane in range(1 if solo else 2):
+	for unit in units:
+		if unit.side != "hero":
+			break
+		var lane: int = unit.lane
 		var tiles: Array = hero_lanes[lane] if lane < hero_lanes.size() else []
 		_lanes.append(_valid_tiles(tiles))
 
 
 func _start_campaign(options: Dictionary) -> void:
-	var hero_id: String = options.get("hero", "warden")
-	var hero: Dictionary = HERO_CLASSES.get(hero_id, HERO_CLASSES.warden)
-	var max_hp := maxi(1, int(options.get("max_hp", 100)))
-	var unit := _unit("hero_1", hero.label, "hero", 0, Vector2(285, 265), max_hp, 23.0, 153.0, 86.0)
-	unit.hp = clampi(int(options.get("hp", max_hp)), 0, max_hp)
-	unit["class"] = hero_id
-	unit["relics"] = options.get("relics", []).duplicate()
+	var heroes: Array = options.get("heroes", [])
+	if heroes.is_empty():
+		heroes = [options]
+	var relics: Array = options.get("relics", []).duplicate()
 	var relic: String = options.get("relic", "")
-	if not relic.is_empty() and relic not in unit.relics:
-		unit.relics.append(relic)
-	units.append(unit)
+	if not relic.is_empty() and relic not in relics:
+		relics.append(relic)
+	for lane in range(heroes.size()):
+		var hero_options: Dictionary = heroes[lane]
+		var hero_id: String = hero_options.get("hero", hero_options.get("id", "warden"))
+		var hero: Dictionary = HERO_CLASSES.get(hero_id, HERO_CLASSES.warden)
+		var max_hp := maxi(1, int(hero_options.get("max_hp", 100)))
+		var y := 265.0 + (lane - (heroes.size() - 1) * 0.5) * 96.0
+		var unit := _unit("hero_%d" % (lane + 1), hero.label, "hero", lane, Vector2(285, y), max_hp, 23.0, 153.0, 86.0)
+		unit.hp = clampi(int(hero_options.get("hp", max_hp)), 0, max_hp)
+		unit["class"] = hero_id
+		unit["relics"] = relics
+		units.append(unit)
 
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(options.get("seed", 0))
 	var y := rng.randf_range(217.0, 289.0)
+	var medium: bool = options.get("difficulty", "easy") == "medium"
+	var second_leg: bool = medium and int(options.get("segment", 1)) >= 2
+	var health_scale := 2.15 if second_leg else (1.12 if medium else 1.0)
+	var damage_scale := 1.58 if second_leg else (1.07 if medium else 1.0)
 	match options.get("encounter", "opening"):
 		"battle":
 			if rng.randi_range(0, 1) == 0:
-				_add_campaign_enemy("bruiser", Vector2(615, y))
+				_add_campaign_enemy("bruiser", Vector2(615, y), 0, health_scale, damage_scale)
+				if second_leg:
+					_add_campaign_enemy("scout", Vector2(684, y + 95.0), 12, 1.0, damage_scale)
 			else:
-				_add_campaign_enemy("scout", Vector2(583, y - 58.0))
-				_add_campaign_enemy("scout", Vector2(684, y + 72.0), 20)
+				_add_campaign_enemy("scout", Vector2(583, y - 58.0), 0, health_scale, damage_scale)
+				_add_campaign_enemy("scout", Vector2(684, y + 72.0), 20, health_scale, damage_scale)
 		"elite":
-			_add_campaign_enemy("veteran", Vector2(636, y))
-			_add_campaign_enemy("scout", Vector2(673, y + 113.0))
+			_add_campaign_enemy("veteran", Vector2(636, y), 0, health_scale, damage_scale)
+			_add_campaign_enemy("scout", Vector2(673, y + 113.0), 0, health_scale, damage_scale)
 		"boss":
-			_add_campaign_enemy("boss", Vector2(647, y))
+			if second_leg:
+				_add_campaign_enemy("marshal", Vector2(647, y))
+			else:
+				_add_campaign_enemy("boss", Vector2(647, y), 0, health_scale, damage_scale)
 		_:
 			_add_campaign_enemy("recruit", Vector2(522, y))
 
 
-func _add_campaign_enemy(kind: String, position: Vector2, delay := 0) -> void:
-	var spec: Dictionary = CAMPAIGN_ENEMIES[kind]
+func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_scale := 1.0, damage_scale := 1.0) -> void:
+	var spec: Dictionary = CAMPAIGN_ENEMIES[kind].duplicate()
+	spec.damage = roundi(spec.damage * damage_scale)
 	var enemy := _unit("%s_%d" % [kind, units.size()], spec.name, "enemy", -1, position,
-		spec.hp, spec.radius, spec.speed, spec.spacing)
+		roundi(spec.hp * health_scale), spec.radius, spec.speed, spec.spacing)
 	enemy["attack"] = spec
 	enemy["sprite"] = spec.art
 	enemy.next_attack = int(spec.first) + delay
+	if kind == "marshal":
+		enemy["marshal_plated"] = false
+		enemy["marshal_exposed_until"] = 0
 	units.append(enemy)
 
 
@@ -220,6 +246,10 @@ func step() -> Array[Dictionary]:
 	if outcome != "" or units.is_empty():
 		return _events
 	tick += 1
+	for unit in units:
+		var exposure: int = unit.get("marshal_exposed_until", 0)
+		if exposure > 0 and tick > exposure:
+			unit.marshal_exposed_until = 0
 	if (tick - 1) % LOOP_TICKS == 0:
 		for unit in units:
 			if unit.hp > 0 and _has_relic(unit, "pocket_bell"):
@@ -511,14 +541,13 @@ func _charge(actor: Dictionary, target: Dictionary, tile_id: String) -> bool:
 
 func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: String, offset: Vector2, force: float) -> void:
 	if kind == "push":
-		if _has_relic(actor, "copper_compass") and actor.get("compass_loop", -1) != _loop_index():
-			actor["compass_loop"] = _loop_index()
+		if _has_relic(actor, "copper_compass") and _compass_loop != _loop_index():
+			_compass_loop = _loop_index()
 			force += 145.0
 		if actor.get("class") == "breaker":
 			target["breaker_source"] = actor.id
 			target["breaker_until"] = tick + 24
-	if target.get("attack", {}).get("name") == "The Tollkeeper":
-		force *= 0.55
+	force *= float(target.get("attack", {}).get("displacement", 1.0))
 	var direction := offset.normalized() if offset.length_squared() > 0.001 else Vector2.RIGHT
 	var start_position: Vector2 = target.pos
 	var impulse: Vector2 = target.impulse + direction * force
@@ -527,6 +556,8 @@ func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: Str
 	var endpoint := _bounded(start_position + launch.normalized() * (launch.length_squared() / (2.0 * IMPULSE_DECAY)), target.radius)
 	var action := "pulls" if kind == "pull" else "knocks back"
 	_emit(kind, "%s %s %s." % [actor.name, action, target.name], actor, target, tile_id, roundi(force), start_position, endpoint)
+	if target.get("marshal_plated", false) and actor.side == "hero" and force > 100.0:
+		_expose_marshal(actor, target)
 
 
 func _teleport(actor: Dictionary, target: Dictionary) -> bool:
@@ -578,7 +609,10 @@ func _run_enemies() -> void:
 			continue
 		enemy.intent = target.id
 		enemy.intent_tick = tick + int(attack.get("windup", 24))
-		_emit("intent", "%s winds up at %s." % [enemy.name, target.name], enemy, target, "enemy_attack")
+		var message := "%s winds up at %s." % [enemy.name, target.name]
+		if enemy.get("marshal_plated", false):
+			message = "The Marshal charges a sweep. Push or pull it, then follow up with your other hero."
+		_emit("intent", message, enemy, target, "enemy_attack")
 
 
 func _resolve_intent(enemy: Dictionary) -> void:
@@ -586,6 +620,9 @@ func _resolve_intent(enemy: Dictionary) -> void:
 	var attack: Dictionary = enemy.get("attack", {})
 	enemy.intent = ""
 	enemy.next_attack = tick + int(attack.get("cooldown", 116 if enemy.id == "scout" else 138))
+	if enemy.get("marshal_plated", false):
+		_marshal_sweep(enemy, attack)
+		return
 	var position: Vector2 = enemy.pos
 	var reach: float = attack.get("reach", 290.0 if enemy.id == "scout" else 155.0)
 	for target in units:
@@ -597,12 +634,35 @@ func _resolve_intent(enemy: Dictionary) -> void:
 		var damage: int = attack.get("damage", 9 if enemy.id == "scout" else 21)
 		if enemy.get("enraged", false):
 			damage += 3
-		_damage(enemy, target, damage, "enemy_attack")
+		var defender := _intercept_target(target)
+		_damage(enemy, defender, damage, "enemy_attack")
 		var force: float = attack.get("push", 430.0 if enemy.id == "clockwork" else 0.0)
-		if force > 0.0 and target.hp > 0:
-			var offset: Vector2 = target.pos - position
-			_displace("push", enemy, target, "enemy_attack", offset, force)
+		if force > 0.0 and defender.hp > 0:
+			var offset: Vector2 = defender.pos - position
+			_displace("push", enemy, defender, "enemy_attack", offset, force)
 		return
+
+
+func _marshal_sweep(enemy: Dictionary, attack: Dictionary) -> void:
+	var affected := _enemies_in_area(enemy, enemy.pos, attack.reach + 48.0)
+	for target in affected:
+		# A sweep hits each hero in the arc once. Bulwark still reduces their own hit.
+		_damage(enemy, target, attack.damage + 5, "enemy_attack")
+		if target.hp > 0:
+			_displace("push", enemy, target, "enemy_attack", target.pos - enemy.pos, attack.push)
+	if affected.is_empty():
+		_emit("miss", "The Marshal's sweep hits no one.", enemy, enemy, "enemy_attack")
+
+
+func _intercept_target(target: Dictionary) -> Dictionary:
+	for ally in units:
+		if ally.side != target.side or ally.id == target.id or ally.hp <= 0 or ally.get("class") != "bulwark":
+			continue
+		if ally.get("bulwark_loop", -1) == _loop_index():
+			continue
+		_emit("intercept", "%s intercepts the attack on %s." % [ally.name, target.name], ally, target, "bulwark")
+		return ally
+	return target
 
 
 func _guard(recipient: Dictionary, amount: int, tile_id: String, source: Dictionary = {}, echo := true) -> void:
@@ -624,6 +684,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		return
 	if TILES.has(tile_id):
 		amount = _class_attack_damage(actor, target, amount)
+		if target.get("marshal_plated", false) and actor.side == "hero":
+			amount = _marshal_damage(actor, target, amount)
 	if tile_id == "enemy_attack" and target.get("class") == "bulwark" and target.get("bulwark_loop", -1) != _loop_index():
 		target["bulwark_loop"] = _loop_index()
 		amount = maxi(0, amount - 6)
@@ -649,6 +711,35 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		target.next_attack = mini(target.next_attack, tick + 20)
 		_guard(target, 11, "tollkeeper_rallies")
 		_emit("intent", "The Tollkeeper rallies. Its strikes now hit harder.", target, actor, "enemy_attack")
+	elif target.get("sprite") == "marshal" and target.hp * 5 <= target.max_hp * 3 and not target.get("marshal_raised", false):
+		target["marshal_raised"] = true
+		target.marshal_plated = true
+		_guard(target, 18, "marshal_plate")
+		_emit("intent", "The Marshal raises its plating. Push or pull it, then strike with your other hero.", target, actor, "marshal_plate")
+
+
+func _expose_marshal(actor: Dictionary, marshal: Dictionary) -> void:
+	if marshal.marshal_exposed_until > 0:
+		return
+	marshal.marshal_exposed_until = tick + TICKS_PER_BEAT * 3
+	marshal["marshal_opened_by"] = actor.id
+	_emit("interrupt", "%s exposes the Marshal for 3 beats. Follow up with your other hero." % actor.name,
+		actor, marshal, "marshal_exposed")
+
+
+func _marshal_damage(actor: Dictionary, marshal: Dictionary, amount: int) -> int:
+	if marshal.marshal_exposed_until == 0:
+		return maxi(1, roundi(amount * 0.62))
+	if marshal.marshal_opened_by == actor.id:
+		return amount
+	marshal.marshal_plated = false
+	marshal.marshal_exposed_until = 0
+	marshal.guard = 0
+	marshal.intent = ""
+	marshal.next_attack = tick + TICKS_PER_BEAT * 5
+	_emit("interrupt", "%s shatters the Marshal's plating and staggers it!" % actor.name,
+		actor, marshal, "marshal_shattered")
+	return amount + 18
 
 
 func _class_attack_damage(actor: Dictionary, target: Dictionary, amount: int) -> int:

@@ -70,6 +70,7 @@ func _initialize() -> void:
 	check(resumed.buy_meta("curated_cache"), "Prerequisite must unlock the next Aether Chart node.")
 	check(resumed.start_run(42) and resumed.data.max_hp == 108, "Stout Start must raise the next run's starting HP.")
 	check("gravity_hook" in resumed._normal_pool(), "Gravity Hook must stay eligible for future drafts.")
+	_check_medium(path)
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
@@ -95,6 +96,71 @@ func _check_map(layers: Array) -> void:
 		check(types.has(kind), "Required node is missing: " + kind)
 	for node: Dictionary in layers[5]:
 		check(node.type == "rest" and layers[6][0].id in node.next, "Boss approaches need a reachable rest.")
+
+
+func _check_medium(path: String) -> void:
+	var run := FrontierRun.new()
+	run.load_save(path)
+	run.abandon_run()
+	run.profile.medium_unlocked = false
+	check(not run.start_run(42, "medium"), "Medium must require an Easy clear.")
+	run.profile.medium_unlocked = true
+	check(run.start_run(42, "medium"), "Unlocked Medium must start.")
+	check(run.data.layers.size() == 14, "Medium must have two segments of six nodes and one boss each.")
+	var hero: String = run.data.offers[0]
+	run.choose_hero(hero)
+	run.choose_relic("pocket_bell")
+	run.choose_starter("bash")
+	_reach_boss(run)
+	check(run.data.node.label == "The Tollkeeper" and not run.is_final_boss(), "First Medium boss must be intermediate.")
+	var marks: int = run.profile.marks
+	check(run.finish_combat(true, [68]), "Medium boss must read per-hero HP.")
+	check(run.profile.marks == marks + 4 and not run.profile.hard_unlocked, "First boss must bank only its boss payout.")
+	check(run.reward(run.data.offers[0]), "Intermediate Legendary choice must succeed.")
+	check(run.data.phase == "recruit" and run.data.offers.size() == 3 and hero not in run.data.offers,
+		"Second draft must offer three different choices from the lead hero.")
+	check(run.choose_recruit(run.data.offers[0]), "Choose a recruit.")
+	var restored := FrontierRun.new()
+	check(restored.load_save(path) and restored.data.phase == "recruit_starter", "Recruitment must resume from the saved starter draft.")
+	check(restored.choose_recruit_starter("shot"), "Recruit must be able to choose a starter tile.")
+	check(restored.data.heroes.size() == 2 and restored.data.heroes[0].hp == 68 and restored.data.heroes[1].hp == 108,
+		"Recruitment must preserve the lead hero's HP and add a full-HP recruit.")
+	check(restored.loadout.lanes.size() == 2 and restored.loadout.lanes[1][0].id == "shot", "The recruit's lane must include its starter.")
+	check(restored.data.segment == 2 and int(restored.available_nodes()[0].row) == 7, "Recruitment must open the first node in segment two.")
+	_reach_boss(restored)
+	check(restored.data.node.label == "The Gilded Marshal" and restored.is_final_boss(), "Second Medium boss must be the Gilded Marshal.")
+	marks = restored.profile.marks
+	check(restored.finish_combat(true, [0, 50]), "Final fight must persist both heroes' remaining HP.")
+	check(restored.data.hp == 0 and restored.data.heroes[1].hp == 50, "Legacy HP alias must follow the lead hero.")
+	check(restored.profile.marks == marks + 34 and restored.profile.hard_unlocked and restored.profile.glass_easy_unlocked,
+		"First Medium clear must grant boss, completion and first-clear marks and open both gates.")
+	check(not restored.finish_combat(true, [0, 50]), "Resuming the final reward must not pay again.")
+	check(restored.reward("skip") and restored.data.phase == "result", "Final Legendary choice must lead to the recap.")
+
+
+func _reach_boss(run: RefCounted) -> void:
+	while run.data.node.type != "boss" or run.data.phase != "combat":
+		match run.data.phase:
+			"map":
+				var options: Array = run.available_nodes()
+				var node: Dictionary = options[0]
+				for option: Dictionary in options:
+					if option.type in ["battle", "shop", "rest", "boss"]:
+						node = option
+						break
+				run.choose_node(node.id)
+			"combat":
+				var hp: Array = []
+				for hero: Dictionary in run.data.heroes:
+					hp.append(hero.hp)
+				run.finish_combat(true, hp)
+			"reward": run.reward("skip")
+			"shop": run.leave_node()
+			"event": run.event_choice(0)
+			"rest": run.rest("heal")
+			_:
+				check(false, "Unexpected phase while traveling to a boss: " + str(run.data.phase))
+				return
 
 
 func check(condition: bool, description: String) -> void:

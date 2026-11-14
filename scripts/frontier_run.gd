@@ -26,7 +26,10 @@ const NODE_LABELS := {
 	"event": ["Jammed Crane", "Loaded Beacon", "Relay Auction"],
 	"rest": ["Lantern Camp", "Ember Post"],
 }
-const DEFAULT_PROFILE := {"marks": 0, "medium_unlocked": false, "meta": []}
+const DEFAULT_PROFILE := {
+	"marks": 0, "medium_unlocked": false, "hard_unlocked": false, "glass_easy_unlocked": false, "meta": [],
+}
+const NODES_PER_SEGMENT := 7
 const VERSION := 1
 
 var data: Dictionary = {}
@@ -86,16 +89,19 @@ func save() -> bool:
 	return true
 
 
-func start_run(seed_value := 0) -> bool:
-	if not data.is_empty():
+func start_run(seed_value := 0, difficulty := "easy") -> bool:
+	if not data.is_empty() or difficulty not in ["easy", "medium"]:
+		return false
+	if difficulty == "medium" and not profile.medium_unlocked:
 		return false
 	# JSON preserves these 32-bit seeds exactly.
 	var run_seed := clampi(seed_value, 1, 4294967295) if seed_value != 0 else maxi(1, int(randi()))
-	var layers := _make_map(run_seed)
+	var layers := _make_map(run_seed, difficulty)
 	var hp := 100 + (8 if "stout_start" in profile.meta else 0)
 	var gold := 12 + (8 if "purse" in profile.meta else 0)
 	data = {
-		"phase": "hero", "seed": run_seed, "hero": "", "relics": [], "hp": hp, "max_hp": hp,
+		"phase": "hero", "seed": run_seed, "difficulty": difficulty, "segment": 1,
+		"hero": "", "heroes": [], "relics": [], "hp": hp, "max_hp": hp,
 		"gold": gold, "layers": layers, "node": layers[0][0], "visited": [layers[0][0].id],
 		"offers": _sample(HEROES.keys(), 3, run_seed, 11), "result": "", "marks_earned": 0,
 		"midpoint_paid": false, "node_notice": "",
@@ -106,9 +112,12 @@ func start_run(seed_value := 0) -> bool:
 
 
 func choose_hero(id: String) -> bool:
+	if data.get("phase") == "recruit":
+		return choose_recruit(id)
 	if not _is_offer("hero", id):
 		return false
 	data.hero = id
+	data.heroes.append({"id": id, "hp": data.hp, "max_hp": data.max_hp})
 	data.phase = "relic"
 	var pool := STARTER_RELICS.duplicate()
 	if "relic_archive" in profile.meta:
@@ -129,13 +138,45 @@ func choose_relic(id: String) -> bool:
 
 
 func choose_starter(id: String) -> bool:
+	if data.get("phase") == "recruit_starter":
+		return choose_recruit_starter(id)
 	if not _is_offer("starter", id):
 		return false
-	loadout.lanes = [[{"id": id, "start": 0, "target": ArenaSim.TILES[id].targets[0]}]]
+	loadout.lanes = [_starter_lane(id)]
 	data.phase = "combat"
 	data.offers = []
 	save()
 	return true
+
+
+func choose_recruit(id: String) -> bool:
+	if not _is_offer("recruit", id):
+		return false
+	data.pending_recruit = id
+	data.phase = "recruit_starter"
+	data.offers = _sample(STARTER_TILES, 3, int(data.seed), _node_salt(93))
+	save()
+	return true
+
+
+func choose_recruit_starter(id: String) -> bool:
+	if not _is_offer("recruit_starter", id):
+		return false
+	var max_hp: int = data.max_hp
+	data.heroes.append({"id": data.pending_recruit, "hp": max_hp, "max_hp": max_hp})
+	data.erase("pending_recruit")
+	loadout.lanes.append(_starter_lane(id))
+	loadout.defaults.append("nearest")
+	data.segment = 2
+	data.phase = "map"
+	data.offers = []
+	data.node_notice = "%s joins the expedition." % HEROES[data.heroes[1].id].label
+	save()
+	return true
+
+
+func _starter_lane(id: String) -> Array:
+	return [{"id": id, "start": 0, "target": ArenaSim.TILES[id].targets[0]}]
 
 
 func available_nodes() -> Array:
@@ -160,9 +201,11 @@ func choose_node(id: String) -> bool:
 	if selected.is_empty():
 		return false
 	data.node = selected
+	data.segment = 1 + floori(float(selected.row) / NODES_PER_SEGMENT)
 	data.visited.append(id)
 	data.node_notice = ""
-	if not data.midpoint_paid and int(selected.row) >= 3:
+	var midpoint := 6 if data.difficulty == "medium" else 3
+	if not data.midpoint_paid and int(selected.row) >= midpoint:
 		data.midpoint_paid = true
 		_grant_marks(1)
 	match selected.type:
@@ -184,34 +227,44 @@ func encounter() -> Dictionary:
 	if data.get("phase") != "combat":
 		return {}
 	var kind: String = data.node.get("encounter_override", data.node.type)
+	var roster: Array = []
+	for hero: Dictionary in data.heroes:
+		roster.append({"id": hero.id, "hero": hero.id, "hp": int(hero.hp), "max_hp": int(hero.max_hp)})
 	return {
 		"encounter": kind, "kind": kind, "id": data.node.id,
 		"seed": int(data.seed) ^ _node_salt(71), "hero": data.hero, "hp": int(data.hp),
 		"max_hp": int(data.max_hp), "relic": data.relics.front() if not data.relics.is_empty() else "",
-		"relics": data.relics.duplicate(),
+		"relics": data.relics.duplicate(), "heroes": roster, "segment": data.segment,
+		"difficulty": data.difficulty, "final_boss": is_final_boss(),
 	}
 
 
-func finish_combat(victory: bool, hp: int) -> bool:
+func is_final_boss() -> bool:
+	return data.get("node", {}).get("type") == "boss" and int(data.node.row) == data.layers.size() - 1
+
+
+func finish_combat(victory: bool, hp: Variant) -> bool:
 	if data.get("phase") != "combat":
 		return false
-	data.hp = clampi(hp, 0, int(data.max_hp))
+	var remaining: Array = hp if hp is Array else [hp]
+	if remaining.size() != data.heroes.size():
+		return false
+	for index in range(remaining.size()):
+		var hero: Dictionary = data.heroes[index]
+		hero.hp = clampi(int(remaining[index]), 0, int(hero.max_hp))
+	_sync_lead_hero()
 	if not victory:
 		data.result = "defeat"
 		data.phase = "result"
 		save()
 		return true
 	if "trail_ration" in data.relics:
-		_heal(5)
+		_heal(5, false)
 	data.phase = "reward"
 	match data.node.type:
 		"boss":
 			data.offers = _sample(BOSS_TILES, 3, int(data.seed), _node_salt(81))
-			var first_clear := not bool(profile.medium_unlocked)
-			_grant_marks(19 if first_clear else 14)
-			profile.medium_unlocked = true
-			data.result = "victory"
-			data.node_notice = "Brass Frontier cleared. Medium unlocked." if first_clear else "Brass Frontier cleared."
+			_resolve_boss()
 		"elite":
 			data.gold += 20
 			_grant_marks(2)
@@ -228,12 +281,38 @@ func finish_combat(victory: bool, hp: int) -> bool:
 	return true
 
 
+func _resolve_boss() -> void:
+	_grant_marks(4)
+	if not is_final_boss():
+		data.node_notice = "The Tollkeeper fell. Choose a Legendary and draft a second hero."
+		return
+	data.result = "victory"
+	if data.difficulty == "medium":
+		var first_clear := not bool(profile.hard_unlocked)
+		_grant_marks(30 if first_clear else 20)
+		profile.hard_unlocked = true
+		profile.glass_easy_unlocked = true
+		data.node_notice = "Brass Frontier Medium cleared. Hard and Glass Foundry Easy unlocked." if first_clear else "Brass Frontier Medium cleared."
+	else:
+		var first_clear := not bool(profile.medium_unlocked)
+		_grant_marks(15 if first_clear else 10)
+		profile.medium_unlocked = true
+		data.node_notice = "Brass Frontier cleared. Medium unlocked." if first_clear else "Brass Frontier cleared."
+
+
 func reward(id: String) -> bool:
 	if data.get("phase") != "reward" or (id != "skip" and id not in data.offers):
 		return false
-	if data.node.type == "boss":
+	if is_final_boss():
 		data.trophy = "" if id == "skip" else id
 		data.phase = "result"
+	elif data.node.type == "boss":
+		var classes := HEROES.keys()
+		classes.erase(data.hero)
+		data.phase = "recruit"
+		data.offers = _sample(classes, 3, int(data.seed), _node_salt(94))
+		save()
+		return true
 	else:
 		if id == "skip":
 			data.gold += 6 + (3 if "quartermasters_coin" in data.relics else 0)
@@ -261,7 +340,7 @@ func shop_buy(id: String) -> bool:
 
 
 func shop_heal() -> bool:
-	if data.get("phase") != "shop" or data.shop_healed or int(data.gold) < 12 or data.hp >= data.max_hp:
+	if data.get("phase") != "shop" or data.shop_healed or int(data.gold) < 12 or not party_needs_healing():
 		return false
 	data.gold -= 12
 	data.shop_healed = true
@@ -293,7 +372,9 @@ func rest(action: String) -> bool:
 	if data.get("phase") != "rest" or action not in ["heal", "forge"]:
 		return false
 	if action == "heal":
-		_heal(ceili(float(data.max_hp) * 0.30))
+		for hero: Dictionary in data.heroes:
+			hero.hp = mini(int(hero.max_hp), int(hero.hp) + ceili(float(hero.max_hp) * 0.30))
+		_sync_lead_hero()
 	return leave_node()
 
 
@@ -327,7 +408,10 @@ func event_choice(index: int) -> bool:
 				data.phase = "reward"
 				data.offers = _sample(ELITE_TILES.slice(0, 2), 2, int(data.seed), _node_salt(92))
 			else:
-				data.hp = maxi(1, int(data.hp) - ceili(float(data.max_hp) * 0.10))
+				for hero: Dictionary in data.heroes:
+					if hero.hp > 0:
+						hero.hp = maxi(1, int(hero.hp) - ceili(float(hero.max_hp) * 0.10))
+				_sync_lead_hero()
 				data.node_notice = "The crane collapsed. Lost 10% of maximum HP."
 		"Loaded Beacon":
 			if index == 1:
@@ -374,7 +458,7 @@ func buy_meta(id: String) -> bool:
 	return true
 
 
-func _make_map(seed_value: int) -> Array:
+func _make_map(seed_value: int, difficulty := "easy") -> Array:
 	var rng := _rng(seed_value, 1)
 	var layers: Array = [[_node("opening", "Gate Trial", 0, 1)]]
 	var specifications := [
@@ -385,8 +469,29 @@ func _make_map(seed_value: int) -> Array:
 		["rest", "rest", "rest"],
 	]
 	var used_events: Array[String] = []
-	for i in range(specifications.size()):
-		var kinds: Array = specifications[i].duplicate()
+	_append_layers(layers, specifications, rng, used_events)
+	layers.append([_node("boss", "The Tollkeeper", layers.size(), 1)])
+	if difficulty == "medium":
+		layers.append([_node("battle", "Upper Gate Patrol", layers.size(), 1)])
+		_append_layers(layers, [
+			["battle", "event", "battle"],
+			["battle", "shop", "battle"],
+			["elite", "battle", "battle"],
+			["shop", "battle", "battle"],
+			["rest", "rest", "rest"],
+		], rng, used_events)
+		layers.append([_node("boss", "The Gilded Marshal", layers.size(), 1)])
+	for row in range(layers.size() - 1):
+		for node: Dictionary in layers[row]:
+			for target: Dictionary in layers[row + 1]:
+				if absi(int(node.column) - int(target.column)) <= 1:
+					node.next.append(target.id)
+	return layers
+
+
+func _append_layers(layers: Array, specifications: Array, rng: RandomNumberGenerator, used_events: Array[String]) -> void:
+	for specification: Array in specifications:
+		var kinds: Array = specification.duplicate()
 		_shuffle(kinds, rng)
 		var layer: Array = []
 		for column in range(kinds.size()):
@@ -398,16 +503,8 @@ func _make_map(seed_value: int) -> Array:
 			var label: String = labels[rng.randi_range(0, labels.size() - 1)]
 			if kind == "event":
 				used_events.append(label)
-			layer.append(_node(kind, label, i + 1, column))
+			layer.append(_node(kind, label, layers.size(), column))
 		layers.append(layer)
-	layers.append([_node("boss", "The Tollkeeper", 6, 1)])
-	for row in range(layers.size() - 1):
-		for node: Dictionary in layers[row]:
-			for target: Dictionary in layers[row + 1]:
-				var adjacent := absi(int(node.column) - int(target.column)) <= 1
-				if adjacent or row == 0 or row == layers.size() - 2:
-					node.next.append(target.id)
-	return layers
 
 
 func _node(kind: String, label: String, row: int, column: int) -> Dictionary:
@@ -467,8 +564,23 @@ func _grant_marks(amount: int) -> void:
 	data.marks_earned += amount
 
 
-func _heal(amount: int) -> void:
-	data.hp = mini(int(data.max_hp), int(data.hp) + amount)
+func party_needs_healing() -> bool:
+	for hero: Dictionary in data.get("heroes", []):
+		if hero.hp < hero.max_hp:
+			return true
+	return false
+
+
+func _heal(amount: int, revive := true) -> void:
+	for hero: Dictionary in data.heroes:
+		if revive or hero.hp > 0:
+			hero.hp = mini(int(hero.max_hp), int(hero.hp) + amount)
+	_sync_lead_hero()
+
+
+func _sync_lead_hero() -> void:
+	data.hp = data.heroes[0].hp
+	data.max_hp = data.heroes[0].max_hp
 
 
 func _restore_integers() -> void:
@@ -477,6 +589,13 @@ func _restore_integers() -> void:
 		return
 	for field in ["seed", "hp", "max_hp", "gold", "marks_earned"]:
 		data[field] = int(data[field])
+	data.difficulty = data.get("difficulty", "easy")
+	data.segment = int(data.get("segment", 1))
+	if not data.has("heroes"):
+		data.heroes = [] if data.hero.is_empty() else [{"id": data.hero, "hp": data.hp, "max_hp": data.max_hp}]
+	for hero: Dictionary in data.heroes:
+		hero.hp = int(hero.hp)
+		hero.max_hp = int(hero.max_hp)
 	for layer: Array in data.layers:
 		for node: Dictionary in layer:
 			node.row = int(node.row)

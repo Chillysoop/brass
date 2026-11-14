@@ -15,6 +15,7 @@ const SPRITE_PATHS := {
 	"hexwright": "res://assets/hexwright.png",
 	"clockwork": "res://assets/clockwork.png",
 	"scout": "res://assets/scout.png",
+	"marshal": "res://assets/marshal.png",
 }
 const EFFECT_LENGTHS := {
 	"pull": 0.42,
@@ -143,8 +144,15 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	if friendly:
 		art_key = "hexwright" if String(unit.name).to_lower().contains("hex") else "warden"
 	var texture: Texture2D = _textures.get(art_key)
+	if texture == null and art_key == "marshal":
+		texture = _textures.get("clockwork")
 	var radius := maxf(8.0, float(unit.radius) * unit_scale)
-	var art_height := maxf(39.0, unit_scale * (154.0 if art_key == "clockwork" else 132.0))
+	var model_height := 132.0
+	if art_key == "marshal":
+		model_height = 191.0
+	elif art_key == "clockwork":
+		model_height = 154.0
+	var art_height := maxf(39.0, unit_scale * model_height)
 	var facing := float(_facing.get(unit.id, 1.0 if friendly else -1.0))
 	var velocity: Vector2 = unit.get("velocity", Vector2.ZERO)
 	var motion := minf(velocity.length() / 100.0, 1.0)
@@ -164,7 +172,8 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		var width := art_height * texture.get_size().aspect()
 		var flip := 1.0 if (facing > 0.0) == friendly else -1.0
 		draw_set_transform(point + bounce, 0.0, Vector2(flip, 1.0))
-		draw_texture_rect(texture, Rect2(-width * 0.5, -art_height, width, art_height), false, Color.WHITE.lerp(GOLD, flash * 0.6))
+		var tint := GOLD.lightened(0.35) if art_key == "marshal" and not _textures.has("marshal") else Color.WHITE
+		draw_texture_rect(texture, Rect2(-width * 0.5, -art_height, width, art_height), false, tint.lerp(GOLD, flash * 0.6))
 		draw_set_transform(Vector2.ZERO)
 	else:
 		var body_center := point - Vector2(0.0, art_height * 0.37)
@@ -182,6 +191,11 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	draw_rect(Rect2(bar.position, Vector2(bar.size.x * health_ratio, bar.size.y)), accent)
 	if float(unit.get("guard", 0)) > 0.0:
 		draw_line(bar.position + Vector2(0.0, -2.0), bar.position + Vector2(bar.size.x, -2.0), GOLD, 2.0, true)
+	if unit.get("marshal_plated", false):
+		var exposed: bool = int(unit.get("marshal_exposed_until", 0)) > 0
+		var plate_color := HERO_COLOR if exposed else GOLD
+		_draw_centered("ARMOR OPEN" if exposed else "PLATED", bar.get_center() - Vector2(0.0, 9.0), 14, plate_color)
+		draw_arc(point, radius * 1.4, 0.0, TAU, 32, Color(plate_color, 0.8), 2.0, true)
 
 
 func _draw_intents(field: Rect2) -> void:
