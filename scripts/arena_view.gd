@@ -139,7 +139,7 @@ func _draw_arena(board: Rect2) -> void:
 func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	var friendly: bool = unit.side == "hero"
 	var accent := HERO_COLOR if friendly else ENEMY_COLOR
-	var art_key := String(unit.id)
+	var art_key := String(unit.get("sprite", unit.id))
 	if friendly:
 		art_key = "hexwright" if String(unit.name).to_lower().contains("hex") else "warden"
 	var texture: Texture2D = _textures.get(art_key)

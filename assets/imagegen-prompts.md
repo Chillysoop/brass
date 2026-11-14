@@ -9,3 +9,11 @@ Use case: stylized-concept. Generate a production-ready 16:9 2D game background 
 ## Characters
 
 Use case: stylized-concept. Production sprite atlas for a 2D open arena game, restrained hand-drawn screen-print style, graphic shapes, few flat colors, minimal texture. A 2 by 2 atlas of four SEPARATE full-body isolated sprites, evenly placed at exact 25% and 75% of canvas width and height, generous transparent gutters, no shadows outside characters, no labels, no other elements. Top left: friendly compact teal-and-cream space knight with short hammer, facing right. Top right: friendly hooded teal-and-cream gravity witch with a small hooked staff, facing right. Bottom left: compact red-and-brass enemy clockwork knight with rust round shield, facing left. Bottom right: smaller rust clockwork scout with blade, facing left. Three-quarter elevated view, action-ready stance, consistent scale within quadrants and crisp distinct silhouettes, visibly wielded weapons. Transparent background, nothing besides sprites.
+
+## frontier-map
+
+A landscape background plate for a route map in original indie game Brass & Aether. 16:9 wide, slightly elevated illustrated sandstone desert and enormous worn brass clockwork arches, distant terracotta frontier foundries and slate mountains. Muted dusty ochre, deep charcoal navy, tiny faded teal. Fine screen-printed texture, stylized graphic shapes and strong quiet silhouettes, matched to a rust-and-teal fantasy gladiator game. Dark enough to sit behind bright route lines and native UI. Center and right are mostly unobstructed faded flat terrain. No game interface, nodes, text, borders or characters.
+
+## aether-sky
+
+Background plate for the Aether Chart of Brass & Aether, a dramatic celestial brass star map in the dark atmospheric style of a high fantasy passive skill constellation. Deep near-black indigo night, subtle pinprick stars, pale wisps of cosmic dust, muted glowing cyan nebula along a corner, aged engraved astrolabe circles in the far margins, warm bronze light only at the distant edges. Main center is an even dark field for native constellation lines and nodes. Original dark fantasy engraving, elegant and restrained. 16:9 wide. No text, no UI, no nodes, no icons or figures.

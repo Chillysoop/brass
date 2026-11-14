@@ -1,8 +1,14 @@
 # Brass & Aether
 
-The Windows playtest covers the arena, tile storage, and the Bash forge family. Open `project.godot` in Godot 4.7.2 and press F5.
+The Windows playtest includes a complete Brass Frontier Easy run and a separate practice arena. Open `project.godot` in Godot 4.7.2 and press F5.
 
 ## Playtest
+
+Choose **Start Easy run** to draft a hero, relic, and starting tile. Win the opening fight, pick rewards, then travel a seeded route through battles, elites, shops, events, and a rest site. Health, relics, gold, and tile layouts carry between stops. The game saves between fights and after loadout changes. **Resume** picks up from the saved checkpoint.
+
+Defeat the Tollkeeper to bank Aether Marks and record the Medium unlock. Close the victory recap to spend Marks in the **Aether Chart**. Medium is the next playable difficulty milestone.
+
+## Arena practice
 
 1. Start with **Two heroes**. The preset schedules Hexwright's **Pull · Farthest** at beat 4 and Warden's **Bash · Nearest** at beat 6. Start the battle and watch the tether bring the distant clockwork within striking distance.
 2. **Reset fight**, change Pull's rule to **Nearest**, and compare the target and follow-up. Each tile previews its target in setup and chooses again when it fires.
@@ -13,13 +19,13 @@ The Windows playtest covers the arena, tile storage, and the Bash forge family. 
 
 The simulation runs at 60 ticks per second, with 21 ticks per beat and 12 beats per loop. Same-tick activations run in hero order. The arena is continuous and uses scripted movement and separation, capped displacement, and checked teleport destinations.
 
-The practice palette supplies unlimited base tiles for testing. Switching fixtures resets the practice inventory. The location run and between-run Aether Chart are the next milestone.
+The practice palette supplies unlimited base tiles. Switching practice fixtures resets their inventory.
 
 ## Build
 
 With matching Godot export templates installed, create a `build` folder and export **Windows Desktop**. The preset embeds the game data in the x86-64 executable.
 
-Run `tests/arena_sim_test.gd` and `tests/arena_lab_test.gd` with Godot's `--headless --script` options to check the simulation and setup controls.
+Run the scripts under `tests/` with Godot's `--headless --script` options to check practice combat, setup controls, and the Frontier run.
 
 ## Desktop launcher
 
@@ -27,4 +33,4 @@ The **Brass & Aether** desktop shortcut checks the project's GitHub `main` branc
 
 ## Credits
 
-Brass & Aether uses [Godot Engine](https://godotengine.org/license/). The arena backdrop and character sprites were generated with ImageGen. The prompts are in `assets/imagegen-prompts.md`.
+Brass & Aether uses [Godot Engine](https://godotengine.org/license/). The arena, map, constellation backdrops, and character sprites were generated with ImageGen. The prompts are in `assets/imagegen-prompts.md`.

@@ -11,6 +11,8 @@ func _run() -> void:
 	var lab = ArenaScene.instantiate()
 	root.add_child(lab)
 	await process_frame
+	lab.run_practice()
+	await process_frame
 	lab.set_physics_process(false)
 	_check(lab.lanes.size() == 2, "Duo setup should start with two lanes.")
 	var preview = lab.sim.target_for(0, "pull", "farthest")

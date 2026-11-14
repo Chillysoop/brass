@@ -5,6 +5,8 @@ const ArenaView = preload("res://scripts/arena_view.gd")
 const StorageScreen = preload("res://scripts/storage_screen.gd")
 const ForgeScreen = preload("res://scripts/forge_screen.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
+const FrontierRun = preload("res://scripts/frontier_run.gd")
+const FrontierScreen = preload("res://scripts/frontier_screen.gd")
 const PRACTICE_TILES := ["pull", "bash", "guard", "shot", "blink", "slam"]
 const INK := Color("#101820")
 const PANEL := Color("#192732")
@@ -20,6 +22,16 @@ const LABELS := {
 }
 
 var sim = ArenaSim.new()
+var run = FrontierRun.new()
+var campaign := false
+var encounter_setup := false
+var camp_forge := false
+var frontier_screen
+var return_button: Button
+var reset_button: Button
+var camp_button: Button
+var remove_button: Button
+var discard_dialog: ConfirmationDialog
 var lanes: Array = []
 var defaults: Array[String] = []
 var fixture := "duo"
@@ -50,6 +62,8 @@ func _ready() -> void:
 	theme = _theme()
 	_build()
 	_load_fixture("duo")
+	run.load_save()
+	run_menu()
 
 func _theme() -> Theme:
 	var result := Theme.new()
@@ -129,7 +143,10 @@ func _build() -> void:
 	storage_button = _button("Tile storage", _open_storage)
 	storage_button.tooltip_text = "Open storage. An equipped or practice tile stays selected for placement."
 	header.add_child(storage_button)
-	header.add_child(_button("Reset fight", _reset_fight))
+	reset_button = _button("Reset fight", _reset_fight)
+	header.add_child(reset_button)
+	return_button = _button("Title", _leave_arena)
+	header.add_child(return_button)
 	action = _button("Start battle", _action)
 	action.custom_minimum_size.x = 130
 	action.add_theme_stylebox_override("normal", _box(Color("#59462f"), GOLD))
@@ -161,7 +178,10 @@ func _build() -> void:
 	palette.add_theme_constant_override("separation", 5)
 	palette.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	tray.add_child(palette)
-	tray.add_child(_button("Remove selected", _remove_selected))
+	remove_button = _button("Remove selected", _remove_selected)
+	tray.add_child(remove_button)
+	camp_button = _button("Forge selected", _open_camp_forge)
+	tray.add_child(camp_button)
 	setup_hint = _label("", 14, MUTED)
 	setup_hint.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	stack.add_child(setup_hint)
@@ -179,6 +199,15 @@ func _build() -> void:
 	decline_dialog.title = "Decline combine?"
 	decline_dialog.ok_button_text = "Decline combine"
 	add_child(decline_dialog)
+	discard_dialog = ConfirmationDialog.new()
+	discard_dialog.title = "Discard tile?"
+	discard_dialog.ok_button_text = "Discard"
+	discard_dialog.confirmed.connect(_discard_selected)
+	add_child(discard_dialog)
+	frontier_screen = FrontierScreen.new()
+	add_child(frontier_screen)
+	frontier_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	frontier_screen.configure(self)
 
 func _load_fixture(next_fixture: String) -> void:
 	fixture = "solo" if next_fixture == "solo" else "duo"
@@ -202,8 +231,9 @@ func _entry(id: String, start: int, target: String) -> Dictionary:
 func _reset_fight() -> void:
 	state = "setup"
 	selected.clear()
+	pending_forge.clear()
 	log_lines.clear()
-	sim.start(lanes, fixture)
+	_start_sim()
 	arena.reset_view(sim.units)
 	_rebuild_loadout()
 	_update_controls()
@@ -211,15 +241,22 @@ func _reset_fight() -> void:
 func _action() -> void:
 	match state:
 		"setup":
+			if campaign and (not encounter_setup or lanes[0].is_empty()):
+				setup_hint.text = "Equip a tile before starting the battle."
+				return
 			selected.clear()
 			log_lines.clear()
-			sim.start(lanes, fixture)
+			_start_sim()
 			arena.reset_view(sim.units)
 			state = "running"
 			_rebuild_loadout()
 		"running": state = "paused"
 		"paused": state = "running"
-		"finished": _reset_fight()
+		"finished":
+			if campaign:
+				run_return()
+				return
+			_reset_fight()
 	_update_controls()
 
 func _physics_process(_delta: float) -> void:
@@ -236,11 +273,23 @@ func _physics_process(_delta: float) -> void:
 					log_lines.pop_back()
 		if not sim.outcome.is_empty():
 			state = "finished"
+			if campaign:
+				run.finish_combat(sim.outcome == "victory", sim.units[0].hp)
 			break
 	_update_controls()
 
 func _update_controls() -> void:
 	action.text = {"setup": "Start battle", "running": "Pause", "paused": "Resume", "finished": "Edit loadout"}[state]
+	if campaign and state == "finished":
+		action.text = "Continue"
+	action.visible = not campaign or encounter_setup
+	reset_button.visible = not campaign
+	fixture_picker.visible = not campaign
+	return_button.text = "Return to run" if campaign else "Title"
+	return_button.disabled = campaign and state in ["running", "paused"]
+	camp_button.visible = camp_forge
+	remove_button.text = "Discard selected" if campaign else "Remove selected"
+	remove_button.disabled = state != "setup"
 	fixture_picker.disabled = state != "setup"
 	storage_button.disabled = state != "setup"
 	var cycle := ArenaSim.BEATS * ArenaSim.TICKS_PER_BEAT
@@ -248,8 +297,8 @@ func _update_controls() -> void:
 	var beat := 0 if elapsed == 0 else 1 + floori(float((elapsed - 1) % cycle) / ArenaSim.TICKS_PER_BEAT)
 	match state:
 		"setup":
-			status.text = "PRE-FIGHT SETUP"
-			log_text.text = "Try Pull · Farthest at beat 4, then Bash · Nearest at beat 6."
+			status.text = "PRE-FIGHT SETUP" if not campaign or encounter_setup else "MANAGE TILES"
+			log_text.text = "Try Pull · Farthest at beat 4, then Bash · Nearest at beat 6." if not campaign else "%s  ·  %d / %d HP  ·  %d gold" % [sim.units[0].name, run.data.hp, run.data.max_hp, run.data.gold]
 		"finished":
 			status.text = "%s · %.1fs" % [sim.outcome.to_upper(), elapsed / 60.0]
 		_:
@@ -276,7 +325,7 @@ func _rebuild_loadout() -> void:
 	playheads.clear()
 	for lane_index in range(lanes.size()):
 		_build_lane(lane_index)
-	for id: String in PRACTICE_TILES:
+	for id: String in ([] if campaign else PRACTICE_TILES):
 		var tile: Dictionary = ArenaSim.TILES[id]
 		var payload := {"id": id}
 		var button := _button("%s · %d" % [tile.label, tile.width], func(): _select(payload))
@@ -286,7 +335,7 @@ func _rebuild_loadout() -> void:
 			button.add_theme_stylebox_override("normal", _box(Color("#4d4430"), GOLD))
 		_drag_source(button, payload)
 		palette.add_child(button)
-	setup_hint.text = "Drag or select a tile, then choose an empty beat. Open Tile storage to pack or combine tiles."
+	setup_hint.text = "Select a tile to move it or send it to storage." if campaign else "Drag or select a tile, then choose an empty beat. Open Tile storage to pack or combine tiles."
 
 func _build_lane(lane_index: int) -> void:
 	var row := HBoxContainer.new()
@@ -378,6 +427,7 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	targets.disabled = state != "setup" or targets.item_count == 1
 	targets.item_selected.connect(func(index: int):
 		item.target = targets.get_item_metadata(index)
+		_save_loadout()
 		var new_preview: Dictionary = sim.target_for(lane_index, item.id, item.target)
 		name_button.tooltip_text = _tile_tooltip(lane_index, item, tile)
 		setup_hint.text = "%s · %s" % [tile.label, new_preview.get("name", "No eligible target")]
@@ -399,6 +449,7 @@ func _set_all(lane_index: int, rule: String) -> void:
 		else:
 			skipped += 1
 	_rebuild_loadout()
+	_save_loadout()
 	setup_hint.text = "Set compatible tiles to %s%s." % [
 		LABELS[rule], " · %d unchanged" % skipped if skipped else ""
 	]
@@ -471,6 +522,7 @@ func _place(payload: Dictionary, lane_index: int, start: int) -> void:
 	lanes[lane_index].sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
 	selected.clear()
 	_rebuild_loadout()
+	_save_loadout()
 
 func _take_tile(payload: Dictionary) -> Dictionary:
 	var lane: Array = storage_rows[payload.row] if payload.has("row") else lanes[payload.lane]
@@ -482,9 +534,23 @@ func _take_tile(payload: Dictionary) -> Dictionary:
 func _remove_selected() -> void:
 	if state != "setup" or selected.get("lane", -1) < 0:
 		return
+	_confirm_discard()
+
+func _confirm_discard() -> void:
+	if campaign:
+		discard_dialog.dialog_text = "Discard %s for this run?" % ArenaSim.TILES[selected.id].label
+		discard_dialog.popup_centered()
+		return
+	_discard_selected()
+
+func _discard_selected() -> void:
 	_take_tile(selected)
 	selected.clear()
-	_rebuild_loadout()
+	if storage_screen.visible:
+		_render_storage()
+	else:
+		_rebuild_loadout()
+	_save_loadout()
 
 func tile_spec(id: String) -> Dictionary:
 	return ArenaSim.TILES[id]
@@ -506,7 +572,7 @@ func _render_storage() -> void:
 		for offer in TilePacking.offers(storage_rows[row], suppressed_combines):
 			offer.row = row
 			all_offers.append(offer)
-	storage_screen.render(storage_rows, selected, all_offers)
+	storage_screen.render(storage_rows, selected, all_offers, camp_forge)
 
 func storage_pick(row: int, item: Dictionary) -> void:
 	var payload := {"id": item.id, "lane": -1, "row": row, "start": item.start}
@@ -534,12 +600,21 @@ func storage_place(row: int, start: int, payload: Dictionary) -> void:
 	storage_rows[row].sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
 	selected.clear()
 	_render_storage()
+	_save_loadout()
 
 func storage_send_to_timeline() -> void:
 	if selected.has("row"):
 		storage_close()
 		setup_hint.text = "Choose an empty starting beat for %s." % ArenaSim.TILES[selected.id].label
 		lane_stack.get_child(0).get_child(1).get_child(0).grab_focus()
+
+func storage_discard() -> void:
+	if selected.has("row"):
+		_confirm_discard()
+
+func storage_forge() -> void:
+	if camp_forge and selected.has("row"):
+		_open_camp_forge()
 
 func storage_combine(row: int, start: int, accept: bool) -> void:
 	_offer_combine(row, -1, start, accept)
@@ -586,10 +661,14 @@ func _decline_combine() -> void:
 	if decline_dialog.canceled.is_connected(_cancel_decline):
 		decline_dialog.canceled.disconnect(_cancel_decline)
 	suppressed_combines[pending_forge.offer.id] = true
+	_save_loadout()
 	forge_close()
 
 func forge_choose(id: String) -> void:
 	if pending_forge.is_empty() or not forge_screen.visible:
+		return
+	if pending_forge.has("camp"):
+		_commit_camp_forge(id)
 		return
 	var offer: Dictionary = pending_forge.offer
 	if id not in TilePacking.next_options(offer.id):
@@ -609,13 +688,166 @@ func forge_choose(id: String) -> void:
 	items.sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
 	suppressed_combines.erase(id)
 	selected.clear()
+	_save_loadout()
 	forge_close()
 
 func forge_close() -> void:
-	var from_storage: bool = pending_forge.get("row", -1) >= 0
+	var from_storage: bool = pending_forge.get("row", -1) >= 0 or pending_forge.get("camp", {}).has("row")
 	pending_forge.clear()
 	forge_screen.hide()
 	if from_storage:
 		_open_storage()
 	else:
 		storage_close()
+
+func _start_sim() -> void:
+	if campaign:
+		var options: Dictionary = run.encounter()
+		if options.is_empty():
+			options = {
+				"encounter": "opening", "hero": run.data.hero, "hp": run.data.hp,
+				"max_hp": run.data.max_hp, "relics": run.data.relics,
+				"relic": run.data.relics[0] if not run.data.relics.is_empty() else ""
+			}
+		sim.start(lanes, "solo", options)
+	else:
+		sim.start(lanes, fixture)
+
+func _save_loadout() -> void:
+	if campaign:
+		run.loadout = {"lanes": lanes, "storage": storage_rows, "defaults": defaults, "suppressed": suppressed_combines}
+		run.save()
+
+func _show_frontier(page := "") -> void:
+	state = "setup"
+	campaign = false
+	camp_forge = false
+	arena_screen.hide()
+	storage_screen.hide()
+	forge_screen.hide()
+	frontier_screen.show()
+	frontier_screen.render(run, page)
+
+func _leave_arena() -> void:
+	if campaign:
+		_save_loadout()
+		run_return()
+	else:
+		run_menu()
+
+func run_menu() -> void:
+	_show_frontier("menu")
+
+func run_show_chart() -> void:
+	_show_frontier("chart")
+
+func run_return() -> void:
+	_show_frontier()
+
+func run_start(seed_value := 0) -> void:
+	run.start_run(seed_value)
+	run_return()
+
+func run_resume() -> void:
+	run_return()
+
+func run_practice() -> void:
+	campaign = false
+	camp_forge = false
+	frontier_screen.hide()
+	arena_screen.show()
+	fixture_picker.select(0)
+	_load_fixture("duo")
+
+func run_show_arena() -> void:
+	campaign = true
+	encounter_setup = run.data.phase == "combat"
+	lanes = run.loadout.lanes
+	storage_rows = run.loadout.storage
+	defaults.assign(run.loadout.defaults)
+	suppressed_combines = run.loadout.suppressed
+	frontier_screen.hide()
+	storage_screen.hide()
+	forge_screen.hide()
+	arena_screen.show()
+	_reset_fight()
+
+func run_rest_forge() -> void:
+	camp_forge = true
+	run_show_arena()
+	setup_hint.text = "Select a tile from the Bash family, then choose Forge selected."
+
+func _open_camp_forge() -> void:
+	if not selected.has("lane") or TilePacking.next_options(selected.get("id", "")).is_empty():
+		_show_inventory_message("Select a tile from the Bash family below Legendary.")
+		return
+	pending_forge = {"camp": selected.duplicate()}
+	arena_screen.hide()
+	storage_screen.hide()
+	forge_screen.open(selected.id, 1)
+
+func _commit_camp_forge(id: String) -> void:
+	var source: Dictionary = pending_forge.camp
+	if id not in TilePacking.next_options(source.id):
+		return
+	var stored: bool = source.has("row")
+	var items: Array = storage_rows[source.row] if stored else lanes[source.lane]
+	var capacity := TilePacking.STORAGE_COLUMNS if stored else ArenaSim.BEATS
+	if not TilePacking.can_place(items, id, source.start, capacity, source.start):
+		forge_close()
+		_show_inventory_message("Make room next to the tile for the wider upgrade.")
+		return
+	for item: Dictionary in items:
+		if item.start == source.start and item.id == source.id:
+			item.id = id
+			suppressed_combines.erase(id)
+			pending_forge.clear()
+			run.rest("forge")
+			_save_loadout()
+			run_return()
+			return
+
+func _show_inventory_message(message: String) -> void:
+	if storage_screen.visible:
+		storage_screen.show_message(message)
+	else:
+		setup_hint.text = message
+
+func _loot_destination(id: String) -> Dictionary:
+	var owned: Dictionary = run.loadout
+	for beat in range(ArenaSim.BEATS):
+		if TilePacking.can_place(owned.lanes[0], id, beat, ArenaSim.BEATS):
+			return {"items": owned.lanes[0], "start": beat}
+	for row: Array in owned.storage:
+		for column in range(TilePacking.STORAGE_COLUMNS):
+			if TilePacking.can_place(row, id, column, TilePacking.STORAGE_COLUMNS):
+				return {"items": row, "start": column}
+	return {}
+
+func _claim_loot(id: String, commit: Callable) -> bool:
+	if not ArenaSim.TILES.has(id):
+		return false
+	var destination := _loot_destination(id)
+	if destination.is_empty():
+		return false
+	var entry := _entry(id, destination.start, ArenaSim.TILES[id].targets[0])
+	var items: Array = destination.items
+	items.append(entry)
+	items.sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
+	var was_suppressed: bool = run.loadout.suppressed.erase(id)
+	if commit.call(id):
+		return true
+	items.erase(entry)
+	if was_suppressed:
+		run.loadout.suppressed[id] = true
+	return false
+
+func run_claim_reward(id: String) -> bool:
+	if id == "skip" or run.data.get("node", {}).get("type") == "boss":
+		return run.reward(id)
+	return _claim_loot(id, run.reward)
+
+func run_buy_shop(id: String) -> bool:
+	if not ArenaSim.TILES.has(id):
+		return run.shop_buy(id)
+	return _claim_loot(id, run.shop_buy)

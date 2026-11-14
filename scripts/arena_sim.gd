@@ -16,11 +16,41 @@ const BASH_TIERS := [
 	["sunwall", "graviton"],
 	["dawn_bastion", "event_horizon"],
 ]
+const HERO_CLASSES := {
+	"warden": {"label": "Warden", "description": "Gain 4 guard on the first Bash-family hit each loop."},
+	"bulwark": {"label": "Bulwark", "description": "Reduce the first strike you take each loop by 6."},
+	"breaker": {"label": "Breaker", "description": "A push that sends a foe into another deals 5 extra damage to both."},
+	"hexwright": {"label": "Hexwright", "description": "Pull tiles draw enemies in with extra force."},
+	"wayfarer": {"label": "Wayfarer", "description": "Move faster for three beats after teleporting."},
+	"lancer": {"label": "Lancer", "description": "Moving 80 units charges your next hit for 6 bonus damage."},
+	"cantor": {"label": "Cantor", "description": "Echo 3 guard to the lowest-HP ally when you grant guard, including yourself."},
+	"apothecary": {"label": "Apothecary", "description": "Your first tile hit each loop heals 2 HP. Excess healing becomes guard."},
+	"rune_smith": {"label": "Rune Smith", "description": "Finish a tile at least 3 beats wide to charge your next hit for 5 bonus damage."},
+	"starshot": {"label": "Starshot", "description": "Deal 5 bonus damage to targets more than 200 units away."},
+	"cinder_mage": {"label": "Cinder Mage", "description": "Once per loop, hitting a displaced enemy burns it for 6 damage."},
+	"duelist": {"label": "Duelist", "description": "Repeated hits on one target build up to 6 bonus damage. Resets when you switch."}
+}
+const CAMPAIGN_ENEMIES := {
+	"recruit": {"name": "Clockwork Recruit", "art": "clockwork", "hp": 30, "radius": 24.0, "speed": 87.0,
+		"spacing": 85.0, "reach": 128.0, "damage": 3, "first": 116, "cooldown": 170, "windup": 27},
+	"bruiser": {"name": "Rivet Bruiser", "art": "clockwork", "hp": 134, "radius": 29.0, "speed": 80.0,
+		"spacing": 93.0, "reach": 155.0, "damage": 11, "first": 115, "cooldown": 139, "windup": 27, "push": 235.0},
+	"scout": {"name": "Clockwork Scout", "art": "scout", "hp": 53, "radius": 17.0, "speed": 68.0,
+		"spacing": 145.0, "reach": 224.0, "damage": 7, "first": 157, "cooldown": 143, "windup": 25},
+	"veteran": {"name": "Rivet Captain", "art": "clockwork", "hp": 168, "radius": 33.0, "speed": 83.0,
+		"spacing": 95.0, "reach": 171.0, "damage": 14, "first": 116, "cooldown": 129, "windup": 31, "push": 310.0},
+	"boss": {"name": "The Tollkeeper", "art": "clockwork", "hp": 330, "radius": 40.0, "speed": 86.0,
+		"spacing": 107.0, "reach": 204.0, "damage": 16, "first": 125, "cooldown": 123, "windup": 39, "push": 345.0}
+}
 
 const TILES := {
 	"pull": {
 		"label": "Pull", "width": 3, "range": 610.0, "damage": 5,
 		"targets": TARGET_RULES, "description": "Drag an enemy toward you."
+	},
+	"gravity_hook": {
+		"label": "Gravity Hook", "width": 3, "range": 720.0, "damage": 8, "rarity": "common",
+		"targets": TARGET_RULES, "description": "Reach across the arena and pull an enemy in with extra force."
 	},
 	"bash": {
 		"label": "Bash", "width": 2, "range": 150.0, "damage": 17,
@@ -82,6 +112,10 @@ const TILES := {
 		"label": "Event Horizon", "width": 6, "range": 620.0, "damage": 39,
 		"family": "bash", "rarity": "legendary",
 		"targets": TARGET_RULES, "description": "Damage and pull enemies around the target. Interrupt their active windups."
+	},
+	"meteor_seal": {
+		"label": "Meteor Seal", "width": 5, "range": 580.0, "damage": 42, "rarity": "legendary",
+		"targets": TARGET_RULES, "description": "Drop a meteor on the target, damaging nearby enemies."
 	}
 }
 
@@ -116,15 +150,17 @@ static func default_lanes(fixture: String = "duo") -> Array:
 	]
 
 
-func start(hero_lanes: Array, fixture: String = "duo") -> void:
+func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {}) -> void:
 	tick = 0
 	outcome = ""
 	units.clear()
 	trace.clear()
 	_events.clear()
 	_lanes.clear()
-	var solo := fixture == "solo"
-	if solo:
+	var solo := fixture == "solo" or not options.is_empty()
+	if not options.is_empty():
+		_start_campaign(options)
+	elif solo:
 		units.append(_unit("hero_1", "Warden", "hero", 0, Vector2(270, 270), 165, 23.0, 122.0, 92.0))
 		units.append(_unit("clockwork", "Clockwork", "enemy", -1, Vector2(715, 254), 273, 32.0, 75.0, 112.0))
 	else:
@@ -137,15 +173,62 @@ func start(hero_lanes: Array, fixture: String = "duo") -> void:
 		_lanes.append(_valid_tiles(tiles))
 
 
+func _start_campaign(options: Dictionary) -> void:
+	var hero_id: String = options.get("hero", "warden")
+	var hero: Dictionary = HERO_CLASSES.get(hero_id, HERO_CLASSES.warden)
+	var max_hp := maxi(1, int(options.get("max_hp", 100)))
+	var unit := _unit("hero_1", hero.label, "hero", 0, Vector2(285, 265), max_hp, 23.0, 153.0, 86.0)
+	unit.hp = clampi(int(options.get("hp", max_hp)), 0, max_hp)
+	unit["class"] = hero_id
+	unit["relics"] = options.get("relics", []).duplicate()
+	var relic: String = options.get("relic", "")
+	if not relic.is_empty() and relic not in unit.relics:
+		unit.relics.append(relic)
+	units.append(unit)
+
+	var rng := RandomNumberGenerator.new()
+	rng.seed = int(options.get("seed", 0))
+	var y := rng.randf_range(217.0, 289.0)
+	match options.get("encounter", "opening"):
+		"battle":
+			if rng.randi_range(0, 1) == 0:
+				_add_campaign_enemy("bruiser", Vector2(615, y))
+			else:
+				_add_campaign_enemy("scout", Vector2(583, y - 58.0))
+				_add_campaign_enemy("scout", Vector2(684, y + 72.0), 20)
+		"elite":
+			_add_campaign_enemy("veteran", Vector2(636, y))
+			_add_campaign_enemy("scout", Vector2(673, y + 113.0))
+		"boss":
+			_add_campaign_enemy("boss", Vector2(647, y))
+		_:
+			_add_campaign_enemy("recruit", Vector2(522, y))
+
+
+func _add_campaign_enemy(kind: String, position: Vector2, delay := 0) -> void:
+	var spec: Dictionary = CAMPAIGN_ENEMIES[kind]
+	var enemy := _unit("%s_%d" % [kind, units.size()], spec.name, "enemy", -1, position,
+		spec.hp, spec.radius, spec.speed, spec.spacing)
+	enemy["attack"] = spec
+	enemy["sprite"] = spec.art
+	enemy.next_attack = int(spec.first) + delay
+	units.append(enemy)
+
+
 func step() -> Array[Dictionary]:
 	_events = []
 	if outcome != "" or units.is_empty():
 		return _events
 	tick += 1
+	if (tick - 1) % LOOP_TICKS == 0:
+		for unit in units:
+			if unit.hp > 0 and _has_relic(unit, "pocket_bell"):
+				_guard(unit, 5, "pocket_bell")
 	_move_units()
 	if tick % TICKS_PER_BEAT == 0:
 		_activate_lanes()
 	_run_enemies()
+	_run_burns()
 	if tick >= 3600 and tick % 30 == 0:
 		_end_stalemate()
 	_check_outcome()
@@ -215,12 +298,17 @@ func _move_units() -> void:
 			var offset: Vector2 = focus.pos - position
 			var distance := offset.length()
 			var speed: float = unit.speed
+			if tick < unit.get("haste_until", 0):
+				speed *= 1.42
 			var margin: float = distance - unit.preferred_range
 			drive = offset.normalized() * clampf(margin * 4.0, 0.0, speed)
 		var impulse: Vector2 = unit.impulse
 		unit.velocity = drive + impulse
 		unit.impulse = impulse.move_toward(Vector2.ZERO, IMPULSE_DECAY * DELTA)
-		next_positions.append(_bounded(position + unit.velocity * DELTA, unit.radius))
+		var next := _bounded(position + unit.velocity * DELTA, unit.radius)
+		if unit.get("class") == "lancer":
+			unit["travel"] = minf(80.0, unit.get("travel", 0.0) + position.distance_to(next))
+		next_positions.append(next)
 	for i in range(units.size()):
 		if units[i].hp <= 0:
 			continue
@@ -232,6 +320,8 @@ func _move_units() -> void:
 			var minimum: float = units[i].radius + units[j].radius + 3.0
 			if distance >= minimum:
 				continue
+			_breaker_collision(units[i], units[j])
+			_breaker_collision(units[j], units[i])
 			var direction := offset / distance if distance > 0.001 else Vector2.RIGHT
 			var separation := direction * minf((minimum - distance) * 0.32, 10.0)
 			next_positions[i] = _bounded(next_positions[i] - separation, units[i].radius)
@@ -278,6 +368,8 @@ func _activate_lanes() -> void:
 		for tile in _lanes[lane]:
 			if tile.end == current_beat:
 				_cast(actor, tile.id, tile.target)
+				if actor.get("class") == "rune_smith" and TILES[tile.id].width >= 3:
+					actor["rune_charged"] = true
 
 
 func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
@@ -292,8 +384,10 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 			_emit("miss", "%s: %s was out of range." % [actor.name, tile.label], actor, out_of_range, tile_id)
 		return
 	match tile_id:
-		"pull":
-			var force := 890.0 if actor.name == "Hexwright" else 735.0
+		"pull", "gravity_hook":
+			var force := 935.0 if tile_id == "gravity_hook" else 735.0
+			if actor.name == "Hexwright":
+				force += 155.0
 			var direction: Vector2 = actor.pos - target.pos
 			_displace("pull", actor, target, tile_id, direction, force)
 			_damage(actor, target, tile.damage, tile_id)
@@ -335,6 +429,9 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 			_area_push(actor, target, tile_id, tile.damage, 115.0, 520.0)
 		"shot":
 			_damage(actor, target, tile.damage, tile_id)
+		"meteor_seal":
+			for enemy in _enemies_in_area(actor, target.pos, 175.0):
+				_damage(actor, enemy, tile.damage, tile_id)
 	if tile.get("family") == "bash":
 		_warden_guard(actor, tile_id)
 
@@ -389,7 +486,7 @@ func _gravity_strike(actor: Dictionary, target: Dictionary, tile_id: String, rad
 func _pull_toward(actor: Dictionary, enemy: Dictionary, tile_id: String, center: Vector2, force: float) -> void:
 	var offset: Vector2 = center - enemy.pos
 	if enemy.hp > 0 and offset.length_squared() > 0.001:
-		_displace("pull", actor, enemy, tile_id, offset, force)
+		_displace("pull", actor, enemy, tile_id, offset, force + (90.0 if actor.get("class") == "hexwright" else 0.0))
 
 
 func _charge(actor: Dictionary, target: Dictionary, tile_id: String) -> bool:
@@ -413,6 +510,15 @@ func _charge(actor: Dictionary, target: Dictionary, tile_id: String) -> bool:
 
 
 func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: String, offset: Vector2, force: float) -> void:
+	if kind == "push":
+		if _has_relic(actor, "copper_compass") and actor.get("compass_loop", -1) != _loop_index():
+			actor["compass_loop"] = _loop_index()
+			force += 145.0
+		if actor.get("class") == "breaker":
+			target["breaker_source"] = actor.id
+			target["breaker_until"] = tick + 24
+	if target.get("attack", {}).get("name") == "The Tollkeeper":
+		force *= 0.55
 	var direction := offset.normalized() if offset.length_squared() > 0.001 else Vector2.RIGHT
 	var start_position: Vector2 = target.pos
 	var impulse: Vector2 = target.impulse + direction * force
@@ -438,6 +544,8 @@ func _teleport(actor: Dictionary, target: Dictionary) -> bool:
 		actor.prev_pos = landing
 		actor.velocity = Vector2.ZERO
 		actor.impulse = Vector2.ZERO
+		if actor.get("class") == "wayfarer":
+			actor["haste_until"] = tick + TICKS_PER_BEAT * 3
 		_emit("teleport", "%s blinks beside %s." % [actor.name, target.name], actor, target, "blink", 0, start_position, landing)
 		return true
 	return false
@@ -464,48 +572,70 @@ func _run_enemies() -> void:
 		if target.is_empty():
 			continue
 		var position: Vector2 = enemy.pos
-		var reach := 290.0 if enemy.id == "scout" else 155.0
+		var attack: Dictionary = enemy.get("attack", {})
+		var reach: float = attack.get("reach", 290.0 if enemy.id == "scout" else 155.0)
 		if position.distance_to(target.pos) > reach:
 			continue
 		enemy.intent = target.id
-		enemy.intent_tick = tick + 24
+		enemy.intent_tick = tick + int(attack.get("windup", 24))
 		_emit("intent", "%s winds up at %s." % [enemy.name, target.name], enemy, target, "enemy_attack")
 
 
 func _resolve_intent(enemy: Dictionary) -> void:
 	var intent: String = enemy.intent
+	var attack: Dictionary = enemy.get("attack", {})
 	enemy.intent = ""
-	enemy.next_attack = tick + (116 if enemy.id == "scout" else 138)
+	enemy.next_attack = tick + int(attack.get("cooldown", 116 if enemy.id == "scout" else 138))
 	var position: Vector2 = enemy.pos
-	var reach := 290.0 if enemy.id == "scout" else 155.0
+	var reach: float = attack.get("reach", 290.0 if enemy.id == "scout" else 155.0)
 	for target in units:
 		if target.id != intent or target.hp <= 0:
 			continue
 		if position.distance_to(target.pos) > reach:
 			_emit("miss", "%s's windup misses %s." % [enemy.name, target.name], enemy, target, "enemy_attack")
 			return
-		var damage := 9 if enemy.id == "scout" else 21
+		var damage: int = attack.get("damage", 9 if enemy.id == "scout" else 21)
+		if enemy.get("enraged", false):
+			damage += 3
 		_damage(enemy, target, damage, "enemy_attack")
-		if enemy.id == "clockwork" and target.hp > 0:
+		var force: float = attack.get("push", 430.0 if enemy.id == "clockwork" else 0.0)
+		if force > 0.0 and target.hp > 0:
 			var offset: Vector2 = target.pos - position
-			_displace("push", enemy, target, "enemy_attack", offset, 430.0)
+			_displace("push", enemy, target, "enemy_attack", offset, force)
 		return
 
 
-func _guard(recipient: Dictionary, amount: int, tile_id: String, source: Dictionary = {}) -> void:
+func _guard(recipient: Dictionary, amount: int, tile_id: String, source: Dictionary = {}, echo := true) -> void:
 	var gain := mini(amount, 28 - recipient.guard)
 	recipient.guard += gain
 	if gain > 0:
 		var actor := recipient if source.is_empty() else source
 		_emit("guard", "%s gains %d guard." % [recipient.name, gain], actor, recipient, tile_id, gain)
+		if echo and actor.get("class") == "cantor":
+			var weakest := recipient
+			for ally in units:
+				if ally.side == actor.side and ally.hp > 0 and ally.hp < weakest.hp:
+					weakest = ally
+			_guard(weakest, 3, "cantor", actor, false)
 
 
 func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String) -> void:
+	if target.hp <= 0:
+		return
+	if TILES.has(tile_id):
+		amount = _class_attack_damage(actor, target, amount)
+	if tile_id == "enemy_attack" and target.get("class") == "bulwark" and target.get("bulwark_loop", -1) != _loop_index():
+		target["bulwark_loop"] = _loop_index()
+		amount = maxi(0, amount - 6)
 	var blocked := mini(amount, target.guard)
 	target.guard -= blocked
 	var dealt := mini(amount - blocked, target.hp)
 	target.hp -= dealt
 	var action: String = TILES[tile_id].label if TILES.has(tile_id) else "Strike"
+	if tile_id == "cinder_mage":
+		action = "Burn"
+	elif tile_id == "breaker":
+		action = "Collision"
 	var blocked_text := " (%d blocked)" % blocked if blocked > 0 else ""
 	var details := "%s: %s hits %s for %d%s." % [actor.name, action, target.name, dealt, blocked_text]
 	_emit("hit", details, actor, target, tile_id, dealt)
@@ -514,6 +644,92 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		target.impulse = Vector2.ZERO
 		target.intent = ""
 		_emit("defeat_unit", "%s falls." % target.name, actor, target, tile_id)
+	elif target.name == "The Tollkeeper" and target.hp * 2 <= target.max_hp and not target.get("enraged", false):
+		target["enraged"] = true
+		target.next_attack = mini(target.next_attack, tick + 20)
+		_guard(target, 11, "tollkeeper_rallies")
+		_emit("intent", "The Tollkeeper rallies. Its strikes now hit harder.", target, actor, "enemy_attack")
+
+
+func _class_attack_damage(actor: Dictionary, target: Dictionary, amount: int) -> int:
+	match actor.get("class", ""):
+		"lancer":
+			if actor.get("travel", 0.0) >= 80.0:
+				actor["travel"] = 0.0
+				amount += 6
+		"apothecary":
+			if actor.get("heal_loop", -1) != _loop_index():
+				actor["heal_loop"] = _loop_index()
+				var healed := mini(2, actor.max_hp - actor.hp)
+				actor.hp += healed
+				if healed > 0:
+					_emit("heal", "Apothecary restores %d HP." % healed, actor, actor, "apothecary", healed)
+				if healed < 2:
+					_guard(actor, 2 - healed, "apothecary")
+		"rune_smith":
+			if actor.get("rune_charged", false):
+				actor["rune_charged"] = false
+				amount += 5
+		"starshot":
+			var position: Vector2 = actor.pos
+			if position.distance_squared_to(target.pos) > 200.0 * 200.0:
+				amount += 5
+		"cinder_mage":
+			var impulse: Vector2 = target.impulse
+			if impulse.length_squared() > 1.0 and actor.get("burn_loop", -1) != _loop_index():
+				actor["burn_loop"] = _loop_index()
+				target["burn_source"] = actor.id
+				target["burn_tick"] = tick + TICKS_PER_BEAT
+				target["burn_left"] = 2
+		"duelist":
+			var streak := 0
+			if actor.get("focus_target", "") == target.id:
+				streak = mini(3, actor.get("focus_streak", 0) + 1)
+			actor["focus_target"] = target.id
+			actor["focus_streak"] = streak
+			amount += 2 * streak
+	return amount
+
+
+func _run_burns() -> void:
+	for target in units:
+		if target.hp <= 0 or target.get("burn_left", 0) == 0 or tick < target.get("burn_tick", 0):
+			continue
+		var source := _find_unit(target.burn_source)
+		target.burn_left -= 1
+		target.burn_tick += TICKS_PER_BEAT
+		if not source.is_empty():
+			_damage(source, target, 3, "cinder_mage")
+
+
+func _breaker_collision(moving: Dictionary, other: Dictionary) -> void:
+	if moving.hp <= 0 or other.hp <= 0 or moving.side != other.side or tick > moving.get("breaker_until", -1):
+		return
+	var impulse: Vector2 = moving.impulse
+	var contact: Vector2 = other.pos - moving.pos
+	if impulse.dot(contact.normalized()) < 100.0:
+		return
+	var source := _find_unit(moving.get("breaker_source", ""))
+	if source.is_empty():
+		return
+	moving["breaker_until"] = -1
+	_damage(source, moving, 5, "breaker")
+	_damage(source, other, 5, "breaker")
+
+
+func _find_unit(id: String) -> Dictionary:
+	for unit in units:
+		if unit.id == id:
+			return unit
+	return {}
+
+
+func _has_relic(unit: Dictionary, relic: String) -> bool:
+	return relic in unit.get("relics", [])
+
+
+func _loop_index() -> int:
+	return (tick - 1) / LOOP_TICKS
 
 
 func _end_stalemate() -> void:

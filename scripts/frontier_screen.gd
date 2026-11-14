@@ -1,0 +1,696 @@
+extends Control
+
+const FrontierRun = preload("res://scripts/frontier_run.gd")
+const ArenaSim = preload("res://scripts/arena_sim.gd")
+const INK := Color("#101820")
+const PANEL := Color("#182632")
+const PANEL_DARK := Color("#111f2a")
+const EDGE := Color("#40515c")
+const CREAM := Color("#f3e7d1")
+const GOLD := Color("#ecc482")
+const MUTED := Color("#aababc")
+const TEAL := Color("#9ddbd1")
+const RUST := Color("#e8a28b")
+const TYPE_GLYPHS := {
+	"battle": "×", "opening": "×", "elite": "◆", "shop": "◈", "event": "?", "rest": "+", "boss": "✦"
+}
+const TYPE_NAMES := {
+	"battle": "Battle", "opening": "Opening battle", "elite": "Elite", "shop": "Shop",
+	"event": "Event", "rest": "Rest site", "boss": "Boss"
+}
+const CHART_POINTS := {
+	"stout_start": Vector2(0.33, 0.36), "purse": Vector2(0.34, 0.70),
+	"curated_cache": Vector2(0.70, 0.21), "relic_archive": Vector2(0.73, 0.72)
+}
+
+var _host
+var _run
+var _layout: VBoxContainer
+var _chart_focus := ""
+var _chart_details: VBoxContainer
+var _display_font: SystemFont
+
+
+func configure(host: Control) -> void:
+	_host = host
+	_display_font = SystemFont.new()
+	_display_font.font_names = PackedStringArray(["Georgia", "Cambria"])
+
+
+func render(model, page_override: String = "") -> void:
+	_run = model
+	for child in get_children():
+		remove_child(child)
+		child.queue_free()
+	show()
+	var phase: String = page_override if not page_override.is_empty() else _run.data.get("phase", "menu")
+	_shell(phase)
+	match phase:
+		"menu": _main_menu()
+		"hero", "relic", "starter": _draft(phase)
+		"map": _map()
+		"combat": _combat()
+		"reward": _reward()
+		"shop": _shop()
+		"event": _event()
+		"rest": _rest()
+		"result": _result()
+		"chart": _chart()
+
+
+func _shell(phase: String) -> void:
+	var base := ColorRect.new()
+	base.color = INK
+	base.mouse_filter = MOUSE_FILTER_IGNORE
+	add_child(base)
+	base.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
+	var margin := MarginContainer.new()
+	add_child(margin)
+	margin.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
+	for side in ["left", "right"]:
+		margin.add_theme_constant_override("margin_" + side, 37)
+	for side in ["top", "bottom"]:
+		margin.add_theme_constant_override("margin_" + side, 25)
+	_layout = VBoxContainer.new()
+	_layout.add_theme_constant_override("separation", 13)
+	margin.add_child(_layout)
+	if phase == "menu":
+		return
+	var bar := HBoxContainer.new()
+	bar.add_theme_constant_override("separation", 10)
+	_layout.add_child(bar)
+	var title := _label("BRASS & AETHER", 19, GOLD)
+	title.size_flags_horizontal = SIZE_EXPAND_FILL
+	bar.add_child(title)
+	if phase != "chart" and phase != "result":
+		var hp: int = _run.data.get("hp", 0)
+		if hp > 0:
+			bar.add_child(_label("HP %d / %d" % [hp, int(_run.data.get("max_hp", hp))], 15, TEAL))
+		bar.add_child(_label("%d gold" % int(_run.data.get("gold", 0)), 15, GOLD))
+	var back_caption := "Title" if phase in ["chart", "result"] else "Save & title"
+	if phase == "result":
+		bar.add_child(_button(back_caption, func(): _finish(false)))
+	else:
+		bar.add_child(_button(back_caption, func(): _host.run_menu()))
+	if not _run.save_error.is_empty():
+		_layout.add_child(_label(_run.save_error, 15, RUST))
+
+
+func _main_menu() -> void:
+	var hero := Panel.new()
+	hero.size_flags_vertical = SIZE_EXPAND_FILL
+	hero.custom_minimum_size.y = 590
+	hero.clip_contents = true
+	hero.add_theme_stylebox_override("panel", _box(PANEL, EDGE, 13, 0))
+	_layout.add_child(hero)
+	_background(hero, "res://assets/arena.webp", Color("#4f656b"), TextureRect.STRETCH_KEEP_ASPECT_COVERED)
+	var tint := Gradient.new()
+	tint.offsets = PackedFloat32Array([0.0, 0.56, 1.0])
+	tint.colors = PackedColorArray([Color("#101820"), Color(0.065, 0.095, 0.12, 0.84), Color(0.065, 0.095, 0.12, 0.08)])
+	var tint_texture := GradientTexture2D.new()
+	tint_texture.gradient = tint
+	var overlay := TextureRect.new()
+	overlay.texture = tint_texture
+	overlay.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	overlay.mouse_filter = MOUSE_FILTER_IGNORE
+	hero.add_child(overlay)
+	overlay.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
+	var copy := VBoxContainer.new()
+	copy.add_theme_constant_override("separation", 13)
+	hero.add_child(copy)
+	copy.position = Vector2(50, 49)
+	copy.custom_minimum_size.x = 510
+	copy.add_child(_label("Brass & Aether", 56, CREAM, true))
+	copy.add_child(_label("Brass Frontier", 27, GOLD, true))
+	copy.add_child(_label("Easy  ·  Six encounters and the Tollkeeper", 16, MUTED))
+	var space := Control.new()
+	space.custom_minimum_size.y = 21
+	copy.add_child(space)
+	var resumable: bool = not _run.data.is_empty()
+	var result_pending: bool = _run.data.get("phase") == "result"
+	if resumable:
+		copy.add_child(_button("View run result" if result_pending else "Resume run", func(): _host.run_resume(), true))
+	var begin := _button("Start Easy run", func(): _start_new_run(0, resumable), not resumable)
+	copy.add_child(begin)
+	var seed_row := HBoxContainer.new()
+	seed_row.add_theme_constant_override("separation", 8)
+	copy.add_child(seed_row)
+	var seed_input := LineEdit.new()
+	seed_input.placeholder_text = "Optional run seed"
+	seed_input.max_length = 10
+	seed_input.size_flags_horizontal = SIZE_EXPAND_FILL
+	seed_row.add_child(seed_input)
+	var seed_button := _button("Play seed", func(): _start_new_run(int(seed_input.text), resumable))
+	seed_button.disabled = true
+	seed_input.text_changed.connect(func(value: String):
+		seed_button.disabled = not value.is_valid_int() or int(value) < 1 or int(value) > 4294967295
+	)
+	seed_row.add_child(seed_button)
+	var options := HBoxContainer.new()
+	options.add_theme_constant_override("separation", 8)
+	copy.add_child(options)
+	options.add_child(_button("Aether Chart", func(): _host.run_show_chart()))
+	options.add_child(_button("Arena practice", func(): _host.run_practice()))
+	var medium: bool = _run.profile.get("medium_unlocked", false)
+	copy.add_child(_label("Medium unlocked · Playable in a future build" if medium else "Clear Easy to unlock Medium.", 14, TEAL if medium else MUTED))
+	var marks: int = _run.profile.get("marks", 0)
+	var footer := _label("%d Aether Marks" % marks, 16, GOLD)
+	_layout.add_child(footer)
+	if not _run.save_error.is_empty():
+		_layout.add_child(_label(_run.save_error, 15, RUST))
+
+
+func _start_new_run(seed_value: int, resumable: bool) -> void:
+	if not resumable:
+		_host.run_start(seed_value)
+		return
+	if _run.data.get("phase") == "result":
+		_run.finish_run()
+		_host.run_start(seed_value)
+		return
+	var dialog := ConfirmationDialog.new()
+	dialog.title = "Start a new run?"
+	dialog.dialog_text = "Starting a new run replaces your current expedition."
+	dialog.ok_button_text = "Start new run"
+	dialog.confirmed.connect(func():
+		_run.abandon_run()
+		_host.run_start(seed_value)
+	)
+	dialog.canceled.connect(dialog.queue_free)
+	add_child(dialog)
+	dialog.popup_centered()
+
+
+func _draft(phase: String) -> void:
+	var title: String = {"hero": "Choose your hero", "relic": "Choose a starter relic", "starter": "Choose your first tile"}[phase]
+	var subtitle: String = {
+		"hero": "Each hero brings a passive to the arena.",
+		"relic": "Your relic stays with you for the expedition.",
+		"starter": "Your starter tile begins on your combat timeline."
+	}[phase]
+	_page_title(title, subtitle)
+	var cards := _cards_row()
+	for id: String in _run.data.get("offers", []):
+		var entry: Dictionary
+		match phase:
+			"hero": entry = FrontierRun.HEROES[id]
+			"relic": entry = FrontierRun.RELICS[id]
+			_: entry = ArenaSim.TILES[id]
+		var info := _tile_info(entry) if phase == "starter" else str(entry.get("description", ""))
+		var card := _choice(cards, entry.label, info, "Choose", func(): _pick_draft(phase, id))
+		if phase == "hero":
+			_add_portrait(card, id)
+
+
+func _pick_draft(phase: String, id: String) -> void:
+	match phase:
+		"hero": _run.choose_hero(id)
+		"relic": _run.choose_relic(id)
+		"starter": _run.choose_starter(id)
+	_host.run_return()
+
+
+func _map() -> void:
+	_page_title("Brass Frontier", "Easy  ·  Seed %s" % str(_run.data.get("seed", "")))
+	var region := HBoxContainer.new()
+	region.add_theme_constant_override("separation", 15)
+	region.size_flags_vertical = SIZE_EXPAND_FILL
+	_layout.add_child(region)
+	var map := _map_board()
+	region.add_child(map)
+	var sidebar := _panel_stack(region, Vector2(270, 0))
+	sidebar.add_child(_label("Expedition", 24, CREAM, true))
+	var hero_id: String = _run.data.get("hero", "")
+	sidebar.add_child(_label(FrontierRun.HEROES.get(hero_id, {}).get("label", hero_id.capitalize()), 18, TEAL))
+	var relic_names := PackedStringArray()
+	for id: String in _run.data.get("relics", []):
+		relic_names.append(FrontierRun.RELICS.get(id, {}).get("label", id.capitalize()))
+	var relics := _label("Relics  ·  " + ", ".join(relic_names), 15, MUTED)
+	relics.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	sidebar.add_child(relics)
+	sidebar.add_child(_button("Manage tiles", func(): _host.run_show_arena()))
+	if not str(_run.data.get("node_notice", "")).is_empty():
+		sidebar.add_child(_notice())
+	sidebar.add_child(HSeparator.new())
+	var keys := _label("Route key", 17, GOLD)
+	sidebar.add_child(keys)
+	for type in ["battle", "elite", "shop", "event", "rest", "boss"]:
+		sidebar.add_child(_label("%s   %s" % [TYPE_GLYPHS[type], TYPE_NAMES[type]], 15, MUTED))
+	sidebar.add_child(HSeparator.new())
+	var guidance := _label("Choose a highlighted destination.", 15, TEAL)
+	guidance.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	sidebar.add_child(guidance)
+
+
+func _map_board() -> Control:
+	var board := _board(Vector2(655, 500), "res://assets/frontier-map.webp")
+	var layers: Array = _run.data.get("layers", [])
+	var nodes := {}
+	var points := {}
+	var active := {}
+	var visited: Array = _run.data.get("visited", [])
+	var current_id: String = _run.data.get("node", {}).get("id", "")
+	for node: Dictionary in _run.available_nodes():
+		active[node.id] = true
+	for layer in layers:
+		for index in range(layer.size()):
+			var node: Dictionary = layer[index]
+			var x := 0.5 if layer.size() == 1 else lerpf(0.22, 0.78, float(index) / (layer.size() - 1))
+			var y := lerpf(0.91, 0.10, float(node.row) / maxf(1.0, layers.size() - 1))
+			points[node.id] = Vector2(x, y)
+			nodes[node.id] = node
+	var lines := _ink_layer(board)
+	lines.draw.connect(func():
+		_draw_route_field(lines)
+		for id in nodes:
+			for destination in nodes[id].next:
+				if points.has(destination):
+					var traversed: bool = id in visited and destination in visited
+					var current_edge: bool = id == current_id and active.has(destination)
+					var tone := TEAL if current_edge else (Color("#9b865e") if traversed else Color("#3f5661"))
+					lines.draw_dashed_line(points[id] * lines.size, points[destination] * lines.size, tone, 2.0, 6.0, true, true)
+	)
+	for id: String in nodes:
+		var node: Dictionary = nodes[id]
+		var type: String = node.type
+		var reachable: bool = active.has(id)
+		var past: bool = id in visited
+		var label: String = node.get("label", TYPE_NAMES.get(type, type.capitalize()))
+		var glyph: String = TYPE_GLYPHS.get(type, "·")
+		var button := _button("%s  %s" % [glyph, label], func(): _choose_node(id), reachable)
+		button.disabled = not reachable
+		button.add_theme_font_size_override("font_size", 14)
+		button.tooltip_text = "%s%s" % [TYPE_NAMES.get(type, type.capitalize()), " · completed" if past else (" · reachable" if reachable else " · unavailable")]
+		button.add_theme_stylebox_override("disabled", _box(PANEL_DARK, GOLD.darkened(0.35) if past else EDGE.darkened(0.15), 6, 6))
+		button.add_theme_color_override("font_disabled_color", GOLD if past else MUTED.darkened(0.11))
+		_at(board, button, points[id], Vector2(161, 37))
+	return board
+
+
+func _draw_route_field(canvas: Control) -> void:
+	if ResourceLoader.exists("res://assets/frontier-map.webp"):
+		return
+	for band in range(12):
+		var path := PackedVector2Array()
+		for step in range(54):
+			var x := float(step) / 53.0
+			var y := 0.08 + band * 0.075 + 0.018 * sin(x * 11.0 + band * 0.41) + 0.014 * cos(x * 28.0 - band * 0.63)
+			path.append(Vector2(x * canvas.size.x, y * canvas.size.y))
+		canvas.draw_polyline(path, Color(0.36, 0.47, 0.45, 0.19), 1.25, true)
+
+
+func _choose_node(id: String) -> void:
+	if _run.choose_node(id):
+		_host.run_return()
+
+
+func _combat() -> void:
+	var node: Dictionary = _run.data.get("node", {})
+	var type: String = node.get("type", "battle")
+	_page_title(node.get("label", "Opening battle"), TYPE_NAMES.get(type, "Battle"))
+	var region := _cards_row()
+	var detail := _choice(region, "Prepare for battle", "Arrange tiles, choose targeting rules, and check your storage before you start.", "Open arena", func(): _host.run_show_arena())
+	_add_portrait(detail, "clockwork")
+
+
+func _reward() -> void:
+	var boss: bool = _run.data.get("node", {}).get("type") == "boss"
+	_page_title("Legendary reward" if boss else "Choose a reward", "Choose a trophy for the victory recap. It takes no inventory space." if boss else "Choose one tile to equip or store, or take bonus gold.")
+	var cards := _cards_row()
+	var notice := _notice()
+	for id: String in _run.data.get("offers", []):
+		var tile: Dictionary = ArenaSim.TILES[id]
+		_choice(cards, tile.label, _tile_info(tile), "Choose", func(): _claim_reward(id, notice))
+	_layout.add_child(notice)
+	if not boss:
+		var actions := HBoxContainer.new()
+		actions.add_theme_constant_override("separation", 8)
+		_layout.add_child(actions)
+		actions.add_child(_button("Manage tiles", func(): _host.run_show_arena()))
+		var bonus := 9 if "quartermasters_coin" in _run.data.get("relics", []) else 6
+		actions.add_child(_button("Skip for +%d gold" % bonus, func(): _claim_reward("skip", notice)))
+
+
+func _claim_reward(id: String, notice: Label) -> void:
+	if _host.run_claim_reward(id):
+		_host.run_return()
+	else:
+		notice.text = "No room for this tile. Manage tiles to free a continuous span."
+
+
+func _shop() -> void:
+	_page_title(_run.data.get("node", {}).get("label", "Relay Market"), "Stock up for this run.")
+	var cards := _cards_row()
+	var notice := _notice()
+	for id: String in _run.data.get("offers", []):
+		var tile: Dictionary = ArenaSim.TILES[id]
+		var price: int = _run.shop_price(id)
+		_choice(cards, tile.label, _tile_info(tile), "Buy · %d gold" % price, func(): _buy_tile(id, notice), int(_run.data.get("gold", 0)) < price)
+	if _run.data.get("offers", []).is_empty():
+		cards.add_child(_label("No tiles left.", 20, MUTED))
+	_layout.add_child(notice)
+	var actions := HBoxContainer.new()
+	actions.add_theme_constant_override("separation", 8)
+	_layout.add_child(actions)
+	actions.add_child(_button("Manage tiles", func(): _host.run_show_arena()))
+	var healing := _button("Heal 15 HP · 12 gold", func():
+		if _run.shop_heal():
+			_host.run_return()
+	)
+	healing.disabled = int(_run.data.get("gold", 0)) < 12 or _run.data.get("shop_healed", false) or _run.data.get("hp") >= _run.data.get("max_hp")
+	actions.add_child(healing)
+	var relic_id: String = _run.data.get("shop_relic", "")
+	if FrontierRun.RELICS.has(relic_id):
+		var relic: Dictionary = FrontierRun.RELICS[relic_id]
+		var buy_relic := _button("%s · 30 gold" % relic.label, func():
+			if _run.shop_buy_relic():
+				_host.run_return()
+		)
+		buy_relic.disabled = int(_run.data.get("gold", 0)) < 30
+		buy_relic.tooltip_text = relic.description
+		actions.add_child(buy_relic)
+	actions.add_child(_button("Leave market", _leave))
+
+
+func _buy_tile(id: String, notice: Label) -> void:
+	if _host.run_buy_shop(id):
+		_host.run_return()
+	else:
+		notice.text = "No room for this tile. Manage tiles to free a continuous span."
+
+
+func _event() -> void:
+	_page_title(_run.data.get("node", {}).get("label", "Roadside encounter"), _run.event_text())
+	var cards := _cards_row()
+	var options: Array = _run.event_options()
+	for index in range(options.size()):
+		var unavailable: bool = options[index] == "No relic to trade"
+		_choice(cards, str(options[index]), "", "Choose", func(): _pick_event(index), unavailable)
+
+
+func _pick_event(index: int) -> void:
+	_run.event_choice(index)
+	_host.run_return()
+
+
+func _rest() -> void:
+	_page_title(_run.data.get("node", {}).get("label", "Rest site"), "Choose one use of this camp.")
+	var cards := _cards_row()
+	_choice(cards, "Rest", "Recover 30% of your maximum HP.", "Heal", func(): _run.rest("heal"); _host.run_return())
+	_choice(cards, "Forge", "Advance one eligible Bash family tile to the next rarity.", "Open forge", func(): _host.run_rest_forge())
+	_layout.add_child(_button("Leave camp", _leave))
+
+
+func _leave() -> void:
+	_run.leave_node()
+	_host.run_return()
+
+
+func _result() -> void:
+	var victory: bool = _run.data.get("result", "") == "victory"
+	_page_title("Brass Frontier cleared" if victory else "Expedition ended", "Easy  ·  Seed %s" % str(_run.data.get("seed", "")))
+	var cards := _cards_row()
+	var detail := "You defeated the Tollkeeper. Medium is unlocked." if victory else "Your run is over. Aether Marks earned during the run are banked."
+	var chosen: String = _run.data.get("trophy", "")
+	if victory and ArenaSim.TILES.has(chosen):
+		detail += "\nVictory reward  ·  " + ArenaSim.TILES[chosen].label
+	detail += "\n%d Aether Marks available." % int(_run.profile.get("marks", 0))
+	_choice(cards, "Victory" if victory else "Defeat", detail, "Open Aether Chart", func(): _finish(true))
+	_layout.add_child(_button("Return to title", func(): _finish(false)))
+
+
+func _finish(show_chart: bool) -> void:
+	if _run.finish_run():
+		if show_chart:
+			_host.run_show_chart()
+		else:
+			_host.run_menu()
+
+
+func _chart() -> void:
+	var owned: Array = _run.profile.get("meta", [])
+	var marks: int = _run.profile.get("marks", 0)
+	var between_runs: bool = _run.data.is_empty()
+	_page_title("Aether Chart", "%d Aether Marks  ·  Spend between runs" % marks)
+	var region := HBoxContainer.new()
+	region.add_theme_constant_override("separation", 15)
+	region.size_flags_vertical = SIZE_EXPAND_FILL
+	_layout.add_child(region)
+	var chart := _board(Vector2(650, 515), "res://assets/aether-sky.webp")
+	region.add_child(chart)
+	var chart_ink := _ink_layer(chart)
+	var origin := Vector2(0.14, 0.51)
+	chart_ink.draw.connect(func():
+		_draw_stars(chart_ink)
+		for id: String in FrontierRun.META_NODES:
+			var destination := _chart_point(id)
+			var spec: Dictionary = FrontierRun.META_NODES[id]
+			var prerequisites: Array = spec.get("requires", [])
+			if prerequisites.is_empty():
+				_draw_constellation_edge(chart_ink, origin, destination, true)
+			else:
+				for parent: String in prerequisites:
+					_draw_constellation_edge(chart_ink, _chart_point(parent), destination, parent in owned)
+		var core := origin * chart_ink.size
+		chart_ink.draw_circle(core, 20.0, Color("#314344"), true, -1, true)
+		chart_ink.draw_arc(core, 20.0, 0, TAU, 32, GOLD, 1.5, true)
+		chart_ink.draw_circle(core, 6.0, GOLD, true, -1, true)
+	)
+	for id: String in FrontierRun.META_NODES:
+		var spec: Dictionary = FrontierRun.META_NODES[id]
+		var acquired: bool = id in owned
+		var available: bool = _prerequisites_met(spec, owned)
+		var marker := _button(spec.label, func(): _select_chart(id), available)
+		var border := TEAL if acquired else (GOLD if available else EDGE)
+		marker.add_theme_stylebox_override("normal", _box(Color("#23383b") if acquired else PANEL_DARK, border, 18, 10))
+		marker.tooltip_text = "Unlocked" if acquired else ("Available" if available else "Locked")
+		_at(chart, marker, _chart_point(id), Vector2(168, 45))
+	_chart_details = _panel_stack(region, Vector2(296, 0))
+	var initial: String = FrontierRun.META_NODES.keys()[0]
+	_show_chart_details(_chart_focus if FrontierRun.META_NODES.has(_chart_focus) else initial, between_runs)
+
+
+func _select_chart(id: String) -> void:
+	_chart_focus = id
+	_show_chart_details(id, _run.data.is_empty())
+
+
+func _show_chart_details(id: String, between_runs: bool) -> void:
+	for child in _chart_details.get_children():
+		_chart_details.remove_child(child)
+		child.queue_free()
+	var spec: Dictionary = FrontierRun.META_NODES[id]
+	var owned: Array = _run.profile.get("meta", [])
+	var marks: int = _run.profile.get("marks", 0)
+	var acquired: bool = id in owned
+	var unlocked := _prerequisites_met(spec, owned)
+	_chart_details.add_child(_label("✦", 39, GOLD))
+	var title := _label(spec.label, 26, CREAM, true)
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_chart_details.add_child(title)
+	_chart_details.add_child(_label("Unlocked" if acquired else ("%d Marks" % int(spec.cost)), 16, TEAL if acquired else GOLD))
+	var details := _label(spec.description, 17, MUTED)
+	details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_chart_details.add_child(details)
+	if not unlocked:
+		var needed := PackedStringArray()
+		for parent: String in spec.get("requires", []):
+			if parent not in owned:
+				needed.append(FrontierRun.META_NODES[parent].label)
+		var requirements := _label("Requires " + ", ".join(needed), 14, RUST)
+		requirements.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_chart_details.add_child(requirements)
+	elif not between_runs and not acquired:
+		var note := _label("Complete the current run to spend Marks.", 14, MUTED)
+		note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		_chart_details.add_child(note)
+	var space := Control.new()
+	space.custom_minimum_size.y = 12
+	_chart_details.add_child(space)
+	var buy := _button("Unlock" if not acquired else "Already unlocked", func(): _buy_chart_node(id), true)
+	buy.disabled = acquired or not between_runs or not unlocked or marks < int(spec.cost)
+	_chart_details.add_child(buy)
+
+
+func _buy_chart_node(id: String) -> void:
+	if _run.buy_meta(id):
+		_host.run_show_chart()
+
+
+func _prerequisites_met(spec: Dictionary, owned: Array) -> bool:
+	for id: String in spec.get("requires", []):
+		if id not in owned:
+			return false
+	return true
+
+
+func _chart_point(id: String) -> Vector2:
+	return CHART_POINTS.get(id, Vector2(0.55, 0.49))
+
+
+func _draw_stars(canvas: Control) -> void:
+	for index in range(120):
+		var point := Vector2(fposmod(index * 0.61803, 1.0), fposmod(index * 0.41421 + 0.014, 1.0)) * canvas.size
+		var alpha := 0.12 + fposmod(index * 0.144, 0.24)
+		canvas.draw_circle(point, 1.4 if index % 13 == 0 else 0.7, Color(0.83, 0.94, 0.95, alpha), true, -1, true)
+
+
+func _draw_constellation_edge(canvas: Control, from: Vector2, to: Vector2, available: bool) -> void:
+	var source := from * canvas.size
+	var target := to * canvas.size
+	var tint := GOLD if available else Color("#50636c")
+	canvas.draw_line(source, target, Color(tint, 0.16), 7.0, true)
+	canvas.draw_line(source, target, Color(tint, 0.78), 1.4, true)
+	for n in [0.32, 0.65]:
+		canvas.draw_circle(source.lerp(target, n), 3.0, Color(tint, 0.85), true, -1, true)
+
+
+func _page_title(title: String, subtitle: String) -> void:
+	_layout.add_child(_label(title, 44, CREAM, true))
+	var text := _label(subtitle, 17, MUTED)
+	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_layout.add_child(text)
+
+
+func _notice() -> Label:
+	var note := _label(_run.data.get("node_notice", ""), 15, TEAL)
+	note.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	return note
+
+
+func _cards_row() -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 15)
+	row.size_flags_vertical = SIZE_EXPAND_FILL
+	_layout.add_child(row)
+	return row
+
+
+func _choice(parent: Control, name: String, body: String, cta: String, chosen: Callable, disabled := false) -> VBoxContainer:
+	var card := _panel_stack(parent, Vector2(0, 280), true)
+	var title := _label(name, 27, CREAM, true)
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	card.add_child(title)
+	var details := _label(body, 17, MUTED)
+	details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	details.size_flags_vertical = SIZE_EXPAND_FILL
+	card.add_child(details)
+	var action := _button(cta, chosen, true)
+	action.disabled = disabled
+	card.add_child(action)
+	return card
+
+
+func _tile_info(tile: Dictionary) -> String:
+	return "%s  ·  %d beats\n\n%s" % [str(tile.get("rarity", "common")).capitalize(), tile.width, tile.description]
+
+
+func _add_portrait(card: VBoxContainer, id: String) -> void:
+	var path := "res://assets/%s.png" % id
+	if not ResourceLoader.exists(path):
+		return
+	var portrait := TextureRect.new()
+	portrait.texture = load(path) as Texture2D
+	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	portrait.custom_minimum_size.y = 138
+	portrait.mouse_filter = MOUSE_FILTER_IGNORE
+	card.add_child(portrait)
+	card.move_child(portrait, 1)
+
+
+func _panel_stack(parent: Control, minimum: Vector2, expand := false) -> VBoxContainer:
+	var panel := PanelContainer.new()
+	panel.add_theme_stylebox_override("panel", _box(PANEL, EDGE, 9, 18))
+	panel.custom_minimum_size = minimum
+	if expand:
+		panel.size_flags_horizontal = SIZE_EXPAND_FILL
+	parent.add_child(panel)
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 13)
+	panel.add_child(stack)
+	return stack
+
+
+func _board(minimum: Vector2, image_path: String) -> Panel:
+	var board := Panel.new()
+	board.size_flags_horizontal = SIZE_EXPAND_FILL
+	board.size_flags_vertical = SIZE_EXPAND_FILL
+	board.custom_minimum_size = minimum
+	board.clip_contents = true
+	board.add_theme_stylebox_override("panel", _box(PANEL_DARK, EDGE, 9, 0))
+	_background(board, image_path, Color(0.60, 0.68, 0.73, 0.50), TextureRect.STRETCH_KEEP_ASPECT_COVERED)
+	return board
+
+
+func _background(parent: Control, path: String, tint: Color, stretch: TextureRect.StretchMode) -> void:
+	if not ResourceLoader.exists(path):
+		return
+	var picture := TextureRect.new()
+	picture.texture = load(path) as Texture2D
+	picture.modulate = tint
+	picture.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	picture.stretch_mode = stretch
+	picture.mouse_filter = MOUSE_FILTER_IGNORE
+	parent.add_child(picture)
+	picture.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
+
+
+func _ink_layer(board: Control) -> Control:
+	var drawing := Control.new()
+	drawing.mouse_filter = MOUSE_FILTER_IGNORE
+	board.add_child(drawing)
+	drawing.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
+	drawing.resized.connect(drawing.queue_redraw)
+	return drawing
+
+
+func _at(board: Control, child: Control, location: Vector2, extent: Vector2) -> void:
+	board.add_child(child)
+	child.anchor_left = location.x
+	child.anchor_right = location.x
+	child.anchor_top = location.y
+	child.anchor_bottom = location.y
+	child.offset_left = -extent.x / 2.0
+	child.offset_right = extent.x / 2.0
+	child.offset_top = -extent.y / 2.0
+	child.offset_bottom = extent.y / 2.0
+
+
+func _label(value: String, points: int, color: Color, display := false) -> Label:
+	var label := Label.new()
+	label.text = value
+	label.add_theme_font_size_override("font_size", points)
+	label.add_theme_color_override("font_color", color)
+	if display and _display_font:
+		label.add_theme_font_override("font", _display_font)
+	return label
+
+
+func _button(title: String, activate: Callable, primary := false) -> Button:
+	var button := Button.new()
+	button.text = title
+	button.custom_minimum_size.y = 41
+	button.pressed.connect(activate)
+	var fill := Color("#60492d") if primary else PANEL_DARK
+	var border := GOLD if primary else EDGE
+	button.add_theme_stylebox_override("normal", _box(fill, border, 6, 12))
+	button.add_theme_stylebox_override("hover", _box(fill.lightened(0.12), GOLD, 6, 12))
+	button.add_theme_stylebox_override("pressed", _box(fill.darkened(0.14), GOLD, 6, 12))
+	button.add_theme_stylebox_override("disabled", _box(PANEL_DARK, EDGE, 6, 12))
+	button.add_theme_color_override("font_color", CREAM)
+	button.add_theme_color_override("font_disabled_color", MUTED.darkened(0.18))
+	return button
+
+
+func _box(fill: Color, border: Color, radius: int, margin: int) -> StyleBoxFlat:
+	var box := StyleBoxFlat.new()
+	box.bg_color = fill
+	box.border_color = border
+	box.set_border_width_all(1)
+	box.set_corner_radius_all(radius)
+	box.content_margin_left = margin
+	box.content_margin_right = margin
+	box.content_margin_top = margin
+	box.content_margin_bottom = margin
+	return box

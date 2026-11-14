@@ -22,6 +22,8 @@ var _board: VBoxContainer
 var _status: Label
 var _capacity: Label
 var _send: Button
+var _discard: Button
+var _forge: Button
 var _selected: Dictionary = {}
 var _preview: Panel
 var _preview_row: Control
@@ -33,7 +35,7 @@ func configure(host: Control) -> void:
 		_build()
 
 
-func render(rows: Array, selected: Dictionary, offers: Array) -> void:
+func render(rows: Array, selected: Dictionary, offers: Array, camp := false) -> void:
 	_selected = selected.duplicate()
 	_clear_preview()
 	for child in _board.get_children():
@@ -45,6 +47,9 @@ func render(rows: Array, selected: Dictionary, offers: Array) -> void:
 		used += _build_row(row_index, tiles, offers)
 	_capacity.text = "%d / %d cells used" % [used, COLUMNS * ROWS]
 	_send.disabled = int(_selected.get("row", -1)) < 0 or int(_selected.get("lane", 0)) != -1
+	_discard.disabled = _send.disabled
+	_forge.visible = camp
+	_forge.disabled = _send.disabled
 	if _selected.is_empty():
 		show_message("Select a tile to move it, or drag it to an empty cell.")
 	else:
@@ -112,6 +117,12 @@ func _build() -> void:
 	_send = _button("Transfer selected to timeline", func(): _host.storage_send_to_timeline())
 	_send.disabled = true
 	footer.add_child(_send)
+	_discard = _button("Discard selected", func(): _host.storage_discard())
+	_discard.disabled = true
+	footer.add_child(_discard)
+	_forge = _button("Forge selected", func(): _host.storage_forge())
+	_forge.hide()
+	footer.add_child(_forge)
 
 
 func _build_row(row_index: int, tiles: Array, offers: Array) -> int:

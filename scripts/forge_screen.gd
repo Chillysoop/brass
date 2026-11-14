@@ -34,7 +34,7 @@ func configure(host: Control) -> void:
 		_build()
 
 
-func open(source_id: String) -> void:
+func open(source_id: String, copies := 3) -> void:
 	_source_id = source_id
 	_next_ids = []
 	for tier in range(ArenaSim.BASH_TIERS.size() - 1):
@@ -42,7 +42,7 @@ func open(source_id: String) -> void:
 			_next_ids = ArenaSim.BASH_TIERS[tier + 1]
 			break
 	var source: Dictionary = _host.tile_spec(source_id)
-	_subtitle.text = "Three %s tiles are ready to combine. Inspect any tile, then choose from the next rarity." % source.label
+	_subtitle.text = "Three %s tiles are ready to combine. Inspect any tile, then choose from the next rarity." % source.label if copies == 3 else "Upgrade one %s at the rest site. Inspect any tile, then choose from the next rarity." % source.label
 	for child in _columns.get_children():
 		_columns.remove_child(child)
 		child.queue_free()
