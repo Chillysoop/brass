@@ -1,6 +1,7 @@
 extends Control
 
 const TilePacking = preload("res://scripts/tile_packing.gd")
+const GameIcons = preload("res://scripts/game_icons.gd")
 const INK := Color("#101820")
 const PANEL := Color("#192732")
 const EDGE := Color("#3c505b")
@@ -42,7 +43,7 @@ func open(source_id: String, copies := 3) -> void:
 	_next_ids = TilePacking.next_options(source_id)
 	_is_combine = copies == 3
 	var source: Dictionary = _host.tile_spec(source_id)
-	_subtitle.text = "Three %s tiles are ready to combine. Inspect any tile, then choose from the next rarity." % source.label if _is_combine else "Upgrade one %s at the rest site. Inspect any tile, then choose from the next rarity." % source.label
+	_subtitle.text = "Combine 3 × %s" % source.label if _is_combine else "Upgrade %s" % source.label
 	for child in _columns.get_children():
 		_columns.remove_child(child)
 		child.queue_free()
@@ -164,6 +165,7 @@ func _add_tier(tier: int) -> void:
 	for id: String in ids:
 		var tile: Dictionary = _host.tile_spec(id)
 		var card := _button("%s\n%d beats" % [tile.label, tile.width], func(): _inspect(id))
+		GameIcons.decorate(card, GameIcons.tile(id, tile), 25)
 		card.custom_minimum_size.y = 88
 		card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		card.add_theme_font_size_override("font_size", 17)

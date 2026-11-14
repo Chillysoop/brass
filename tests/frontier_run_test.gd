@@ -118,6 +118,8 @@ func _initialize() -> void:
 	_check_moonwreck_medium(path)
 	_check_moonwreck_hard(path)
 	_check_artifice(path)
+	_check_specialist_drafts(path)
+	_check_navigation(path)
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
@@ -775,6 +777,92 @@ func _check_artifice(path: String) -> void:
 		"The two Blink Legendaries join the existing boss choices.")
 	var next_blink := restored._owned_reward(restored._tier_pool(2), 92)
 	check(next_blink in ArenaSim.BLINK_TIERS[2], "With no eligible duplicate, a reward can offer another tile from an owned family.")
+
+
+func _check_specialist_drafts(path: String) -> void:
+	var run := FrontierRun.new()
+	check(run.load_save(path) and run.abandon_run(), "Leave the test expedition before purchasing new Chart nodes.")
+	check(not run.buy_meta("shot_artifice") and not run.buy_meta("navigation"), "Supplies is a prerequisite for Marksman and Navigation.")
+	check(run.buy_meta("purse") and run.buy_meta("shot_artifice") and run.buy_meta("guard_artifice"), "The new forge families can unlock independently.")
+	check(run.start_run(42) and run.choose_hero(run.data.offers[0]) and run.choose_relic("pocket_bell")
+		and run.choose_starter("shot"), "An upgraded account can start with a Common Shot.")
+	var fresh := FrontierRun.new()
+	check(not fresh.forge_family_available("shot") and not fresh.forge_family_available("guard")
+		and "shot" in fresh._normal_pool() and "guard" in fresh._normal_pool(), "Common Shot and Guard remain draftable before their trees unlock.")
+	for family in ["shot", "guard"]:
+		check(run.forge_family_available(family), "An unlocked family can use the forge.")
+		for tier in range(1, 5):
+			var tiles: Array = ArenaSim.FORGE_FAMILIES[family][tier]
+			check(tiles.all(func(id: String): return id in run._tier_pool(tier) and id not in fresh._tier_pool(tier)),
+				"Each specialist upgrade joins its rarity pool only after its unlock.")
+	var stocked := {}
+	var legendary := {}
+	var normal := {}
+	var shot: String = ArenaSim.FORGE_FAMILIES.shot[1][0]
+	run.loadout.storage[0] = [{"id": shot, "start": 0}, {"id": shot, "start": 3}]
+	check(shot in run._standard_rewards(), "An owned pair keeps its slot in the expanded combat draft.")
+	run.loadout.storage[0] = []
+	for seed_value in range(1, 129):
+		run.data.seed = seed_value
+		var shop := run._shop_tiles()
+		check(shop.size() == 4 and shop.slice(0, 3).all(func(id: String): return id in run._normal_pool()),
+			"Multiple unlocks share one shop slot and preserve three regular offers.")
+		stocked[shop[3]] = true
+		var offers := run._tier_rewards(run._tier_pool(4), 3, 81)
+		check(offers.size() == 3 and offers.any(func(id: String): return id in fresh._tier_pool(4)),
+			"Expanded boss drafts preserve a baseline Legendary choice.")
+		for id: String in offers:
+			legendary[id] = true
+		for id: String in run._standard_rewards():
+			normal[id] = true
+	for family in ["shot", "guard"]:
+		check(stocked.has_all(ArenaSim.FORGE_FAMILIES[family][1]) and normal.has_all(ArenaSim.FORGE_FAMILIES[family][1]),
+			"Each new family can enter shops and combat drafts.")
+		check(legendary.has_all(ArenaSim.FORGE_FAMILIES[family][4]), "Each new Legendary can appear as a boss reward.")
+
+
+func _check_navigation(path: String) -> void:
+	var run := FrontierRun.new()
+	check(run.load_save(path) and run.abandon_run() and run.buy_meta("navigation"), "Navigation can be bought between runs.")
+	var fresh := FrontierRun.new()
+	var labels := {}
+	for seed_value in range(1, 33):
+		var normal := fresh._make_map(seed_value, "hard", "brass")
+		var charts := run._make_map(seed_value, "hard", "brass")
+		check(charts == run._make_map(seed_value, "hard", "brass"), "Navigation variations are deterministic.")
+		var seen: Array[String] = []
+		for row in range(charts.size()):
+			for column in range(charts[row].size()):
+				var node: Dictionary = charts[row][column]
+				if node.label not in FrontierRun.NAVIGATION_EVENTS:
+					check(node == normal[row][column], "Navigation preserves unrelated nodes and connectivity.")
+					continue
+				check(node.type == "event" and node.next == normal[row][column].next and node.label not in seen,
+					"Navigation mystery nodes never repeat or alter connections.")
+				seen.append(node.label)
+				labels[node.label] = true
+		check(not seen.is_empty(), "A Charted expedition finds at least one new mystery event.")
+	check(labels.has_all(FrontierRun.NAVIGATION_EVENTS), "All Navigation events appear across seeds.")
+	check(run.start_run(18) and run.choose_hero(run.data.offers[0]) and run.choose_relic("pocket_bell")
+		and run.choose_starter("bash"), "Open a test expedition with Navigation.")
+	var restored := FrontierRun.new()
+	check(restored.load_save(path) and restored.data.layers == run.data.layers, "Saved Navigation nodes survive a reload.")
+	run.data.node = run._node("event", "Broker's Table", 1, 0)
+	run.data.phase = "event"
+	run.data.gold = 9
+	check(not run.event_choice(1) and run.event_choice(0) and run.data.gold == 13,
+		"An unaffordable wager leaves gold untouched and the safe choice available.")
+	run.data.node = run._node("event", "Salvage Permit", 2, 0)
+	run.data.phase = "event"
+	run.data.gold = 30
+	check(run.event_choice(1) and run.data.relics.size() == 2 and run.data.relics[0] != run.data.relics[1]
+		and run.data.gold == 6, "The permit charges gold and grants an unowned relic.")
+	run.data.node = run._node("event", "Bounty Board", 3, 0)
+	run.data.phase = "event"
+	var marks: int = run.profile.marks
+	check(run.event_choice(1) and run.encounter().encounter == "elite" and run.finish_combat(true, 83)
+		and run.data.gold == 26 and run.profile.marks == marks + 2 and run.data.offers.size() == 3,
+		"Taking a bounty starts an Elite fight and awards Elite loot when won.")
 
 
 func _reach_boss(run: RefCounted) -> void:

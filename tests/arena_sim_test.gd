@@ -58,6 +58,7 @@ func _initialize() -> void:
 	_check_tile_edges()
 	_check_activation_review()
 	_check_boss_review()
+	_check_new_forge_families()
 	if _failures.is_empty():
 		print("Arena simulation checks passed (duo %d ticks, solo %d ticks)." % [first.tick, solo.tick])
 	else:
@@ -141,6 +142,69 @@ func _check_boss_review() -> void:
 		"Review should associate the Regent phase transition with the exact attack that triggered it, without duplicate Guard events")
 	_check(sim.boss_events.any(func(event): return event.tile == "regent_window_missed" and event.stage == "miss" and "1 of 3" in event.message),
 		"Review should explain how many heroes connected before the Regent's window expired")
+
+
+func _check_new_forge_families() -> void:
+	var precision := ArenaSim.new()
+	precision.start([[{"id": "longshot", "start": 0}], []], "duo")
+	_stop_movement(precision)
+	precision.units[0].pos = Vector2(150, 260)
+	precision.units[2].pos = Vector2(600, 260)
+	precision.units[3].pos = Vector2(400, 260)
+	for frame in range(2 * ArenaSim.TICKS_PER_BEAT):
+		precision.step()
+	var hit := _event(precision, "hit", "longshot", 2 * ArenaSim.TICKS_PER_BEAT)
+	_check(hit.get("target") == "scout" and hit.get("amount") == 23,
+		"Longshot should add its distance bonus on the tile's exact end tick")
+	for mixed in [false, true]:
+		var lane := [{"id": "longshot", "start": 0}]
+		if mixed:
+			lane.append({"id": "bash", "start": 2})
+		precision.start([lane], "solo")
+		precision.units[0].pos = Vector2(250, 260)
+		precision.units[1].pos = Vector2(400, 260)
+		precision.units[1].speed = 0.0
+		precision.step()
+		var hero_pos: Vector2 = precision.units[0].pos
+		_check(hero_pos.x > 250.0 if mixed else hero_pos.x < 250.0,
+			"A marksman should backstep with precision-only offense and close when equipped with Bash")
+
+	var volley := ArenaSim.new()
+	volley.start([[{"id": "split_shot", "start": 0}], []], "duo")
+	_stop_movement(volley)
+	volley.units[0].pos = Vector2(230, 260)
+	volley.units[2].pos = Vector2(460, 260)
+	volley.units[3].pos = Vector2(560, 260)
+	for frame in range(2 * ArenaSim.TICKS_PER_BEAT):
+		volley.step()
+	var hits := volley.trace.filter(func(event): return event.kind == "hit" and event.tile == "split_shot")
+	_check(hits.size() == 2 and hits[0].amount == 16 and hits[1].amount == 12,
+		"Split Shot should hit the primary and splash a nearby second enemy at the same beat")
+
+	var defense := ArenaSim.new()
+	defense.start([[{"id": "guard", "start": 0}, {"id": "riposte", "start": 2}], [{"id": "rally_guard", "start": 4}]], "duo")
+	_stop_movement(defense)
+	defense.units[0].pos = Vector2(275, 260)
+	defense.units[3].pos = Vector2(400, 260)
+	for frame in range(6 * ArenaSim.TICKS_PER_BEAT):
+		defense.step()
+	var counter := _event(defense, "hit", "riposte", 4 * ArenaSim.TICKS_PER_BEAT)
+	_check(counter.get("amount") == 23 and defense.units[0].guard == 21,
+		"Riposte should spend stored Guard for damage, gain its own Guard, and receive its ally's support")
+	_check(defense.units[1].guard == 13 and defense.activations[-1].target == "hero_1",
+		"Rally Guard should shield the caster and the other hero on the intended beat")
+	defense.start([[{"id": "riposte", "start": 0}]], "solo")
+	_stop_movement(defense)
+	for frame in range(2 * ArenaSim.TICKS_PER_BEAT):
+		defense.step()
+	_check(defense.units[0].guard == 8 and "No enemy was in reach" in defense.activations[0].reason,
+		"An out-of-range counter should still grant Guard and explain the missed strike")
+
+
+func _stop_movement(sim: RefCounted) -> void:
+	for unit: Dictionary in sim.units:
+		unit.speed = 0.0
+		unit.next_attack = 10000
 
 
 func _run(sim: RefCounted, steps_per_frame: int = 1) -> void:

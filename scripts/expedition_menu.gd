@@ -1,5 +1,7 @@
 extends Control
 
+const GameIcons = preload("res://scripts/game_icons.gd")
+
 signal start_requested(seed: int, difficulty: String, location: String)
 signal resume_requested
 signal chart_requested
@@ -129,14 +131,17 @@ func _title() -> void:
 		_focus_target = resume
 		left.add_child(_label(_resume_caption(), 16, TEAL))
 	var start := _button("New Expedition", func(): _show_page("regions"), not resumable)
+	GameIcons.decorate(start, "route", 24)
 	start.name = "NewExpedition"
 	left.add_child(start)
 	if _focus_target == null:
 		_focus_target = start
 	var chart := _button("Aether Chart", func(): chart_requested.emit())
+	GameIcons.decorate(chart, "relic", 24)
 	chart.name = "AetherChart"
 	left.add_child(chart)
 	var practice := _button("Arena Practice", func(): practice_requested.emit())
+	GameIcons.decorate(practice, "battle", 24)
 	practice.name = "ArenaPractice"
 	left.add_child(practice)
 	var quit := _button("Quit", func(): quit_requested.emit(), false, true)

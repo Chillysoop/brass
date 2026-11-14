@@ -5,6 +5,7 @@ const ArenaView = preload("res://scripts/arena_view.gd")
 const StorageScreen = preload("res://scripts/storage_screen.gd")
 const ForgeScreen = preload("res://scripts/forge_screen.gd")
 const BattleReview = preload("res://scripts/battle_review.gd")
+const GameIcons = preload("res://scripts/game_icons.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const FrontierScreen = preload("res://scripts/frontier_screen.gd")
@@ -151,7 +152,8 @@ func _build() -> void:
 	fixture_picker.add_item("Solo hero")
 	fixture_picker.add_item("Forge practice")
 	fixture_picker.add_item("Blink forge practice")
-	fixture_picker.item_selected.connect(func(index: int): _load_fixture(["duo", "solo", "forge", "blink_forge"][index]))
+	fixture_picker.add_item("Shot and Guard practice")
+	fixture_picker.item_selected.connect(func(index: int): _load_fixture(["duo", "solo", "forge", "blink_forge", "build_forge"][index]))
 	header.add_child(fixture_picker)
 	speed_picker = OptionButton.new()
 	speed_picker.add_item("1× speed")
@@ -159,6 +161,7 @@ func _build() -> void:
 	speed_picker.item_selected.connect(func(index: int): speed = index + 1)
 	header.add_child(speed_picker)
 	storage_button = _button("Tile storage", _open_storage)
+	GameIcons.decorate(storage_button, "forge", 18)
 	storage_button.tooltip_text = "Open storage. An equipped or practice tile stays selected for placement."
 	header.add_child(storage_button)
 	reset_button = _button("Reset fight", _reset_fight)
@@ -166,6 +169,7 @@ func _build() -> void:
 	return_button = _button("Title", _leave_arena)
 	header.add_child(return_button)
 	review_button = _button("Battle review", _toggle_review)
+	GameIcons.decorate(review_button, "review", 18)
 	review_button.name = "OpenBattleReview"
 	review_button.hide()
 	header.add_child(review_button)
@@ -266,6 +270,9 @@ func _load_fixture(next_fixture: String) -> void:
 	elif next_fixture == "blink_forge":
 		lanes[0] = [_entry("blink", 0, "nearest"), _entry("blink", 3, "nearest"), _entry("blink", 6, "nearest")]
 		lanes[1] = [_entry("prism_stride", 0, "nearest"), _entry("prism_stride", 4, "nearest"), _entry("prism_stride", 8, "nearest")]
+	elif next_fixture == "build_forge":
+		lanes[0] = [_entry("shot", 0, "farthest"), _entry("shot", 2, "farthest"), _entry("shot", 4, "farthest")]
+		lanes[1] = [_entry("guard", 0, "self"), _entry("guard", 2, "self"), _entry("guard", 4, "self")]
 	suppressed_combines.clear()
 	defaults.clear()
 	for _lane_index in range(lanes.size()):
@@ -323,7 +330,7 @@ func _physics_process(_delta: float) -> void:
 		# At 2×, show the boundary for the frame even if it was the first of two steps.
 		if sim.tick % ArenaSim.TICKS_PER_BEAT == 0:
 			edge_tick = sim.tick
-		arena.present(sim.units, events)
+		arena.present(sim.units, events, sim.tick)
 		for event in events:
 			var line: String = event.get("message", "")
 			if not line.is_empty():
@@ -363,8 +370,8 @@ func _update_controls() -> void:
 	var reviewing := battle_review.visible
 	review_button.visible = state == "finished" and not reviewing
 	status.get_parent().visible = not reviewing
-	palette.get_parent().visible = not reviewing
-	setup_hint.visible = not reviewing
+	palette.get_parent().visible = state == "setup"
+	setup_hint.visible = state == "setup"
 	var cycle := ArenaSim.LOOP_TICKS
 	var elapsed: int = sim.tick
 	var display_tick := int(reviewed_event.get("tick", 0)) if reviewing else (edge_tick if edge_tick > 0 else elapsed)
@@ -713,6 +720,7 @@ func _rebuild_loadout() -> void:
 		var tile: Dictionary = ArenaSim.TILES[id]
 		var payload := {"id": id}
 		var button := _button("%s · %d" % [tile.label, tile.width], func(): _select(payload))
+		GameIcons.decorate(button, GameIcons.tile(id, tile), 16)
 		button.tooltip_text = tile.description
 		button.disabled = state != "setup"
 		if selected.get("id") == id and not selected.has("lane"):
@@ -808,13 +816,17 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	card.set_meta("tile", item)
 	tile_cards[lane_index][item.start] = card
 	var name_button := _button(tile.label, func(): _select(payload))
+	GameIcons.decorate(name_button, GameIcons.tile(item.id, tile), 20)
 	name_button.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	name_button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	name_button.add_theme_font_size_override("font_size", 13)
-	var tint := Color("#254949") if item.id in ["pull", "guard"] or tile.get("family") == "blink" else Color("#583b35")
+	var tint: Color = {
+		"guard": Color("#254949"), "blink": Color("#413653"), "shot": Color("#273f52"),
+	}.get(tile.get("family", ""), Color("#254949") if item.id in ["pull", "gravity_hook"] else Color("#583b35"))
+	var rarity_edge := GameIcons.rarity(tile).lerp(EDGE, 0.5)
 	name_button.tooltip_text = _tile_tooltip(lane_index, item, tile)
-	name_button.add_theme_stylebox_override("normal", _box(tint, GOLD if active else EDGE))
-	name_button.add_theme_stylebox_override("disabled", _box(tint, EDGE))
+	name_button.add_theme_stylebox_override("normal", _box(tint, GOLD if active else rarity_edge))
+	name_button.add_theme_stylebox_override("disabled", _box(tint, rarity_edge))
 	name_button.disabled = state != "setup"
 	card.add_child(name_button)
 	_drag_source(name_button, payload, board, lane_index, offer_height)
@@ -1164,7 +1176,8 @@ func _combine_prompt(row: int, lane: int, offer: Dictionary) -> Control:
 	return panel
 
 func _forge_family_available(id: String) -> bool:
-	return not campaign or ArenaSim.TILES.get(id, {}).get("family") != "blink" or "blink_artifice" in run.profile.meta
+	var family: String = ArenaSim.TILES.get(id, {}).get("family", "")
+	return not campaign or run.forge_family_available(family)
 
 func _combine_offers(items: Array) -> Array[Dictionary]:
 	return TilePacking.offers(items, suppressed_combines).filter(func(offer: Dictionary): return _forge_family_available(offer.id))
@@ -1327,7 +1340,9 @@ func _open_camp_forge() -> void:
 		_show_inventory_message("Select a tile that has a forge upgrade.")
 		return
 	if not _forge_family_available(id):
-		_show_inventory_message("Unlock Blink Artifice in the Aether Chart to forge Blink.")
+		var family: String = ArenaSim.TILES[id].get("family", "")
+		var unlock: Dictionary = FrontierRun.META_NODES[FrontierRun.FORGE_UNLOCKS[family]]
+		_show_inventory_message("Unlock %s in the Aether Chart." % unlock.label)
 		return
 	pending_forge = {"camp": selected.duplicate()}
 	arena_screen.hide()

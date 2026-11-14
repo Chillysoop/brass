@@ -5,6 +5,7 @@ const HEROES = ArenaSim.HERO_CLASSES
 const BASE_TILES := ["bash", "shot", "slam", "pull", "guard", "blink"]
 const STARTER_TILES := ["bash", "shot", "slam"]
 const STARTER_RELICS := ["pocket_bell", "copper_compass", "quartermasters_coin"]
+const FORGE_UNLOCKS := {"blink": "blink_artifice", "shot": "shot_artifice", "guard": "guard_artifice"}
 const RELICS := {
 	"pocket_bell": {"label": "Pocket Bell", "description": "Gain guard at the start of each combat loop."},
 	"copper_compass": {"label": "Copper Compass", "description": "Your first push each loop travels farther."},
@@ -19,6 +20,9 @@ const META_NODES := {
 	"relic_archive": {"label": "Relic Archive", "description": "Permanently add Trail Ration to the starter relic draft.", "cost": 8, "requires": ["purse"]},
 	"blink_artifice": {"label": "Blink Artifice", "description": "Unlock the full Blink forge family. Its upgrades enter future reward and shop pools.", "cost": 18, "requires": ["curated_cache"]},
 	"wayfarers_pin": {"label": "Wayfarer's Pin", "description": "Add Wayfarer's Pin to future relic drafts, shops and elite rewards. Each hero gains 6 guard on their first successful teleport each loop.", "cost": 14, "requires": ["blink_artifice"]},
+	"shot_artifice": {"label": "Marksman's Arsenal", "description": "Unlock the Shot forge family for precision hits and ranged area damage.", "cost": 14, "requires": ["purse"]},
+	"guard_artifice": {"label": "Bastion Workshop", "description": "Unlock the Guard forge family for counterattacks and party protection.", "cost": 14, "requires": ["stout_start"]},
+	"navigation": {"label": "Pathfinder's Chart", "description": "Find wagers, relic brokers, and optional elite bounties at mystery nodes.", "cost": 12, "requires": ["purse"]},
 }
 const TILE_RARITIES := ["common", "uncommon", "rare", "epic", "legendary"]
 const NODE_LABELS := {
@@ -96,7 +100,9 @@ const EVENT_KINDS := {
 	"Signalman's Infirmary": "infirmary", "Lost Dispatch": "lenswright", "Storm Cache": "prism_cache",
 	"Tethered Barge": "barge", "Rusted Foghorn": "ambush", "Diver's Exchange": "trade",
 	"Lifeboat Clinic": "infirmary", "Pearl Diver's Bench": "lenswright", "Storm-Tossed Crate": "prism_cache",
+	"Broker's Table": "wager", "Salvage Permit": "permit", "Bounty Board": "bounty",
 }
+const NAVIGATION_EVENTS := ["Broker's Table", "Salvage Permit", "Bounty Board"]
 const LOCATION_LABELS := {"brass": "Brass Frontier", "glass": "Glass Foundry", "crown": "Crown Relay", "moonwreck": "Moonwreck Docks"}
 const BOSS_LABELS := {
 	"tollkeeper": "The Tollkeeper", "gilded_marshal": "The Gilded Marshal",
@@ -380,7 +386,7 @@ func finish_combat(victory: bool, hp: Variant) -> bool:
 	if "trail_ration" in data.relics:
 		_heal(5, false)
 	data.phase = "reward"
-	match data.node.type:
+	match data.node.get("encounter_override", data.node.type):
 		"boss":
 			data.offers = _tier_rewards(_tier_pool(4), 3, 81)
 			_resolve_boss()
@@ -574,6 +580,9 @@ func event_text() -> String:
 		"Lifeboat Clinic": return "A lifeboat medic offers to patch up both heroes before you head out past the sea wall."
 		"Pearl Diver's Bench": return "A pearl diver has two Rare tiles for sale, fresh from a wreck caught on the breakwater."
 		"Storm-Tossed Crate": return "A crate keeps slamming against the pier. A deckhand offers to buy the location, or you can climb down and pry it open."
+		"Broker's Table": return "A broker offers a cash wager."
+		"Salvage Permit": return "The permit buys a relic you don't already carry."
+		"Bounty Board": return "An elite crew has a price on its head."
 	return ""
 
 
@@ -589,6 +598,9 @@ func event_options() -> Array:
 		"prism_cache": return ["Sell the location · gain 12 gold", "Open the cache · lose 15% max HP for an Epic tile"]
 		"signal_cache": return ["Sell the coordinates · gain 14 gold", "Open the case · lose 12% max HP and choose a Rare tile"]
 		"barge": return ["Take your share · gain 12 gold", "Rest aboard · recover up to 24 HP"]
+		"wager": return ["Take 4 gold", "Stake 10 gold · 60% win 24 gold"]
+		"permit": return ["Walk away", "Pay 24 gold · gain a random relic" if not _available_relics().is_empty() else "No relics available"]
+		"bounty": return ["Walk away", "Fight an elite · tile, relic and Marks"]
 	return []
 
 
@@ -602,6 +614,8 @@ func event_option_available(index: int) -> bool:
 		"trade": return not data.relics.is_empty()
 		"infirmary": return int(data.gold) >= 10
 		"lenswright": return int(data.gold) >= 14
+		"wager": return int(data.gold) >= 10
+		"permit": return int(data.gold) >= 24 and not _available_relics().is_empty()
 	return true
 
 
@@ -663,6 +677,26 @@ func event_choice(index: int) -> bool:
 			else:
 				_heal(24)
 				data.node_notice = "Resting aboard the barge restored up to 24 HP."
+		"wager":
+			if index == 0:
+				data.gold += 4
+			else:
+				data.gold -= 10
+				if _rng(int(data.seed), _node_salt(95)).randf() < 0.6:
+					data.gold += 24
+					data.node_notice = "Wager won · received 24 gold."
+				else:
+					data.node_notice = "Wager lost · paid 10 gold."
+		"permit":
+			if index == 1:
+				data.gold -= 24
+				var found: String = _sample(_available_relics(), 1, int(data.seed), _node_salt(96))[0]
+				data.relics.append(found)
+				data.node_notice = "Relic acquired: " + RELICS[found].label
+		"bounty":
+			if index == 1:
+				data.phase = "combat"
+				data.node["encounter_override"] = "elite"
 	save()
 	return true
 
@@ -788,12 +822,30 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 				leg_labels = MOONWRECK_BLACKWATER_NODE_LABELS
 		_append_layers(layers, leg, leg_labels, rng, used_events)
 		_append_boss(layers, bosses[segment])
+	if "navigation" in profile.meta:
+		_add_navigation_events(layers, seed_value, seed_salt)
 	for row in range(layers.size() - 1):
 		for node: Dictionary in layers[row]:
 			for target: Dictionary in layers[row + 1]:
 				if absi(int(node.column) - int(target.column)) <= 1:
 					node.next.append(target.id)
 	return layers
+
+
+func _add_navigation_events(layers: Array, seed_value: int, seed_salt: int) -> void:
+	var sites: Array = []
+	for layer: Array in layers:
+		for node: Dictionary in layer:
+			if node.type == "event":
+				sites.append(node)
+	if sites.is_empty():
+		return
+	var rng := _rng(seed_value, seed_salt + 401)
+	var count := rng.randi_range(1, mini(sites.size(), NAVIGATION_EVENTS.size()))
+	_shuffle(sites, rng)
+	var labels := _sample(NAVIGATION_EVENTS, count, seed_value, seed_salt + 402)
+	for index in range(count):
+		sites[index].label = labels[index]
 
 
 func _append_boss(layers: Array, id: String) -> void:
@@ -851,14 +903,25 @@ func _tier_pool(tier: int) -> Array:
 	var pool: Array = ArenaSim.BASH_TIERS[tier].duplicate()
 	if tier == 4:
 		pool.append("meteor_seal")
-	if "blink_artifice" in profile.meta:
-		pool.append_array(ArenaSim.BLINK_TIERS[tier])
+	pool.append_array(_specialist_pool(tier))
+	return pool
+
+
+func forge_family_available(family: String) -> bool:
+	return family == "bash" or (FORGE_UNLOCKS.has(family) and FORGE_UNLOCKS[family] in profile.meta)
+
+
+func _specialist_pool(tier: int) -> Array:
+	var pool := []
+	for family: String in FORGE_UNLOCKS:
+		if forge_family_available(family):
+			pool.append_array(ArenaSim.FORGE_FAMILIES[family][tier])
 	return pool
 
 
 func _tier_rewards(pool: Array, count: int, salt: int) -> Array:
-	var usual := pool.filter(func(id: String): return ArenaSim.TILES[id].get("family") != "blink")
-	if "blink_artifice" not in profile.meta or usual.size() == pool.size():
+	var usual := pool.filter(func(id: String): return not FORGE_UNLOCKS.has(ArenaSim.TILES[id].get("family", "")))
+	if usual.size() == pool.size():
 		return _sample(pool, count, int(data.seed), _node_salt(salt))
 	# Keep one original pick and leave one slot open to the full expanded pool.
 	var rewards := _sample(usual, mini(usual.size(), count - 1), int(data.seed), _node_salt(salt))
@@ -872,25 +935,26 @@ func _tier_rewards(pool: Array, count: int, salt: int) -> Array:
 
 func _shop_tiles() -> Array:
 	var stock := _sample(_normal_pool(), 3, int(data.seed), _node_salt(51))
-	if "blink_artifice" not in profile.meta:
+	var upgrades := _specialist_pool(int(data.segment))
+	if upgrades.is_empty():
 		return stock
-	var upgrades: Array = ArenaSim.BLINK_TIERS[int(data.segment)]
-	var owned := _owned_reward(upgrades, 153)
+	var favor_owned_family := upgrades.size() <= 2 or _rng(int(data.seed), _node_salt(54)).randi_range(1, 3) != 1
+	var owned := _owned_reward(upgrades, 153, favor_owned_family)
 	stock.append(owned if not owned.is_empty() else _sample(upgrades, 1, int(data.seed), _node_salt(53))[0])
 	return stock
 
 
-func _owned_reward(pool: Array, salt: int) -> String:
+func _owned_reward(pool: Array, salt: int, favor_owned_family := true) -> String:
 	var counts := {}
 	var family_tiers := {}
 	for items: Array in loadout.lanes + loadout.storage:
 		for tile: Dictionary in items:
 			counts[tile.id] = int(counts.get(tile.id, 0)) + 1
 			var spec: Dictionary = ArenaSim.TILES[tile.id]
-			if spec.has("family"):
+			if forge_family_available(spec.get("family", "")):
 				var tier := TILE_RARITIES.find(spec.rarity)
 				family_tiers[spec.family] = maxi(tier, int(family_tiers.get(spec.family, -1)))
-	var focused: bool = "blink_artifice" in profile.meta
+	var focused: bool = profile.meta.any(func(id: String): return id in FORGE_UNLOCKS.values())
 	var candidates: Array = []
 	var best_priority := -1
 	for id: String in counts:
@@ -898,7 +962,7 @@ func _owned_reward(pool: Array, salt: int) -> String:
 			continue
 		var priority := 0
 		var spec: Dictionary = ArenaSim.TILES[id]
-		if focused and spec.has("family") and spec.rarity != "legendary" and counts[id] < 3:
+		if focused and forge_family_available(spec.get("family", "")) and spec.rarity != "legendary" and counts[id] < 3:
 			# Complete pairs first, then prefer useful copies at higher rarities.
 			priority = int(counts[id]) * TILE_RARITIES.size() + TILE_RARITIES.find(spec.rarity)
 		if priority > best_priority:
@@ -906,7 +970,7 @@ func _owned_reward(pool: Array, salt: int) -> String:
 			best_priority = priority
 		if priority == best_priority:
 			candidates.append(id)
-	if best_priority <= 0 and focused:
+	if best_priority <= 0 and focused and favor_owned_family:
 		var family_options: Array = []
 		var closest_tier := TILE_RARITIES.size() * 2
 		for id: String in pool:

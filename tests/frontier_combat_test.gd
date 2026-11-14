@@ -35,6 +35,7 @@ func _initialize() -> void:
 	_check(_has_event(healer, "heal", "apothecary"), "Apothecary heals on a tile hit")
 	_check_blink_upgrades()
 	_check_wayfarers_pin()
+	_check_enemy_variants()
 	_check_glass_targeting()
 	_check_prism_ward()
 	_check_tempered_colossus()
@@ -50,6 +51,68 @@ func _initialize() -> void:
 	if failures.is_empty():
 		print("Frontier combat checks passed (%d classes × 3 starters, fresh-profile win at %d HP)." % [ArenaSim.HERO_CLASSES.size(), hp])
 	quit(0 if failures.is_empty() else 1)
+
+
+func _check_enemy_variants() -> void:
+	var variants := {"brass": "brass_sapper", "glass": "glass_duelist", "crown": "crown_mender", "moonwreck": "dock_corsair"}
+	for location: String in variants:
+		for encounter in ["battle", "elite"]:
+			var sim := ArenaSim.new()
+			var options := {"location": location, "encounter": encounter, "seed": 1, "hero": "warden"}
+			sim.start([[]], "solo", options)
+			var expected: String = variants[location]
+			_check(sim.units.any(func(unit: Dictionary) -> bool: return unit.get("sprite") == expected),
+				"Seeded %s %s includes its new enemy." % [location, encounter])
+			var repeated := ArenaSim.new()
+			repeated.start([[]], "solo", options)
+			_check(sim.units == repeated.units, "Encounter variants are reproducible.")
+			options.seed = 42
+			repeated.start([[]], "solo", options)
+			_check(not repeated.units.any(func(unit: Dictionary) -> bool: return unit.get("sprite") == expected),
+				"Legacy compositions still appear on other seeds.")
+
+	var sim := ArenaSim.new()
+	sim.start([[]], "solo", {"location": "brass", "encounter": "battle", "seed": 1, "hero": "warden"})
+	var hero: Dictionary = sim.units[0]
+	var mortar: Dictionary = sim.units[1]
+	mortar.next_attack = 1
+	hero.speed = 0.0
+	mortar.speed = 0.0
+	sim.step()
+	var target_position: Vector2 = hero.pos
+	_check(mortar.blast_center == target_position, "The Bombardier aims at a fixed point.")
+	hero.pos += Vector2(0, 130)
+	for tick in range(2 * ArenaSim.TICKS_PER_BEAT):
+		sim.step()
+	_check(sim.trace.any(func(event: Dictionary) -> bool:
+		return event.kind == "hazard_burst" and event.tile == "sapper_blast" and event.from == target_position),
+		"The Bombardier fires at the marked spot after two beats.")
+	_check(not _has_event(sim, "hit", "sapper_blast"), "Moving out of a marked spot avoids mortar damage.")
+
+	sim.start([[]], "solo", {"location": "glass", "encounter": "battle", "seed": 1, "hero": "warden"})
+	sim.units[1].pos = sim.units[0].pos + Vector2(182, 0)
+	sim.units[1].next_attack = 1
+	for tick in range(40):
+		sim.step()
+	_check(_has_event(sim, "teleport", "duelist_blink"), "Kiln Duelists blink to land their strike.")
+
+	sim.start([[]], "solo", {"location": "crown", "encounter": "battle", "seed": 1, "hero": "warden"})
+	var ally: Dictionary = sim.units[1]
+	ally.hp -= 20
+	var injured: int = ally.hp
+	sim.units[2].next_attack = 1
+	for tick in range(40):
+		sim.step()
+	_check(ally.hp > injured and _has_event(sim, "heal", "mender_repair"), "Relay Menders heal nearby wounded allies.")
+
+	sim.start([[]], "solo", {"location": "moonwreck", "encounter": "battle", "seed": 1, "hero": "warden"})
+	sim.units[1].pos = sim.units[0].pos + Vector2(230, 0)
+	sim.units[1].next_attack = 1
+	sim.units[0].speed = 0.0
+	sim.units[1].speed = 0.0
+	for tick in range(34):
+		sim.step()
+	_check(_has_event(sim, "pull", "corsair_hook"), "Dock Corsairs pull the marked hero toward their blade.")
 
 
 func _check_blink_upgrades() -> void:

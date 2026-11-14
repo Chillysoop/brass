@@ -1,5 +1,7 @@
 extends Control
 
+const GameIcons = preload("res://scripts/game_icons.gd")
+
 signal purchase_requested(id: String)
 signal back_requested
 
@@ -20,7 +22,11 @@ const POINTS := {
 	"wayfarers_pin": Vector2(0.74, 0.27),
 	"purse": Vector2(0.64, 0.65),
 	"relic_archive": Vector2(0.83, 0.57),
+	"shot_artifice": Vector2(0.48, 0.81),
+	"guard_artifice": Vector2(0.16, 0.59),
+	"navigation": Vector2(0.83, 0.78),
 }
+const ART_KEYS := {"shot_artifice": "shot", "guard_artifice": "guard", "navigation": "route"}
 
 var _entries: Dictionary = {}
 var _buttons: Dictionary = {}
@@ -37,6 +43,7 @@ var _detail_state: Label
 var _detail_requires: Label
 var _detail_icon: Control
 var _unlock: Button
+var _icon_textures: Dictionary = {}
 
 
 func render(marks: int, entries: Array, purchase_enabled := true) -> void:
@@ -69,6 +76,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 
 
 func _build() -> void:
+	for id: String in ART_KEYS:
+		_icon_textures[id] = GameIcons.icon(ART_KEYS[id])
 	_serif = SystemFont.new()
 	_serif.font_names = PackedStringArray(["Georgia", "Cambria", "Times New Roman", "Liberation Serif"])
 	var backdrop := TextureRect.new()
@@ -360,6 +369,11 @@ func _draw_medallion(canvas: Control, center: Vector2, radius: float, accent: Co
 
 
 func _draw_icon(canvas: Control, center: Vector2, scale_factor: float, icon: String, accent: Color) -> void:
+	var texture: Texture2D = _icon_textures.get(icon)
+	if texture != null:
+		var extent := Vector2.ONE * (42.0 * scale_factor)
+		canvas.draw_texture_rect(texture, Rect2(center - extent * 0.5, extent), false, Color.WHITE.lerp(accent, 0.25))
+		return
 	match icon:
 		"stout_start":
 			_icon_polygon(canvas, center, scale_factor, [

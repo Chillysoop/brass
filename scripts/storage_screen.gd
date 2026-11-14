@@ -1,5 +1,7 @@
 extends Control
 
+const GameIcons = preload("res://scripts/game_icons.gd")
+
 const COLUMNS := 8
 const ROWS := 3
 const TILE_HEIGHT := 56.0
@@ -173,6 +175,7 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 	var name := String(tile.get("label", item.id))
 	var width: int = tile.width
 	var card := _button(name, func(): _host.storage_pick(row_index, item))
+	GameIcons.decorate(card, GameIcons.tile(item.id, tile), 22)
 	card.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	card.tooltip_text = "%s · width %d\n%s" % [name, width, tile.get("description", "")]
 	card.add_theme_stylebox_override("normal", _box(SELECTED if chosen else STORED, GOLD if chosen else TEAL))

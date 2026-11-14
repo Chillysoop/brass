@@ -25,6 +25,8 @@ const TIDEKEEPER_SLAM_BEATS := 5
 const TIDEKEEPER_SLAM_RADIUS := 310.0
 const ADMIRAL_SWEEP_BEATS := 6
 const ADMIRAL_SWEEP_RADIUS := 330.0
+const PRECISION_BONUS_RANGE := 210.0
+const PRECISION_SPACING := 245.0
 const BOSS_REVIEW_STAGES := {
 	"marshal_plate": "start", "marshal_exposed": "progress", "marshal_shattered": "success",
 	"regent_seals": "start", "regent_seal_struck": "progress", "regent_shattered": "success",
@@ -41,6 +43,7 @@ const TARGET_RULES := ["nearest", "farthest", "lowest_hp", "highest_hp"]
 const RANGED_TILES := [
 	"pull", "gravity_hook", "shot", "hook_bash", "graviton", "event_horizon", "meteor_seal",
 	"ward_step", "mirror_step", "prism_stride", "sanctuary_gate",
+	"longshot", "split_shot", "deadeye", "volley", "rail_shot", "flak_burst", "star_piercer", "meteor_volley",
 ]
 const BASH_TIERS := [
 	["bash"],
@@ -56,7 +59,21 @@ const BLINK_TIERS := [
 	["void_dance", "prism_stride"],
 	["starfall_step", "sanctuary_gate"],
 ]
-const FORGE_FAMILIES := {"bash": BASH_TIERS, "blink": BLINK_TIERS}
+const SHOT_TIERS := [
+	["shot"],
+	["longshot", "split_shot"],
+	["deadeye", "volley"],
+	["rail_shot", "flak_burst"],
+	["star_piercer", "meteor_volley"],
+]
+const GUARD_TIERS := [
+	["guard"],
+	["riposte", "rally_guard"],
+	["counterwall", "ward_link"],
+	["iron_rebuke", "shield_chorus"],
+	["last_stand", "aegis_network"],
+]
+const FORGE_FAMILIES := {"bash": BASH_TIERS, "blink": BLINK_TIERS, "shot": SHOT_TIERS, "guard": GUARD_TIERS}
 const HERO_CLASSES := {
 	"warden": {"label": "Warden", "description": "Gain 4 guard on the first Bash-family hit each loop."},
 	"bulwark": {"label": "Bulwark", "description": "Once per loop, intercept an ally's incoming strike and reduce it by 6. Alone, reduce your first strike."},
@@ -80,6 +97,9 @@ const CAMPAIGN_ENEMIES := {
 		"spacing": 145.0, "reach": 224.0, "damage": 7, "first": 157, "cooldown": 143, "windup": 25},
 	"veteran": {"name": "Rivet Captain", "art": "clockwork", "hp": 168, "radius": 33.0, "speed": 83.0,
 		"spacing": 95.0, "reach": 171.0, "damage": 14, "first": 116, "cooldown": 129, "windup": 31, "push": 310.0},
+	"brass_sapper": {"name": "Rivet Bombardier", "art": "brass_sapper", "hp": 65, "radius": 22.0, "speed": 74.0,
+		"spacing": 252.0, "reach": 405.0, "damage": 9, "first": 119, "cooldown": 143, "windup": 42,
+		"special": "bombard", "blast_radius": 89.0},
 	"boss": {"name": "The Tollkeeper", "art": "clockwork", "hp": 330, "radius": 40.0, "speed": 86.0,
 		"spacing": 107.0, "reach": 204.0, "damage": 16, "first": 125, "cooldown": 123, "windup": 39, "push": 345.0, "displacement": 0.55},
 	"marshal": {"name": "The Gilded Marshal", "art": "marshal", "hp": 860, "radius": 48.0, "speed": 89.0,
@@ -94,6 +114,9 @@ const CAMPAIGN_ENEMIES := {
 		"spacing": 85.0, "reach": 129.0, "damage": 7, "first": 132, "cooldown": 154, "windup": 24, "target": "lowest_hp"},
 	"glass_overseer": {"name": "Kiln Overseer", "art": "glass_hunter", "hp": 157, "radius": 33.0, "speed": 85.0,
 		"spacing": 112.0, "reach": 202.0, "damage": 13, "first": 113, "cooldown": 122, "windup": 36, "target": "ranged_damage"},
+	"glass_duelist": {"name": "Kiln Duelist", "art": "glass_duelist", "hp": 59, "radius": 20.0, "speed": 107.0,
+		"spacing": 164.0, "reach": 255.0, "damage": 9, "first": 129, "cooldown": 149, "windup": 31,
+		"special": "blink_strike", "target": "lowest_hp"},
 	"glass_twin": {"name": "Crucible Twin · Glass", "art": "glass_twin", "hp": 139, "radius": 33.0, "speed": 89.0,
 		"spacing": 136.0, "reach": 215.0, "damage": 12, "first": 120, "cooldown": 139, "windup": 37, "target": "ranged_damage",
 		"twin": true, "displacement": 0.76},
@@ -114,6 +137,9 @@ const CAMPAIGN_ENEMIES := {
 		"spacing": 105.0, "reach": 145.0, "damage": 4, "first": 150, "cooldown": 186, "windup": 33, "support": true},
 	"relay_lancer": {"name": "Crown Lancer", "art": "clockwork", "hp": 130, "radius": 31.0, "speed": 90.0,
 		"spacing": 105.0, "reach": 171.0, "damage": 11, "first": 120, "cooldown": 151, "windup": 33, "push": 215.0},
+	"crown_mender": {"name": "Relay Mender", "art": "crown_mender", "hp": 58, "radius": 24.0, "speed": 79.0,
+		"spacing": 160.0, "reach": 204.0, "damage": 6, "first": 138, "cooldown": 166, "windup": 35,
+		"special": "repair", "repair_reach": 260.0},
 	"relay_captain": {"name": "The Relay Captain", "art": "relay_captain", "hp": 380, "radius": 42.0, "speed": 91.0,
 		"spacing": 108.0, "reach": 190.0, "damage": 14, "first": 121, "cooldown": 128, "windup": 33, "push": 270.0,
 		"displacement": 0.58},
@@ -129,6 +155,9 @@ const CAMPAIGN_ENEMIES := {
 		"spacing": 92.0, "reach": 147.0, "damage": 10, "first": 130, "cooldown": 151, "windup": 32},
 	"dock_winch": {"name": "Winch Operator", "art": "dock_winch", "hp": 60, "radius": 24.0, "speed": 73.0,
 		"spacing": 102.0, "reach": 147.0, "damage": 4, "first": 52, "cooldown": 190, "windup": 34},
+	"dock_corsair": {"name": "Dock Corsair", "art": "dock_corsair", "hp": 78, "radius": 26.0, "speed": 94.0,
+		"spacing": 95.0, "reach": 154.0, "damage": 9, "first": 29, "cooldown": 142, "windup": 32,
+		"special": "grapple", "grapple_reach": 320.0},
 	"wreckmaster": {"name": "The Wreckmaster", "art": "wreckmaster", "hp": 386, "radius": 42.0, "speed": 87.0,
 		"spacing": 112.0, "reach": 177.0, "damage": 10, "first": 128, "cooldown": 140, "windup": 37},
 	"tidekeeper": {"name": "The Tidekeeper", "art": "tidekeeper", "hp": 755, "radius": 46.0, "speed": 87.0,
@@ -155,11 +184,93 @@ const TILES := {
 	},
 	"guard": {
 		"label": "Guard", "width": 2, "range": 0.0, "damage": 0,
+		"family": "guard", "rarity": "common", "guard": 10,
 		"targets": ["self"], "description": "Gain 10 guard to absorb incoming damage."
 	},
 	"shot": {
 		"label": "Shot", "width": 2, "range": 535.0, "damage": 14,
+		"family": "shot", "rarity": "common",
 		"targets": TARGET_RULES, "description": "Strike one enemy at range."
+	},
+	"longshot": {
+		"label": "Longshot", "width": 2, "range": 610.0, "damage": 17,
+		"family": "shot", "rarity": "uncommon", "distance_bonus": 6,
+		"targets": TARGET_RULES, "description": "Hit one enemy. Deal 6 extra damage beyond 210 range."
+	},
+	"split_shot": {
+		"label": "Split Shot", "width": 2, "range": 490.0, "damage": 16,
+		"family": "shot", "rarity": "uncommon", "splash": 130.0, "splash_targets": 1, "splash_damage": 12,
+		"targets": TARGET_RULES, "description": "Hit one enemy, then deal 12 damage to its nearest neighbor within 130 range."
+	},
+	"deadeye": {
+		"label": "Deadeye", "width": 3, "range": 675.0, "damage": 25,
+		"family": "shot", "rarity": "rare", "distance_bonus": 11,
+		"targets": TARGET_RULES, "description": "Hit one enemy. Deal 11 extra damage beyond 210 range."
+	},
+	"volley": {
+		"label": "Volley", "width": 3, "range": 535.0, "damage": 22,
+		"family": "shot", "rarity": "rare", "splash": 150.0, "splash_targets": 2, "splash_damage": 17,
+		"targets": TARGET_RULES, "description": "Hit one enemy, then deal 17 damage to up to two neighbors within 150 range."
+	},
+	"rail_shot": {
+		"label": "Rail Shot", "width": 4, "range": 735.0, "damage": 33,
+		"family": "shot", "rarity": "epic", "distance_bonus": 16,
+		"targets": TARGET_RULES, "description": "Hit one enemy. Deal 16 extra damage beyond 210 range."
+	},
+	"flak_burst": {
+		"label": "Flak Burst", "width": 4, "range": 580.0, "damage": 28,
+		"family": "shot", "rarity": "epic", "splash": 165.0, "splash_damage": 23,
+		"targets": TARGET_RULES, "description": "Hit one enemy and deal 23 damage to every other enemy within 165 range of it."
+	},
+	"star_piercer": {
+		"label": "Star Piercer", "width": 5, "range": 800.0, "damage": 43,
+		"family": "shot", "rarity": "legendary", "distance_bonus": 23,
+		"targets": TARGET_RULES, "description": "Hit one enemy. Deal 23 extra damage beyond 210 range."
+	},
+	"meteor_volley": {
+		"label": "Meteor Volley", "width": 5, "range": 625.0, "damage": 37,
+		"family": "shot", "rarity": "legendary", "splash": 200.0, "splash_damage": 30,
+		"targets": TARGET_RULES, "description": "Hit one enemy and deal 30 damage to every other enemy within 200 range of it."
+	},
+	"riposte": {
+		"label": "Riposte", "width": 2, "range": 150.0, "damage": 13,
+		"family": "guard", "rarity": "uncommon", "guard": 8, "guard_bonus_cap": 10,
+		"targets": TARGET_RULES, "description": "Strike and spend up to 10 guard for extra damage. Gain 8 guard even if no target is in range."
+	},
+	"rally_guard": {
+		"label": "Rally Guard", "width": 2, "range": 0.0, "damage": 0,
+		"family": "guard", "rarity": "uncommon", "guard": 13, "support": "weakest",
+		"targets": ["self"], "description": "Give yourself and your lowest-health ally 13 guard each."
+	},
+	"counterwall": {
+		"label": "Counterwall", "width": 3, "range": 175.0, "damage": 20,
+		"family": "guard", "rarity": "rare", "guard": 12, "guard_bonus_cap": 14,
+		"targets": TARGET_RULES, "description": "Strike and spend up to 14 guard for extra damage. Gain 12 guard even if no target is in range."
+	},
+	"ward_link": {
+		"label": "Ward Link", "width": 3, "range": 0.0, "damage": 0,
+		"family": "guard", "rarity": "rare", "guard": 17, "support": "weakest",
+		"targets": ["self"], "description": "Give yourself and your lowest-health ally 17 guard each."
+	},
+	"iron_rebuke": {
+		"label": "Iron Rebuke", "width": 4, "range": 200.0, "damage": 27,
+		"family": "guard", "rarity": "epic", "guard": 16, "guard_bonus_cap": 18, "push": 620.0,
+		"targets": TARGET_RULES, "description": "Strike and push. Spend up to 18 guard for extra damage. Gain 16 guard even if no target is in range."
+	},
+	"shield_chorus": {
+		"label": "Shield Chorus", "width": 4, "range": 0.0, "damage": 0,
+		"family": "guard", "rarity": "epic", "guard": 17, "support": "party",
+		"targets": ["self"], "description": "Give every living hero 17 guard."
+	},
+	"last_stand": {
+		"label": "Last Stand", "width": 5, "range": 225.0, "damage": 37,
+		"family": "guard", "rarity": "legendary", "guard": 21, "guard_bonus_cap": 22, "push": 810.0,
+		"targets": TARGET_RULES, "description": "Strike and push. Spend up to 22 guard for extra damage. Gain 21 guard even if no target is in range."
+	},
+	"aegis_network": {
+		"label": "Aegis Network", "width": 5, "range": 0.0, "damage": 0,
+		"family": "guard", "rarity": "legendary", "guard": 20, "support": "party", "weakest_bonus": 7,
+		"targets": ["self"], "description": "Give every living hero 20 guard. Your lowest-health hero gets 7 extra."
 	},
 	"blink": {
 		"label": "Blink", "width": 3, "range": 430.0, "damage": 8,
@@ -319,10 +430,18 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 		var tiles: Array = hero_lanes[lane] if lane < hero_lanes.size() else []
 		_lanes.append(_valid_tiles(tiles))
 		var ranged_damage := 0
+		var has_precision := false
+		var has_close_attack := false
 		for tile: Dictionary in _lanes[lane]:
+			var spec: Dictionary = TILES[tile.id]
 			if tile.id in RANGED_TILES:
-				ranged_damage += int(TILES[tile.id].damage)
+				ranged_damage += int(spec.damage)
+			has_precision = has_precision or spec.has("distance_bonus")
+			has_close_attack = has_close_attack or (spec.damage > 0 and spec.range < PRECISION_SPACING)
 		unit["ranged_damage"] = ranged_damage
+		if has_precision and not has_close_attack:
+			unit.preferred_range = maxf(unit.preferred_range, PRECISION_SPACING)
+			unit["precision_spacing"] = true
 
 
 func _start_campaign(options: Dictionary) -> void:
@@ -351,20 +470,25 @@ func _start_campaign(options: Dictionary) -> void:
 	var encounter: String = options.get("encounter", "opening")
 	var difficulty: String = options.get("difficulty", "easy")
 	var segment := clampi(int(options.get("segment", 1)), 1, 3)
+	var encounter_seed := int(options.get("seed", 0))
+	var alternate := posmod(encounter_seed ^ (encounter_seed >> 8), 3) == 1
 	if options.get("location", "brass") == "glass":
-		_start_glass_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""))
+		_start_glass_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""), alternate)
 		return
 	if options.get("location", "brass") == "crown":
-		_start_crown_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""))
+		_start_crown_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""), alternate)
 		return
 	if options.get("location", "brass") == "moonwreck":
-		_start_moonwreck_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""))
+		_start_moonwreck_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""), alternate)
 		return
 	var health_scale: float = {"medium": [1.12, 2.15, 2.15], "hard": [1.21, 2.35, 3.0]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	var damage_scale: float = {"medium": [1.07, 1.58, 1.58], "hard": [1.10, 1.64, 1.80]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	match encounter:
 		"battle":
-			if rng.randi_range(0, 1) == 0:
+			if alternate:
+				_add_campaign_enemy("brass_sapper", Vector2(610, y + 46.0), 0, health_scale, damage_scale)
+				_add_campaign_enemy("recruit", Vector2(538, y - 38.0), 13, 1.35 * health_scale, damage_scale)
+			elif rng.randi_range(0, 1) == 0:
 				_add_campaign_enemy("bruiser", Vector2(615, y), 0, health_scale, damage_scale)
 				if segment >= 2:
 					_add_campaign_enemy("scout", Vector2(684, y + 95.0), 12, 1.0, damage_scale)
@@ -373,7 +497,8 @@ func _start_campaign(options: Dictionary) -> void:
 				_add_campaign_enemy("scout", Vector2(684, y + 72.0), 20, health_scale, damage_scale)
 		"elite":
 			_add_campaign_enemy("veteran", Vector2(636, y), 0, health_scale, damage_scale)
-			_add_campaign_enemy("scout", Vector2(673, y + 113.0), 0, health_scale, damage_scale)
+			_add_campaign_enemy("brass_sapper" if alternate else "scout", Vector2(673, y + 113.0), 0,
+				health_scale * (0.86 if alternate else 1.0), damage_scale)
 			if difficulty == "hard" and segment == 3:
 				_add_campaign_enemy("scout", Vector2(673, y - 113.0), 40, 1.5, damage_scale)
 		"boss":
@@ -393,14 +518,17 @@ func _start_campaign(options: Dictionary) -> void:
 			_add_campaign_enemy("recruit", Vector2(522, y))
 
 
-func _start_glass_encounter(encounter: String, rng: RandomNumberGenerator, y: float, difficulty: String, segment: int, boss_id: String) -> void:
+func _start_glass_encounter(encounter: String, rng: RandomNumberGenerator, y: float, difficulty: String, segment: int, boss_id: String, alternate: bool) -> void:
 	var extra_leg := difficulty != "easy" and segment >= 2
 	var third_leg := difficulty == "hard" and segment == 3
 	var health_scale: float = {"medium": [1.14, 2.15, 2.15], "hard": [1.20, 2.27, 2.90]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	var damage_scale: float = {"medium": [1.08, 1.51, 1.51], "hard": [1.12, 1.55, 1.70]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	match encounter:
 		"battle":
-			if rng.randi_range(0, 1) == 0:
+			if alternate:
+				_add_campaign_enemy("glass_duelist", Vector2(589, y - 60.0), 0, health_scale, damage_scale)
+				_add_campaign_enemy("glass_skirmisher", Vector2(656, y + 64.0), 25, health_scale, damage_scale)
+			elif rng.randi_range(0, 1) == 0:
 				_add_campaign_enemy("glass_hunter", Vector2(615, y), 0, health_scale, damage_scale)
 				if extra_leg:
 					_add_campaign_enemy("glass_skirmisher", Vector2(686, y + 90.0), 16, 1.15, damage_scale)
@@ -410,7 +538,8 @@ func _start_glass_encounter(encounter: String, rng: RandomNumberGenerator, y: fl
 				_add_campaign_enemy(partner, Vector2(668, y + 68.0), 25, health_scale, damage_scale)
 		"elite":
 			_add_campaign_enemy("glass_overseer", Vector2(644, y), 0, health_scale, damage_scale)
-			_add_campaign_enemy("glass_skirmisher", Vector2(676, y + 108.0), 25, health_scale, damage_scale)
+			_add_campaign_enemy("glass_duelist" if alternate else "glass_skirmisher", Vector2(676, y + 108.0),
+				25, health_scale, damage_scale)
 			if third_leg:
 				_add_campaign_enemy("glass_hunter", Vector2(676, y - 108.0), 47, 1.25, damage_scale)
 		"boss":
@@ -483,7 +612,7 @@ func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_sca
 	units.append(enemy)
 
 
-func _start_crown_encounter(encounter: String, rng: RandomNumberGenerator, y: float, difficulty: String, segment: int, boss_id: String) -> void:
+func _start_crown_encounter(encounter: String, rng: RandomNumberGenerator, y: float, difficulty: String, segment: int, boss_id: String, alternate: bool) -> void:
 	var medium := difficulty == "medium"
 	var hard := difficulty == "hard"
 	var extra_leg := (medium or hard) and segment >= 2
@@ -495,10 +624,12 @@ func _start_crown_encounter(encounter: String, rng: RandomNumberGenerator, y: fl
 			var partner := "relay_runner" if rng.randi_range(0, 1) == 0 else "relay_lancer"
 			var lancer := partner == "relay_lancer"
 			_add_campaign_enemy(partner, Vector2(603, y - 15.0), 0, (0.54 if lancer else 1.0) * health_scale, (0.81 if lancer else 1.0) * damage_scale)
-			_add_campaign_enemy("relay_guard", Vector2(668, y + 46.0), 22, health_scale, damage_scale)
+			_add_campaign_enemy("crown_mender" if alternate else "relay_guard", Vector2(668, y + 46.0),
+				22, health_scale, damage_scale)
 		"elite":
 			_add_campaign_enemy("relay_lancer", Vector2(623, y - 12.0), 0, health_scale, damage_scale)
-			_add_campaign_enemy("relay_guard", Vector2(692, y + 44.0), 15, 1.25 * health_scale, damage_scale)
+			_add_campaign_enemy("crown_mender" if alternate else "relay_guard", Vector2(692, y + 44.0),
+				15, 1.25 * health_scale, damage_scale)
 			if third_leg:
 				_add_campaign_enemy("relay_runner", Vector2(669, y - 114.0), 40, 1.55, damage_scale)
 		"boss":
@@ -527,7 +658,7 @@ func _start_crown_regent(y: float) -> void:
 	regent["crown_role"] = "relay_regent"
 
 
-func _start_moonwreck_encounter(encounter: String, rng: RandomNumberGenerator, y: float, difficulty: String, segment: int, boss_id: String) -> void:
+func _start_moonwreck_encounter(encounter: String, rng: RandomNumberGenerator, y: float, difficulty: String, segment: int, boss_id: String, alternate: bool) -> void:
 	var hard := difficulty == "hard"
 	var second_leg := (difficulty == "medium" or hard) and segment >= 2
 	var third_leg := hard and segment == 3
@@ -536,11 +667,16 @@ func _start_moonwreck_encounter(encounter: String, rng: RandomNumberGenerator, y
 	match encounter:
 		"battle":
 			var flank := -1.0 if rng.randi_range(0, 1) == 0 else 1.0
-			_add_campaign_enemy("dock_bruiser", Vector2(633, y + flank * 42.0), 0, 0.65 * health_scale, damage_scale)
-			_add_campaign_enemy("dock_winch", Vector2(563, y - flank * 28.0), 0, 0.86 * health_scale, damage_scale)
+			if alternate:
+				_add_campaign_enemy("dock_corsair", Vector2(573, y + flank * 38.0), 0, health_scale, damage_scale)
+				_add_campaign_enemy("dock_recruit", Vector2(638, y - flank * 54.0), 15, 1.30 * health_scale, damage_scale)
+			else:
+				_add_campaign_enemy("dock_bruiser", Vector2(633, y + flank * 42.0), 0, 0.65 * health_scale, damage_scale)
+				_add_campaign_enemy("dock_winch", Vector2(563, y - flank * 28.0), 0, 0.86 * health_scale, damage_scale)
 		"elite":
 			_add_campaign_enemy("dock_bruiser", Vector2(655, y + 42.0), 0, 1.18 * health_scale, 1.15 * damage_scale)
-			_add_campaign_enemy("dock_winch", Vector2(571, y - 31.0), 0, 1.12 * health_scale, damage_scale)
+			_add_campaign_enemy("dock_corsair" if alternate else "dock_winch", Vector2(571, y - 31.0), 0,
+				health_scale * (0.90 if alternate else 1.12), damage_scale)
 			if third_leg:
 				_add_campaign_enemy("dock_recruit", Vector2(650, y - 113.0), 46, 3.1, damage_scale)
 		"boss":
@@ -609,16 +745,18 @@ func target_for(lane: int, tile_id: String, rule: String) -> Dictionary:
 	var actor: Dictionary = units[lane]
 	if actor.hp <= 0:
 		return {}
-	if tile_id == "guard":
-		return actor
-	return _select(actor, rule, TILES[tile_id].range)
+	var tile: Dictionary = TILES[tile_id]
+	if tile.targets == ["self"]:
+		return _guard_recipient(actor, tile)
+	var target := _select(actor, rule, tile.range)
+	return actor if target.is_empty() and tile.get("family") == "guard" else target
 
 
 func target_rules(tile_id: String) -> Array:
 	if not TILES.has(tile_id):
 		return []
 	var base: Array = TILES[tile_id].targets
-	if tile_id != "guard" and units.any(func(unit: Dictionary) -> bool: return unit.get("crown_role") == "relay_regent"):
+	if "self" not in base and units.any(func(unit: Dictionary) -> bool: return unit.get("crown_role") == "relay_regent"):
 		return base + CROWN_TARGET_RULES
 	return base
 
@@ -678,7 +816,8 @@ func _move_units() -> void:
 			if tick < unit.get("haste_until", 0):
 				speed *= 1.42
 			var margin: float = distance - unit.preferred_range
-			drive = offset.normalized() * clampf(margin * 4.0, 0.0, speed)
+			var retreat_speed := minf(55.0, speed) if unit.get("precision_spacing", false) else 0.0
+			drive = offset.normalized() * clampf(margin * 4.0, -retreat_speed, speed)
 		var impulse: Vector2 = unit.impulse
 		unit.velocity = drive + impulse
 		unit.impulse = impulse.move_toward(Vector2.ZERO, IMPULSE_DECAY * DELTA)
@@ -867,16 +1006,15 @@ func _activate_lanes() -> void:
 				_cast(actor, tile.id, tile.target)
 				if actor.get("class") == "rune_smith" and TILES[tile.id].width >= 3:
 					actor["rune_charged"] = true
-				if _activation.status == "landed":
+				if _activation.status == "landed" and _activation.reason.is_empty():
 					_activation.reason = _activation_result(_activation)
 			_activation = {}
 
 
 func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 	var tile: Dictionary = TILES[tile_id]
-	if tile_id == "guard":
-		_review_activation_target(actor)
-		_guard(actor, 10, tile_id)
+	if tile.get("family") == "guard":
+		_cast_guard(actor, tile_id, tile, rule)
 		return
 	var target := _select(actor, rule, tile.range)
 	if target.is_empty():
@@ -931,14 +1069,13 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 			_gravity_strike(actor, target, tile_id, 245.0, true)
 		"slam":
 			_area_push(actor, target, tile_id, tile.damage, 115.0, 520.0)
-		"shot":
-			_damage(actor, target, tile.damage, tile_id)
 		"meteor_seal":
 			for enemy in _enemies_in_area(actor, target.pos, 175.0):
 				_damage(actor, enemy, tile.damage, tile_id)
 		_:
-			if tile.get("family") == "blink":
-				_cast_blink(actor, target, tile_id, tile)
+			match tile.get("family", ""):
+				"blink": _cast_blink(actor, target, tile_id, tile)
+				"shot": _cast_shot(actor, target, tile_id, tile)
 	if tile.get("family") == "bash":
 		_warden_guard(actor, tile_id)
 
@@ -957,9 +1094,71 @@ func _activation_result(activation: Dictionary) -> String:
 		parts.append("%d Guard granted" % activation.guard)
 	if not parts.is_empty():
 		return ", ".join(parts) + "."
-	if activation.tile == "guard":
+	var tile: Dictionary = TILES[activation.tile]
+	if tile.get("family") == "guard" and (tile.damage == 0 or activation.target_name == activation.hero):
 		return "Guard was already full."
 	return "The tile connected. The target blocked all damage."
+
+
+func _cast_shot(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
+	var origin: Vector2 = actor.pos
+	var damage: int = tile.damage
+	if origin.distance_squared_to(target.pos) > PRECISION_BONUS_RANGE * PRECISION_BONUS_RANGE:
+		damage += int(tile.get("distance_bonus", 0))
+	_damage(actor, target, damage, tile_id)
+	if not tile.has("splash"):
+		return
+	var center: Vector2 = target.pos
+	var neighbors := _enemies_in_area(actor, center, tile.splash)
+	neighbors.erase(target)
+	if tile.has("splash_targets"):
+		neighbors.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+			var first := center.distance_squared_to(a.pos)
+			var second := center.distance_squared_to(b.pos)
+			return a.id < b.id if first == second else first < second)
+		neighbors.resize(mini(neighbors.size(), tile.splash_targets))
+	for enemy: Dictionary in neighbors:
+		_damage(actor, enemy, tile.splash_damage, tile_id)
+
+
+func _cast_guard(actor: Dictionary, tile_id: String, tile: Dictionary, rule: String) -> void:
+	if tile.has("guard_bonus_cap"):
+		var target := _select(actor, rule, tile.range)
+		_review_activation_target(actor if target.is_empty() else target)
+		if not target.is_empty():
+			var spent := mini(actor.guard, tile.guard_bonus_cap)
+			actor.guard -= spent
+			var damage: int = tile.damage + spent
+			if tile.has("push"):
+				_strike_and_push(actor, target, tile_id, damage, tile.push)
+			else:
+				_damage(actor, target, damage, tile_id)
+		_guard(actor, tile.guard, tile_id)
+		if target.is_empty() and not _activation.is_empty():
+			_activation.reason = "%s No enemy was in reach for the strike." % _activation_result(_activation)
+		return
+	var recipient := _guard_recipient(actor, tile)
+	_review_activation_target(recipient)
+	if tile.get("support") == "party":
+		_guard_allies(actor, tile_id, tile.guard)
+		if tile.has("weakest_bonus"):
+			_guard(recipient, tile.weakest_bonus, tile_id, actor)
+	else:
+		_guard(actor, tile.guard, tile_id)
+		if recipient.id != actor.id:
+			_guard(recipient, tile.guard, tile_id, actor)
+
+
+func _guard_recipient(actor: Dictionary, tile: Dictionary) -> Dictionary:
+	var lowest := {}
+	var support: String = tile.get("support", "")
+	if support == "weakest" or tile.has("weakest_bonus"):
+		for ally: Dictionary in units:
+			if ally.side != actor.side or ally.hp <= 0 or (support == "weakest" and ally.id == actor.id):
+				continue
+			if lowest.is_empty() or ally.hp < lowest.hp:
+				lowest = ally
+	return actor if lowest.is_empty() else lowest
 
 
 func _cast_blink(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
@@ -1173,6 +1372,8 @@ func _run_enemies() -> void:
 			continue
 		var position: Vector2 = enemy.pos
 		var attack: Dictionary = enemy.get("attack", {})
+		if attack.has("special") and _begin_variant_attack(enemy, target, attack):
+			continue
 		var reach: float = attack.get("reach", 290.0 if enemy.id == "scout" else 155.0)
 		if position.distance_to(target.pos) > reach:
 			continue
@@ -1197,6 +1398,11 @@ func _resolve_intent(enemy: Dictionary) -> void:
 	var attack: Dictionary = enemy.get("attack", {})
 	enemy.intent = ""
 	enemy.next_attack = tick + int(attack.get("cooldown", 116 if enemy.id == "scout" else 138))
+	var special_intent: String = enemy.get("special_intent", "")
+	if not special_intent.is_empty():
+		enemy.erase("special_intent")
+		_resolve_variant_attack(enemy, _find_unit(intent), attack, special_intent)
+		return
 	if enemy.get("dock_winch_ally", "") != "":
 		_resolve_winch_pull(enemy, intent)
 		return
@@ -1269,6 +1475,95 @@ func _resolve_intent(enemy: Dictionary) -> void:
 			var offset: Vector2 = defender.pos - position
 			_displace("push", enemy, defender, "enemy_attack", offset, force)
 		return
+
+
+func _begin_variant_attack(enemy: Dictionary, target: Dictionary, attack: Dictionary) -> bool:
+	var position: Vector2 = enemy.pos
+	var distance := position.distance_to(target.pos)
+	var message: String
+	var intent_tile: String
+	match attack.special:
+		"bombard":
+			if distance > attack.reach:
+				return false
+			enemy["blast_center"] = target.pos
+			enemy["blast_radius"] = attack.blast_radius
+			message = "Mortar lands in two beats. Move out of the ring."
+			intent_tile = "sapper_blast"
+		"blink_strike":
+			if distance > attack.reach:
+				return false
+			message = "Kiln Duelist readies a blink strike on %s." % target.name
+			intent_tile = "duelist_blink"
+		"repair":
+			target = _repair_target(enemy, attack.repair_reach)
+			if target.is_empty():
+				return false
+			message = "Relay Mender prepares to repair %s." % target.name
+			intent_tile = "mender_repair"
+		"grapple":
+			if distance <= attack.reach or distance > attack.grapple_reach:
+				return false
+			message = "Dock Corsair aims a boarding hook at %s." % target.name
+			intent_tile = "corsair_hook"
+	enemy["special_intent"] = attack.special
+	enemy.intent = target.id
+	enemy.intent_tick = tick + int(attack.windup)
+	_emit("intent", message, enemy, target, intent_tile)
+	return true
+
+
+func _resolve_variant_attack(enemy: Dictionary, target: Dictionary, attack: Dictionary, move: String) -> void:
+	if move == "bombard":
+		var center: Vector2 = enemy.blast_center
+		var radius: float = enemy.blast_radius
+		enemy.erase("blast_center")
+		enemy.erase("blast_radius")
+		_emit("hazard_burst", "Mortar strikes.", enemy, {}, "sapper_blast", roundi(radius), center, center)
+		for hero in _enemies_in_area(enemy, center, radius):
+			_damage(enemy, hero, attack.damage, "sapper_blast")
+		return
+	if target.get("hp", 0) <= 0:
+		return
+	var position: Vector2 = enemy.pos
+	var distance := position.distance_to(target.pos)
+	match move:
+		"blink_strike":
+			if distance <= attack.reach and _teleport(enemy, target, "duelist_blink", 0.0):
+				_damage(enemy, _intercept_target(target), attack.damage, "enemy_attack")
+			else:
+				_emit("miss", "Kiln Duelist misses its blink strike.", enemy, target, "duelist_blink")
+		"repair":
+			if distance > attack.repair_reach:
+				_emit("miss", "Relay Mender's repair target is out of range.", enemy, target, "mender_repair")
+				return
+			var amount := mini(14, int(target.max_hp - target.hp))
+			if amount > 0:
+				target.hp += amount
+				_emit("heal", "Relay Mender repairs %d HP on %s." % [amount, target.name], enemy, target, "mender_repair", amount)
+		"grapple":
+			if distance <= attack.grapple_reach:
+				var travel := maxf(0.0, distance - 70.0)
+				if travel > 0.0:
+					var force := minf(700.0, sqrt(2.0 * IMPULSE_DECAY * travel))
+					_displace("pull", enemy, target, "corsair_hook", position - target.pos, force)
+				enemy.next_attack = tick + TICKS_PER_BEAT
+			else:
+				_emit("miss", "Dock Corsair's boarding hook falls short.", enemy, target, "corsair_hook")
+
+
+func _repair_target(mender: Dictionary, reach: float) -> Dictionary:
+	var position: Vector2 = mender.pos
+	var weakest := {}
+	var lowest_health := 1.0
+	for ally in units:
+		if ally.side != mender.side or ally.id == mender.id or ally.hp <= 0 or position.distance_squared_to(ally.pos) > reach * reach:
+			continue
+		var health: float = float(ally.hp) / ally.max_hp
+		if health < lowest_health:
+			weakest = ally
+			lowest_health = health
+	return weakest
 
 
 func _sweep(enemy: Dictionary, attack: Dictionary, extra_reach: float, bonus_damage: int) -> void:
@@ -1748,6 +2043,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		action = "Burn"
 	elif tile_id == "breaker":
 		action = "Collision"
+	elif tile_id == "sapper_blast":
+		action = "Mortar"
 	var blocked_text := " (%d blocked)" % blocked if blocked > 0 else ""
 	var details := "%s: %s hits %s for %d%s." % [actor.name, action, target.name, dealt, blocked_text]
 	_emit("hit", details, actor, target, tile_id, dealt)

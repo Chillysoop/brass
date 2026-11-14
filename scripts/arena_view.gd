@@ -1,5 +1,7 @@
 extends Control
 
+const GameIcons = preload("res://scripts/game_icons.gd")
+const ArenaSim = preload("res://scripts/arena_sim.gd")
 const WORLD_SIZE := Vector2(1000.0, 520.0)
 const INK := Color("#182126")
 const FRAME := Color("#47534b")
@@ -17,6 +19,14 @@ const SPRITE_PATHS := {
 	"arena": "res://assets/arena.webp",
 	"warden": "res://assets/warden.png",
 	"hexwright": "res://assets/hexwright.png",
+	"marksman": "res://assets/marksman.png",
+	"apothecary": "res://assets/apothecary.png",
+	"duelist": "res://assets/duelist.png",
+	"runesmith": "res://assets/runesmith.png",
+	"brass_sapper": "res://assets/brass_sapper.png",
+	"glass_duelist": "res://assets/glass_duelist.png",
+	"crown_mender": "res://assets/crown_mender.png",
+	"dock_corsair": "res://assets/dock_corsair.png",
 	"clockwork": "res://assets/clockwork.png",
 	"scout": "res://assets/scout.png",
 	"marshal": "res://assets/marshal.png",
@@ -47,6 +57,8 @@ const EFFECT_LENGTHS := {
 	"guard": 0.36,
 	"miss": 0.42,
 	"defeat_unit": 0.46,
+	"hazard_burst": 0.55,
+	"heal": 0.60,
 	"relay_interrupted": 0.65,
 	"relay_link_broken": 0.42,
 	"relay_marshal_separated": 0.55,
@@ -82,6 +94,7 @@ const FLOATING_CUES := {
 }
 
 var units: Array = []
+var combat_tick := 0
 var location := "brass"
 var _textures: Dictionary = {}
 var _positions: Dictionary = {}
@@ -103,6 +116,7 @@ func _ready() -> void:
 
 func reset_view(units_data: Array) -> void:
 	units = units_data
+	combat_tick = 0
 	_effects.clear()
 	_positions.clear()
 	_facing.clear()
@@ -112,8 +126,9 @@ func reset_view(units_data: Array) -> void:
 	queue_redraw()
 
 
-func present(units_data: Array, events: Array) -> void:
+func present(units_data: Array, events: Array, tick := 0) -> void:
 	units = units_data
+	combat_tick = tick
 	for event in events:
 		var tile: String = event.get("tile", "")
 		if tile == "relay_link_broken" and str(event.target).begins_with("crown_regent"):
@@ -161,7 +176,7 @@ func _process(delta: float) -> void:
 		if effect.age >= EFFECT_LENGTHS[effect.kind]:
 			_effects.remove_at(index)
 		changed = true
-	if changed:
+	if changed or _has_animated_warning():
 		queue_redraw()
 
 
@@ -216,8 +231,10 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		accent = Color("#c4fff0")
 	var art_key := String(unit.get("sprite", unit.id))
 	if friendly:
-		art_key = "hexwright" if String(unit.name).to_lower().contains("hex") else "warden"
+		art_key = GameIcons.portrait(unit.get("class", "warden"))
 	var texture: Texture2D = _textures.get(art_key)
+	if texture == null and friendly:
+		texture = _textures.get("warden")
 	if texture == null and art_key == "marshal":
 		texture = _textures.get("clockwork")
 	var radius := maxf(8.0, float(unit.radius) * unit_scale)
@@ -232,7 +249,12 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	var facing := float(_facing.get(unit.id, 1.0 if friendly else -1.0))
 	var velocity: Vector2 = unit.get("velocity", Vector2.ZERO)
 	var motion := minf(velocity.length() / 100.0, 1.0)
-	var bounce := Vector2(0.0, -absf(sin(_animation_time * 16.0 + float(unit.lane))) * motion * 3.0)
+	var stride := _animation_time * 16.0 + float(unit.lane)
+	var bounce := Vector2(0.0, -absf(sin(stride)) * motion * 3.0)
+	var lean := sin(stride) * motion * 0.022
+	if not str(unit.get("intent", "")).is_empty():
+		var windup := maxf(0.0, float(unit.get("intent_tick", 0) - combat_tick))
+		lean -= facing * (1.0 - clampf(windup / 36.0, 0.0, 1.0)) * 0.11
 	var flash := 0.0
 	for effect in _effects:
 		if effect.kind != "hit":
@@ -241,13 +263,15 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 			flash = maxf(flash, 1.0 - float(effect.age) * 10.0)
 		if effect.actor == unit.id and float(effect.age) < 0.16:
 			var hit_direction: Vector2 = (effect.to - effect.from).normalized()
-			bounce += hit_direction * sin(float(effect.age) / 0.16 * PI) * 7.0
+			var recoil := sin(float(effect.age) / 0.16 * PI)
+			bounce += hit_direction * recoil * 7.0
+			lean += hit_direction.x * recoil * 0.08
 	_draw_ellipse(point + Vector2(1.5, 2.0), Vector2(radius * 1.2, radius * 0.36), Color(0.1, 0.09, 0.08, 0.43))
 	draw_line(point + Vector2(-radius * 0.55, 2.0), point + Vector2(radius * 0.55, 2.0), accent, 2.0, true)
 	if texture:
 		var width := art_height * texture.get_size().aspect()
 		var flip := 1.0 if (facing > 0.0) == friendly else -1.0
-		draw_set_transform(point + bounce, 0.0, Vector2(flip, 1.0))
+		draw_set_transform(point + bounce, lean, Vector2(flip, 1.0))
 		var tint := GOLD.lightened(0.35) if art_key == "marshal" and not _textures.has("marshal") else Color.WHITE
 		if unit.name == "Crucible Twin · Ember":
 			tint = Color("#ffc391")
@@ -403,6 +427,9 @@ func _draw_intents(field: Rect2) -> void:
 		var target_id: String = unit.get("intent", "")
 		if unit.hp <= 0 or target_id.is_empty():
 			continue
+		if unit.has("blast_center"):
+			_draw_sweep_warning(_project(unit.blast_center, field), float(unit.blast_radius) * field.size / WORLD_SIZE)
+			continue
 		var start := _project(_positions.get(unit.id, unit.pos), field)
 		var wreck_phase: int = unit.get("wreckmaster_phase", 0)
 		var tide_phase: int = unit.get("tidekeeper_phase", 0)
@@ -435,6 +462,8 @@ func _draw_intents(field: Rect2) -> void:
 				continue
 			var end := _project(_positions.get(target.id, target.pos), field)
 			var warning := ENEMY_COLOR.darkened(0.34)
+			if unit.get("sprite") == "crown_mender":
+				warning = HERO_COLOR.darkened(0.16)
 			if unit.get("relay_charge_active", false) or wreck_phase == 1 or tide_phase == 1 or admiral_phase == 1:
 				warning = GOLD
 			elif not winch_ally.is_empty():
@@ -443,6 +472,13 @@ func _draw_intents(field: Rect2) -> void:
 				warning = TELEPORT_COLOR.darkened(0.21)
 			draw_dashed_line(start, end, Color(warning, 0.8), 2.0, 6.0)
 			draw_arc(end, 14.0 + sin(_animation_time * 22.0) * 2.0, 0.0, TAU, 24, warning, 2.0, true)
+
+
+func _has_animated_warning() -> bool:
+	for unit: Dictionary in units:
+		if unit.hp > 0 and not str(unit.get("intent", "")).is_empty():
+			return true
+	return false
 
 
 func _dock_sweep_radius(unit: Dictionary) -> float:
@@ -467,6 +503,12 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 	var progress := float(effect.age) / float(EFFECT_LENGTHS[kind])
 	var opacity := 1.0 - progress
 	match kind:
+		"hit":
+			if ArenaSim.TILES.get(effect.tile, {}).get("family") == "shot":
+				var lift := Vector2(0.0, -19.0)
+				var tracer := Color(GOLD, pow(opacity, 4.0))
+				draw_line(from_point + lift, to_point + lift, tracer, 2.0, true)
+				draw_circle(from_point + lift, 4.0 * opacity, tracer, true, -1.0, true)
 		"pull", "push":
 			var color := HERO_COLOR if kind == "pull" else GOLD
 			if kind == "pull":
@@ -481,8 +523,20 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			draw_dashed_line(from_point, to_point, Color(TELEPORT_COLOR, opacity * 0.75), 2.0, 6.0)
 			draw_arc(from_point, 7.0 + progress * 18.0, 0.0, TAU, 24, Color(TELEPORT_COLOR, opacity), 2.0, true)
 			draw_arc(to_point, 8.0 + opacity * 14.0, 0.0, TAU, 24, Color(TELEPORT_COLOR, opacity), 2.0, true)
-		"guard", "defeat_unit", "relay_interrupted", "relay_link_broken", "relay_marshal_separated", "tidekeeper_unanchored", "admiral_reversed":
+			for index in range(5):
+				var ray := Vector2.RIGHT.rotated(index * TAU / 5.0 + progress * 1.7)
+				draw_circle(to_point + ray * (8.0 + progress * 27.0), 2.2 * opacity, Color(TELEPORT_COLOR, opacity), true, -1.0, true)
+		"hazard_burst":
+			var extent := float(effect.amount) * field.size / WORLD_SIZE
+			_draw_ellipse(from_point, extent * lerpf(0.38, 1.0, progress), Color(GOLD, opacity * 0.53))
+			for index in range(10):
+				var ray := Vector2.RIGHT.rotated(index * TAU / 10.0)
+				var spark := from_point + ray * extent * progress * 0.85 - Vector2(0, sin(progress * PI) * (20.0 + 5.0 * (index % 3)))
+				draw_circle(spark, 2.0 + opacity * 1.6, Color(GOLD, opacity), true, -1.0, true)
+		"guard", "heal", "defeat_unit", "relay_interrupted", "relay_link_broken", "relay_marshal_separated", "tidekeeper_unanchored", "admiral_reversed":
 			var color := GOLD if kind == "guard" else ENEMY_COLOR
+			if kind == "heal":
+				color = HERO_COLOR
 			if FLOATING_CUES.has(kind):
 				color = RELAY_SHIELD_COLOR
 			draw_arc(to_point, 7.0 + progress * 24.0, 0.0, TAU, 24, Color(color, opacity), 2.0, true)
