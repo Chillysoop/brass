@@ -35,6 +35,10 @@ func _initialize() -> void:
 		check(crown_hard.slice(0, 14) == _with_gate_link(crown_medium, crown_hard[14][0].id),
 			"Crown Hard must keep the first two Crown legs and connect the Marshal to leg three.")
 		_check_crown_hard_leg(crown_hard)
+		var moonwreck := run._make_map(seed_value, "easy", "moonwreck")
+		_check_map(moonwreck, 1, "wreckmaster")
+		check(moonwreck == run._make_map(seed_value, "easy", "moonwreck"), "Moonwreck routes must be deterministic.")
+		_check_moonwreck_nodes(moonwreck)
 	check(run._make_map(1) != run._make_map(2), "Distinct seeds should vary routes.")
 
 	var path := "user://frontier-model-test-%d.json" % Time.get_ticks_usec()
@@ -100,13 +104,14 @@ func _initialize() -> void:
 	_check_crown_easy(path)
 	_check_crown_medium(path)
 	_check_crown_hard(path)
+	_check_moonwreck_easy(path)
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
 	for failure: String in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Frontier model checks passed across 128 seeds for Brass, Glass, and Crown routes.")
+		print("Frontier model checks passed across 128 seeds for Brass, Glass, Crown, and Moonwreck routes.")
 	quit(0 if failures.is_empty() else 1)
 
 
@@ -186,6 +191,17 @@ func _check_crown_hard_leg(layers: Array) -> void:
 	for row in range(15, 20):
 		for node: Dictionary in layers[row]:
 			check(node.label in FrontierRun.CROWN_REGENT_NODE_LABELS[node.type], "Crown Hard leg three must use its own route names.")
+
+
+func _check_moonwreck_nodes(layers: Array) -> void:
+	check(layers[0][0].label == "Drowned Gate Trial", "Moonwreck must open at the Drowned Gate Trial.")
+	var events: Array[String] = []
+	for row in range(1, 6):
+		for node: Dictionary in layers[row]:
+			check(node.label in FrontierRun.MOONWRECK_NODE_LABELS[node.type], "Moonwreck must have its own route names.")
+			if node.type == "event":
+				check(node.label not in events, "Moonwreck events must not repeat on one route.")
+				events.append(node.label)
 
 
 func _check_medium(path: String) -> void:
@@ -408,6 +424,7 @@ func _check_crown_easy(path: String) -> void:
 
 func _check_crown_medium(path: String) -> void:
 	var run := FrontierRun.new()
+	check(not run.can_start("easy", "moonwreck"), "Moonwreck Easy must require a Crown Medium clear.")
 	check(not run.can_start("hard", "crown"), "Crown Hard must require a Crown Medium clear.")
 	check(run.load_save(path), "Crown Medium must read its unlock from a saved profile.")
 	run.abandon_run()
@@ -440,8 +457,8 @@ func _check_crown_medium(path: String) -> void:
 		"The first Marshal clear must grant the first-clear payout.")
 	check(restored.profile.crown_hard_unlocked and restored.profile.moonwreck_easy_unlocked,
 		"The Marshal must unlock Crown Hard and Moonwreck Docks Easy.")
-	check(restored.can_start("hard", "crown") and not restored.can_start("easy", "moonwreck"),
-		"Crown Hard must be playable after its unlock and the future Moonwreck route must remain unavailable.")
+	check(restored.can_start("hard", "crown") and restored.can_start("easy", "moonwreck"),
+		"Crown Hard and Moonwreck Easy must both be playable after their unlock.")
 	check(not restored.finish_combat(true, [42, 71]) and restored.reward(restored.data.offers[0]) and restored.finish_run(),
 		"The final payout must be recorded once and the trophy must lead to a recap.")
 	check(restored.start_run(983, "medium", "crown"), "Crown Medium must be replayable.")
@@ -501,6 +518,54 @@ func _check_crown_hard(path: String) -> void:
 	var marks: int = run.profile.marks
 	check(run.finish_combat(true, [75]) and run.profile.marks == marks + 39,
 		"A repeated Regent clear must omit the first-clear bonus.")
+
+
+func _check_moonwreck_easy(path: String) -> void:
+	var run := FrontierRun.new()
+	check(not run.can_start("easy", "moonwreck"), "Moonwreck Easy must be locked on a fresh profile.")
+	check(run.load_save(path), "Read Moonwreck's Crown Medium unlock from disk.")
+	run.abandon_run()
+	check(run.can_start("easy", "moonwreck") and run.start_run(9142, "easy", "moonwreck"),
+		"The Relay Marshal's Medium clear must open Moonwreck Easy.")
+	run.choose_hero(run.data.offers[0])
+	run.choose_relic("pocket_bell")
+	run.choose_starter("shot")
+	check(run.encounter().location == "moonwreck" and run.encounter().kind == "opening" and run.data.heroes.size() == 1,
+		"Moonwreck Easy must start with a solo Drowned Gate Trial.")
+	var restored := FrontierRun.new()
+	check(restored.load_save(path) and restored.data.layers == run.data.layers and restored.data.location == "moonwreck",
+		"Moonwreck Easy must resume with the same route and location.")
+	_reach_boss(restored)
+	check(restored.is_final_boss() and restored.encounter().boss_id == "wreckmaster", "The Wreckmaster must finish Moonwreck Easy.")
+	var marks: int = restored.profile.marks
+	check(restored.finish_combat(true, [67]), "Resolve the Moonwreck boss.")
+	check(restored.profile.moonwreck_medium_unlocked and restored.profile.marks == marks + 19,
+		"The first Moonwreck clear must bank its boss payout and record the future Medium unlock.")
+	check(not restored.can_start("medium", "moonwreck") and not restored.can_start("hard", "moonwreck"),
+		"Future Moonwreck routes must remain unavailable.")
+	check(restored.data.offers.size() == 3, "The Wreckmaster's final reward must offer three choices.")
+	for id: String in restored.data.offers:
+		check(ArenaSim.TILES[id].rarity == "legendary", "The Wreckmaster's final reward must be Legendary.")
+	check(not restored.finish_combat(true, [67]), "Moonwreck's first-clear payout must not be applied twice.")
+	check(restored.reward(restored.data.offers[0]) and restored.finish_run(), "Moonwreck Easy must return to the hub after its trophy.")
+	check(restored.start_run(9142, "easy", "moonwreck"), "Moonwreck Easy must be replayable.")
+	restored.choose_hero(restored.data.offers[0])
+	restored.choose_relic("pocket_bell")
+	restored.choose_starter("shot")
+	restored.data.phase = "event"
+	restored.data.node = restored._node("event", "Tethered Barge", 1, 0)
+	var gold: int = restored.data.gold
+	check(restored.event_choice(0) and restored.data.gold == gold + 12 and restored.data.phase == "map",
+		"The Tethered Barge must pay the promised share of salvage.")
+	restored.data.phase = "event"
+	restored.data.heroes[0].hp = 50
+	check(restored.event_choice(1) and restored.data.hp == 74 and restored.data.gold == gold + 12,
+		"Resting aboard the Tethered Barge must heal without granting additional gold.")
+	restored.data.node = restored.data.layers.back()[0]
+	restored.data.phase = "combat"
+	marks = restored.profile.marks
+	check(restored.finish_combat(true, [67]) and restored.profile.marks == marks + 14,
+		"A repeated Wreckmaster clear must omit the first-clear bonus.")
 
 
 func _reach_boss(run: RefCounted) -> void:

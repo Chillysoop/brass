@@ -11,7 +11,8 @@ const WHITE := Color("#fff0d2")
 const TELEPORT_COLOR := Color("#b2afd9")
 const RELAY_SHIELD_COLOR := Color("#91e2f4")
 const RIGHT_RELAY_COLOR := Color("#e7b3ff")
-const ARENA_TEXTURES := {"glass": "glass_arena", "crown": "crown_arena"}
+const DOCK_WINCH_COLOR := Color("#e6c193")
+const ARENA_TEXTURES := {"glass": "glass_arena", "crown": "crown_arena", "moonwreck": "moonwreck_arena"}
 const SPRITE_PATHS := {
 	"arena": "res://assets/arena.webp",
 	"warden": "res://assets/warden.png",
@@ -29,8 +30,12 @@ const SPRITE_PATHS := {
 	"relay_captain": "res://assets/relay_captain.png",
 	"relay_marshal": "res://assets/relay_marshal.png",
 	"crown_regent": "res://assets/crown_regent.png",
+	"dock_winch": "res://assets/dock_winch.png",
+	"dock_bruiser": "res://assets/dock_bruiser.png",
+	"wreckmaster": "res://assets/wreckmaster.png",
 	"glass_arena": "res://assets/glass-arena.webp",
 	"crown_arena": "res://assets/crown-arena.webp",
+	"moonwreck_arena": "res://assets/moonwreck-arena.webp",
 }
 const EFFECT_LENGTHS := {
 	"pull": 0.42,
@@ -43,14 +48,19 @@ const EFFECT_LENGTHS := {
 	"relay_interrupted": 0.65,
 	"relay_link_broken": 0.42,
 	"relay_marshal_separated": 0.55,
+	"wreckmaster_slam": 0.42,
+	"wreckmaster_slam_miss": 0.55,
 }
-const RELAY_EFFECTS := {
+const ENCOUNTER_EFFECTS := {
 	"relay_interrupted": "relay_interrupted",
 	"relay_link_broken": "relay_link_broken",
 	"relay_marshal_interrupted": "relay_interrupted",
 	"relay_marshal_separated": "relay_marshal_separated",
 	"crown_regent_interrupted": "relay_interrupted",
 	"crown_link_separated": "relay_marshal_separated",
+	"dock_winch_interrupted": "relay_interrupted",
+	"wreckmaster_slam": "wreckmaster_slam",
+	"wreckmaster_slam_miss": "wreckmaster_slam_miss",
 }
 
 var units: Array = []
@@ -90,7 +100,7 @@ func present(units_data: Array, events: Array) -> void:
 		var tile: String = event.get("tile", "")
 		if tile == "relay_link_broken" and str(event.target).begins_with("crown_regent"):
 			continue
-		var kind: String = RELAY_EFFECTS.get(tile, event.get("kind", ""))
+		var kind: String = ENCOUNTER_EFFECTS.get(tile, event.get("kind", ""))
 		if not EFFECT_LENGTHS.has(kind):
 			continue
 		if kind in ["relay_marshal_separated", "relay_interrupted"]:
@@ -103,6 +113,11 @@ func present(units_data: Array, events: Array) -> void:
 		var effect: Dictionary = event.duplicate()
 		effect["kind"] = kind
 		effect["age"] = 0.0
+		if kind == "wreckmaster_slam":
+			for unit: Dictionary in units:
+				if unit.id == event.actor:
+					effect["slam_radius"] = unit.get("wreckmaster_slam_radius", 0.0)
+					break
 		_effects.append(effect)
 	queue_redraw()
 
@@ -138,7 +153,7 @@ func _draw() -> void:
 	draw_rect(Rect2(Vector2.ZERO, size), INK)
 	var board_size := Vector2(minf(size.x - 4.0, (size.y - 4.0) * 2.36), size.y - 4.0)
 	var board := Rect2((size - board_size) * 0.5, board_size)
-	var field_top := 0.40 if location == "crown" else 0.27
+	var field_top := 0.40 if location in ["crown", "moonwreck"] else 0.27
 	var field := Rect2(board.position + board.size * Vector2(0.10, field_top), board.size * Vector2(0.80, 0.87 - field_top))
 	var sprite_scale := minf(field.size.x / WORLD_SIZE.x, field.size.y / WORLD_SIZE.y)
 	_draw_arena(board)
@@ -189,7 +204,7 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		texture = _textures.get("clockwork")
 	var radius := maxf(8.0, float(unit.radius) * unit_scale)
 	var model_height := 132.0
-	if art_key in ["tempered_colossus", "crown_regent"]:
+	if art_key in ["tempered_colossus", "crown_regent", "wreckmaster"]:
 		model_height = 218.0
 	elif art_key in ["marshal", "regent", "glass_twin", "prism_warden", "relay_captain", "relay_marshal"]:
 		model_height = 191.0
@@ -273,6 +288,11 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	if role in ["relay_left", "relay_right"]:
 		var caption := "LEFT GUARD" if role == "relay_left" else "RIGHT GUARD"
 		_draw_centered(caption, bar.get_center() - Vector2(0.0, 9.0), 12, _relay_link_color(unit))
+	var wreck_phase: int = unit.get("wreckmaster_phase", 0)
+	if wreck_phase > 0:
+		_draw_centered("HARPOON" if wreck_phase == 1 else "DECK SLAM", bar.get_center() - Vector2(0.0, 9.0), 14, GOLD)
+	elif not str(unit.get("dock_winch_ally", "")).is_empty():
+		_draw_centered("WINCH PULL", bar.get_center() - Vector2(0.0, 9.0), 13, DOCK_WINCH_COLOR)
 
 
 func _draw_relay_charge(unit: Dictionary, point: Vector2, radius: float, bar: Rect2) -> void:
@@ -347,18 +367,34 @@ func _draw_intents(field: Rect2) -> void:
 		if unit.hp <= 0 or target_id.is_empty():
 			continue
 		var start := _project(_positions.get(unit.id, unit.pos), field)
+		var wreck_phase: int = unit.get("wreckmaster_phase", 0)
+		if wreck_phase == 2:
+			var slam_radius: float = unit.get("wreckmaster_slam_radius", 0.0)
+			_draw_sweep_warning(start, slam_radius * field.size / WORLD_SIZE)
+			continue
 		var sweep_radius: float = unit.get("colossus_sweep_radius", 0.0)
 		if sweep_radius > 0.0 and int(unit.get("colossus_stage", 0)) > 0:
 			_draw_sweep_warning(start, sweep_radius * field.size / WORLD_SIZE)
 			continue
 		var secondary: String = unit.get("prism_secondary", "")
+		var winch_ally: String = unit.get("dock_winch_ally", "")
+		if not winch_ally.is_empty():
+			for ally: Dictionary in units:
+				if ally.id == winch_ally and ally.hp > 0:
+					var rope_end := _project(_positions.get(ally.id, ally.pos), field)
+					draw_line(start, rope_end, Color(INK, 0.82), 5.0, true)
+					draw_line(start, rope_end, DOCK_WINCH_COLOR, 2.0, true)
+					start = rope_end
+					break
 		for target in units:
 			if target.hp <= 0 or target.id not in [target_id, secondary]:
 				continue
 			var end := _project(_positions.get(target.id, target.pos), field)
 			var warning := ENEMY_COLOR.darkened(0.34)
-			if unit.get("relay_charge_active", false):
+			if unit.get("relay_charge_active", false) or wreck_phase == 1:
 				warning = GOLD
+			elif not winch_ally.is_empty():
+				warning = DOCK_WINCH_COLOR
 			elif target.id == secondary:
 				warning = TELEPORT_COLOR.darkened(0.21)
 			draw_dashed_line(start, end, Color(warning, 0.8), 2.0, 6.0)
@@ -402,17 +438,23 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			if kind in ["relay_interrupted", "relay_link_broken", "relay_marshal_separated"]:
 				color = RELAY_SHIELD_COLOR
 			draw_arc(to_point, 7.0 + progress * 24.0, 0.0, TAU, 24, Color(color, opacity), 2.0, true)
+		"wreckmaster_slam":
+			var radius: float = effect.get("slam_radius", 0.0)
+			var impact_radius := radius * field.size / WORLD_SIZE * lerpf(0.4, 1.0, progress)
+			_draw_ellipse(from_point, impact_radius, Color(ENEMY_COLOR, opacity * 0.22))
 
 
 func _draw_feedback(effect: Dictionary, field: Rect2) -> void:
 	var kind: String = effect.kind
-	if kind not in ["hit", "miss", "relay_interrupted", "relay_link_broken", "relay_marshal_separated"]:
+	if kind not in ["hit", "miss", "relay_interrupted", "relay_link_broken", "relay_marshal_separated", "wreckmaster_slam_miss"]:
 		return
 	var point := _project(effect.to, field)
 	var progress := float(effect.age) / float(EFFECT_LENGTHS[kind])
 	var opacity := 1.0 - progress
 	var label := "MISS"
 	var color := WHITE
+	if kind == "wreckmaster_slam_miss":
+		label = "SLAM MISSED"
 	if kind in ["relay_interrupted", "relay_link_broken", "relay_marshal_separated"]:
 		label = {"relay_interrupted": "INTERRUPTED", "relay_link_broken": "LINK BROKEN", "relay_marshal_separated": "SEPARATED"}[kind]
 		color = RELAY_SHIELD_COLOR

@@ -17,6 +17,10 @@ const RELAY_MARSHAL_CHARGE_BEATS := 8
 const CROWN_CHARGE_BEATS := 8
 const CROWN_LINK_RECONNECT_BEATS := 5
 const CROWN_TARGET_RULES := ["relay_left", "relay_right", "relay_regent"]
+const DOCK_WINCH_TICKS := 42
+const WRECKMASTER_HARPOON_TICKS := 2 * TICKS_PER_BEAT - 1
+const WRECKMASTER_SLAM_TICKS := 3 * TICKS_PER_BEAT
+const WRECKMASTER_SLAM_RADIUS := 126.0
 const TARGET_RULES := ["nearest", "farthest", "lowest_hp", "highest_hp"]
 const RANGED_TILES := ["pull", "gravity_hook", "shot", "hook_bash", "graviton", "event_horizon", "meteor_seal"]
 const BASH_TIERS := [
@@ -91,7 +95,15 @@ const CAMPAIGN_ENEMIES := {
 		"displacement": 0.82},
 	"crown_regent": {"name": "The Crown Regent", "art": "crown_regent", "hp": 1100, "radius": 49.0, "speed": 90.0,
 		"spacing": 116.0, "reach": 220.0, "damage": 33, "first": 116, "cooldown": 115, "windup": 45, "push": 330.0,
-		"displacement": 0.72}
+		"displacement": 0.72},
+	"dock_recruit": {"name": "Dockhand", "art": "dock_bruiser", "hp": 33, "radius": 22.0, "speed": 90.0,
+		"spacing": 85.0, "reach": 130.0, "damage": 4, "first": 118, "cooldown": 178, "windup": 29},
+	"dock_bruiser": {"name": "Dock Bruiser", "art": "dock_bruiser", "hp": 112, "radius": 31.0, "speed": 69.0,
+		"spacing": 92.0, "reach": 147.0, "damage": 10, "first": 130, "cooldown": 151, "windup": 32},
+	"dock_winch": {"name": "Winch Operator", "art": "dock_winch", "hp": 60, "radius": 24.0, "speed": 73.0,
+		"spacing": 102.0, "reach": 147.0, "damage": 4, "first": 52, "cooldown": 190, "windup": 34},
+	"wreckmaster": {"name": "The Wreckmaster", "art": "wreckmaster", "hp": 386, "radius": 42.0, "speed": 87.0,
+		"spacing": 112.0, "reach": 177.0, "damage": 10, "first": 128, "cooldown": 140, "windup": 37}
 }
 
 const TILES := {
@@ -265,6 +277,9 @@ func _start_campaign(options: Dictionary) -> void:
 	if options.get("location", "brass") == "crown":
 		_start_crown_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""))
 		return
+	if options.get("location", "brass") == "moonwreck":
+		_start_moonwreck_encounter(encounter, rng, y)
+		return
 	var health_scale: float = {"medium": [1.12, 2.15, 2.15], "hard": [1.21, 2.35, 3.0]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	var damage_scale: float = {"medium": [1.07, 1.58, 1.58], "hard": [1.10, 1.64, 1.80]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	match encounter:
@@ -365,6 +380,11 @@ func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_sca
 		enemy["crown_breakers"] = {}
 		enemy["crown_guard_ids"] = []
 		enemy["crown_charge_interrupted"] = false
+	elif kind == "dock_winch":
+		enemy["dock_winch_ally"] = ""
+	elif kind == "wreckmaster":
+		enemy["wreckmaster_phase"] = 0
+		enemy["wreckmaster_slam_radius"] = WRECKMASTER_SLAM_RADIUS
 	if kind == "regent":
 		enemy["regent_sealed"] = false
 		enemy["regent_seals_left"] = 0
@@ -414,6 +434,21 @@ func _start_crown_regent(y: float) -> void:
 		guard["crown_regent_id"] = regent.id
 		regent.crown_guard_ids.append(guard.id)
 	regent["crown_role"] = "relay_regent"
+
+
+func _start_moonwreck_encounter(encounter: String, rng: RandomNumberGenerator, y: float) -> void:
+	match encounter:
+		"battle":
+			var flank := -1.0 if rng.randi_range(0, 1) == 0 else 1.0
+			_add_campaign_enemy("dock_bruiser", Vector2(633, y + flank * 42.0), 0, 0.65)
+			_add_campaign_enemy("dock_winch", Vector2(563, y - flank * 28.0), 0, 0.86)
+		"elite":
+			_add_campaign_enemy("dock_bruiser", Vector2(655, y + 42.0), 0, 1.18, 1.15)
+			_add_campaign_enemy("dock_winch", Vector2(571, y - 31.0), 0, 1.12)
+		"boss":
+			_add_campaign_enemy("wreckmaster", Vector2(595, 265.0))
+		_:
+			_add_campaign_enemy("dock_recruit", Vector2(521, y))
 
 
 func step() -> Array[Dictionary]:
@@ -811,7 +846,9 @@ func _gravity_strike(actor: Dictionary, target: Dictionary, tile_id: String, rad
 	for enemy in _enemies_in_area(actor, impact, radius):
 		if enemy.id == target.id or collapse:
 			_damage(actor, enemy, TILES[tile_id].damage, tile_id)
-		if collapse and enemy.intent != "" and enemy.get("colossus_stage", 0) == 0 and not enemy.get("relay_charge_active", false):
+		if collapse and enemy.intent != "" and enemy.get("colossus_stage", 0) == 0 \
+				and not enemy.get("relay_charge_active", false) and enemy.get("wreckmaster_phase", 0) == 0 \
+				and enemy.get("dock_winch_ally", "") == "":
 			enemy.intent = ""
 			enemy.next_attack = tick + TICKS_PER_BEAT * 3
 			_emit("interrupt", "%s interrupts %s." % [TILES[tile_id].label, enemy.name], actor, enemy, tile_id)
@@ -874,6 +911,10 @@ func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: Str
 			actor, target, "colossus_displaced")
 	elif target.get("relay_charge_active", false) and actor.side == "hero" and force > 100.0:
 		_interrupt_relay_charge(actor, target, kind)
+	elif target.get("dock_winch_ally", "") != "" and actor.side == "hero" and force > 100.0:
+		_clear_winch_intent(target)
+		target.next_attack = tick + TICKS_PER_BEAT * 5
+		_emit("interrupt", "%s interrupts Winch Pull." % actor.name, actor, target, "dock_winch_interrupted")
 
 
 func _teleport(actor: Dictionary, target: Dictionary) -> bool:
@@ -919,11 +960,21 @@ func _run_enemies() -> void:
 		elif enemy.get("sprite") in ["relay_captain", "relay_marshal"] and tick % LOOP_TICKS == TICKS_PER_BEAT + 1:
 			_begin_relay_charge(enemy)
 			continue
+		elif enemy.get("sprite") == "wreckmaster" and tick % LOOP_TICKS == TICKS_PER_BEAT + 1:
+			_begin_wreckmaster_harpoon(enemy)
+			continue
 		if enemy.intent != "":
+			var winch_ally: String = enemy.get("dock_winch_ally", "")
+			if winch_ally != "" and _find_unit(winch_ally).get("hp", 0) <= 0:
+				_clear_winch_intent(enemy)
+				enemy.next_attack = tick + TICKS_PER_BEAT
+				continue
 			if tick >= enemy.intent_tick:
 				_resolve_intent(enemy)
 			continue
 		if tick < enemy.next_attack:
+			continue
+		if enemy.has("dock_winch_ally") and _begin_winch_pull(enemy):
 			continue
 		var rule := _attack_target_rule(enemy)
 		var target := _select(enemy, rule)
@@ -955,6 +1006,12 @@ func _resolve_intent(enemy: Dictionary) -> void:
 	var attack: Dictionary = enemy.get("attack", {})
 	enemy.intent = ""
 	enemy.next_attack = tick + int(attack.get("cooldown", 116 if enemy.id == "scout" else 138))
+	if enemy.get("dock_winch_ally", "") != "":
+		_resolve_winch_pull(enemy, intent)
+		return
+	if enemy.get("wreckmaster_phase", 0) > 0:
+		_resolve_wreckmaster(enemy, intent)
+		return
 	if enemy.get("relay_charge_active", false):
 		var marshal: bool = enemy.get("sprite") == "relay_marshal"
 		enemy.relay_charge_active = false
@@ -1021,6 +1078,79 @@ func _sweep(enemy: Dictionary, attack: Dictionary, extra_reach: float, bonus_dam
 			_displace("push", enemy, target, "enemy_attack", target.pos - enemy.pos, attack.push)
 	if affected.is_empty():
 		_emit("miss", "%s's sweep hits no one." % enemy.name, enemy, enemy, "enemy_attack")
+
+
+func _begin_winch_pull(enemy: Dictionary) -> bool:
+	var target := _select(enemy, "nearest")
+	if target.is_empty():
+		return false
+	var origin: Vector2 = enemy.pos
+	for ally in units:
+		if ally.hp <= 0 or not ally.id.begins_with("dock_bruiser") or origin.distance_squared_to(ally.pos) > 300.0 * 300.0:
+			continue
+		enemy.dock_winch_ally = ally.id
+		enemy.intent = target.id
+		enemy.intent_tick = tick + DOCK_WINCH_TICKS
+		_emit("intent", "Winch Pull in 2 beats. The Operator is drawing the Bruiser toward %s." % target.name,
+			enemy, target, "dock_winch_windup")
+		return true
+	return false
+
+
+func _resolve_winch_pull(enemy: Dictionary, intent: String) -> void:
+	var ally := _find_unit(enemy.dock_winch_ally)
+	_clear_winch_intent(enemy)
+	var target := _find_unit(intent)
+	if ally.is_empty() or ally.hp <= 0 or target.is_empty() or target.hp <= 0:
+		return
+	var offset: Vector2 = target.pos - ally.pos
+	var clearance: float = ally.radius + target.radius + 24.0
+	if offset.length() <= clearance:
+		return
+	_emit("intent", "The Winch Operator pulls the Bruiser toward %s." % target.name, enemy, ally, "dock_winch_pull")
+	var force := minf(810.0, sqrt(2.0 * IMPULSE_DECAY * (offset.length() - clearance)))
+	_displace("pull", enemy, ally, "dock_winch", offset, force)
+
+
+func _clear_winch_intent(enemy: Dictionary) -> void:
+	enemy.dock_winch_ally = ""
+	enemy.intent = ""
+	enemy.intent_tick = 0
+
+
+func _begin_wreckmaster_harpoon(enemy: Dictionary) -> void:
+	var target := _select(enemy, "nearest")
+	if target.is_empty():
+		return
+	enemy.wreckmaster_phase = 1
+	enemy.intent = target.id
+	enemy.intent_tick = tick + WRECKMASTER_HARPOON_TICKS
+	_emit("intent", "Harpoon at the end of beat 3. Expect a close Deck Slam next.", enemy, target, "wreckmaster_harpoon")
+
+
+func _resolve_wreckmaster(enemy: Dictionary, intent: String) -> void:
+	var target := _find_unit(intent)
+	if enemy.wreckmaster_phase == 1:
+		if not target.is_empty() and target.hp > 0:
+			var offset: Vector2 = enemy.pos - target.pos
+			var travel := maxf(0.0, offset.length() - 73.0)
+			if travel > 0.0:
+				_emit("intent", "The Wreckmaster harpoons %s." % target.name, enemy, target, "wreckmaster_pull")
+				var force := minf(950.0, sqrt(2.0 * IMPULSE_DECAY * travel))
+				_displace("pull", enemy, target, "wreckmaster_harpoon", offset, force)
+		enemy.wreckmaster_phase = 2
+		enemy.intent = intent
+		enemy.intent_tick = tick + WRECKMASTER_SLAM_TICKS
+		_emit("intent", "Deck Slam at the end of beat 6. Push the Wreckmaster away or brace.", enemy, target, "wreckmaster_slam_windup")
+		return
+	enemy.wreckmaster_phase = 0
+	enemy.intent_tick = 0
+	_emit("intent", "The Wreckmaster slams the deck.", enemy, enemy, "wreckmaster_slam")
+	var affected := _enemies_in_area(enemy, enemy.pos, enemy.wreckmaster_slam_radius)
+	if affected.is_empty():
+		_emit("miss", "Deck Slam misses. No hero is close enough.", enemy, target, "wreckmaster_slam_miss")
+	for hero in affected:
+		_damage(enemy, hero, 15, "enemy_attack")
 
 
 func _begin_relay_charge(enemy: Dictionary) -> void:
@@ -1259,6 +1389,12 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 			if target.has("relay_combo_stage"):
 				target.relay_combo_stage = 0
 				target.relay_breaker = ""
+		if target.has("dock_winch_ally"):
+			target.dock_winch_ally = ""
+			target.intent_tick = 0
+		if target.has("wreckmaster_phase"):
+			target.wreckmaster_phase = 0
+			target.intent_tick = 0
 		var relay := target if target.has("relay_link_target") else _find_unit(target.get("relay_shield_source", ""))
 		if not relay.is_empty() and relay.relay_link_target != "":
 			_break_relay_link(relay)

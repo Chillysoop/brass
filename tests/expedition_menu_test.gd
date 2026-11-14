@@ -30,6 +30,7 @@ func _run() -> void:
 		await _check_navigation()
 		await _check_chart()
 		await _check_crown_entry()
+		await _check_moonwreck_entry()
 		await _check_glass_hard_entry()
 	game.queue_free()
 	await process_frame
@@ -49,7 +50,7 @@ func _check_navigation() -> void:
 	_check(game.run.data.is_empty(), "Starting from the title must open region selection before creating a run.")
 	_check_disabled(menu, "Region_glass", "Locked")
 	_check_disabled(menu, "Region_crown", "Locked")
-	_check_disabled(menu, "Region_moonwreck", "Coming soon")
+	_check_disabled(menu, "Region_moonwreck", "Locked")
 	await _press_named(menu, "Back")
 	await _press_named(menu, "NewExpedition")
 	await _press_named(menu, "Region_brass")
@@ -149,6 +150,19 @@ func _check_crown_entry() -> void:
 	_check(game.run.data.get("phase") == "hero" and game.run.data.get("location") == "crown"
 		and game.run.data.get("difficulty") == "hard", "Crown Hard should start from the expedition menu after its unlock.")
 	_check(game.run.abandon_run(), "Close the test Crown Hard expedition.")
+
+
+func _check_moonwreck_entry() -> void:
+	game.run.profile.moonwreck_easy_unlocked = true
+	game.run_menu()
+	await _press_named(menu, "NewExpedition")
+	await _press_named(menu, "Region_moonwreck")
+	_check_disabled(menu, "Difficulty_medium", "Coming soon")
+	_check_disabled(menu, "Difficulty_hard", "Coming soon")
+	await _press_named(menu, "Difficulty_easy")
+	_check(game.run.data.get("phase") == "hero" and game.run.data.get("location") == "moonwreck"
+		and game.run.data.get("difficulty") == "easy", "Moonwreck Easy should start from the expedition menu after its unlock.")
+	_check(game.run.abandon_run(), "Close the test Moonwreck expedition.")
 
 
 func _check_glass_hard_entry() -> void:

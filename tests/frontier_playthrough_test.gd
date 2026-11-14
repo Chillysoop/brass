@@ -96,6 +96,8 @@ func _run() -> void:
 	_check(game.run.finish_run(), "Close the Crown Relay victory recap.")
 	var crown_medium_fights := _new_route_playthrough(game, "medium", "crown")
 	_check(game.run.finish_run(), "Close the Crown Relay Medium victory recap.")
+	var moonwreck_fights := _new_route_playthrough(game, "easy", "moonwreck")
+	_check(game.run.finish_run(), "Close the Moonwreck Docks victory recap.")
 	var crown_hard_fights := _new_route_playthrough(game, "hard", "crown")
 	_check(game.run.finish_run(), "Close the Crown Relay Hard victory recap.")
 	var glass_hard_fights := _new_route_playthrough(game, "hard", "glass")
@@ -107,8 +109,8 @@ func _run() -> void:
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Playthroughs passed: Brass Easy %d fights (%d HP), Medium %d (%d HP combined), Brass Hard %d, Glass Easy %d, Glass Medium %d, Glass Hard %d, Crown Easy %d, Crown Medium %d, Crown Hard %d." % [
-			battles, easy_hp, medium.fights, medium.hp, hard_fights, glass_fights, glass_medium_fights, glass_hard_fights, crown_fights, crown_medium_fights, crown_hard_fights])
+		print("Playthroughs passed: Brass Easy %d fights (%d HP), Medium %d (%d HP combined), Brass Hard %d, Glass Easy %d, Glass Medium %d, Glass Hard %d, Crown Easy %d, Crown Medium %d, Crown Hard %d, Moonwreck Easy %d." % [
+			battles, easy_hp, medium.fights, medium.hp, hard_fights, glass_fights, glass_medium_fights, glass_hard_fights, crown_fights, crown_medium_fights, crown_hard_fights, moonwreck_fights])
 	game.queue_free()
 	await process_frame
 	quit(0 if failures.is_empty() else 1)
@@ -278,6 +280,11 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 					var boss_id: String = {"easy": "relay_captain", "medium": "relay_marshal", "hard": "crown_regent"}[difficulty]
 					_check(saved.load_save(save_path) and saved.encounter().get("boss_id") == boss_id
 						and saved.loadout.lanes == run.loadout.lanes, "Crown Relay must resume its saved boss setup.")
+				if final and location == "moonwreck":
+					_arrange_wreckmaster_bash(game)
+					var saved := FrontierRun.new()
+					_check(saved.load_save(save_path) and saved.encounter().get("boss_id") == "wreckmaster"
+						and saved.loadout.lanes == run.loadout.lanes, "Moonwreck Docks must resume its saved boss setup.")
 				if run.data.node.type == "boss":
 					boss_party_sizes.append(game.lanes.size())
 				game._action()
@@ -313,6 +320,13 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 					_check(game.sim.trace.any(func(event: Dictionary):
 						return event.tile == interruption and (difficulty == "easy" or event.amount == 1)),
 						"The expedition loadout should interrupt the final Crown Relay boss.")
+				if final and location == "moonwreck":
+					var opening: Array = game.sim.trace.filter(func(event: Dictionary):
+						return event.tick <= 6 * ArenaSim.TICKS_PER_BEAT)
+					_check(opening.any(func(event: Dictionary): return event.tile == "wreckmaster_pull")
+						and opening.any(func(event: Dictionary): return event.kind == "push" and event.tile == "bash" and event.beat == 5)
+						and opening.any(func(event: Dictionary): return event.tile == "wreckmaster_slam_miss"),
+						"An earned Bash should knock the Wreckmaster out of its first Deck Slam range.")
 				game._action()
 			"reward":
 				var chosen: String = run.data.offers[0]
@@ -360,6 +374,10 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 				var saved := FrontierRun.new()
 				_check(saved.load_save(save_path) and saved.profile.crown_medium_unlocked and saved.data.get("result") == "victory",
 					"Crown Easy should save its victory and the Crown Medium unlock.")
+			elif location == "moonwreck":
+				var saved := FrontierRun.new()
+				_check(saved.load_save(save_path) and saved.profile.moonwreck_medium_unlocked and saved.data.get("result") == "victory",
+					"Moonwreck Easy should save its victory and the Moonwreck Medium unlock.")
 			else:
 				_check(run.profile.glass_medium_unlocked, "Glass Easy should unlock Glass Medium.")
 		"medium":
@@ -382,6 +400,38 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 			else:
 				_check(run.profile.brass_hard_cleared, "Brass Hard should record its clear.")
 	return fights
+
+func _arrange_wreckmaster_bash(game: Control) -> void:
+	var lane: Array = game.lanes[0]
+	var bash_index := lane.find_custom(func(tile: Dictionary): return tile.id == "bash")
+	_check(bash_index >= 0, "The Moonwreck playthrough should retain the starter Bash.")
+	if bash_index < 0:
+		return
+	var bash: Dictionary = lane.pop_at(bash_index)
+	var remaining := lane.duplicate()
+	lane.assign([bash])
+	bash.start = 3
+	var next_beat := 5
+	for tile: Dictionary in remaining:
+		var width: int = ArenaSim.TILES[tile.id].width
+		if next_beat + width <= ArenaSim.BEATS:
+			tile.start = next_beat
+			lane.append(tile)
+			next_beat += width
+			continue
+		var stowed := false
+		for row: Array in game.storage_rows:
+			for beat in range(TilePacking.STORAGE_COLUMNS):
+				if TilePacking.can_place(row, tile.id, beat, TilePacking.STORAGE_COLUMNS):
+					tile.start = beat
+					row.append(tile)
+					stowed = true
+					break
+			if stowed:
+				break
+		_check(stowed, "The Moonwreck playthrough should retain all earned tiles.")
+	game._save_loadout()
+
 
 func _arrange_crown_combo(game: Control) -> void:
 	var pull: Dictionary = {}

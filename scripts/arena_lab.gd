@@ -57,6 +57,7 @@ var status: Label
 var log_text: Label
 var colossus_status: Label
 var relay_status: Label
+var dock_status: Label
 var setup_hint: Label
 var playheads: Array[ColorRect] = []
 var log_lines: Array[String] = []
@@ -180,6 +181,11 @@ func _build() -> void:
 	relay_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	relay_status.hide()
 	stack.add_child(relay_status)
+	dock_status = _label("", 15, TEAL)
+	dock_status.name = "DockStatus"
+	dock_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	dock_status.hide()
+	stack.add_child(dock_status)
 	lane_stack = VBoxContainer.new()
 	lane_stack.add_theme_constant_override("separation", 5)
 	stack.add_child(lane_stack)
@@ -326,6 +332,7 @@ func _update_controls() -> void:
 		log_text.tooltip_text = ""
 	_update_colossus_status()
 	_update_relay_status()
+	_update_dock_status()
 	for head in playheads:
 		var board := head.get_parent() as Control
 		head.visible = state != "setup"
@@ -484,6 +491,49 @@ func _marshal_charge_instruction(marshal: Dictionary) -> String:
 				return "2 of 2 · Push the Marshal with " + " or ".join(eligible)
 			return "2 of 2 · A different hero must push the Marshal"
 	return "Push the Marshal with any hero"
+
+func _update_dock_status() -> void:
+	dock_status.hide()
+	if not campaign or not encounter_setup or run.data.get("location") != "moonwreck":
+		return
+	for unit: Dictionary in sim.units:
+		if unit.hp <= 0:
+			continue
+		var instruction := ""
+		var color := TEAL
+		var remaining := maxi(0, int(unit.get("intent_tick", 0)) - sim.tick)
+		var time := "%.1f beats left" % (float(remaining) / ArenaSim.TICKS_PER_BEAT)
+		match unit.get("sprite", ""):
+			"wreckmaster":
+				match int(unit.get("wreckmaster_phase", 0)):
+					1:
+						instruction = "Harpoon · Pulls %s close · %s" % [_combatant_name(unit.intent, "the marked hero"), time]
+						color = GOLD
+					2:
+						instruction = "Deck Slam · Hits inside the marked circle · %s" % time
+						color = RUST
+					_:
+						instruction = "Harpoon → Deck Slam · Push after the pull to create distance, or Guard before impact."
+			"dock_winch":
+				var ally: String = unit.get("dock_winch_ally", "")
+				if not ally.is_empty():
+					instruction = "Winch Pull · %s toward %s · Push or pull the Operator to interrupt · %s" % [
+						_combatant_name(ally, "Bruiser"), _combatant_name(unit.intent, "your hero"), time]
+					color = GOLD
+				else:
+					instruction = "Winch Operator · Can pull a bruiser toward your hero."
+		if not instruction.is_empty():
+			dock_status.text = instruction
+			dock_status.tooltip_text = instruction
+			dock_status.add_theme_color_override("font_color", color)
+			dock_status.show()
+			return
+
+func _combatant_name(id: String, fallback: String) -> String:
+	for unit: Dictionary in sim.units:
+		if unit.id == id:
+			return unit.name
+	return fallback
 
 func _party_has_tiles() -> bool:
 	for index in range(lanes.size()):

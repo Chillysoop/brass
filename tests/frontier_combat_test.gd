@@ -39,6 +39,7 @@ func _initialize() -> void:
 	_check_crown_coordination()
 	_check_crown_marshal_combo()
 	_check_crown_regent_combo()
+	_check_moonwreck_combat()
 	_check_regent_seals()
 	for failure in failures:
 		printerr(failure)
@@ -306,6 +307,49 @@ func _check_crown_regent_combo() -> void:
 	var interrupts: Array = sim.trace.filter(func(event: Dictionary) -> bool: return event.tile == "crown_regent_interrupted")
 	_check(not regent.relay_charge_active and interrupts.size() == 1 and interrupts[0].amount == 0,
 		"Defeating the guards leaves a normal Bash fallback without awarding a full interrupt")
+
+
+func _check_moonwreck_combat() -> void:
+	var options := {"location": "moonwreck", "encounter": "battle", "seed": 42, "hero": "warden"}
+	var sim := ArenaSim.new()
+	sim.start([[]], "solo", options)
+	for frame in range(94):
+		sim.step()
+	var bruiser: Dictionary = sim.units[1]
+	var operator: Dictionary = sim.units[2]
+	var hero: Dictionary = sim.units[0]
+	var impulse: Vector2 = bruiser.impulse
+	var toward_hero: Vector2 = hero.pos - bruiser.pos
+	_check(operator.get("sprite") == "dock_winch" and bruiser.get("sprite") == "dock_bruiser"
+		and impulse.dot(toward_hero) > 0.0 and _has_event(sim, "intent", "dock_winch_pull"),
+		"Winch Pull applies a real impulse to the allied Bruiser toward the hero")
+	sim.start([[{"id": "bash", "start": 2}]], "solo", options)
+	for frame in range(94):
+		sim.step()
+	_check(_has_event(sim, "interrupt", "dock_winch_interrupted") and not _has_event(sim, "intent", "dock_winch_pull"),
+		"Beat-4 Bash can interrupt the Winch Operator before the pull")
+
+	options.encounter = "boss"
+	options.boss_id = "wreckmaster"
+	sim.start([[{"id": "bash", "start": 3}]], "solo", options)
+	for frame in range(63):
+		sim.step()
+	var boss: Dictionary = sim.units[1]
+	_check(boss.get("sprite") == "wreckmaster" and _has_event(sim, "pull", "wreckmaster_harpoon")
+		and boss.wreckmaster_phase == 2 and boss.intent_tick == 126,
+		"Harpoon pulls the hero and telegraphs Deck Slam through beat 6")
+	for frame in range(63):
+		sim.step()
+	hero = sim.units[0]
+	var distance: float = hero.pos.distance_to(boss.pos)
+	_check(hero.hp == hero.max_hp and _has_event(sim, "miss", "wreckmaster_slam_miss")
+		and distance > boss.wreckmaster_slam_radius,
+		"Common Bash at beat 5 makes Deck Slam miss by moving the boss out of actual reach")
+	sim.start([[{"id": "guard", "start": 3}]], "solo", options)
+	for frame in range(126):
+		sim.step()
+	_check(sim.units[0].hp == 95 and not _has_event(sim, "miss", "wreckmaster_slam_miss"),
+		"Guard reduces Deck Slam's damage when the hero stays within reach")
 
 
 func _fight(hero: String, encounter: String, hp: int, tile_ids: Array, relics: Array) -> RefCounted:

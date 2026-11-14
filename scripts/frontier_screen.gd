@@ -52,17 +52,23 @@ const BOSS_BRIEFS := {
 	"crown_regent": {
 		"portrait": "crown_regent",
 		"hint": "Crown Charge starts on beat 2 and strikes at the end of beat 9. Use a different hero to displace each Guard, then push the Regent with your third hero before the links return. Use Left Guard, Right Guard, and Crown Regent in the tile targeting menu."
+	},
+	"wreckmaster": {
+		"portrait": "wreckmaster",
+		"hint": "Harpoon pulls its target close at the end of beat 3. Deck Slam hits inside the marked circle at the end of beat 6. Time a push between them to create distance, or use Guard before impact."
 	}
 }
 const MAP_ART := {
 	"brass": "res://assets/frontier-map.webp",
 	"glass": "res://assets/glass-map.webp",
 	"crown": "res://assets/crown-map.webp",
+	"moonwreck": "res://assets/moonwreck-map.webp",
 }
 const ENCOUNTER_ART := {
 	"brass": "clockwork",
 	"glass": "glass_hunter",
 	"crown": "relay_guard",
+	"moonwreck": "dock_bruiser",
 }
 
 var _host
@@ -334,6 +340,8 @@ func _combat() -> void:
 	var default_hint := "Arrange tiles, choose targeting rules, and check your storage before you start."
 	if location == "crown":
 		default_hint = "Relay Guards protect nearby allies. Push or pull either fighter out of range to break the link, or take out the Guard."
+	elif location == "moonwreck":
+		default_hint = "A Winch Operator can pull a bruiser toward your hero. Push or pull the Operator during Winch Pull to interrupt, or defeat it to stop future pulls."
 	var instruction: String = brief.get("hint", default_hint)
 	var detail := _choice(region, "Prepare for battle", instruction, "Open arena", func(): _host.run_show_arena())
 	var default_portrait: String = ENCOUNTER_ART.get(location, ENCOUNTER_ART.brass)
