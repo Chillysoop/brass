@@ -98,6 +98,12 @@ const EFFECT_LENGTHS := {
 	"lance_travel_spent": 0.34,
 	"lance_return_ready": 0.40,
 	"lance_return_spent": 0.34,
+	"counter": 0.38,
+	"arc": 0.40,
+	"ranged_warning": 0.33,
+	"bell_ring": 0.49,
+	"tar_slow": 0.45,
+	"fuse_disarmed": 0.55,
 }
 const MARK_COLOR := Color("#e4adff")
 const RELIC_EFFECTS := ["afterimage", "barrage_rack", "siege_fuse", "stepped_gear", "twin_bell", "switchback_lens", "longshot_prism"]
@@ -118,6 +124,8 @@ const ENCOUNTER_EFFECTS := {
 	"admiral_unanchored": "tidekeeper_unanchored",
 	"admiral_reversed": "admiral_reversed",
 	"admiral_interrupted": "relay_interrupted",
+	"powder_runner_disarmed": "fuse_disarmed",
+	"reef_diver_interrupted": "relay_interrupted",
 }
 const FLOATING_CUES := {
 	"relay_interrupted": "INTERRUPTED",
@@ -125,6 +133,7 @@ const FLOATING_CUES := {
 	"relay_marshal_separated": "SEPARATED",
 	"tidekeeper_unanchored": "UNANCHORED",
 	"admiral_reversed": "UNDERTOW REVERSED",
+	"fuse_disarmed": "DISARMED",
 }
 
 var units: Array = []
@@ -146,6 +155,8 @@ func _ready() -> void:
 		var path: String = SPRITE_PATHS[key]
 		if ResourceLoader.exists(path, "Texture2D"):
 			_textures[key] = ResourceLoader.load(path, "Texture2D") as Texture2D
+	for id: String in GameIcons.GLASS_PILOT_ART.keys() + GameIcons.MOON_PILOT_ART.keys():
+		_textures[id] = GameIcons.pilot_enemy_art(id)
 	resized.connect(queue_redraw)
 
 
@@ -339,6 +350,9 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	draw_rect(Rect2(bar.position, Vector2(bar.size.x * health_ratio, bar.size.y)), accent)
 	if float(unit.get("guard", 0)) > 0.0:
 		draw_line(bar.position + Vector2(0.0, -2.0), bar.position + Vector2(bar.size.x, -2.0), GOLD, 2.0, true)
+	for index in range(int(unit.get("furnace_heat", 0))):
+		var pip := Vector2(bar.end.x + 5.0 + index * 6.0, bar.get_center().y)
+		draw_circle(pip, 2.4, ENEMY_COLOR.lightened(0.2), true, -1.0, true)
 	if _windups.has(unit.id):
 		var window: Vector2i = _windups[unit.id]
 		var charge := clampf(inverse_lerp(float(window.x), float(window.y), float(combat_tick)), 0.0, 1.0)
@@ -346,6 +360,12 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		draw_rect(gauge.grow(1), INK)
 		draw_rect(gauge, Color("#593b29"))
 		draw_rect(Rect2(gauge.position, Vector2(gauge.size.x * charge, gauge.size.y)), GOLD.lerp(ENEMY_COLOR, charge * charge))
+		if unit.get("special_intent", "") == "powder_runner":
+			for index in range(2):
+				var pip := gauge.end + Vector2(5.0 + index * 6.0, -2.0)
+				draw_circle(pip, 2.3, HERO_COLOR if index < unit.get("powder_hits", 0) else GOLD, true, -1.0, true)
+	if int(unit.get("tar_slow_until", 0)) > combat_tick:
+		draw_arc(point, radius, 0.0, PI, 16, Color("#be915d"), 2.0, true)
 	if int(unit.get("arsenal_mark", {}).get("expires", -1)) >= combat_tick:
 		var center := bar.position + Vector2(-8.0, 2.5)
 		var diamond := PackedVector2Array([center + Vector2(0, -5), center + Vector2(4, 0),
@@ -487,6 +507,29 @@ func _draw_intents(field: Rect2) -> void:
 			_draw_sweep_warning(_project(unit.blast_center, field), float(unit.blast_radius) * field.size / WORLD_SIZE)
 			continue
 		var start := _project(_positions.get(unit.id, unit.pos), field)
+		var special: String = unit.get("special_intent", "")
+		if special == "glass_mirrorback":
+			var flicker := 0.75 + sin(_animation_time * 15.0) * 0.18
+			draw_arc(start, 24.0, 0.0, TAU, 32, Color(RELAY_SHIELD_COLOR, flicker), 3.0, true)
+			continue
+		if unit.has("pilot_ring_radius"):
+			_draw_sweep_warning(start, float(unit.pilot_ring_radius) * field.size / WORLD_SIZE)
+			continue
+		if unit.has("pilot_aim_point"):
+			var origin: Vector2 = unit.pos
+			var endpoint := origin.move_toward(unit.pilot_aim_point, float(unit.attack.reach))
+			var edge := (endpoint - origin).normalized().orthogonal() * float(unit.pilot_aim_width)
+			var upper := _project(origin + edge, field)
+			var lower := _project(origin - edge, field)
+			var upper_end := _project(endpoint + edge, field)
+			var lower_end := _project(endpoint - edge, field)
+			draw_colored_polygon(PackedVector2Array([upper, upper_end, lower_end, lower]), Color(ENEMY_COLOR, 0.16))
+			var cap := float(unit.pilot_aim_width) * field.size / WORLD_SIZE
+			_draw_ellipse(_project(origin, field), cap, Color(ENEMY_COLOR, 0.12))
+			_draw_ellipse(_project(endpoint, field), cap, Color(ENEMY_COLOR, 0.12))
+			draw_dashed_line(upper, upper_end, ENEMY_COLOR, 2.0, 6.0)
+			draw_dashed_line(lower, lower_end, ENEMY_COLOR, 2.0, 6.0)
+			continue
 		var wreck_phase: int = unit.get("wreckmaster_phase", 0)
 		var tide_phase: int = unit.get("tidekeeper_phase", 0)
 		var admiral_phase: int = unit.get("admiral_phase", 0)
@@ -517,9 +560,15 @@ func _draw_intents(field: Rect2) -> void:
 			if target.hp <= 0 or target.id not in marked:
 				continue
 			var end := _project(_positions.get(target.id, target.pos), field)
+			if special == "glass_shard_conductor":
+				_draw_sweep_warning(end, float(unit.attack.chain_radius) * field.size / WORLD_SIZE)
 			var warning := ENEMY_COLOR.darkened(0.34)
 			if unit.get("sprite") == "crown_mender":
 				warning = HERO_COLOR.darkened(0.16)
+			if special in ["glass_annealer", "patch_rigger"]:
+				warning = RELAY_SHIELD_COLOR
+			elif special in ["powder_runner", "signal_gunner", "glass_lens_arbalist"]:
+				warning = GOLD
 			if unit.get("relay_charge_active", false) or wreck_phase == 1 or tide_phase == 1 or admiral_phase == 1:
 				warning = GOLD
 			elif not winch_ally.is_empty():
@@ -559,6 +608,17 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 	var progress := float(effect.age) / float(EFFECT_LENGTHS[kind])
 	var opacity := 1.0 - progress
 	match kind:
+		"counter", "arc", "ranged_warning":
+			var lift := Vector2(0.0, -19.0)
+			var tint := GOLD if kind == "ranged_warning" else RELAY_SHIELD_COLOR
+			draw_line(from_point + lift, to_point + lift, Color(tint, opacity * opacity), 2.5, true)
+		"bell_ring":
+			var extent := float(effect.amount) * field.size / WORLD_SIZE
+			var ring := extent * lerpf(0.22, 1.0, progress)
+			draw_arc(to_point, ring.x, 0.0, TAU, 36, Color(GOLD, opacity), 2.0, true)
+		"tar_slow", "fuse_disarmed":
+			var tint := HERO_COLOR if kind == "fuse_disarmed" else Color("#be915d")
+			draw_arc(to_point, 9.0 + progress * 19.0, 0.0, TAU, 26, Color(tint, opacity), 2.0, true)
 		"hit":
 			if ArenaSim.is_ranged_tile(effect.tile):
 				var lift := Vector2(0.0, -19.0)

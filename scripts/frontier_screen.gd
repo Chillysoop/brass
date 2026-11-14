@@ -457,8 +457,8 @@ func _elite_preview_copy(node: Dictionary) -> String:
 		if unit.side != "enemy" or unit.name in enemies:
 			continue
 		enemies.append(unit.name)
-		if threat.is_empty() and ENEMY_HINTS.has(unit.sprite):
-			threat = ENEMY_HINTS[unit.sprite]
+		if threat.is_empty():
+			threat = _enemy_hint(unit)
 	var tile: Dictionary = ArenaSim.TILES[info.tile]
 	var formation := ", ".join(enemies)
 	if not threat.is_empty():
@@ -522,10 +522,15 @@ func _add_enemy_preview(card: VBoxContainer) -> void:
 		var enemy := _panel_stack(formation, Vector2.ZERO, true)
 		_add_portrait(enemy, unit.sprite)
 		enemy.add_child(_label(unit.name, 21, CREAM, true))
-		if ENEMY_HINTS.has(unit.sprite):
-			var hint := _label(ENEMY_HINTS[unit.sprite], 15, MUTED)
+		var attack_hint := _enemy_hint(unit)
+		if not attack_hint.is_empty():
+			var hint := _label(attack_hint, 15, MUTED)
 			hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			enemy.add_child(hint)
+
+
+func _enemy_hint(unit: Dictionary) -> String:
+	return unit.get("attack", {}).get("hint", ENEMY_HINTS.get(unit.sprite, ""))
 
 
 func _reward() -> void:
@@ -980,11 +985,14 @@ func _add_card_icon(card: VBoxContainer, key: String, accent := GOLD) -> void:
 
 
 func _add_portrait(card: VBoxContainer, id: String, height := 138) -> void:
-	var path := "res://assets/%s.png" % id
-	if not ResourceLoader.exists(path):
-		return
+	var texture := GameIcons.pilot_enemy_art(id)
+	if texture == null:
+		var path := "res://assets/%s.png" % id
+		if not ResourceLoader.exists(path, "Texture2D"):
+			return
+		texture = load(path) as Texture2D
 	var portrait := TextureRect.new()
-	portrait.texture = load(path) as Texture2D
+	portrait.texture = texture
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	portrait.custom_minimum_size.y = height

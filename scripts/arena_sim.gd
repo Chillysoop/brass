@@ -3,6 +3,9 @@ extends RefCounted
 const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
 const ClassExpansionTiles = preload("res://scripts/class_expansion_tiles.gd")
 const UniversalTileUpgrades = preload("res://scripts/universal_tile_upgrades.gd")
+const GlassPilotEnemies = preload("res://scripts/glass_pilot_enemies.gd")
+const MoonPilotEnemies = preload("res://scripts/moon_pilot_enemies.gd")
+const PILOT_ENEMY_SCRIPTS := {"glass": GlassPilotEnemies, "moonwreck": MoonPilotEnemies}
 
 const BEATS := 12
 const LANCE_TRAVEL_CAP := 80.0
@@ -588,14 +591,15 @@ func _start_campaign(options: Dictionary) -> void:
 	var segment := clampi(int(options.get("segment", 1)), 1, 3)
 	var encounter_seed := int(options.get("seed", 0))
 	var alternate := posmod(encounter_seed ^ (encounter_seed >> 8), 3) == 1
+	var formation: Array = options.get("formation", [])
 	if options.get("location", "brass") == "glass":
-		_start_glass_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""), alternate)
+		_start_glass_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""), alternate, formation)
 		return
 	if options.get("location", "brass") == "crown":
 		_start_crown_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""), alternate)
 		return
 	if options.get("location", "brass") == "moonwreck":
-		_start_moonwreck_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""), alternate)
+		_start_moonwreck_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""), alternate, formation)
 		return
 	var health_scale: float = {"medium": [1.12, 2.15, 2.15], "hard": [1.21, 2.35, 3.0]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	var damage_scale: float = {"medium": [1.07, 1.58, 1.58], "hard": [1.10, 1.64, 1.80]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
@@ -634,11 +638,14 @@ func _start_campaign(options: Dictionary) -> void:
 			_add_campaign_enemy("recruit", Vector2(522, y))
 
 
-func _start_glass_encounter(encounter: String, rng: RandomNumberGenerator, y: float, difficulty: String, segment: int, boss_id: String, alternate: bool) -> void:
+func _start_glass_encounter(encounter: String, rng: RandomNumberGenerator, y: float, difficulty: String, segment: int, boss_id: String, alternate: bool, formation: Array) -> void:
 	var extra_leg := difficulty != "easy" and segment >= 2
 	var third_leg := difficulty == "hard" and segment == 3
 	var health_scale: float = {"medium": [1.14, 2.15, 2.15], "hard": [1.20, 2.27, 2.90]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	var damage_scale: float = {"medium": [1.08, 1.51, 1.51], "hard": [1.12, 1.55, 1.70]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
+	if not formation.is_empty() and encounter in ["battle", "elite"]:
+		_spawn_formation(formation, y, health_scale, damage_scale)
+		return
 	match encounter:
 		"battle":
 			if alternate:
@@ -670,13 +677,29 @@ func _start_glass_encounter(encounter: String, rng: RandomNumberGenerator, y: fl
 			_add_campaign_enemy("glass_recruit", Vector2(522, y), 0, health_scale, damage_scale)
 
 
+func _spawn_formation(formation: Array, y: float, health_scale: float, damage_scale: float) -> void:
+	for spawn: Dictionary in formation:
+		_add_campaign_enemy(spawn.id, Vector2(spawn.x, y + float(spawn.dy)), int(spawn.delay),
+			health_scale * float(spawn.health_scale), damage_scale * float(spawn.damage_scale))
+
+
 func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_scale := 1.0, damage_scale := 1.0) -> void:
-	var spec: Dictionary = CAMPAIGN_ENEMIES[kind].duplicate()
+	var source: Dictionary = CAMPAIGN_ENEMIES.get(kind, {})
+	var pilot := ""
+	if source.is_empty():
+		for region: String in PILOT_ENEMY_SCRIPTS:
+			source = PILOT_ENEMY_SCRIPTS[region].ENEMIES.get(kind, {})
+			if not source.is_empty():
+				pilot = region
+				break
+	var spec := source.duplicate()
 	spec.damage = roundi(spec.damage * damage_scale)
 	var enemy := _unit("%s_%d" % [kind, units.size()], spec.name, "enemy", -1, position,
 		roundi(spec.hp * health_scale), spec.radius, spec.speed, spec.spacing)
 	enemy["attack"] = spec
 	enemy["sprite"] = spec.art
+	if not pilot.is_empty():
+		enemy["pilot_region"] = pilot
 	enemy.next_attack = int(spec.first) + delay
 	if kind == "marshal":
 		enemy["marshal_plated"] = false
@@ -774,12 +797,15 @@ func _start_crown_regent(y: float) -> void:
 	regent["crown_role"] = "relay_regent"
 
 
-func _start_moonwreck_encounter(encounter: String, rng: RandomNumberGenerator, y: float, difficulty: String, segment: int, boss_id: String, alternate: bool) -> void:
+func _start_moonwreck_encounter(encounter: String, rng: RandomNumberGenerator, y: float, difficulty: String, segment: int, boss_id: String, alternate: bool, formation: Array) -> void:
 	var hard := difficulty == "hard"
 	var second_leg := (difficulty == "medium" or hard) and segment >= 2
 	var third_leg := hard and segment == 3
 	var health_scale: float = {"medium": [1.0, 2.22, 2.22], "hard": [1.0, 2.34, 2.95]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	var damage_scale: float = {"medium": [1.0, 1.60, 1.60], "hard": [1.0, 1.64, 1.80]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
+	if not formation.is_empty() and encounter in ["battle", "elite"]:
+		_spawn_formation(formation, y, health_scale, damage_scale)
+		return
 	match encounter:
 		"battle":
 			var flank := -1.0 if rng.randi_range(0, 1) == 0 else 1.0
@@ -936,6 +962,8 @@ func _move_units() -> void:
 			var speed: float = unit.speed
 			if tick < unit.get("haste_until", 0):
 				speed *= 1.42
+			if tick < unit.get("tar_slow_until", 0):
+				speed *= 0.65
 			var margin: float = distance - unit.preferred_range
 			var retreat_speed := minf(55.0, speed) if unit.get("precision_spacing", false) else 0.0
 			drive = offset.normalized() * clampf(margin * 4.0, -retreat_speed, speed)
@@ -1839,7 +1867,11 @@ func _run_enemies() -> void:
 			continue
 		var position: Vector2 = enemy.pos
 		var attack: Dictionary = enemy.get("attack", {})
-		if attack.has("special") and _begin_variant_attack(enemy, target, attack):
+		var pilot: Variant = PILOT_ENEMY_SCRIPTS.get(enemy.get("pilot_region", ""))
+		if pilot != null:
+			if pilot.begin(self, enemy, target, attack):
+				continue
+		elif attack.has("special") and _begin_variant_attack(enemy, target, attack):
 			continue
 		var reach: float = attack.get("reach", 290.0 if enemy.id == "scout" else 155.0)
 		if position.distance_to(target.pos) > reach:
@@ -1868,7 +1900,11 @@ func _resolve_intent(enemy: Dictionary) -> void:
 	var special_intent: String = enemy.get("special_intent", "")
 	if not special_intent.is_empty():
 		enemy.erase("special_intent")
-		_resolve_variant_attack(enemy, _find_unit(intent), attack, special_intent)
+		var pilot: Variant = PILOT_ENEMY_SCRIPTS.get(enemy.get("pilot_region", ""))
+		if pilot != null:
+			pilot.resolve(self, enemy, _find_unit(intent), attack, special_intent)
+		else:
+			_resolve_variant_attack(enemy, _find_unit(intent), attack, special_intent)
 		return
 	if enemy.get("dock_winch_ally", "") != "":
 		_resolve_winch_pull(enemy, intent)
@@ -2531,7 +2567,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 				amount -= prevented
 				_emit("guard", "The Crown shields block %d damage." % prevented,
 					_find_unit(target.relay_shield_sources[0]), target, "relay_absorb", prevented)
-	if tile_id == "enemy_attack" and target.get("class") == "bulwark" and target.get("bulwark_loop", -1) != _loop_index():
+	var enemy_strike: bool = tile_id == "enemy_attack" or actor.has("pilot_region")
+	if enemy_strike and target.get("class") == "bulwark" and target.get("bulwark_loop", -1) != _loop_index():
 		target["bulwark_loop"] = _loop_index()
 		amount = maxi(0, amount - 6)
 	var blocked := mini(amount, target.guard)
@@ -2551,6 +2588,10 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 	var blocked_text := " (%d blocked)" % blocked if blocked > 0 else ""
 	var details := "%s: %s hits %s for %d%s." % [actor.name, action, target.name, dealt, blocked_text]
 	_emit("hit", details, actor, target, tile_id, dealt, _attack_origin(actor))
+	if dealt > 0 and target.hp > 0 and actor.side == "hero" and _activation.get("tile") == tile_id and _activation.get("actor") == actor.id:
+		var pilot: Variant = PILOT_ENEMY_SCRIPTS.get(target.get("pilot_region", ""))
+		if pilot != null:
+			pilot.on_tile_hit(self, actor, target, dealt, tile_id, _activation.order)
 	if actor.side == "enemy" and target.side == "hero" and target.has("bastion_ward"):
 		_release_bastion_ward(target, blocked)
 	if target.hp == 0:

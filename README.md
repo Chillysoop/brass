@@ -32,6 +32,8 @@ All twelve classes have two signature choices at Rare, Epic, and Legendary. If y
 
 Seeded battle and elite formations can include a Rivet Bombardier, Kiln Duelist, Relay Mender, or Dock Corsair. The encounter preview shows who you will face.
 
+Start a new Glass Foundry or Moonwreck Docks expedition on Medium or Hard to try the expanded enemy pools in Acts 2 and 3. The preview describes each new threat. Glass Mirrorback reflects the first hit during its stance. Wait it out or bait it with a quick hit under Guard. Powder Runner's fuse can be disarmed with two separate tile hits, or stopped by defeating the runner before it fires.
+
 Medium starts solo. After the Tollkeeper, take a Legendary tile into your build and recruit a second hero with a starter tile. Both lanes fire on the same beat clock. Push or pull the Gilded Marshal to expose its armor, then land a hit with the other hero before it closes. Defeating the Marshal unlocks Brass Frontier Hard and Glass Foundry Easy. Each hero can take a Legendary trophy after the final boss.
 
 Glass Foundry Easy is a solo route that ends at the Crucible Twins. Hunters prioritize the hero with the most ranged tile damage. Skirmishers prioritize the hero with the lowest current HP. The clear awards Aether Marks and records the unlock for Glass Foundry Medium.

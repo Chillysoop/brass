@@ -3,6 +3,26 @@ extends RefCounted
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
 
+const GLASS_PILOT_ART := {
+	"glass_mirrorback": Rect2i(11, 22, 386, 373),
+	"glass_annealer": Rect2i(464, 18, 376, 379),
+	"glass_lens_arbalist": Rect2i(906, 21, 392, 384),
+	"glass_kiln_ram": Rect2i(1342, 89, 425, 286),
+	"glass_shard_conductor": Rect2i(74, 435, 321, 425),
+	"glass_ash_siphon": Rect2i(467, 477, 368, 381),
+	"glass_quench_sentinel": Rect2i(881, 445, 426, 405),
+	"glass_furnace_knight": Rect2i(1353, 450, 404, 411),
+}
+const MOON_PILOT_ART := {
+	"powder_runner": Rect2i(83, 54, 289, 359),
+	"tar_pitcher": Rect2i(465, 27, 376, 384),
+	"deck_ram": Rect2i(918, 25, 397, 391),
+	"patch_rigger": Rect2i(1400, 31, 321, 389),
+	"reef_diver": Rect2i(18, 471, 374, 385),
+	"signal_gunner": Rect2i(454, 471, 382, 385),
+	"chain_warden": Rect2i(888, 476, 433, 380),
+	"wreck_bell": Rect2i(1387, 466, 364, 388),
+}
 const FAMILY_ICONS := {"bash": "push", "blink": "teleport", "shot": "shot", "guard": "guard", "slam": "area"}
 const RELIC_ICONS := {
 	"towline_knot": "pull", "bridgeplate": "guard", "brass_metronome": "review",
@@ -38,6 +58,21 @@ static func tile(id: String, spec: Dictionary) -> String:
 
 static func relic(id: String) -> String:
 	return RELIC_ICONS.get(id, "relic")
+
+
+static func pilot_enemy_art(id: String) -> Texture2D:
+	var sheet := "res://assets/glass-pilot-enemies.png"
+	var frame: Rect2i = GLASS_PILOT_ART.get(id, Rect2i())
+	if not frame.has_area():
+		sheet = "res://assets/moon-pilot-enemies.png"
+		frame = MOON_PILOT_ART.get(id, Rect2i())
+	if not frame.has_area() or not ResourceLoader.exists(sheet, "Texture2D"):
+		return null
+	var sprite := AtlasTexture.new()
+	sprite.atlas = load(sheet) as Texture2D
+	sprite.region = Rect2(frame)
+	sprite.filter_clip = true
+	return sprite
 
 
 static func icon(key: String) -> Texture2D:

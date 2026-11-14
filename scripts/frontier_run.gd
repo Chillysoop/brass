@@ -3,6 +3,7 @@ extends RefCounted
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
+const PilotFormations = preload("res://scripts/pilot_formations.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const UniversalTileUpgrades = preload("res://scripts/universal_tile_upgrades.gd")
 const HEROES = ArenaSim.HERO_CLASSES
@@ -248,6 +249,8 @@ func start_run(seed_value := 0, difficulty := "easy", location := "brass") -> bo
 		"offers": _sample(HEROES.keys(), 3, run_seed, 11), "result": "", "marks_earned": 0,
 		"midpoint_paid": false, "elite_relic_drafted": false, "node_notice": "",
 	}
+	if location in ["glass", "moonwreck"] and difficulty != "easy":
+		data.pilot_fights = []
 	loadout = {"lanes": [[]], "storage": [[], [], []], "defaults": ["nearest"], "suppressed": {}}
 	save()
 	return true
@@ -415,6 +418,7 @@ func choose_node(id: String) -> bool:
 			data.phase = selected.type
 		_:
 			data.phase = "combat"
+			_lock_pilot_formation()
 	save()
 	return true
 
@@ -430,7 +434,7 @@ func _encounter_for(node: Dictionary, segment: int) -> Dictionary:
 	var roster: Array = []
 	for hero: Dictionary in data.heroes:
 		roster.append({"id": hero.id, "hero": hero.id, "hp": int(hero.hp), "max_hp": int(hero.max_hp)})
-	return {
+	var options := {
 		"encounter": kind, "kind": kind, "id": node.id,
 		"seed": int(data.seed) ^ _node_salt(71, node), "hero": data.hero, "hp": int(data.hp),
 		"max_hp": int(data.max_hp), "relic": data.relics.front() if not data.relics.is_empty() else "",
@@ -438,6 +442,43 @@ func _encounter_for(node: Dictionary, segment: int) -> Dictionary:
 		"difficulty": data.difficulty, "location": data.location,
 		"boss_id": node.get("boss_id", ""), "final_boss": node.type == "boss" and int(node.row) == data.layers.size() - 1,
 	}
+	var formation := _pilot_formation_for(node, segment, kind)
+	if not formation.is_empty():
+		options["formation"] = formation
+	return options
+
+
+func _pilot_formation_for(node: Dictionary, segment: int, kind: String) -> Array:
+	if node.has("pilot_formation"):
+		return node.pilot_formation.duplicate(true)
+	if not data.has("pilot_fights"):
+		return []
+	return PilotFormations.choose(data.location, segment, kind,
+		int(data.seed) ^ _node_salt(187, node), data.pilot_fights)
+
+
+func _lock_pilot_formation() -> void:
+	var node: Dictionary = data.node
+	var formation := _pilot_formation_for(node, int(data.segment), node.get("encounter_override", node.type))
+	if not formation.is_empty():
+		node["pilot_formation"] = formation
+
+
+func _record_pilot_fight(kind: String) -> void:
+	if not data.has("pilot_fights"):
+		return
+	var enemies: Array[String] = []
+	var formation: Array = data.node.get("pilot_formation", [])
+	if not formation.is_empty():
+		for spawn: Dictionary in formation:
+			enemies.append(spawn.id)
+	else:
+		var fight := ArenaSim.new()
+		fight.start([], "solo", encounter())
+		for unit: Dictionary in fight.units:
+			if unit.side == "enemy":
+				enemies.append(unit.id.rsplit("_", true, 1)[0])
+	data.pilot_fights.append({"kind": kind, "enemies": enemies})
 
 
 func elite_preview(node: Dictionary) -> Dictionary:
@@ -675,6 +716,7 @@ func finish_combat(victory: bool, hp: Variant) -> bool:
 		_heal(5, false)
 	var draft_relic := will_draft_elite_relic()
 	var kind: String = data.node.get("encounter_override", data.node.type)
+	_record_pilot_fight(kind)
 	data.phase = "reward"
 	match kind:
 		"boss":
@@ -1040,6 +1082,8 @@ func event_choice(index: int) -> bool:
 			if index == 1:
 				data.phase = "combat"
 				data.node["encounter_override"] = "elite"
+	if data.phase == "combat":
+		_lock_pilot_formation()
 	save()
 	return true
 
@@ -1688,6 +1732,8 @@ func _restore_integers() -> void:
 func _restore_node(node: Dictionary) -> void:
 	node.row = int(node.row)
 	node.column = int(node.column)
+	for spawn: Dictionary in node.get("pilot_formation", []):
+		spawn.delay = int(spawn.delay)
 	if node.type == "boss" and not node.has("boss_id"):
 		node.boss_id = BOSS_LABELS.find_key(node.label)
 
