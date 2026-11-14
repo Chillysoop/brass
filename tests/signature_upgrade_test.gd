@@ -15,10 +15,13 @@ func _initialize() -> void:
 		_check_wayfarer(TilePacking.forge_tiers("ghost_volley")[tier])
 		_check_breaker(TilePacking.forge_tiers("collision_hammer")[tier])
 		_check_apothecary(TilePacking.forge_tiers("triage_kit")[tier])
+		_check_rune_smith(TilePacking.forge_tiers("runic_anvil")[tier])
+		_check_duelist(TilePacking.forge_tiers("needle_point")[tier])
+		_check_cantor(TilePacking.forge_tiers("chorus_bolt")[tier])
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Rare, Epic, and Legendary signature combat checks passed for six heroes.")
+		print("Rare, Epic, and Legendary signature combat checks passed for nine heroes.")
 	quit(0 if failures.is_empty() else 1)
 
 
@@ -279,6 +282,148 @@ func _check_apothecary(choices: Array) -> void:
 	_check(shared.units[0].hp == 45 and shared.units[0].guard == mist_spec.guard
 		and shared.units[1].hp == 55 + mist_spec.heal and shared.units[2].hp == 0,
 		"%s should heal a previously full hero on a later loop without healing the same hero twice." % mist)
+
+
+func _check_rune_smith(choices: Array) -> void:
+	var heavy: String = choices[0]
+	var quick: String = choices[1]
+	var edge: int = ArenaSim.TILES[quick].width
+	var tap_damage: int = ArenaSim.TILES.tap_bolt.damage
+	var spread := _fixture([[_tile(quick, 0), _tile("tap_bolt", edge),
+		_tile("jab", edge + 1), _tile("tap_bolt", edge + 2), _tile("tap_bolt", edge + 3),
+		_tile("tap_bolt", edge + 4)]], ["rune_smith"])
+	_advance(spread, edge * BEAT - 1)
+	_check(spread.activations.is_empty(), "%s must wait until its right edge." % quick)
+	spread.step()
+	_check(_damage_at(spread, quick, edge * BEAT) == ArenaSim.TILES[quick].damage
+		and not spread.trace.any(func(event: Dictionary): return event.kind == "rune_charge_spent"),
+		"%s must prime after its own hit." % quick)
+	_advance(spread, (edge + 1) * BEAT)
+	var bonus: int = ArenaSim.TILES[quick].rune_quick_bonus
+	_check(_damage_at(spread, "tap_bolt", (edge + 1) * BEAT) == tap_damage + bonus + 5,
+		"%s must stack with the Rune Smith's ordinary passive." % quick)
+	_move(spread.units[1], spread.units[0].pos + Vector2(240, 0))
+	_advance(spread, (edge + 2) * BEAT)
+	_check(_damage_at(spread, "jab", (edge + 2) * BEAT) == 0,
+		"An out-of-range melee attack should leave the remaining quick rune charges alone.")
+	_advance(spread, (edge + 5) * BEAT)
+	var charges: Array = spread.trace.filter(func(event: Dictionary): return event.kind == "rune_charge_spent")
+	_check(charges.size() == ArenaSim.TILES[quick].rune_quick_hits
+		and _damage_at(spread, "tap_bolt", (edge + 3) * BEAT) == tap_damage + bonus
+		and _damage_at(spread, "tap_bolt", (edge + 5) * BEAT) == tap_damage,
+		"%s must boost multiple quick attacks and stop after the advertised count." % quick)
+
+	var concentrated := _fixture([[_tile(heavy, 0), _tile("tap_bolt", edge),
+		_tile("sweep", edge + 1), _tile("sweep", edge + 4)]], ["rune_smith"], "elite")
+	_layout_two_targets(concentrated, 1, 100, Vector2(112, 70))
+	_advance(concentrated, (edge + 7) * BEAT)
+	charges = concentrated.trace.filter(func(event: Dictionary): return event.kind == "rune_charge_spent")
+	var hits := concentrated.trace.filter(func(event: Dictionary):
+		return event.kind == "hit" and event.tile == "sweep" and event.tick == (edge + 4) * BEAT)
+	_check(_damage_at(concentrated, "tap_bolt", (edge + 1) * BEAT) == tap_damage + 5
+		and charges.size() == 1 and charges[0].tick == (edge + 4) * BEAT
+		and charges[0].amount == ArenaSim.TILES[heavy].rune_heavy_bonus and hits.size() >= 2,
+		"%s should boost the first target of a single wide attack, not each target in its splash." % heavy)
+
+	var expired := _fixture([[_tile(quick, 0), _tile("tap_bolt", edge + 1)]], ["rune_smith"])
+	_advance(expired, edge * BEAT)
+	_move(expired.units[1], Vector2(790, 240))
+	_advance(expired, edge * BEAT + ArenaSim.LOOP_TICKS)
+	_move(expired.units[1], expired.units[0].pos + Vector2(100, 0))
+	var late_hit := (edge + 2) * BEAT + ArenaSim.LOOP_TICKS
+	_advance(expired, late_hit)
+	_check(_damage_at(expired, "tap_bolt", late_hit) == tap_damage + 5
+		and not expired.trace.any(func(event: Dictionary): return event.kind == "rune_charge_spent"),
+		"%s should boost no attacks after its rune expires." % quick)
+
+
+func _check_duelist(choices: Array) -> void:
+	var lock: String = choices[0]
+	var passing: String = choices[1]
+	var lock_spec: Dictionary = ArenaSim.TILES[lock]
+	var switch := {"id": "tap_bolt", "start": 5, "target": "farthest"}
+	var focused := _fixture([[_tile(lock, 0), _tile(lock, 1), _tile(lock, 2),
+		_tile(lock, 3), _tile(lock, 4), switch, _tile(lock, 6)]], ["duelist"], "elite")
+	_layout_two_targets(focused, 1, 94, Vector2(180, 60))
+	focused.units[1].max_hp = 500
+	focused.units[1].hp = 500
+	_advance(focused, 7 * BEAT)
+	var bonuses := focused.trace.filter(func(event: Dictionary): return event.kind == "duel_stack")
+	_check(_damage_at(focused, lock, BEAT) == lock_spec.damage and bonuses.size() == 4
+		and bonuses[0].amount == lock_spec.duel_stack_gain
+		and bonuses[3].amount == lock_spec.duel_stack_cap
+		and _damage_at(focused, lock, 7 * BEAT) == lock_spec.damage,
+		"%s must build repeat-hit damage, respect its cap, and reset after switching targets." % lock)
+
+	var cut_spec: Dictionary = ArenaSim.TILES[passing]
+	var finisher := _fixture([[_tile(passing, 0), _tile("tap_bolt", 1), _tile("tap_bolt", 2)]], ["duelist"], "elite")
+	_layout_two_targets(finisher, 1, 97, Vector2(168, 55))
+	finisher.units[1].hp = 1
+	_advance(finisher, 3 * BEAT)
+	var spent := finisher.trace.filter(func(event: Dictionary): return event.kind == "duel_kill_spent")
+	_check(spent.size() == 1 and spent[0].target == finisher.units[2].id and spent[0].amount == cut_spec.duel_kill_bonus
+		and _damage_at(finisher, "tap_bolt", 2 * BEAT) == ArenaSim.TILES.tap_bolt.damage + cut_spec.duel_kill_bonus
+		and _damage_at(finisher, "tap_bolt", 3 * BEAT) == ArenaSim.TILES.tap_bolt.damage + 2,
+		"%s must carry bonus damage from its kill to exactly one hit against another enemy." % passing)
+
+
+func _check_cantor(choices: Array) -> void:
+	var chorus: String = choices[0]
+	var ward: String = choices[1]
+	var chorus_spec: Dictionary = ArenaSim.TILES[chorus]
+	var edge: int = chorus_spec.width
+	var last: int = edge + chorus_spec.chorus_mark_beats
+	var tap_damage: int = ArenaSim.TILES.tap_bolt.damage
+	var party := _fixture([[_tile(chorus, 0), _tile("tap_bolt", edge)],
+		[_tile("tap_bolt", edge + 1), _tile("tap_bolt", edge + 2)],
+		[_tile("tap_bolt", last - 1), _tile("tap_bolt", last)]], ["cantor", "warden", "hexwright"])
+	_layout_cantor_party(party)
+	_advance(party, edge * BEAT - 1)
+	_check(party.activations.is_empty(), "%s must wait for its right edge." % chorus)
+	_advance(party, (last + 1) * BEAT)
+	var assists := party.trace.filter(func(event: Dictionary): return event.kind == "chorus_mark_spent")
+	_check(_damage_at(party, "tap_bolt", (edge + 1) * BEAT) == tap_damage
+		and _damage_at(party, "tap_bolt", (edge + 3) * BEAT) == tap_damage
+		and _damage_at(party, "tap_bolt", (last + 1) * BEAT) == tap_damage
+		and assists.size() == 2 and assists[0].actor != assists[1].actor
+		and assists[0].amount == chorus_spec.chorus_mark_bonus and assists[1].tick == last * BEAT,
+		"%s should help two different allies, exclude the caster, and include the expiry beat." % chorus)
+
+	var ward_spec: Dictionary = ArenaSim.TILES[ward]
+	var pulses: int = ward_spec.chorus_guard
+	var defense := _fixture([[_tile(ward, 0), _tile("tap_bolt", edge)],
+		[_tile("tap_bolt", edge + 1), _tile("tap_bolt", edge + 2)], []], ["cantor", "warden", "hexwright"])
+	_layout_cantor_party(defense)
+	defense.units[2].hp = 0
+	_advance(defense, (edge + 1) * BEAT)
+	var baseline := [int(defense.units[0].guard), int(defense.units[1].guard)]
+	_advance(defense, (edge + 3) * BEAT)
+	var wards := defense.trace.filter(func(event: Dictionary): return event.kind == "chorus_guard")
+	_check(wards.size() == 1 and wards[0].tick == (edge + 2) * BEAT and wards[0].actor == defense.units[1].id
+		and _damage_at(defense, "tap_bolt", (edge + 2) * BEAT) == tap_damage
+		and defense.units[0].guard == baseline[0] + pulses and defense.units[1].guard == baseline[1] + pulses
+		and defense.units[2].guard == 0, "%s should grant Guard once to the living party after another hero hits." % ward)
+	var too_late: int = edge + ward_spec.chorus_guard_beats + 1
+	var expired := _fixture([[_tile(ward, 0)], [_tile("tap_bolt", too_late - 1)]], ["cantor", "warden"])
+	_layout_cantor_party(expired)
+	_advance(expired, too_late * BEAT)
+	_check(_damage_at(expired, "tap_bolt", too_late * BEAT) == tap_damage
+		and not expired.trace.any(func(event: Dictionary): return event.kind == "chorus_guard"),
+		"%s should grant no party Guard after its mark expires." % ward)
+
+
+func _layout_two_targets(sim: ArenaSim, first: int, reach: float, near_neighbor: Vector2) -> void:
+	var origin := Vector2(200, 240)
+	_move(sim.units[0], origin)
+	_move(sim.units[first], origin + Vector2(reach, 0))
+	_move(sim.units[first + 1], origin + near_neighbor)
+	_move(sim.units[first + 2], Vector2(755, 400))
+
+
+func _layout_cantor_party(sim: ArenaSim) -> void:
+	for lane in range(sim.units.size() - 1):
+		_move(sim.units[lane], Vector2(230, 130 + lane * 92))
+	_move(sim.units[-1], Vector2(355, 240))
 
 
 func _push_fixture(id: String, hero: String) -> ArenaSim:
