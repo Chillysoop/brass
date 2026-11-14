@@ -9,6 +9,7 @@ const WALL_MARGIN := 26.0
 const IMPULSE_CAP := 1000.0
 const IMPULSE_DECAY := 1850.0
 const TARGET_RULES := ["nearest", "farthest", "lowest_hp", "highest_hp"]
+const RANGED_TILES := ["pull", "gravity_hook", "shot", "hook_bash", "graviton", "event_horizon", "meteor_seal"]
 const BASH_TIERS := [
 	["bash"],
 	["shield_ram", "hook_bash"],
@@ -42,7 +43,23 @@ const CAMPAIGN_ENEMIES := {
 	"boss": {"name": "The Tollkeeper", "art": "clockwork", "hp": 330, "radius": 40.0, "speed": 86.0,
 		"spacing": 107.0, "reach": 204.0, "damage": 16, "first": 125, "cooldown": 123, "windup": 39, "push": 345.0, "displacement": 0.55},
 	"marshal": {"name": "The Gilded Marshal", "art": "marshal", "hp": 860, "radius": 48.0, "speed": 89.0,
-		"spacing": 122.0, "reach": 227.0, "damage": 38, "first": 110, "cooldown": 105, "windup": 49, "push": 415.0, "displacement": 0.7}
+		"spacing": 122.0, "reach": 227.0, "damage": 38, "first": 110, "cooldown": 105, "windup": 49, "push": 415.0, "displacement": 0.7},
+	"regent": {"name": "The Iron Regent", "art": "regent", "hp": 1140, "radius": 51.0, "speed": 86.0,
+		"spacing": 118.0, "reach": 222.0, "damage": 43, "first": 114, "cooldown": 112, "windup": 54, "push": 380.0, "displacement": 0.6},
+	"glass_recruit": {"name": "Glass Apprentice", "art": "glass_hunter", "hp": 34, "radius": 24.0, "speed": 87.0,
+		"spacing": 83.0, "reach": 131.0, "damage": 4, "first": 115, "cooldown": 173, "windup": 31, "target": "ranged_damage"},
+	"glass_hunter": {"name": "Glass Hunter", "art": "glass_hunter", "hp": 103, "radius": 24.0, "speed": 85.0,
+		"spacing": 131.0, "reach": 218.0, "damage": 11, "first": 118, "cooldown": 136, "windup": 33, "target": "ranged_damage"},
+	"glass_skirmisher": {"name": "Kiln Skirmisher", "art": "glass_skirmisher", "hp": 52, "radius": 18.0, "speed": 123.0,
+		"spacing": 85.0, "reach": 129.0, "damage": 7, "first": 132, "cooldown": 154, "windup": 24, "target": "lowest_hp"},
+	"glass_overseer": {"name": "Kiln Overseer", "art": "glass_hunter", "hp": 157, "radius": 33.0, "speed": 85.0,
+		"spacing": 112.0, "reach": 202.0, "damage": 13, "first": 113, "cooldown": 122, "windup": 36, "target": "ranged_damage"},
+	"glass_twin": {"name": "Crucible Twin · Glass", "art": "glass_twin", "hp": 139, "radius": 33.0, "speed": 89.0,
+		"spacing": 136.0, "reach": 215.0, "damage": 12, "first": 120, "cooldown": 139, "windup": 37, "target": "ranged_damage",
+		"twin": true, "displacement": 0.76},
+	"ember_twin": {"name": "Crucible Twin · Ember", "art": "glass_twin", "hp": 139, "radius": 33.0, "speed": 99.0,
+		"spacing": 91.0, "reach": 160.0, "damage": 13, "first": 146, "cooldown": 143, "windup": 32, "target": "lowest_hp",
+		"twin": true, "push": 210.0, "displacement": 0.76}
 }
 
 const TILES := {
@@ -177,6 +194,11 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 		var lane: int = unit.lane
 		var tiles: Array = hero_lanes[lane] if lane < hero_lanes.size() else []
 		_lanes.append(_valid_tiles(tiles))
+		var ranged_damage := 0
+		for tile: Dictionary in _lanes[lane]:
+			if tile.id in RANGED_TILES:
+				ranged_damage += int(TILES[tile.id].damage)
+		unit["ranged_damage"] = ranged_damage
 
 
 func _start_campaign(options: Dictionary) -> void:
@@ -202,15 +224,19 @@ func _start_campaign(options: Dictionary) -> void:
 	var rng := RandomNumberGenerator.new()
 	rng.seed = int(options.get("seed", 0))
 	var y := rng.randf_range(217.0, 289.0)
-	var medium: bool = options.get("difficulty", "easy") == "medium"
-	var second_leg: bool = medium and int(options.get("segment", 1)) >= 2
-	var health_scale := 2.15 if second_leg else (1.12 if medium else 1.0)
-	var damage_scale := 1.58 if second_leg else (1.07 if medium else 1.0)
-	match options.get("encounter", "opening"):
+	var encounter: String = options.get("encounter", "opening")
+	if options.get("location", "brass") == "glass":
+		_start_glass_encounter(encounter, rng, y)
+		return
+	var difficulty: String = options.get("difficulty", "easy")
+	var segment := clampi(int(options.get("segment", 1)), 1, 3)
+	var health_scale: float = {"medium": [1.12, 2.15, 2.15], "hard": [1.21, 2.35, 3.0]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
+	var damage_scale: float = {"medium": [1.07, 1.58, 1.58], "hard": [1.10, 1.64, 1.80]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
+	match encounter:
 		"battle":
 			if rng.randi_range(0, 1) == 0:
 				_add_campaign_enemy("bruiser", Vector2(615, y), 0, health_scale, damage_scale)
-				if second_leg:
+				if segment >= 2:
 					_add_campaign_enemy("scout", Vector2(684, y + 95.0), 12, 1.0, damage_scale)
 			else:
 				_add_campaign_enemy("scout", Vector2(583, y - 58.0), 0, health_scale, damage_scale)
@@ -218,13 +244,41 @@ func _start_campaign(options: Dictionary) -> void:
 		"elite":
 			_add_campaign_enemy("veteran", Vector2(636, y), 0, health_scale, damage_scale)
 			_add_campaign_enemy("scout", Vector2(673, y + 113.0), 0, health_scale, damage_scale)
+			if difficulty == "hard" and segment == 3:
+				_add_campaign_enemy("scout", Vector2(673, y - 113.0), 40, 1.5, damage_scale)
 		"boss":
-			if second_leg:
-				_add_campaign_enemy("marshal", Vector2(647, y))
-			else:
-				_add_campaign_enemy("boss", Vector2(647, y), 0, health_scale, damage_scale)
+			var fallback := "tollkeeper"
+			if difficulty == "hard" and segment == 3:
+				fallback = "iron_regent"
+			elif difficulty in ["medium", "hard"] and segment >= 2:
+				fallback = "gilded_marshal"
+			match options.get("boss_id", fallback):
+				"iron_regent":
+					_add_campaign_enemy("regent", Vector2(647, y))
+				"gilded_marshal":
+					_add_campaign_enemy("marshal", Vector2(647, y), 0, 1.10 if difficulty == "hard" else 1.0, 1.06 if difficulty == "hard" else 1.0)
+				_:
+					_add_campaign_enemy("boss", Vector2(647, y), 0, health_scale, damage_scale)
 		_:
 			_add_campaign_enemy("recruit", Vector2(522, y))
+
+
+func _start_glass_encounter(encounter: String, rng: RandomNumberGenerator, y: float) -> void:
+	match encounter:
+		"battle":
+			if rng.randi_range(0, 1) == 0:
+				_add_campaign_enemy("glass_hunter", Vector2(615, y))
+			else:
+				_add_campaign_enemy("glass_skirmisher", Vector2(589, y - 63.0))
+				_add_campaign_enemy("glass_skirmisher", Vector2(668, y + 68.0), 25)
+		"elite":
+			_add_campaign_enemy("glass_overseer", Vector2(644, y))
+			_add_campaign_enemy("glass_skirmisher", Vector2(676, y + 108.0), 25)
+		"boss":
+			_add_campaign_enemy("glass_twin", Vector2(615, y - 70.0))
+			_add_campaign_enemy("ember_twin", Vector2(661, y + 62.0))
+		_:
+			_add_campaign_enemy("glass_recruit", Vector2(522, y))
 
 
 func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_scale := 1.0, damage_scale := 1.0) -> void:
@@ -238,6 +292,10 @@ func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_sca
 	if kind == "marshal":
 		enemy["marshal_plated"] = false
 		enemy["marshal_exposed_until"] = 0
+	if kind == "regent":
+		enemy["regent_sealed"] = false
+		enemy["regent_seals_left"] = 0
+		enemy["regent_window_until"] = 0
 	units.append(enemy)
 
 
@@ -250,6 +308,11 @@ func step() -> Array[Dictionary]:
 		var exposure: int = unit.get("marshal_exposed_until", 0)
 		if exposure > 0 and tick > exposure:
 			unit.marshal_exposed_until = 0
+		var seal_window: int = unit.get("regent_window_until", 0)
+		if seal_window > 0 and tick > seal_window:
+			unit.regent_window_until = 0
+			unit.regent_seals_left = 3
+			unit.regent_contributors.clear()
 	if (tick - 1) % LOOP_TICKS == 0:
 		for unit in units:
 			if unit.hp > 0 and _has_relic(unit, "pocket_bell"):
@@ -322,7 +385,7 @@ func _move_units() -> void:
 		if unit.hp <= 0:
 			next_positions.append(position)
 			continue
-		var focus := _select(unit, "nearest")
+		var focus := _select(unit, _attack_target_rule(unit))
 		var drive := Vector2.ZERO
 		if not focus.is_empty() and unit.intent == "":
 			var offset: Vector2 = focus.pos - position
@@ -383,10 +446,16 @@ func _select(actor: Dictionary, rule: String, reach: float = INF) -> Dictionary:
 				score = candidate.hp
 			"highest_hp":
 				score = -candidate.hp
+			"ranged_damage":
+				score = -candidate.get("ranged_damage", 0)
 		if score < best_score:
 			best = candidate
 			best_score = score
 	return best
+
+
+func _attack_target_rule(unit: Dictionary) -> String:
+	return unit.get("attack", {}).get("target", "nearest")
 
 
 func _activate_lanes() -> void:
@@ -599,7 +668,8 @@ func _run_enemies() -> void:
 			continue
 		if tick < enemy.next_attack:
 			continue
-		var target := _select(enemy, "nearest")
+		var rule := _attack_target_rule(enemy)
+		var target := _select(enemy, rule)
 		if target.is_empty():
 			continue
 		var position: Vector2 = enemy.pos
@@ -612,6 +682,12 @@ func _run_enemies() -> void:
 		var message := "%s winds up at %s." % [enemy.name, target.name]
 		if enemy.get("marshal_plated", false):
 			message = "The Marshal charges a sweep. Push or pull it, then follow up with your other hero."
+		elif enemy.get("regent_sealed", false):
+			message = "The Regent charges a sweep. Land a hit from each hero within 4 beats to break its seals."
+		elif rule == "ranged_damage":
+			message = "%s marks %s, the highest ranged damage dealer." % [enemy.name, target.name]
+		elif rule == "lowest_hp":
+			message = "%s rushes %s, the lowest-HP hero." % [enemy.name, target.name]
 		_emit("intent", message, enemy, target, "enemy_attack")
 
 
@@ -621,7 +697,10 @@ func _resolve_intent(enemy: Dictionary) -> void:
 	enemy.intent = ""
 	enemy.next_attack = tick + int(attack.get("cooldown", 116 if enemy.id == "scout" else 138))
 	if enemy.get("marshal_plated", false):
-		_marshal_sweep(enemy, attack)
+		_sweep(enemy, attack, 48.0, 5)
+		return
+	if enemy.get("regent_sealed", false):
+		_sweep(enemy, attack, 70.0, 2)
 		return
 	var position: Vector2 = enemy.pos
 	var reach: float = attack.get("reach", 290.0 if enemy.id == "scout" else 155.0)
@@ -643,15 +722,15 @@ func _resolve_intent(enemy: Dictionary) -> void:
 		return
 
 
-func _marshal_sweep(enemy: Dictionary, attack: Dictionary) -> void:
-	var affected := _enemies_in_area(enemy, enemy.pos, attack.reach + 48.0)
+func _sweep(enemy: Dictionary, attack: Dictionary, extra_reach: float, bonus_damage: int) -> void:
+	var affected := _enemies_in_area(enemy, enemy.pos, attack.reach + extra_reach)
 	for target in affected:
 		# A sweep hits each hero in the arc once. Bulwark still reduces their own hit.
-		_damage(enemy, target, attack.damage + 5, "enemy_attack")
+		_damage(enemy, target, attack.damage + bonus_damage, "enemy_attack")
 		if target.hp > 0:
 			_displace("push", enemy, target, "enemy_attack", target.pos - enemy.pos, attack.push)
 	if affected.is_empty():
-		_emit("miss", "The Marshal's sweep hits no one.", enemy, enemy, "enemy_attack")
+		_emit("miss", "%s's sweep hits no one." % enemy.name, enemy, enemy, "enemy_attack")
 
 
 func _intercept_target(target: Dictionary) -> Dictionary:
@@ -686,6 +765,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		amount = _class_attack_damage(actor, target, amount)
 		if target.get("marshal_plated", false) and actor.side == "hero":
 			amount = _marshal_damage(actor, target, amount)
+		elif target.get("regent_sealed", false) and actor.side == "hero":
+			amount = _regent_damage(actor, target, amount)
 	if tile_id == "enemy_attack" and target.get("class") == "bulwark" and target.get("bulwark_loop", -1) != _loop_index():
 		target["bulwark_loop"] = _loop_index()
 		amount = maxi(0, amount - 6)
@@ -706,6 +787,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		target.impulse = Vector2.ZERO
 		target.intent = ""
 		_emit("defeat_unit", "%s falls." % target.name, actor, target, tile_id)
+		if target.get("attack", {}).get("twin", false):
+			_rally_twin(target)
 	elif target.name == "The Tollkeeper" and target.hp * 2 <= target.max_hp and not target.get("enraged", false):
 		target["enraged"] = true
 		target.next_attack = mini(target.next_attack, tick + 20)
@@ -716,6 +799,42 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		target.marshal_plated = true
 		_guard(target, 18, "marshal_plate")
 		_emit("intent", "The Marshal raises its plating. Push or pull it, then strike with your other hero.", target, actor, "marshal_plate")
+	elif target.get("sprite") == "regent" and target.hp * 5 <= target.max_hp * 3 and not target.get("regent_raised", false):
+		target["regent_raised"] = true
+		target.regent_sealed = true
+		target.regent_seals_left = 3
+		target["regent_contributors"] = []
+		_guard(target, 22, "regent_seals")
+		_emit("intent", "The Regent raises three seals. Land a hit from each hero within 4 beats to break them.", target, actor, "regent_seals")
+
+
+func _regent_damage(actor: Dictionary, regent: Dictionary, amount: int) -> int:
+	if regent.regent_window_until == 0:
+		regent.regent_window_until = tick + TICKS_PER_BEAT * 4
+	if actor.id not in regent.regent_contributors:
+		regent.regent_contributors.append(actor.id)
+		regent.regent_seals_left -= 1
+		if regent.regent_seals_left == 0:
+			regent.regent_sealed = false
+			regent.regent_window_until = 0
+			regent.guard = 0
+			regent.intent = ""
+			regent.next_attack = tick + TICKS_PER_BEAT * 6
+			_emit("interrupt", "All three heroes shatter the Regent's seals and stagger it!", actor, regent, "regent_shattered")
+			return amount + 22
+		_emit("interrupt", "%s strikes a seal. %d distinct heroes still needed." % [actor.name, regent.regent_seals_left],
+			actor, regent, "regent_seal_struck")
+	return maxi(1, roundi(amount * 0.62))
+
+
+func _rally_twin(fallen: Dictionary) -> void:
+	for unit in units:
+		if unit.id == fallen.id or unit.hp <= 0 or not unit.get("attack", {}).get("twin", false):
+			continue
+		unit["enraged"] = true
+		unit.next_attack = mini(unit.next_attack, tick + 20)
+		_guard(unit, 11, "crucible_rally")
+		_emit("intent", "%s rallies after their twin falls." % unit.name, unit, fallen, "crucible_rally")
 
 
 func _expose_marshal(actor: Dictionary, marshal: Dictionary) -> void:

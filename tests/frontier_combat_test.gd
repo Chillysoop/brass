@@ -33,11 +33,50 @@ func _initialize() -> void:
 	_check(carry.units == duplicate.units, "Same encounter seed gives the same combat state")
 	var healer := _fight("apothecary", "opening", 80, ["shot"], [])
 	_check(_has_event(healer, "heal", "apothecary"), "Apothecary heals on a tile hit")
+	_check_glass_targeting()
+	_check_regent_seals()
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
 		print("Frontier combat checks passed (%d classes × 3 starters, fresh-profile win at %d HP)." % [ArenaSim.HERO_CLASSES.size(), hp])
 	quit(0 if failures.is_empty() else 1)
+
+
+func _check_glass_targeting() -> void:
+	var sim := ArenaSim.new()
+	sim.start([[{"id": "shot", "start": 0}], [{"id": "bash", "start": 0}]], "duo",
+		{"location": "glass", "encounter": "boss", "heroes": [{"hero": "starshot"}, {"hero": "warden", "hp": 60}]})
+	_check(sim.units[2].get("sprite") == "glass_twin" and sim.units[3].get("sprite") == "glass_twin",
+		"Glass boss spawns both Crucible Twins")
+	for tick in range(270):
+		sim.step()
+	var intents: Array = sim.trace.filter(func(event: Dictionary) -> bool: return event.kind == "intent")
+	_check(intents.any(func(event: Dictionary) -> bool:
+		return event.actor.begins_with("glass_twin") and event.target == "hero_1"), "Glass Twin prioritizes ranged damage")
+	_check(intents.any(func(event: Dictionary) -> bool:
+		return event.actor.begins_with("ember_twin") and event.target == "hero_2"), "Ember Twin prioritizes current low HP")
+	sim._damage(sim.units[0], sim.units[2], 200, "shot")
+	_check(sim.units[3].get("enraged", false), "The surviving Twin rallies")
+
+
+func _check_regent_seals() -> void:
+	var sim := ArenaSim.new()
+	sim.start([[], [], []], "solo", {"difficulty": "hard", "segment": 3, "encounter": "boss",
+		"heroes": [{"hero": "starshot"}, {"hero": "warden"}, {"hero": "cantor"}]})
+	var regent: Dictionary = sim.units[3]
+	_check(regent.get("sprite") == "regent", "Hard leg three summons the Iron Regent")
+	sim._damage(sim.units[0], regent, 520, "shot")
+	_check(regent.regent_sealed and regent.regent_seals_left == 3, "Regent raises three seals at its phase change")
+	sim._damage(sim.units[0], regent, 14, "shot")
+	sim._damage(sim.units[0], regent, 14, "shot")
+	_check(regent.regent_seals_left == 2, "Repeated hits from one hero count once")
+	for tick in range(ArenaSim.TICKS_PER_BEAT * 4 + 1):
+		sim.step()
+	_check(regent.regent_seals_left == 3 and regent.regent_window_until == 0, "An expired window resets seal progress")
+	for lane in range(3):
+		sim._damage(sim.units[lane], regent, 14, "shot")
+	_check(not regent.regent_sealed and _has_event(sim, "interrupt", "regent_shattered"),
+		"Three distinct heroes break the seals and stagger the Regent")
 
 
 func _fight(hero: String, encounter: String, hp: int, tile_ids: Array, relics: Array) -> RefCounted:

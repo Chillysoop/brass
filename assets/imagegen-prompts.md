@@ -21,3 +21,15 @@ Background plate for the Aether Chart of Brass & Aether, a dramatic celestial br
 ## Gilded Marshal
 
 Production-ready transparent sprite, original indie videogame Brass & Aether. One full-body left-facing clockwork gladiator boss, tall brass furnace armor, rusty crimson accents, heavy fists, single bright cyan eye and circular teal gyroscopic counterweight at chest. Hand-drawn restrained screen-print art, bold dark contours, flat muted colors, elevated three-quarter fixed camera, readable silhouette, original design, transparent background, nothing else. No text or floor.
+
+## glass-map
+
+16:9 route map environment for Brass & Aether, restrained hand-drawn screen print, original fantasy industrial Glass Foundry, sprawling elevated black basalt platforms and muted blue glass roofs, enormous brass furnaces and teal channels of molten glass, overhead haze, dramatic silhouettes and low contrast for native map markers over it, no interface, text, characters, icons or grid.
+
+## glass-arena
+
+Wide 16:9 environment plate for Brass & Aether 2D battles, slightly elevated fixed camera, huge open flat basalt and pale teal stone floor in the Glass Foundry, rimmed by aquamarine glass furnaces and restrained warm brass pipes. Floor broad and even, clear and free of obstacles, no markings or grid. Hand-drawn screen-printed textures, quiet slate and teal backdrop, golden kiln light at perimeter, high silhouette clarity for characters. No UI, text or characters.
+
+## new-enemies
+
+2 by 2 sprite atlas on fully transparent background, four discrete widely separated full-body left-facing game sprites centered within exact quadrants with generous gutters and no shadows. Original Brass & Aether, elevated three-quarter camera, hand-drawn bold dark contour screen-print art, clean readable flat shapes. Top left teal and silver mechanical glass hunter carrying long glass rifle. Top right smaller agile cyan glass skirmisher with twin shards. Bottom left stocky orange copper and aquamarine crucible automaton boss wielding two kiln hammers. Bottom right huge black iron and royal plum automaton Iron Regent wearing a three-pronged crown and raised chain flail. No text, ground or framing.

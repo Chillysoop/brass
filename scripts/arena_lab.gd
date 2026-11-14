@@ -719,13 +719,15 @@ func forge_close() -> void:
 		storage_close()
 
 func _start_sim() -> void:
+	arena.location = run.data.get("location", "brass") if campaign else "brass"
 	if campaign:
 		var options: Dictionary = run.encounter()
 		if options.is_empty():
 			options = {
 				"encounter": "opening", "hero": run.data.hero, "hp": run.data.hp,
 				"max_hp": run.data.max_hp, "heroes": run.data.get("heroes", []),
-				"difficulty": run.data.get("difficulty", "easy"), "relics": run.data.relics,
+				"difficulty": run.data.get("difficulty", "easy"), "location": arena.location,
+				"segment": run.data.get("segment", 1), "relics": run.data.relics,
 				"relic": run.data.relics[0] if not run.data.relics.is_empty() else ""
 			}
 		sim.start(lanes, "solo", options)
@@ -763,8 +765,8 @@ func run_show_chart() -> void:
 func run_return() -> void:
 	_show_frontier()
 
-func run_start(seed_value := 0, difficulty := "easy") -> void:
-	if run.start_run(seed_value, difficulty):
+func run_start(seed_value := 0, difficulty := "easy", location := "brass") -> void:
+	if run.start_run(seed_value, difficulty, location):
 		run_return()
 	else:
 		run_menu()

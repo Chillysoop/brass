@@ -16,6 +16,11 @@ const SPRITE_PATHS := {
 	"clockwork": "res://assets/clockwork.png",
 	"scout": "res://assets/scout.png",
 	"marshal": "res://assets/marshal.png",
+	"regent": "res://assets/regent.png",
+	"glass_hunter": "res://assets/glass_hunter.png",
+	"glass_skirmisher": "res://assets/glass_skirmisher.png",
+	"glass_twin": "res://assets/glass_twin.png",
+	"glass_arena": "res://assets/glass-arena.webp",
 }
 const EFFECT_LENGTHS := {
 	"pull": 0.42,
@@ -28,6 +33,7 @@ const EFFECT_LENGTHS := {
 }
 
 var units: Array = []
+var location := "brass"
 var _textures: Dictionary = {}
 var _positions: Dictionary = {}
 var _facing: Dictionary = {}
@@ -120,7 +126,7 @@ func _draw() -> void:
 
 
 func _draw_arena(board: Rect2) -> void:
-	var background: Texture2D = _textures.get("arena")
+	var background: Texture2D = _textures.get("glass_arena", _textures.get("arena")) if location == "glass" else _textures.get("arena")
 	if background:
 		draw_texture_rect(background, board, false)
 	else:
@@ -140,6 +146,8 @@ func _draw_arena(board: Rect2) -> void:
 func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	var friendly: bool = unit.side == "hero"
 	var accent := HERO_COLOR if friendly else ENEMY_COLOR
+	if friendly and location == "glass":
+		accent = Color("#c4fff0")
 	var art_key := String(unit.get("sprite", unit.id))
 	if friendly:
 		art_key = "hexwright" if String(unit.name).to_lower().contains("hex") else "warden"
@@ -148,7 +156,7 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		texture = _textures.get("clockwork")
 	var radius := maxf(8.0, float(unit.radius) * unit_scale)
 	var model_height := 132.0
-	if art_key == "marshal":
+	if art_key in ["marshal", "regent", "glass_twin"]:
 		model_height = 191.0
 	elif art_key == "clockwork":
 		model_height = 154.0
@@ -173,6 +181,8 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		var flip := 1.0 if (facing > 0.0) == friendly else -1.0
 		draw_set_transform(point + bounce, 0.0, Vector2(flip, 1.0))
 		var tint := GOLD.lightened(0.35) if art_key == "marshal" and not _textures.has("marshal") else Color.WHITE
+		if unit.name == "Crucible Twin · Ember":
+			tint = Color("#ffc391")
 		draw_texture_rect(texture, Rect2(-width * 0.5, -art_height, width, art_height), false, tint.lerp(GOLD, flash * 0.6))
 		draw_set_transform(Vector2.ZERO)
 	else:
@@ -196,6 +206,11 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		var plate_color := HERO_COLOR if exposed else GOLD
 		_draw_centered("ARMOR OPEN" if exposed else "PLATED", bar.get_center() - Vector2(0.0, 9.0), 14, plate_color)
 		draw_arc(point, radius * 1.4, 0.0, TAU, 32, Color(plate_color, 0.8), 2.0, true)
+	if unit.get("regent_sealed", false):
+		var count: int = unit.get("regent_seals_left", 3)
+		var seal_color := HERO_COLOR if int(unit.get("regent_window_until", 0)) > 0 else GOLD
+		_draw_centered("%d SEALS" % count, bar.get_center() - Vector2(0.0, 9.0), 14, seal_color)
+		draw_arc(point, radius * 1.4, 0.0, TAU * count / 3.0, 32, Color(seal_color, 0.8), 2.0, true)
 
 
 func _draw_intents(field: Rect2) -> void:

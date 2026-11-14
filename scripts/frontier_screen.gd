@@ -22,6 +22,26 @@ const CHART_POINTS := {
 	"stout_start": Vector2(0.33, 0.36), "purse": Vector2(0.34, 0.70),
 	"curated_cache": Vector2(0.70, 0.21), "relic_archive": Vector2(0.73, 0.72)
 }
+const RUN_OPTIONS := [
+	{"location": "brass", "difficulty": "easy", "label": "Brass Frontier · Easy", "hint": "Solo run with one boss."},
+	{"location": "brass", "difficulty": "medium", "label": "Brass Frontier · Medium", "hint": "Two bosses. Recruit a second hero after the first."},
+	{"location": "brass", "difficulty": "hard", "label": "Brass Frontier · Hard", "hint": "Three bosses. Recruit a hero after each of the first two."},
+	{"location": "glass", "difficulty": "easy", "label": "Glass Foundry · Easy", "hint": "Solo run against Foundry hunters, skirmishers, and the Crucible Twins."}
+]
+const BOSS_BRIEFS := {
+	"gilded_marshal": {
+		"portrait": "marshal",
+		"hint": "A push or pull exposes the Marshal's plating for three beats. Land a hit with another hero during that window to shatter it."
+	},
+	"iron_regent": {
+		"portrait": "regent",
+		"hint": "When the Regent raises its seals, land hits from all three heroes within four beats to break its defenses and cancel its sweep."
+	},
+	"crucible_twins": {
+		"portrait": "glass_twin",
+		"hint": "Glass keeps its distance while Ember closes in. Use your targeting rules to focus one twin before turning on the other."
+	}
+}
 
 var _host
 var _run
@@ -122,24 +142,29 @@ func _main_menu() -> void:
 	copy.add_theme_constant_override("separation", 13)
 	hero.add_child(copy)
 	copy.position = Vector2(50, 49)
-	copy.custom_minimum_size.x = 510
+	copy.custom_minimum_size.x = 570
 	copy.add_child(_label("Brass & Aether", 56, CREAM, true))
-	copy.add_child(_label("Brass Frontier", 27, GOLD, true))
-	copy.add_child(_label("Easy  ·  Six encounters and one boss", 16, MUTED))
-	var space := Control.new()
-	space.custom_minimum_size.y = 21
-	copy.add_child(space)
+	copy.add_child(_label("Choose an expedition", 27, GOLD, true))
 	var resumable: bool = not _run.data.is_empty()
 	var result_pending: bool = _run.data.get("phase") == "result"
 	if resumable:
-		var resume_text := "View run result" if result_pending else "Resume %s run" % _difficulty_name()
+		var resume_text := "View run result" if result_pending else "Resume %s · %s" % [_location_name(), _difficulty_name()]
 		copy.add_child(_button(resume_text, func(): _host.run_resume(), true))
-	var medium: bool = _run.profile.get("medium_unlocked", false)
-	var begin := _button("Start Easy run", func(): _start_new_run(0, resumable, "easy"), not resumable)
-	copy.add_child(begin)
-	if medium:
-		copy.add_child(_button("Start Medium run", func(): _start_new_run(0, resumable, "medium"), not resumable))
-		copy.add_child(_label("Medium  ·  Two bosses. Recruit a second hero after the first.", 14, TEAL))
+	var runs := GridContainer.new()
+	runs.columns = 2
+	runs.add_theme_constant_override("h_separation", 8)
+	runs.add_theme_constant_override("v_separation", 8)
+	copy.add_child(runs)
+	var available: Array[Dictionary] = []
+	for option: Dictionary in RUN_OPTIONS:
+		var unlocked: bool = _run.can_start(option.difficulty, option.location)
+		var button := _button(option.label, func(): _start_new_run(0, resumable, option.difficulty, option.location), unlocked and not resumable)
+		button.size_flags_horizontal = SIZE_EXPAND_FILL
+		button.disabled = not unlocked
+		button.tooltip_text = option.hint if unlocked else ("Clear Brass Frontier Easy to unlock." if option.difficulty == "medium" else "Clear Brass Frontier Medium to unlock.")
+		runs.add_child(button)
+		if unlocked:
+			available.append(option)
 	var seed_row := HBoxContainer.new()
 	seed_row.add_theme_constant_override("separation", 8)
 	copy.add_child(seed_row)
@@ -148,13 +173,14 @@ func _main_menu() -> void:
 	seed_input.max_length = 10
 	seed_input.size_flags_horizontal = SIZE_EXPAND_FILL
 	seed_row.add_child(seed_input)
-	var seed_difficulty := OptionButton.new()
-	seed_difficulty.add_item("Easy")
-	if medium:
-		seed_difficulty.add_item("Medium")
-	seed_difficulty.visible = medium
-	seed_row.add_child(seed_difficulty)
-	var seed_button := _button("Play seed", func(): _start_new_run(int(seed_input.text), resumable, "medium" if seed_difficulty.selected == 1 else "easy"))
+	var seed_route := OptionButton.new()
+	for option: Dictionary in available:
+		seed_route.add_item(option.label)
+	seed_row.add_child(seed_route)
+	var seed_button := _button("Play seed", func():
+		var option: Dictionary = available[seed_route.selected]
+		_start_new_run(int(seed_input.text), resumable, option.difficulty, option.location)
+	)
 	seed_button.disabled = true
 	seed_input.text_changed.connect(func(value: String):
 		seed_button.disabled = not value.is_valid_int() or int(value) < 1 or int(value) > 4294967295
@@ -165,10 +191,15 @@ func _main_menu() -> void:
 	copy.add_child(options)
 	options.add_child(_button("Aether Chart", func(): _host.run_show_chart()))
 	options.add_child(_button("Arena practice", func(): _host.run_practice()))
-	if _run.profile.get("hard_unlocked", false):
-		copy.add_child(_label("Hard and Glass Foundry Easy unlocked for future builds.", 14, TEAL))
-	elif not medium:
-		copy.add_child(_label("Clear Easy to unlock Medium.", 14, MUTED))
+	if not _run.profile.get("medium_unlocked", false):
+		copy.add_child(_label("Clear Brass Frontier Easy to unlock Medium.", 14, MUTED))
+	elif not _run.profile.get("hard_unlocked", false):
+		copy.add_child(_label("Clear Medium to unlock Hard and Glass Foundry Easy.", 14, MUTED))
+	else:
+		if _run.profile.get("brass_hard_cleared", false):
+			copy.add_child(_label("Brass Frontier Hard mastered.", 14, TEAL))
+		if _run.profile.get("glass_medium_unlocked", false):
+			copy.add_child(_label("Glass Foundry Medium unlocked for a future build.", 14, TEAL))
 	var marks: int = _run.profile.get("marks", 0)
 	var footer := _label("%d Aether Marks" % marks, 16, GOLD)
 	_layout.add_child(footer)
@@ -176,13 +207,13 @@ func _main_menu() -> void:
 		_layout.add_child(_label(_run.save_error, 15, RUST))
 
 
-func _start_new_run(seed_value: int, resumable: bool, difficulty: String) -> void:
+func _start_new_run(seed_value: int, resumable: bool, difficulty: String, location: String) -> void:
 	if not resumable:
-		_host.run_start(seed_value, difficulty)
+		_host.run_start(seed_value, difficulty, location)
 		return
 	if _run.data.get("phase") == "result":
 		_run.finish_run()
-		_host.run_start(seed_value, difficulty)
+		_host.run_start(seed_value, difficulty, location)
 		return
 	var dialog := ConfirmationDialog.new()
 	dialog.title = "Start a new run?"
@@ -190,7 +221,7 @@ func _start_new_run(seed_value: int, resumable: bool, difficulty: String) -> voi
 	dialog.ok_button_text = "Start new run"
 	dialog.confirmed.connect(func():
 		_run.abandon_run()
-		_host.run_start(seed_value, difficulty)
+		_host.run_start(seed_value, difficulty, location)
 	)
 	dialog.canceled.connect(dialog.queue_free)
 	add_child(dialog)
@@ -198,16 +229,17 @@ func _start_new_run(seed_value: int, resumable: bool, difficulty: String) -> voi
 
 
 func _draft(phase: String) -> void:
+	var recruit_rank := "third" if _party().size() == 2 else "second"
 	var title: String = {
 		"hero": "Choose your hero", "relic": "Choose a starter relic", "starter": "Choose your first tile",
-		"recruit": "Recruit your second hero", "recruit_starter": "Equip your recruit"
+		"recruit": "Recruit your %s hero" % recruit_rank, "recruit_starter": "Equip your recruit"
 	}[phase]
 	var subtitle: String = {
 		"hero": "Each hero brings a passive to the arena.",
 		"relic": "Your relic stays with you for the expedition.",
 		"starter": "Your starter tile begins on your combat timeline.",
-		"recruit": "Your new hero joins at full health. Your first hero carries their current HP into leg two.",
-		"recruit_starter": "This tile starts on the second hero's timeline. Both timelines play in sync."
+		"recruit": "Your recruit joins at full health. The rest of the party carries their current HP forward.",
+		"recruit_starter": "This tile starts on your %s hero's timeline. Party timelines play in sync." % recruit_rank
 	}[phase]
 	_page_title(title, subtitle)
 	var cards := _cards_row()
@@ -234,7 +266,7 @@ func _pick_draft(phase: String, id: String) -> void:
 
 
 func _map() -> void:
-	_page_title("Brass Frontier", _route_caption())
+	_page_title(_location_name(), _route_caption())
 	var region := HBoxContainer.new()
 	region.add_theme_constant_override("separation", 15)
 	region.size_flags_vertical = SIZE_EXPAND_FILL
@@ -267,11 +299,12 @@ func _map() -> void:
 
 
 func _map_board() -> Control:
-	var board := _board(Vector2(655, 500), "res://assets/frontier-map.webp")
+	var map_art := "res://assets/glass-map.webp" if _run.data.get("location") == "glass" else "res://assets/frontier-map.webp"
+	var board := _board(Vector2(655, 500), map_art)
 	var layers: Array = _run.data.get("layers", [])
-	if _difficulty_name() == "Medium" and layers.size() > 7:
-		var start := 6 if _leg_number() == 2 else 0
-		layers = layers.slice(start, 14 if _leg_number() == 2 else 7)
+	var leg_start := (_leg_number() - 1) * FrontierRun.NODES_PER_SEGMENT
+	if layers.size() > FrontierRun.NODES_PER_SEGMENT:
+		layers = layers.slice(maxi(0, leg_start - 1), leg_start + FrontierRun.NODES_PER_SEGMENT)
 	var nodes := {}
 	var points := {}
 	var active := {}
@@ -289,7 +322,7 @@ func _map_board() -> Control:
 			nodes[node.id] = node
 	var lines := _ink_layer(board)
 	lines.draw.connect(func():
-		_draw_route_field(lines)
+		_draw_route_field(lines, map_art)
 		for id in nodes:
 			for destination in nodes[id].next:
 				if points.has(destination):
@@ -315,8 +348,8 @@ func _map_board() -> Control:
 	return board
 
 
-func _draw_route_field(canvas: Control) -> void:
-	if ResourceLoader.exists("res://assets/frontier-map.webp"):
+func _draw_route_field(canvas: Control, image_path: String) -> void:
+	if ResourceLoader.exists(image_path):
 		return
 	for band in range(12):
 		var path := PackedVector2Array()
@@ -337,12 +370,12 @@ func _combat() -> void:
 	var type: String = node.get("type", "battle")
 	_page_title(node.get("label", "Opening battle"), "%s  ·  %s" % [TYPE_NAMES.get(type, "Battle"), _route_caption()])
 	var region := _cards_row()
-	var instruction := "Arrange tiles, choose targeting rules, and check your storage before you start."
-	var marshal: bool = type == "boss" and _difficulty_name() == "Medium" and _run.is_final_boss()
-	if marshal:
-		instruction = "A push or pull exposes the Marshal's plating for three beats. Land a hit with your other hero during that window to shatter it."
+	var boss_id: String = node.get("boss_id", "")
+	var brief: Dictionary = BOSS_BRIEFS.get(boss_id, {})
+	var instruction: String = brief.get("hint", "Arrange tiles, choose targeting rules, and check your storage before you start.")
 	var detail := _choice(region, "Prepare for battle", instruction, "Open arena", func(): _host.run_show_arena())
-	_add_portrait(detail, "marshal" if marshal else "clockwork")
+	var default_portrait := "glass_hunter" if _run.data.get("location") == "glass" else "clockwork"
+	_add_portrait(detail, brief.get("portrait", default_portrait))
 
 
 func _reward() -> void:
@@ -350,7 +383,7 @@ func _reward() -> void:
 	var final_boss: bool = boss and _run.is_final_boss()
 	var instruction := "Choose one tile to equip or store, or take bonus gold."
 	if boss:
-		instruction = "Choose a trophy for the victory recap. It takes no inventory space." if final_boss else "Choose a Legendary tile for the second leg, then recruit your next hero."
+		instruction = "Choose a trophy for the victory recap. It takes no inventory space." if final_boss else "Choose a Legendary tile for the next leg, then recruit your next hero."
 	_page_title("Legendary reward" if boss else "Choose a reward", instruction)
 	var cards := _cards_row()
 	var notice := _notice()
@@ -448,13 +481,15 @@ func _leave() -> void:
 
 func _result() -> void:
 	var victory: bool = _run.data.get("result", "") == "victory"
-	_page_title("Brass Frontier cleared" if victory else "Expedition ended", _route_caption())
+	_page_title(_location_name() + " cleared" if victory else "Expedition ended", _route_caption())
 	var cards := _cards_row()
 	var detail := "Aether Marks earned during the run are banked."
 	if victory:
 		var boss_name: String = _run.data.get("node", {}).get("label", "the final boss")
-		var unlocks := "Hard and Glass Foundry Easy are unlocked." if _difficulty_name() == "Medium" else "Medium is unlocked."
-		detail = "You defeated %s. %s" % [boss_name, unlocks]
+		detail = "You defeated %s." % boss_name
+		var notice: String = _run.data.get("node_notice", "")
+		if not notice.is_empty():
+			detail += "\n" + notice
 	var chosen: String = _run.data.get("trophy", "")
 	if victory and ArenaSim.TILES.has(chosen):
 		detail += "\nVictory reward  ·  " + ArenaSim.TILES[chosen].label
@@ -476,17 +511,20 @@ func _difficulty_name() -> String:
 	return str(_run.data.get("difficulty", "easy")).capitalize()
 
 
+func _location_name() -> String:
+	return FrontierRun.LOCATION_LABELS.get(_run.data.get("location", "brass"), "Brass Frontier")
+
+
 func _route_caption() -> String:
 	var parts := PackedStringArray([_difficulty_name()])
-	if _difficulty_name() == "Medium":
-		parts.append("Leg %d of 2" % _leg_number())
+	var legs: int = FrontierRun.SEGMENT_COUNTS.get(_run.data.get("difficulty", "easy"), 1)
+	if legs > 1:
+		parts.append("Leg %d of %d" % [_leg_number(), legs])
 	parts.append("Seed %s" % str(_run.data.get("seed", "")))
 	return "  ·  ".join(parts)
 
 
 func _leg_number() -> int:
-	if _difficulty_name() == "Medium" and _party().size() > 1:
-		return 2
 	return int(_run.data.get("segment", 1))
 
 

@@ -86,14 +86,18 @@ func _run() -> void:
 	var easy_hp: int = run.data.hp
 	_check(restored.abandon_run(), "Close the new test run.")
 	var medium: Dictionary = _medium_playthrough(game)
+	_check(game.run.finish_run(), "Close the Medium victory recap.")
+	var glass_fights := _new_route_playthrough(game, "easy", "glass")
+	_check(game.run.finish_run(), "Close the Glass Foundry victory recap.")
+	var hard_fights := _new_route_playthrough(game, "hard", "brass")
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(save_path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path + suffix))
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Frontier playthrough passed: Easy %d fights (%d HP), Medium %d fights (%d HP combined)." % [
-			battles, easy_hp, medium.fights, medium.hp])
+		print("Playthroughs passed: Brass Easy %d fights (%d HP), Medium %d (%d HP combined), Glass Easy %d, Brass Hard %d." % [
+			battles, easy_hp, medium.fights, medium.hp, glass_fights, hard_fights])
 	game.queue_free()
 	await process_frame
 	quit(0 if failures.is_empty() else 1)
@@ -216,6 +220,105 @@ func _medium_playthrough(game: Control) -> Dictionary:
 func _check(condition: bool, message: String) -> void:
 	if not condition:
 		failures.append(message)
+
+func _new_route_playthrough(game: Control, difficulty: String, location: String) -> int:
+	var run: RefCounted = game.run
+	game.run_start(42, difficulty, location)
+	if run.data.is_empty():
+		_check(false, "Expected to start " + location + " " + difficulty)
+		return 0
+	var fights := 0
+	var boss_party_sizes: Array[int] = []
+	for step in range(100):
+		match run.data.phase:
+			"hero", "recruit":
+				var hero: String = run.data.offers[0]
+				for preferred in ["warden", "duelist", "apothecary", "cantor", "bulwark"]:
+					if preferred in run.data.offers:
+						hero = preferred
+						break
+				run.choose_hero(hero)
+			"relic":
+				run.choose_relic("pocket_bell")
+			"starter":
+				run.choose_starter("bash")
+			"recruit_starter":
+				run.choose_starter("shot")
+			"combat":
+				game.run_show_arena()
+				_equip_stored_rewards(game)
+				var final: bool = run.is_final_boss()
+				if run.data.node.type == "boss":
+					boss_party_sizes.append(game.lanes.size())
+				game._action()
+				game.speed = 2
+				for tick in range(3000):
+					game._physics_process(1.0 / 60)
+					if game.state == "finished":
+						break
+				fights += 1
+				if game.sim.outcome != "victory":
+					_check(false, "%s %s lost to %s after %d fights." % [location, difficulty, run.data.node.label, fights])
+					break
+				if final and difficulty == "hard":
+					_check(game.sim.trace.any(func(event: Dictionary): return event.tile == "regent_shattered"),
+						"Three heroes should break the Iron Regent's seals during the test clear.")
+				game._action()
+			"reward":
+				var chosen: String = run.data.offers[0]
+				for preferred in ["dawn_bastion", "event_horizon", "bulwark_charge", "shield_ram", "hook_bash", "bash", "shot", "slam"]:
+					if preferred in run.data.offers:
+						chosen = preferred
+						break
+				if not game.run_claim_reward(chosen):
+					run.reward("skip")
+			"map":
+				var options: Array = run.available_nodes()
+				if options.is_empty():
+					break
+				var choice: Dictionary = options[0]
+				for preferred in ["battle", "shop", "elite"]:
+					var matches: Array = options.filter(func(node: Dictionary): return node.type == preferred)
+					if not matches.is_empty():
+						choice = matches[0]
+						break
+				run.choose_node(choice.id)
+			"shop":
+				run.shop_heal()
+				for tile: String in run.data.offers.duplicate():
+					if tile in ["shield_ram", "hook_bash", "shot", "bash"]:
+						game.run_buy_shop(tile)
+				run.leave_node()
+			"rest":
+				run.rest("heal")
+			"event":
+				run.event_choice(0)
+			"result":
+				break
+			_:
+				_check(false, "Unexpected phase: " + str(run.data.phase))
+				break
+	_check(run.data.get("result") == "victory", "%s %s must clear the final boss." % [location, difficulty])
+	_check(boss_party_sizes == ([1, 2, 3] if difficulty == "hard" else [1]), "Each boss must have the expected party size.")
+	_check(run.profile.brass_hard_cleared if difficulty == "hard" else run.profile.glass_medium_unlocked,
+		"New route should record its final progression.")
+	return fights
+
+func _equip_stored_rewards(game: Control) -> void:
+	for row in range(game.storage_rows.size()):
+		for item: Dictionary in game.storage_rows[row].duplicate():
+			if ArenaSim.TILES[item.id].damage < 12:
+				continue
+			var payload := {"id": item.id, "lane": -1, "row": row, "start": item.start}
+			var equipped := false
+			for lane in range(game.lanes.size() - 1, -1, -1):
+				for beat in range(ArenaSim.BEATS):
+					if game._can_place(payload, lane, beat):
+						game._place(payload, lane, beat)
+						equipped = true
+						break
+				if equipped:
+					break
 
 func _write_legacy_easy_save(run: RefCounted) -> void:
 	var legacy_run: Dictionary = run.data.duplicate(true)

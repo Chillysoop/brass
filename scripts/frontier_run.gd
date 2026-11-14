@@ -26,8 +26,27 @@ const NODE_LABELS := {
 	"event": ["Jammed Crane", "Loaded Beacon", "Relay Auction"],
 	"rest": ["Lantern Camp", "Ember Post"],
 }
+const GLASS_NODE_LABELS := {
+	"battle": ["Furnace Watch", "Cinder Alley", "Kiln Patrol", "Shard Pickets", "Soot Stalkers", "Glassway Ambush"],
+	"elite": ["Crucible Guard", "Kiln Wardens"],
+	"shop": ["Bellows Market", "Glasswright's Cart"],
+	"event": ["Cracked Mold", "Smelter Relay", "Cinder Exchange"],
+	"rest": ["Cooling Gallery", "Ash Shelter"],
+}
+const EVENT_KINDS := {
+	"Jammed Crane": "salvage", "Loaded Beacon": "ambush", "Relay Auction": "trade",
+	"Cracked Mold": "salvage", "Smelter Relay": "ambush", "Cinder Exchange": "trade",
+}
+const LOCATION_LABELS := {"brass": "Brass Frontier", "glass": "Glass Foundry"}
+const BOSS_LABELS := {
+	"tollkeeper": "The Tollkeeper", "gilded_marshal": "The Gilded Marshal",
+	"iron_regent": "The Iron Regent", "crucible_twins": "The Crucible Twins",
+}
+const BRASS_BOSSES := ["tollkeeper", "gilded_marshal", "iron_regent"]
+const SEGMENT_COUNTS := {"easy": 1, "medium": 2, "hard": 3}
 const DEFAULT_PROFILE := {
-	"marks": 0, "medium_unlocked": false, "hard_unlocked": false, "glass_easy_unlocked": false, "meta": [],
+	"marks": 0, "medium_unlocked": false, "hard_unlocked": false, "glass_easy_unlocked": false,
+	"brass_hard_cleared": false, "glass_medium_unlocked": false, "meta": [],
 }
 const NODES_PER_SEGMENT := 7
 const VERSION := 1
@@ -89,18 +108,16 @@ func save() -> bool:
 	return true
 
 
-func start_run(seed_value := 0, difficulty := "easy") -> bool:
-	if not data.is_empty() or difficulty not in ["easy", "medium"]:
-		return false
-	if difficulty == "medium" and not profile.medium_unlocked:
+func start_run(seed_value := 0, difficulty := "easy", location := "brass") -> bool:
+	if not data.is_empty() or not can_start(difficulty, location):
 		return false
 	# JSON preserves these 32-bit seeds exactly.
 	var run_seed := clampi(seed_value, 1, 4294967295) if seed_value != 0 else maxi(1, int(randi()))
-	var layers := _make_map(run_seed, difficulty)
+	var layers := _make_map(run_seed, difficulty, location)
 	var hp := 100 + (8 if "stout_start" in profile.meta else 0)
 	var gold := 12 + (8 if "purse" in profile.meta else 0)
 	data = {
-		"phase": "hero", "seed": run_seed, "difficulty": difficulty, "segment": 1,
+		"phase": "hero", "seed": run_seed, "difficulty": difficulty, "location": location, "segment": 1,
 		"hero": "", "heroes": [], "relics": [], "hp": hp, "max_hp": hp,
 		"gold": gold, "layers": layers, "node": layers[0][0], "visited": [layers[0][0].id],
 		"offers": _sample(HEROES.keys(), 3, run_seed, 11), "result": "", "marks_earned": 0,
@@ -109,6 +126,18 @@ func start_run(seed_value := 0, difficulty := "easy") -> bool:
 	loadout = {"lanes": [[]], "storage": [[], [], []], "defaults": ["nearest"], "suppressed": {}}
 	save()
 	return true
+
+
+func can_start(difficulty: String, location := "brass") -> bool:
+	if location == "glass":
+		return difficulty == "easy" and profile.glass_easy_unlocked
+	if location != "brass":
+		return false
+	match difficulty:
+		"easy": return true
+		"medium": return profile.medium_unlocked
+		"hard": return profile.hard_unlocked
+	return false
 
 
 func choose_hero(id: String) -> bool:
@@ -163,14 +192,15 @@ func choose_recruit_starter(id: String) -> bool:
 	if not _is_offer("recruit_starter", id):
 		return false
 	var max_hp: int = data.max_hp
-	data.heroes.append({"id": data.pending_recruit, "hp": max_hp, "max_hp": max_hp})
+	var recruit: String = data.pending_recruit
+	data.heroes.append({"id": recruit, "hp": max_hp, "max_hp": max_hp})
 	data.erase("pending_recruit")
 	loadout.lanes.append(_starter_lane(id))
 	loadout.defaults.append("nearest")
-	data.segment = 2
+	data.segment = data.heroes.size()
 	data.phase = "map"
 	data.offers = []
-	data.node_notice = "%s joins the expedition." % HEROES[data.heroes[1].id].label
+	data.node_notice = "%s joins the expedition." % HEROES[recruit].label
 	save()
 	return true
 
@@ -204,7 +234,7 @@ func choose_node(id: String) -> bool:
 	data.segment = 1 + floori(float(selected.row) / NODES_PER_SEGMENT)
 	data.visited.append(id)
 	data.node_notice = ""
-	var midpoint := 6 if data.difficulty == "medium" else 3
+	var midpoint := floori(float(data.layers.size() - 1) / 2.0)
 	if not data.midpoint_paid and int(selected.row) >= midpoint:
 		data.midpoint_paid = true
 		_grant_marks(1)
@@ -235,7 +265,8 @@ func encounter() -> Dictionary:
 		"seed": int(data.seed) ^ _node_salt(71), "hero": data.hero, "hp": int(data.hp),
 		"max_hp": int(data.max_hp), "relic": data.relics.front() if not data.relics.is_empty() else "",
 		"relics": data.relics.duplicate(), "heroes": roster, "segment": data.segment,
-		"difficulty": data.difficulty, "final_boss": is_final_boss(),
+		"difficulty": data.difficulty, "location": data.location,
+		"boss_id": data.node.get("boss_id", ""), "final_boss": is_final_boss(),
 	}
 
 
@@ -284,10 +315,21 @@ func finish_combat(victory: bool, hp: Variant) -> bool:
 func _resolve_boss() -> void:
 	_grant_marks(4)
 	if not is_final_boss():
-		data.node_notice = "The Tollkeeper fell. Choose a Legendary and draft a second hero."
+		var rank := "second" if data.heroes.size() == 1 else "third"
+		data.node_notice = "%s fell. Choose a Legendary and draft a %s hero." % [data.node.label, rank]
 		return
 	data.result = "victory"
-	if data.difficulty == "medium":
+	if data.location == "glass":
+		var first_clear := not bool(profile.glass_medium_unlocked)
+		_grant_marks(15 if first_clear else 10)
+		profile.glass_medium_unlocked = true
+		data.node_notice = "Glass Foundry Easy cleared. Glass Foundry Medium unlocked." if first_clear else "Glass Foundry Easy cleared."
+	elif data.difficulty == "hard":
+		var first_clear := not bool(profile.brass_hard_cleared)
+		_grant_marks(50 if first_clear else 35)
+		profile.brass_hard_cleared = true
+		data.node_notice = "Brass Frontier Hard mastered." if first_clear else "Brass Frontier Hard cleared."
+	elif data.difficulty == "medium":
 		var first_clear := not bool(profile.hard_unlocked)
 		_grant_marks(30 if first_clear else 20)
 		profile.hard_unlocked = true
@@ -308,7 +350,8 @@ func reward(id: String) -> bool:
 		data.phase = "result"
 	elif data.node.type == "boss":
 		var classes := HEROES.keys()
-		classes.erase(data.hero)
+		for hero: Dictionary in data.heroes:
+			classes.erase(hero.id)
 		data.phase = "recruit"
 		data.offers = _sample(classes, 3, int(data.seed), _node_salt(94))
 		save()
@@ -383,25 +426,31 @@ func event_text() -> String:
 		"Jammed Crane": return "A jammed lift holds a salvage crate above the roadway. The crew offers a cut if you walk away."
 		"Loaded Beacon": return "A beacon is drawing a nearby clockwork patrol. Its keeper can disarm it for a fee."
 		"Relay Auction": return "A relay broker will exchange your first relic for a choice of Rare tiles."
+		"Cracked Mold": return "A chipped casting mold holds a salvageable tile. A glasswright offers to buy the mold intact."
+		"Smelter Relay": return "A live smelter relay is calling a Foundry patrol. Its operator can shut it off for a fee."
+		"Cinder Exchange": return "A Foundry broker offers a choice of Rare tiles in exchange for your first relic."
 	return ""
 
 
 func event_options() -> Array:
-	match data.get("node", {}).get("label"):
-		"Jammed Crane": return ["Take 8 gold", "Free the crate · 60% Uncommon reward, 40% lose 10% max HP"]
-		"Loaded Beacon": return ["Disarm it · pay 6 gold", "Fight the patrol · win a tile and 12 gold"] if int(data.gold) >= 6 else ["Walk away", "Fight the patrol · win a tile and 12 gold"]
-		"Relay Auction": return ["Walk away", "Trade first relic · choose a Rare tile" if not data.relics.is_empty() else "No relic to trade"]
+	match EVENT_KINDS.get(data.get("node", {}).get("label", "")):
+		"salvage":
+			var attempt := "Free the casting" if data.location == "glass" else "Free the crate"
+			return ["Take 8 gold", attempt + " · 60% Uncommon reward, 40% lose 10% max HP"]
+		"ambush": return ["Disarm it · pay 6 gold", "Fight the patrol · win a tile and 12 gold"] if int(data.gold) >= 6 else ["Walk away", "Fight the patrol · win a tile and 12 gold"]
+		"trade": return ["Walk away", "Trade first relic · choose a Rare tile" if not data.relics.is_empty() else "No relic to trade"]
 	return []
 
 
 func event_choice(index: int) -> bool:
 	if data.get("phase") != "event" or index not in [0, 1]:
 		return false
-	if data.node.label == "Relay Auction" and index == 1 and data.relics.is_empty():
+	var kind: String = EVENT_KINDS.get(data.node.label, "")
+	if kind == "trade" and index == 1 and data.relics.is_empty():
 		return false
 	data.phase = "map"
-	match data.node.label:
-		"Jammed Crane":
+	match kind:
+		"salvage":
 			if index == 0:
 				data.gold += 8
 			elif _rng(int(data.seed), _node_salt(91)).randf() < 0.6:
@@ -412,14 +461,14 @@ func event_choice(index: int) -> bool:
 					if hero.hp > 0:
 						hero.hp = maxi(1, int(hero.hp) - ceili(float(hero.max_hp) * 0.10))
 				_sync_lead_hero()
-				data.node_notice = "The crane collapsed. Lost 10% of maximum HP."
-		"Loaded Beacon":
+				data.node_notice = "The mold shattered. Lost 10% of maximum HP." if data.location == "glass" else "The crane collapsed. Lost 10% of maximum HP."
+		"ambush":
 			if index == 1:
 				data.phase = "combat"
 				data.node["encounter_override"] = "battle"
 			elif int(data.gold) >= 6:
 				data.gold -= 6
-		"Relay Auction":
+		"trade":
 			if index == 1 and not data.relics.is_empty():
 				data.relics.pop_front()
 				data.phase = "reward"
@@ -458,29 +507,36 @@ func buy_meta(id: String) -> bool:
 	return true
 
 
-func _make_map(seed_value: int, difficulty := "easy") -> Array:
-	var rng := _rng(seed_value, 1)
-	var layers: Array = [[_node("opening", "Gate Trial", 0, 1)]]
-	var specifications := [
-		["battle", "event", "battle"],
-		["shop", "battle", "battle"],
-		["battle", "elite", "event"],
-		["battle", "shop", "battle"],
-		["rest", "rest", "rest"],
-	]
+func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Array:
+	var glass := location == "glass"
+	var rng := _rng(seed_value, 101 if glass else 1)
+	var labels := GLASS_NODE_LABELS if glass else NODE_LABELS
+	var layers: Array = [[_node("opening", "Cooling Gate Trial" if glass else "Gate Trial", 0, 1)]]
 	var used_events: Array[String] = []
-	_append_layers(layers, specifications, rng, used_events)
-	layers.append([_node("boss", "The Tollkeeper", layers.size(), 1)])
-	if difficulty == "medium":
-		layers.append([_node("battle", "Upper Gate Patrol", layers.size(), 1)])
-		_append_layers(layers, [
-			["battle", "event", "battle"],
+	var first_leg := [
+		["battle", "event", "battle"], ["shop", "battle", "battle"],
+		["battle", "elite", "event"], ["battle", "shop", "battle"], ["rest", "rest", "rest"],
+	]
+	if glass:
+		first_leg = [
+			["battle", "battle", "event"], ["battle", "elite", "battle"],
+			["event", "shop", "battle"], ["battle", "shop", "battle"], ["rest", "rest", "rest"],
+		]
+	_append_layers(layers, first_leg, labels, rng, used_events)
+	_append_boss(layers, "crucible_twins" if glass else BRASS_BOSSES[0])
+	var segments: int = SEGMENT_COUNTS[difficulty]
+	for segment in range(1, segments):
+		var gate := "Upper Gate Patrol" if segment == 1 else "Regent's Outer Guard"
+		layers.append([_node("battle", gate, layers.size(), 1)])
+		var leg := [
+			["battle", "event" if segment == 1 else "battle", "battle"],
 			["battle", "shop", "battle"],
 			["elite", "battle", "battle"],
 			["shop", "battle", "battle"],
 			["rest", "rest", "rest"],
-		], rng, used_events)
-		layers.append([_node("boss", "The Gilded Marshal", layers.size(), 1)])
+		]
+		_append_layers(layers, leg, labels, rng, used_events)
+		_append_boss(layers, BRASS_BOSSES[segment])
 	for row in range(layers.size() - 1):
 		for node: Dictionary in layers[row]:
 			for target: Dictionary in layers[row + 1]:
@@ -489,14 +545,20 @@ func _make_map(seed_value: int, difficulty := "easy") -> Array:
 	return layers
 
 
-func _append_layers(layers: Array, specifications: Array, rng: RandomNumberGenerator, used_events: Array[String]) -> void:
+func _append_boss(layers: Array, id: String) -> void:
+	var boss := _node("boss", BOSS_LABELS[id], layers.size(), 1)
+	boss.boss_id = id
+	layers.append([boss])
+
+
+func _append_layers(layers: Array, specifications: Array, node_labels: Dictionary, rng: RandomNumberGenerator, used_events: Array[String]) -> void:
 	for specification: Array in specifications:
 		var kinds: Array = specification.duplicate()
 		_shuffle(kinds, rng)
 		var layer: Array = []
 		for column in range(kinds.size()):
 			var kind: String = kinds[column]
-			var labels: Array = NODE_LABELS[kind].duplicate()
+			var labels: Array = node_labels[kind].duplicate()
 			if kind == "event":
 				for old: String in used_events:
 					labels.erase(old)
@@ -590,6 +652,7 @@ func _restore_integers() -> void:
 	for field in ["seed", "hp", "max_hp", "gold", "marks_earned"]:
 		data[field] = int(data[field])
 	data.difficulty = data.get("difficulty", "easy")
+	data.location = data.get("location", "brass")
 	data.segment = int(data.get("segment", 1))
 	if not data.has("heroes"):
 		data.heroes = [] if data.hero.is_empty() else [{"id": data.hero, "hp": data.hp, "max_hp": data.max_hp}]
@@ -598,13 +661,18 @@ func _restore_integers() -> void:
 		hero.max_hp = int(hero.max_hp)
 	for layer: Array in data.layers:
 		for node: Dictionary in layer:
-			node.row = int(node.row)
-			node.column = int(node.column)
-	data.node.row = int(data.node.row)
-	data.node.column = int(data.node.column)
+			_restore_node(node)
+	_restore_node(data.node)
 	for items: Array in loadout.lanes + loadout.storage:
 		for tile: Dictionary in items:
 			tile.start = int(tile.start)
+
+
+func _restore_node(node: Dictionary) -> void:
+	node.row = int(node.row)
+	node.column = int(node.column)
+	if node.type == "boss" and not node.has("boss_id"):
+		node.boss_id = BOSS_LABELS.find_key(node.label)
 
 
 func _node_salt(salt: int) -> int:
