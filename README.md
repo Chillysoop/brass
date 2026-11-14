@@ -19,6 +19,10 @@ With matching Godot export templates installed, create a `build` folder and expo
 
 Run `tests/arena_sim_test.gd` and `tests/arena_lab_test.gd` with Godot's `--headless --script` options to check the simulation and setup controls.
 
+## Desktop launcher
+
+The **Brass & Aether** desktop shortcut checks the project's GitHub `main` branch when launched. It builds new revisions in a separate per-user cache and keeps the last working build available for offline play. The updater uses Git, Godot 4.7.2, and the matching Windows export templates.
+
 ## Credits
 
 Brass & Aether uses [Godot Engine](https://godotengine.org/license/). The arena backdrop and character sprites were generated with ImageGen. The prompts are in `assets/imagegen-prompts.md`.
