@@ -20,6 +20,7 @@ const SPRITE_PATHS := {
 	"glass_hunter": "res://assets/glass_hunter.png",
 	"glass_skirmisher": "res://assets/glass_skirmisher.png",
 	"glass_twin": "res://assets/glass_twin.png",
+	"prism_warden": "res://assets/prism_warden.png",
 	"glass_arena": "res://assets/glass-arena.webp",
 }
 const EFFECT_LENGTHS := {
@@ -156,7 +157,7 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		texture = _textures.get("clockwork")
 	var radius := maxf(8.0, float(unit.radius) * unit_scale)
 	var model_height := 132.0
-	if art_key in ["marshal", "regent", "glass_twin"]:
+	if art_key in ["marshal", "regent", "glass_twin", "prism_warden"]:
 		model_height = 191.0
 	elif art_key == "clockwork":
 		model_height = 154.0
@@ -211,6 +212,11 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		var seal_color := HERO_COLOR if int(unit.get("regent_window_until", 0)) > 0 else GOLD
 		_draw_centered("%d SEALS" % count, bar.get_center() - Vector2(0.0, 9.0), 14, seal_color)
 		draw_arc(point, radius * 1.4, 0.0, TAU * count / 3.0, 32, Color(seal_color, 0.8), 2.0, true)
+	if unit.get("prism_warded", false):
+		var exposed: bool = int(unit.get("prism_window_until", 0)) > 0
+		var ward_color := HERO_COLOR if exposed else TELEPORT_COLOR
+		_draw_centered("WARD OPEN" if exposed else "PRISM WARD", bar.get_center() - Vector2(0.0, 9.0), 14, ward_color)
+		draw_arc(point, radius * 1.4, 0.0, TAU, 32, Color(ward_color, 0.8), 2.0, true)
 
 
 func _draw_intents(field: Rect2) -> void:
@@ -218,15 +224,17 @@ func _draw_intents(field: Rect2) -> void:
 		var target_id: String = unit.get("intent", "")
 		if unit.hp <= 0 or target_id.is_empty():
 			continue
+		var start := _project(_positions.get(unit.id, unit.pos), field)
+		var secondary: String = unit.get("prism_secondary", "")
 		for target in units:
-			if target.id != target_id or target.hp <= 0:
+			if target.hp <= 0 or target.id not in [target_id, secondary]:
 				continue
-			var start := _project(_positions.get(unit.id, unit.pos), field)
 			var end := _project(_positions.get(target.id, target.pos), field)
 			var warning := ENEMY_COLOR.darkened(0.34)
+			if target.id == secondary:
+				warning = TELEPORT_COLOR.darkened(0.21)
 			draw_dashed_line(start, end, Color(warning, 0.8), 2.0, 6.0)
 			draw_arc(end, 14.0 + sin(_animation_time * 22.0) * 2.0, 0.0, TAU, 24, warning, 2.0, true)
-			break
 
 
 func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:

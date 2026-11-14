@@ -33,20 +33,30 @@ const GLASS_NODE_LABELS := {
 	"event": ["Cracked Mold", "Smelter Relay", "Cinder Exchange"],
 	"rest": ["Cooling Gallery", "Ash Shelter"],
 }
+const GLASS_UPPER_NODE_LABELS := {
+	"battle": ["Annealing Walk", "Mirror Kiln", "Furnace Overlook", "Polished Barricade", "Silica Garrison"],
+	"elite": ["Prism Sentinels", "Mirror Wardens"],
+	"shop": ["Cutters' Bazaar", "Lenswright's Cart"],
+	"event": ["Steam Infirmary", "Lenswright's Bench", "Prism Cache"],
+	"rest": ["Tempering Refuge", "Coolant Cistern"],
+}
 const EVENT_KINDS := {
 	"Jammed Crane": "salvage", "Loaded Beacon": "ambush", "Relay Auction": "trade",
 	"Cracked Mold": "salvage", "Smelter Relay": "ambush", "Cinder Exchange": "trade",
+	"Steam Infirmary": "infirmary", "Lenswright's Bench": "lenswright", "Prism Cache": "prism_cache",
 }
 const LOCATION_LABELS := {"brass": "Brass Frontier", "glass": "Glass Foundry"}
 const BOSS_LABELS := {
 	"tollkeeper": "The Tollkeeper", "gilded_marshal": "The Gilded Marshal",
-	"iron_regent": "The Iron Regent", "crucible_twins": "The Crucible Twins",
+	"iron_regent": "The Iron Regent", "crucible_twins": "The Crucible Twins", "prism_warden": "The Prism Warden",
 }
 const BRASS_BOSSES := ["tollkeeper", "gilded_marshal", "iron_regent"]
+const GLASS_BOSSES := ["crucible_twins", "prism_warden"]
 const SEGMENT_COUNTS := {"easy": 1, "medium": 2, "hard": 3}
 const DEFAULT_PROFILE := {
 	"marks": 0, "medium_unlocked": false, "hard_unlocked": false, "glass_easy_unlocked": false,
-	"brass_hard_cleared": false, "glass_medium_unlocked": false, "meta": [],
+	"brass_hard_cleared": false, "glass_medium_unlocked": false, "glass_hard_unlocked": false,
+	"crown_easy_unlocked": false, "meta": [],
 }
 const NODES_PER_SEGMENT := 7
 const VERSION := 1
@@ -130,7 +140,10 @@ func start_run(seed_value := 0, difficulty := "easy", location := "brass") -> bo
 
 func can_start(difficulty: String, location := "brass") -> bool:
 	if location == "glass":
-		return difficulty == "easy" and profile.glass_easy_unlocked
+		match difficulty:
+			"easy": return profile.glass_easy_unlocked
+			"medium": return profile.glass_medium_unlocked
+		return false
 	if location != "brass":
 		return false
 	match difficulty:
@@ -319,7 +332,13 @@ func _resolve_boss() -> void:
 		data.node_notice = "%s fell. Choose a Legendary and draft a %s hero." % [data.node.label, rank]
 		return
 	data.result = "victory"
-	if data.location == "glass":
+	if data.location == "glass" and data.difficulty == "medium":
+		var first_clear := not bool(profile.glass_hard_unlocked)
+		_grant_marks(30 if first_clear else 20)
+		profile.glass_hard_unlocked = true
+		profile.crown_easy_unlocked = true
+		data.node_notice = "Glass Foundry Medium cleared. Hard and Crown Relay Easy unlocked." if first_clear else "Glass Foundry Medium cleared."
+	elif data.location == "glass":
 		var first_clear := not bool(profile.glass_medium_unlocked)
 		_grant_marks(15 if first_clear else 10)
 		profile.glass_medium_unlocked = true
@@ -429,6 +448,9 @@ func event_text() -> String:
 		"Cracked Mold": return "A chipped casting mold holds a salvageable tile. A glasswright offers to buy the mold intact."
 		"Smelter Relay": return "A live smelter relay is calling a Foundry patrol. Its operator can shut it off for a fee."
 		"Cinder Exchange": return "A Foundry broker offers a choice of Rare tiles in exchange for your first relic."
+		"Steam Infirmary": return "An attendant can treat the whole expedition with the Foundry's last clean vapor tank."
+		"Lenswright's Bench": return "A lenswright offers to cut a Rare tile from one of two slabs on the workbench."
+		"Prism Cache": return "Heat bleeds from a half-buried cache. A scavenger will pay for its location, or you can try to open it."
 	return ""
 
 
@@ -439,15 +461,29 @@ func event_options() -> Array:
 			return ["Take 8 gold", attempt + " · 60% Uncommon reward, 40% lose 10% max HP"]
 		"ambush": return ["Disarm it · pay 6 gold", "Fight the patrol · win a tile and 12 gold"] if int(data.gold) >= 6 else ["Walk away", "Fight the patrol · win a tile and 12 gold"]
 		"trade": return ["Walk away", "Trade first relic · choose a Rare tile" if not data.relics.is_empty() else "No relic to trade"]
+		"infirmary": return ["Walk away", "Treat the party · pay 10 gold for 20 HP each" if int(data.gold) >= 10 else "Treatment costs 10 gold"]
+		"lenswright": return ["Walk away", "Pay 14 gold · choose a Rare tile" if int(data.gold) >= 14 else "Cutting costs 14 gold"]
+		"prism_cache": return ["Sell the location · gain 12 gold", "Open the cache · lose 15% max HP for an Epic tile"]
 	return []
 
 
-func event_choice(index: int) -> bool:
+func event_option_available(index: int) -> bool:
 	if data.get("phase") != "event" or index not in [0, 1]:
 		return false
+	if index == 0:
+		return true
 	var kind: String = EVENT_KINDS.get(data.node.label, "")
-	if kind == "trade" and index == 1 and data.relics.is_empty():
+	match kind:
+		"trade": return not data.relics.is_empty()
+		"infirmary": return int(data.gold) >= 10
+		"lenswright": return int(data.gold) >= 14
+	return true
+
+
+func event_choice(index: int) -> bool:
+	if not event_option_available(index):
 		return false
+	var kind: String = EVENT_KINDS.get(data.node.label, "")
 	data.phase = "map"
 	match kind:
 		"salvage":
@@ -457,10 +493,7 @@ func event_choice(index: int) -> bool:
 				data.phase = "reward"
 				data.offers = _sample(ELITE_TILES.slice(0, 2), 2, int(data.seed), _node_salt(92))
 			else:
-				for hero: Dictionary in data.heroes:
-					if hero.hp > 0:
-						hero.hp = maxi(1, int(hero.hp) - ceili(float(hero.max_hp) * 0.10))
-				_sync_lead_hero()
+				_apply_event_damage(0.10)
 				data.node_notice = "The mold shattered. Lost 10% of maximum HP." if data.location == "glass" else "The crane collapsed. Lost 10% of maximum HP."
 		"ambush":
 			if index == 1:
@@ -473,6 +506,24 @@ func event_choice(index: int) -> bool:
 				data.relics.pop_front()
 				data.phase = "reward"
 				data.offers = _sample(ELITE_TILES.slice(2, 4), 2, int(data.seed), _node_salt(92))
+		"infirmary":
+			if index == 1:
+				data.gold -= 10
+				_heal(20)
+				data.node_notice = "The party recovered up to 20 HP each."
+		"lenswright":
+			if index == 1:
+				data.gold -= 14
+				data.phase = "reward"
+				data.offers = _sample(ELITE_TILES.slice(2, 4), 2, int(data.seed), _node_salt(92))
+		"prism_cache":
+			if index == 0:
+				data.gold += 12
+			else:
+				_apply_event_damage(0.15)
+				data.phase = "reward"
+				data.offers = _sample(ELITE_TILES.slice(4, 6), 1, int(data.seed), _node_salt(92))
+				data.node_notice = "Opening the cache cost 15% of maximum HP."
 	save()
 	return true
 
@@ -523,10 +574,11 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 			["event", "shop", "battle"], ["battle", "shop", "battle"], ["rest", "rest", "rest"],
 		]
 	_append_layers(layers, first_leg, labels, rng, used_events)
-	_append_boss(layers, "crucible_twins" if glass else BRASS_BOSSES[0])
+	var bosses := GLASS_BOSSES if glass else BRASS_BOSSES
+	_append_boss(layers, bosses[0])
 	var segments: int = SEGMENT_COUNTS[difficulty]
 	for segment in range(1, segments):
-		var gate := "Upper Gate Patrol" if segment == 1 else "Regent's Outer Guard"
+		var gate := "Annealing Hall" if glass else ("Upper Gate Patrol" if segment == 1 else "Regent's Outer Guard")
 		layers.append([_node("battle", gate, layers.size(), 1)])
 		var leg := [
 			["battle", "event" if segment == 1 else "battle", "battle"],
@@ -535,8 +587,15 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 			["shop", "battle", "battle"],
 			["rest", "rest", "rest"],
 		]
-		_append_layers(layers, leg, labels, rng, used_events)
-		_append_boss(layers, BRASS_BOSSES[segment])
+		var leg_labels := labels
+		if glass:
+			leg = [
+				["battle", "event", "shop"], ["battle", "elite", "battle"],
+				["event", "shop", "battle"], ["battle", "battle", "battle"], ["rest", "rest", "rest"],
+			]
+			leg_labels = GLASS_UPPER_NODE_LABELS
+		_append_layers(layers, leg, leg_labels, rng, used_events)
+		_append_boss(layers, bosses[segment])
 	for row in range(layers.size() - 1):
 		for node: Dictionary in layers[row]:
 			for target: Dictionary in layers[row + 1]:
@@ -637,6 +696,13 @@ func _heal(amount: int, revive := true) -> void:
 	for hero: Dictionary in data.heroes:
 		if revive or hero.hp > 0:
 			hero.hp = mini(int(hero.max_hp), int(hero.hp) + amount)
+	_sync_lead_hero()
+
+
+func _apply_event_damage(fraction: float) -> void:
+	for hero: Dictionary in data.heroes:
+		if hero.hp > 0:
+			hero.hp = maxi(1, int(hero.hp) - ceili(float(hero.max_hp) * fraction))
 	_sync_lead_hero()
 
 

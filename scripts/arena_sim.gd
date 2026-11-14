@@ -59,7 +59,10 @@ const CAMPAIGN_ENEMIES := {
 		"twin": true, "displacement": 0.76},
 	"ember_twin": {"name": "Crucible Twin · Ember", "art": "glass_twin", "hp": 139, "radius": 33.0, "speed": 99.0,
 		"spacing": 91.0, "reach": 160.0, "damage": 13, "first": 146, "cooldown": 143, "windup": 32, "target": "lowest_hp",
-		"twin": true, "push": 210.0, "displacement": 0.76}
+		"twin": true, "push": 210.0, "displacement": 0.76},
+	"prism_warden": {"name": "The Prism Warden", "art": "prism_warden", "hp": 870, "radius": 46.0, "speed": 98.0,
+		"spacing": 136.0, "reach": 266.0, "damage": 29, "first": 120, "cooldown": 118, "windup": 49,
+		"target": "ranged_damage", "push": 320.0, "displacement": 0.82}
 }
 
 const TILES := {
@@ -225,11 +228,11 @@ func _start_campaign(options: Dictionary) -> void:
 	rng.seed = int(options.get("seed", 0))
 	var y := rng.randf_range(217.0, 289.0)
 	var encounter: String = options.get("encounter", "opening")
-	if options.get("location", "brass") == "glass":
-		_start_glass_encounter(encounter, rng, y)
-		return
 	var difficulty: String = options.get("difficulty", "easy")
 	var segment := clampi(int(options.get("segment", 1)), 1, 3)
+	if options.get("location", "brass") == "glass":
+		_start_glass_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""))
+		return
 	var health_scale: float = {"medium": [1.12, 2.15, 2.15], "hard": [1.21, 2.35, 3.0]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	var damage_scale: float = {"medium": [1.07, 1.58, 1.58], "hard": [1.10, 1.64, 1.80]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	match encounter:
@@ -263,22 +266,32 @@ func _start_campaign(options: Dictionary) -> void:
 			_add_campaign_enemy("recruit", Vector2(522, y))
 
 
-func _start_glass_encounter(encounter: String, rng: RandomNumberGenerator, y: float) -> void:
+func _start_glass_encounter(encounter: String, rng: RandomNumberGenerator, y: float, difficulty: String, segment: int, boss_id: String) -> void:
+	var medium := difficulty == "medium"
+	var second_leg := medium and segment >= 2
+	var health_scale := 2.15 if second_leg else (1.14 if medium else 1.0)
+	var damage_scale := 1.51 if second_leg else (1.08 if medium else 1.0)
 	match encounter:
 		"battle":
 			if rng.randi_range(0, 1) == 0:
-				_add_campaign_enemy("glass_hunter", Vector2(615, y))
+				_add_campaign_enemy("glass_hunter", Vector2(615, y), 0, health_scale, damage_scale)
+				if second_leg:
+					_add_campaign_enemy("glass_skirmisher", Vector2(686, y + 90.0), 16, 1.15, damage_scale)
 			else:
-				_add_campaign_enemy("glass_skirmisher", Vector2(589, y - 63.0))
-				_add_campaign_enemy("glass_skirmisher", Vector2(668, y + 68.0), 25)
+				_add_campaign_enemy("glass_skirmisher", Vector2(589, y - 63.0), 0, health_scale, damage_scale)
+				var partner := "glass_hunter" if second_leg else "glass_skirmisher"
+				_add_campaign_enemy(partner, Vector2(668, y + 68.0), 25, health_scale, damage_scale)
 		"elite":
-			_add_campaign_enemy("glass_overseer", Vector2(644, y))
-			_add_campaign_enemy("glass_skirmisher", Vector2(676, y + 108.0), 25)
+			_add_campaign_enemy("glass_overseer", Vector2(644, y), 0, health_scale, damage_scale)
+			_add_campaign_enemy("glass_skirmisher", Vector2(676, y + 108.0), 25, health_scale, damage_scale)
 		"boss":
-			_add_campaign_enemy("glass_twin", Vector2(615, y - 70.0))
-			_add_campaign_enemy("ember_twin", Vector2(661, y + 62.0))
+			if boss_id == "prism_warden" or (boss_id.is_empty() and second_leg):
+				_add_campaign_enemy("prism_warden", Vector2(647, y))
+			else:
+				_add_campaign_enemy("glass_twin", Vector2(615, y - 70.0), 0, health_scale, damage_scale)
+				_add_campaign_enemy("ember_twin", Vector2(661, y + 62.0), 0, health_scale, damage_scale)
 		_:
-			_add_campaign_enemy("glass_recruit", Vector2(522, y))
+			_add_campaign_enemy("glass_recruit", Vector2(522, y), 0, health_scale, damage_scale)
 
 
 func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_scale := 1.0, damage_scale := 1.0) -> void:
@@ -292,6 +305,9 @@ func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_sca
 	if kind == "marshal":
 		enemy["marshal_plated"] = false
 		enemy["marshal_exposed_until"] = 0
+	elif kind == "prism_warden":
+		enemy["prism_warded"] = false
+		enemy["prism_window_until"] = 0
 	if kind == "regent":
 		enemy["regent_sealed"] = false
 		enemy["regent_seals_left"] = 0
@@ -308,6 +324,9 @@ func step() -> Array[Dictionary]:
 		var exposure: int = unit.get("marshal_exposed_until", 0)
 		if exposure > 0 and tick > exposure:
 			unit.marshal_exposed_until = 0
+		var prism_window: int = unit.get("prism_window_until", 0)
+		if prism_window > 0 and tick > prism_window:
+			unit.prism_window_until = 0
 		var seal_window: int = unit.get("regent_window_until", 0)
 		if seal_window > 0 and tick > seal_window:
 			unit.regent_window_until = 0
@@ -627,6 +646,8 @@ func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: Str
 	_emit(kind, "%s %s %s." % [actor.name, action, target.name], actor, target, tile_id, roundi(force), start_position, endpoint)
 	if target.get("marshal_plated", false) and actor.side == "hero" and force > 100.0:
 		_expose_marshal(actor, target)
+	elif target.get("prism_warded", false) and actor.side == "hero" and force > 100.0:
+		_expose_prism(actor, target)
 
 
 func _teleport(actor: Dictionary, target: Dictionary) -> bool:
@@ -680,7 +701,9 @@ func _run_enemies() -> void:
 		enemy.intent = target.id
 		enemy.intent_tick = tick + int(attack.get("windup", 24))
 		var message := "%s winds up at %s." % [enemy.name, target.name]
-		if enemy.get("marshal_plated", false):
+		if enemy.get("sprite") == "prism_warden":
+			message = _prism_mark(enemy, target)
+		elif enemy.get("marshal_plated", false):
 			message = "The Marshal charges a sweep. Push or pull it, then follow up with your other hero."
 		elif enemy.get("regent_sealed", false):
 			message = "The Regent charges a sweep. Land a hit from each hero within 4 beats to break its seals."
@@ -696,6 +719,9 @@ func _resolve_intent(enemy: Dictionary) -> void:
 	var attack: Dictionary = enemy.get("attack", {})
 	enemy.intent = ""
 	enemy.next_attack = tick + int(attack.get("cooldown", 116 if enemy.id == "scout" else 138))
+	if enemy.get("sprite") == "prism_warden":
+		_prism_beam(enemy, intent, attack)
+		return
 	if enemy.get("marshal_plated", false):
 		_sweep(enemy, attack, 48.0, 5)
 		return
@@ -733,6 +759,46 @@ func _sweep(enemy: Dictionary, attack: Dictionary, extra_reach: float, bonus_dam
 		_emit("miss", "%s's sweep hits no one." % enemy.name, enemy, enemy, "enemy_attack")
 
 
+func _prism_mark(enemy: Dictionary, ranged_leader: Dictionary) -> String:
+	var weak := _select(enemy, "lowest_hp")
+	enemy["prism_secondary"] = "" if weak.is_empty() or weak.id == ranged_leader.id else weak.id
+	if enemy.prism_warded:
+		if enemy.prism_secondary != "":
+			return "The Prism Warden marks %s and %s. Shatter its ward to stop the beams." % [ranged_leader.name, weak.name]
+		return "The Prism Warden focuses both beams on %s. Shatter its ward to stop them." % ranged_leader.name
+	if enemy.prism_secondary != "":
+		return "The Prism Warden marks ranged leader %s and low-health %s." % [ranged_leader.name, weak.name]
+	return "The Prism Warden focuses both beams on %s." % ranged_leader.name
+
+
+func _prism_beam(enemy: Dictionary, primary: String, attack: Dictionary) -> void:
+	var secondary: String = enemy.get("prism_secondary", "")
+	enemy["prism_secondary"] = ""
+	var primary_damage: int = attack.damage
+	if enemy.prism_warded:
+		primary_damage += 5
+	# Both lenses converge when the same hero is both the ranged leader and the weakest.
+	if secondary.is_empty():
+		primary_damage += 5
+	_prism_hit(enemy, primary, primary_damage, attack)
+	if not secondary.is_empty():
+		_prism_hit(enemy, secondary, maxi(1, roundi(primary_damage * 0.73)), attack)
+
+
+func _prism_hit(enemy: Dictionary, target_id: String, damage: int, attack: Dictionary) -> void:
+	var target := _find_unit(target_id)
+	if target.is_empty() or target.hp <= 0:
+		return
+	var position: Vector2 = enemy.pos
+	if position.distance_to(target.pos) > attack.reach + 70.0:
+		_emit("miss", "The prism beam misses %s." % target.name, enemy, target, "enemy_attack")
+		return
+	var defender := _intercept_target(target)
+	_damage(enemy, defender, damage, "enemy_attack")
+	if defender.hp > 0:
+		_displace("push", enemy, defender, "enemy_attack", defender.pos - position, attack.push)
+
+
 func _intercept_target(target: Dictionary) -> Dictionary:
 	for ally in units:
 		if ally.side != target.side or ally.id == target.id or ally.hp <= 0 or ally.get("class") != "bulwark":
@@ -765,6 +831,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		amount = _class_attack_damage(actor, target, amount)
 		if target.get("marshal_plated", false) and actor.side == "hero":
 			amount = _marshal_damage(actor, target, amount)
+		elif target.get("prism_warded", false) and actor.side == "hero":
+			amount = _prism_damage(actor, target, amount)
 		elif target.get("regent_sealed", false) and actor.side == "hero":
 			amount = _regent_damage(actor, target, amount)
 	if tile_id == "enemy_attack" and target.get("class") == "bulwark" and target.get("bulwark_loop", -1) != _loop_index():
@@ -799,6 +867,11 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		target.marshal_plated = true
 		_guard(target, 18, "marshal_plate")
 		_emit("intent", "The Marshal raises its plating. Push or pull it, then strike with your other hero.", target, actor, "marshal_plate")
+	elif target.get("sprite") == "prism_warden" and target.hp * 5 <= target.max_hp * 3 and not target.get("prism_raised", false):
+		target["prism_raised"] = true
+		target.prism_warded = true
+		_guard(target, 18, "prism_ward")
+		_emit("intent", "The Prism Warden raises its ward. Move it with one hero, then hit with the other.", target, actor, "prism_ward")
 	elif target.get("sprite") == "regent" and target.hp * 5 <= target.max_hp * 3 and not target.get("regent_raised", false):
 		target["regent_raised"] = true
 		target.regent_sealed = true
@@ -844,6 +917,29 @@ func _expose_marshal(actor: Dictionary, marshal: Dictionary) -> void:
 	marshal["marshal_opened_by"] = actor.id
 	_emit("interrupt", "%s exposes the Marshal for 3 beats. Follow up with your other hero." % actor.name,
 		actor, marshal, "marshal_exposed")
+
+
+func _expose_prism(actor: Dictionary, warden: Dictionary) -> void:
+	if warden.prism_window_until > 0:
+		return
+	warden.prism_window_until = tick + TICKS_PER_BEAT * 3
+	warden["prism_opened_by"] = actor.id
+	_emit("interrupt", "%s exposes the prism ward for 3 beats." % actor.name, actor, warden, "prism_exposed")
+
+
+func _prism_damage(actor: Dictionary, warden: Dictionary, amount: int) -> int:
+	if warden.prism_window_until == 0:
+		return maxi(1, roundi(amount * 0.65))
+	if warden.prism_opened_by == actor.id:
+		return amount
+	warden.prism_warded = false
+	warden.prism_window_until = 0
+	warden.prism_secondary = ""
+	warden.guard = 0
+	warden.intent = ""
+	warden.next_attack = tick + TICKS_PER_BEAT * 5
+	_emit("interrupt", "%s shatters the prism ward and interrupts the Warden!" % actor.name, actor, warden, "prism_shattered")
+	return amount + 20
 
 
 func _marshal_damage(actor: Dictionary, marshal: Dictionary, amount: int) -> int:

@@ -365,6 +365,14 @@ func _build_lane(lane_index: int) -> void:
 	var hero: Dictionary = sim.units[lane_index]
 	var identity_label := "%s · Down" % hero.name if campaign and hero.hp <= 0 else str(hero.name)
 	identity.add_child(_label(identity_label, 16, TEAL))
+	if campaign and run.data.get("location", "brass") == "glass":
+		var ranged_damage := 0
+		for item: Dictionary in lanes[lane_index]:
+			if item.id in ArenaSim.RANGED_TILES:
+				ranged_damage += int(ArenaSim.TILES[item.id].damage)
+		var ranged := _label("%d ranged damage" % ranged_damage, 12, MUTED)
+		ranged.tooltip_text = "Total base damage from ranged tiles on this lane. Foundry hunters use it to choose a target."
+		identity.add_child(ranged)
 	var all := OptionButton.new()
 	all.add_theme_font_size_override("font_size", 12)
 	all.add_item("Set all targets")

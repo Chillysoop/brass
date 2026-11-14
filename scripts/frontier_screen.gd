@@ -26,7 +26,8 @@ const RUN_OPTIONS := [
 	{"location": "brass", "difficulty": "easy", "label": "Brass Frontier · Easy", "hint": "Solo run with one boss."},
 	{"location": "brass", "difficulty": "medium", "label": "Brass Frontier · Medium", "hint": "Two bosses. Recruit a second hero after the first."},
 	{"location": "brass", "difficulty": "hard", "label": "Brass Frontier · Hard", "hint": "Three bosses. Recruit a hero after each of the first two."},
-	{"location": "glass", "difficulty": "easy", "label": "Glass Foundry · Easy", "hint": "Solo run against Foundry hunters, skirmishers, and the Crucible Twins."}
+	{"location": "glass", "difficulty": "easy", "label": "Glass Foundry · Easy", "hint": "Solo run against Foundry hunters, skirmishers, and the Crucible Twins."},
+	{"location": "glass", "difficulty": "medium", "label": "Glass Foundry · Medium", "hint": "Face the Crucible Twins, recruit a second hero, then challenge the Prism Warden."}
 ]
 const BOSS_BRIEFS := {
 	"gilded_marshal": {
@@ -40,6 +41,10 @@ const BOSS_BRIEFS := {
 	"crucible_twins": {
 		"portrait": "glass_twin",
 		"hint": "Glass keeps its distance while Ember closes in. Use your targeting rules to focus one twin before turning on the other."
+	},
+	"prism_warden": {
+		"portrait": "prism_warden",
+		"hint": "Push or pull the Warden, then strike with your other hero within three beats to shatter the prism ward. Give guard to your ranged leader and the hero with the lowest HP."
 	}
 }
 
@@ -161,7 +166,7 @@ func _main_menu() -> void:
 		var button := _button(option.label, func(): _start_new_run(0, resumable, option.difficulty, option.location), unlocked and not resumable)
 		button.size_flags_horizontal = SIZE_EXPAND_FILL
 		button.disabled = not unlocked
-		button.tooltip_text = option.hint if unlocked else ("Clear Brass Frontier Easy to unlock." if option.difficulty == "medium" else "Clear Brass Frontier Medium to unlock.")
+		button.tooltip_text = option.hint if unlocked else _unlock_hint(option)
 		runs.add_child(button)
 		if unlocked:
 			available.append(option)
@@ -198,13 +203,21 @@ func _main_menu() -> void:
 	else:
 		if _run.profile.get("brass_hard_cleared", false):
 			copy.add_child(_label("Brass Frontier Hard mastered.", 14, TEAL))
-		if _run.profile.get("glass_medium_unlocked", false):
-			copy.add_child(_label("Glass Foundry Medium unlocked for a future build.", 14, TEAL))
+		if _run.profile.get("glass_hard_unlocked", false) and _run.profile.get("crown_easy_unlocked", false):
+			copy.add_child(_label("Glass Foundry Hard and Crown Relay Easy unlocked for future builds.", 14, TEAL))
 	var marks: int = _run.profile.get("marks", 0)
 	var footer := _label("%d Aether Marks" % marks, 16, GOLD)
 	_layout.add_child(footer)
 	if not _run.save_error.is_empty():
 		_layout.add_child(_label(_run.save_error, 15, RUST))
+
+
+func _unlock_hint(option: Dictionary) -> String:
+	if option.location == "glass" and option.difficulty == "medium":
+		return "Clear Glass Foundry Easy to unlock."
+	if option.location == "brass" and option.difficulty == "medium":
+		return "Clear Brass Frontier Easy to unlock."
+	return "Clear Brass Frontier Medium to unlock."
 
 
 func _start_new_run(seed_value: int, resumable: bool, difficulty: String, location: String) -> void:
@@ -457,7 +470,7 @@ func _event() -> void:
 	var cards := _cards_row()
 	var options: Array = _run.event_options()
 	for index in range(options.size()):
-		var unavailable: bool = options[index] == "No relic to trade"
+		var unavailable: bool = not _run.event_option_available(index)
 		_choice(cards, str(options[index]), "", "Choose", func(): _pick_event(index), unavailable)
 
 

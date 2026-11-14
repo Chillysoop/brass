@@ -12,6 +12,9 @@ func _initialize() -> void:
 		_check_map(layers)
 		check(layers == run._make_map(seed_value), "Same seed must generate the same map.")
 		_check_map(run._make_map(seed_value, "easy", "glass"), 1, "crucible_twins")
+		var glass_medium := run._make_map(seed_value, "medium", "glass")
+		_check_map(glass_medium, 2, "prism_warden")
+		_check_glass_events(glass_medium)
 		_check_map(run._make_map(seed_value, "hard"), 3, "iron_regent")
 	check(run._make_map(1) != run._make_map(2), "Distinct seeds should vary routes.")
 
@@ -80,7 +83,7 @@ func _initialize() -> void:
 	for failure: String in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Frontier model checks passed across 128 seeds for Brass Easy, Brass Hard, and Glass Easy.")
+		print("Frontier model checks passed across 128 seeds for Brass Easy, Brass Hard, and both Glass difficulties.")
 	quit(0 if failures.is_empty() else 1)
 
 
@@ -104,6 +107,18 @@ func _check_map(layers: Array, segments := 1, final_boss := "tollkeeper") -> voi
 			for node: Dictionary in layers[index - 1]:
 				check(node.type == "rest" and layers[index][0].id in node.next, "Boss approaches need a reachable rest.")
 			types.clear()
+
+
+func _check_glass_events(layers: Array) -> void:
+	var seen: Dictionary = {}
+	for row in range(layers.size()):
+		for node: Dictionary in layers[row]:
+			if node.type != "event":
+				continue
+			check(not seen.has(node.label), "Glass Medium must not repeat an event label.")
+			seen[node.label] = true
+			if row >= 7:
+				check(node.label in FrontierRun.GLASS_UPPER_NODE_LABELS.event, "The upper leg must offer its own events.")
 
 
 func _check_medium(path: String) -> void:
@@ -152,6 +167,7 @@ func _check_hard_and_glass(path: String) -> void:
 	check(run.load_save(path) and run.finish_run(), "Return to the hub after the saved Medium clear.")
 	check(run.can_start("hard") and run.can_start("easy", "glass"), "A Medium clear must open both branches.")
 	check(not run.can_start("hard", "glass"), "The playable Glass branch must begin at Easy.")
+	check(not run.can_start("medium", "glass"), "Glass Medium must require a Glass Easy clear.")
 
 	run.start_run(76, "easy", "glass")
 	run.choose_hero(run.data.offers[0])
@@ -165,6 +181,8 @@ func _check_hard_and_glass(path: String) -> void:
 	check(run.profile.glass_medium_unlocked and run.profile.marks == marks + 19, "Glass Easy must bank its own first-clear payout.")
 	run.reward("skip")
 	run.finish_run()
+	_check_glass_medium(path)
+	check(run.load_save(path) and run.finish_run(), "Return to the hub after the saved Glass Medium clear.")
 
 	run.start_run(42, "hard")
 	run.choose_hero(run.data.offers[0])
@@ -192,6 +210,34 @@ func _check_hard_and_glass(path: String) -> void:
 		check(team_size == encounter.segment + 1 and run.loadout.lanes.size() == team_size, "Each recruit must add exactly one lane.")
 		check(run.data.heroes[0].hp == remaining[0] and run.data.heroes.back().hp == run.data.heroes.back().max_hp,
 			"Recruitment must preserve party HP and add a full-HP hero.")
+
+
+func _check_glass_medium(path: String) -> void:
+	var run := FrontierRun.new()
+	check(run.load_save(path) and run.start_run(76, "medium", "glass"), "Glass Medium must open after Glass Easy.")
+	run.choose_hero(run.data.offers[0])
+	run.choose_relic("pocket_bell")
+	run.choose_starter("shot")
+	_reach_boss(run)
+	var marks: int = run.profile.marks
+	check(run.encounter().boss_id == "crucible_twins" and not run.is_final_boss(), "The Crucible Twins must be the first Glass Medium boss.")
+	run.finish_combat(true, [53])
+	check(run.profile.marks == marks + 4 and not run.profile.glass_hard_unlocked and not run.profile.crown_easy_unlocked,
+		"The first boss must grant its own marks and leave later routes locked.")
+	run.reward(run.data.offers[0])
+	check(run.data.phase == "recruit" and run.data.hero not in run.data.offers, "Glass Medium must draft a different recruit after the Twins.")
+	run.choose_recruit(run.data.offers[0])
+	var restored := FrontierRun.new()
+	check(restored.load_save(path) and restored.choose_recruit_starter("slam"), "Resume and finish the Glass Medium recruit's draft.")
+	check(restored.data.heroes.size() == 2 and restored.data.hp == 53, "Glass Medium must retain lead HP and add a second hero.")
+	check(restored.available_nodes()[0].label == "Annealing Hall", "Recruitment must open the Foundry's upper leg.")
+	_reach_boss(restored)
+	check(restored.encounter().boss_id == "prism_warden" and restored.is_final_boss(), "The Prism Warden must finish Glass Medium.")
+	marks = restored.profile.marks
+	restored.finish_combat(true, [27, 61])
+	check(restored.profile.marks == marks + 34 and restored.profile.glass_hard_unlocked and restored.profile.crown_easy_unlocked,
+		"A first Prism Warden clear must grant its payout and unlock both future routes.")
+	check(restored.reward("skip") and restored.data.phase == "result", "The final reward must lead to the Glass Medium recap.")
 
 
 func _reach_boss(run: RefCounted) -> void:

@@ -33,3 +33,7 @@ Wide 16:9 environment plate for Brass & Aether 2D battles, slightly elevated fix
 ## new-enemies
 
 2 by 2 sprite atlas on fully transparent background, four discrete widely separated full-body left-facing game sprites centered within exact quadrants with generous gutters and no shadows. Original Brass & Aether, elevated three-quarter camera, hand-drawn bold dark contour screen-print art, clean readable flat shapes. Top left teal and silver mechanical glass hunter carrying long glass rifle. Top right smaller agile cyan glass skirmisher with twin shards. Bottom left stocky orange copper and aquamarine crucible automaton boss wielding two kiln hammers. Bottom right huge black iron and royal plum automaton Iron Regent wearing a three-pronged crown and raised chain flail. No text, ground or framing.
+
+## Prism Warden
+
+Single transparent full-body game sprite for Brass & Aether, The Prism Warden, facing left in a fixed elevated 3/4 combat camera. Teal glass guardian with dark iron limbs, angular stained glass chest prism, long silver polearm, ruby and pale gold accent shards. Wide planted stance, dynamic but readable at 120 px. Restrained hand-drawn screen print with dark outlines, quiet flat shapes and muted brass, indigo and turquoise matching old fantasy industrial illustrations. Centered, generous clear transparent margins. No backdrop, floor, particles, UI, or lettering.

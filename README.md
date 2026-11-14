@@ -1,6 +1,6 @@
 # Brass & Aether
 
-The Windows playtest includes Brass Frontier Easy, Medium and Hard, Glass Foundry Easy, and a separate practice arena. Open `project.godot` in Godot 4.7.2 and press F5.
+The Windows playtest includes Brass Frontier Easy, Medium and Hard, Glass Foundry Easy and Medium, and a separate practice arena. Open `project.godot` in Godot 4.7.2 and press F5.
 
 ## Playtest
 
@@ -11,6 +11,8 @@ Defeat the Tollkeeper on Easy to bank Aether Marks and unlock **Start Medium run
 Medium starts solo. After the Tollkeeper, take a Legendary tile into your build and recruit a second hero with a starter tile. Both lanes fire on the same beat clock. Push or pull the Gilded Marshal to expose its armor, then land a hit with the other hero before it closes. Defeating the Marshal unlocks Brass Frontier Hard and Glass Foundry Easy.
 
 Glass Foundry Easy is a solo route that ends at the Crucible Twins. Hunters prioritize the hero with the most ranged tile damage. Skirmishers prioritize the hero with the lowest current HP. The clear awards Aether Marks and records the unlock for Glass Foundry Medium.
+
+Glass Foundry Medium starts solo. After the Crucible Twins, take a Legendary tile and recruit a second hero for the next leg. The Prism Warden pressures the hero with the most ranged damage and the hero with the lowest current HP. Push or pull to open its ward, then hit it with the other hero within three beats. A clear records the unlocks for Glass Foundry Hard and Crown Relay Easy.
 
 Brass Frontier Hard has three legs. Recruit after the Tollkeeper and the Gilded Marshal. When the Iron Regent raises its seals, land damaging hits from three different heroes within four beats to break them.
 

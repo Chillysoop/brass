@@ -89,6 +89,8 @@ func _run() -> void:
 	_check(game.run.finish_run(), "Close the Medium victory recap.")
 	var glass_fights := _new_route_playthrough(game, "easy", "glass")
 	_check(game.run.finish_run(), "Close the Glass Foundry victory recap.")
+	var glass_medium_fights := _new_route_playthrough(game, "medium", "glass")
+	_check(game.run.finish_run(), "Close the Glass Foundry Medium victory recap.")
 	var hard_fights := _new_route_playthrough(game, "hard", "brass")
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(save_path + suffix):
@@ -96,8 +98,8 @@ func _run() -> void:
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Playthroughs passed: Brass Easy %d fights (%d HP), Medium %d (%d HP combined), Glass Easy %d, Brass Hard %d." % [
-			battles, easy_hp, medium.fights, medium.hp, glass_fights, hard_fights])
+		print("Playthroughs passed: Brass Easy %d fights (%d HP), Medium %d (%d HP combined), Glass Easy %d, Glass Medium %d, Brass Hard %d." % [
+			battles, easy_hp, medium.fights, medium.hp, glass_fights, glass_medium_fights, hard_fights])
 	game.queue_free()
 	await process_frame
 	quit(0 if failures.is_empty() else 1)
@@ -263,6 +265,9 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 				if final and difficulty == "hard":
 					_check(game.sim.trace.any(func(event: Dictionary): return event.tile == "regent_shattered"),
 						"Three heroes should break the Iron Regent's seals during the test clear.")
+				if final and location == "glass" and difficulty == "medium":
+					_check(game.sim.trace.any(func(event: Dictionary): return event.tile == "prism_shattered"),
+						"Both heroes should contribute to the Prism Warden's ward break.")
 				game._action()
 			"reward":
 				var chosen: String = run.data.offers[0]
@@ -299,9 +304,12 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 				_check(false, "Unexpected phase: " + str(run.data.phase))
 				break
 	_check(run.data.get("result") == "victory", "%s %s must clear the final boss." % [location, difficulty])
-	_check(boss_party_sizes == ([1, 2, 3] if difficulty == "hard" else [1]), "Each boss must have the expected party size.")
-	_check(run.profile.brass_hard_cleared if difficulty == "hard" else run.profile.glass_medium_unlocked,
-		"New route should record its final progression.")
+	var expected_sizes := {"easy": [1], "medium": [1, 2], "hard": [1, 2, 3]}
+	_check(boss_party_sizes == expected_sizes[difficulty], "Each boss must have the expected party size.")
+	match difficulty:
+		"easy": _check(run.profile.glass_medium_unlocked, "Glass Easy should unlock Glass Medium.")
+		"medium": _check(run.profile.glass_hard_unlocked and run.profile.crown_easy_unlocked, "Glass Medium should unlock Glass Hard and Crown Easy.")
+		"hard": _check(run.profile.brass_hard_cleared, "Brass Hard should record its clear.")
 	return fights
 
 func _equip_stored_rewards(game: Control) -> void:
