@@ -73,6 +73,13 @@ const MOONWRECK_NODE_LABELS := {
 	"event": ["Tethered Barge", "Rusted Foghorn", "Diver's Exchange"],
 	"rest": ["Ropewalk Refuge", "Netmaker's Berth"],
 }
+const MOONWRECK_BREAKWATER_NODE_LABELS := {
+	"battle": ["Outer Pylons", "Keel Channel", "Sea Wall Traverse", "Saltworks Pier", "Foghorn Deck"],
+	"elite": ["Breakwater Sentinels", "Blackwake Crew"],
+	"shop": ["Pilot's Supply", "Saltwater Exchange"],
+	"event": ["Lifeboat Clinic", "Pearl Diver's Bench", "Storm-Tossed Crate"],
+	"rest": ["Dry Berth", "Lantern Platform"],
+}
 const EVENT_KINDS := {
 	"Jammed Crane": "salvage", "Loaded Beacon": "ambush", "Relay Auction": "trade",
 	"Cracked Mold": "salvage", "Smelter Relay": "ambush", "Cinder Exchange": "trade",
@@ -80,6 +87,7 @@ const EVENT_KINDS := {
 	"Beacon Intercept": "ambush", "Signal Cache": "signal_cache", "Signal Scriptorium": "trade",
 	"Signalman's Infirmary": "infirmary", "Lost Dispatch": "lenswright", "Storm Cache": "prism_cache",
 	"Tethered Barge": "barge", "Rusted Foghorn": "ambush", "Diver's Exchange": "trade",
+	"Lifeboat Clinic": "infirmary", "Pearl Diver's Bench": "lenswright", "Storm-Tossed Crate": "prism_cache",
 }
 const LOCATION_LABELS := {"brass": "Brass Frontier", "glass": "Glass Foundry", "crown": "Crown Relay", "moonwreck": "Moonwreck Docks"}
 const BOSS_LABELS := {
@@ -87,18 +95,19 @@ const BOSS_LABELS := {
 	"iron_regent": "The Iron Regent", "crucible_twins": "The Crucible Twins", "prism_warden": "The Prism Warden",
 	"tempered_colossus": "The Tempered Colossus",
 	"relay_captain": "The Relay Captain", "relay_marshal": "The Relay Marshal", "crown_regent": "The Crown Regent",
-	"wreckmaster": "The Wreckmaster",
+	"wreckmaster": "The Wreckmaster", "tidekeeper": "The Tidekeeper",
 }
 const BRASS_BOSSES := ["tollkeeper", "gilded_marshal", "iron_regent"]
 const GLASS_BOSSES := ["crucible_twins", "prism_warden", "tempered_colossus"]
 const CROWN_BOSSES := ["relay_captain", "relay_marshal", "crown_regent"]
+const MOONWRECK_BOSSES := ["wreckmaster", "tidekeeper"]
 const SEGMENT_COUNTS := {"easy": 1, "medium": 2, "hard": 3}
 const DEFAULT_PROFILE := {
 	"marks": 0, "medium_unlocked": false, "hard_unlocked": false, "glass_easy_unlocked": false,
 	"brass_hard_cleared": false, "glass_medium_unlocked": false, "glass_hard_unlocked": false,
 	"glass_hard_cleared": false, "crown_easy_unlocked": false, "crown_medium_unlocked": false,
 	"crown_hard_unlocked": false, "crown_hard_cleared": false,
-	"moonwreck_easy_unlocked": false, "moonwreck_medium_unlocked": false, "meta": [],
+	"moonwreck_easy_unlocked": false, "moonwreck_medium_unlocked": false, "moonwreck_hard_unlocked": false, "meta": [],
 }
 const NODES_PER_SEGMENT := 7
 const VERSION := 1
@@ -182,7 +191,10 @@ func start_run(seed_value := 0, difficulty := "easy", location := "brass") -> bo
 
 func can_start(difficulty: String, location := "brass") -> bool:
 	if location == "moonwreck":
-		return difficulty == "easy" and profile.moonwreck_easy_unlocked
+		match difficulty:
+			"easy": return profile.moonwreck_easy_unlocked
+			"medium": return profile.moonwreck_medium_unlocked
+		return false
 	if location == "crown":
 		match difficulty:
 			"easy": return profile.crown_easy_unlocked
@@ -383,7 +395,12 @@ func _resolve_boss() -> void:
 		data.node_notice = "%s fell. Choose a Legendary and draft a %s hero." % [data.node.label, rank]
 		return
 	data.result = "victory"
-	if data.location == "moonwreck":
+	if data.location == "moonwreck" and data.difficulty == "medium":
+		var first_clear := not bool(profile.moonwreck_hard_unlocked)
+		_grant_marks(30 if first_clear else 20)
+		profile.moonwreck_hard_unlocked = true
+		data.node_notice = "Moonwreck Docks Medium cleared. Moonwreck Docks Hard unlocked." if first_clear else "Moonwreck Docks Medium cleared."
+	elif data.location == "moonwreck":
 		var first_clear := not bool(profile.moonwreck_medium_unlocked)
 		_grant_marks(15 if first_clear else 10)
 		profile.moonwreck_medium_unlocked = true
@@ -537,6 +554,9 @@ func event_text() -> String:
 		"Tethered Barge": return "You pull a stranded barge back to the dock. Its crew offers you a share of the salvage, or you can leave it with them and rest aboard."
 		"Rusted Foghorn": return "A rusted foghorn calls a nearby wreck patrol. The keeper can muffle it for a fee."
 		"Diver's Exchange": return "A wreck diver offers a choice of Rare tiles for your first relic."
+		"Lifeboat Clinic": return "A lifeboat medic offers to patch up both heroes before you head out past the sea wall."
+		"Pearl Diver's Bench": return "A pearl diver has two Rare tiles for sale, fresh from a wreck caught on the breakwater."
+		"Storm-Tossed Crate": return "A crate keeps slamming against the pier. A deckhand offers to buy the location, or you can climb down and pry it open."
 	return ""
 
 
@@ -663,6 +683,7 @@ func buy_meta(id: String) -> bool:
 func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Array:
 	var glass := location == "glass"
 	var crown := location == "crown"
+	var moonwreck := location == "moonwreck"
 	var seed_salt := 1
 	var labels := NODE_LABELS
 	var bosses := BRASS_BOSSES
@@ -689,10 +710,10 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 			["battle", "shop", "event"], ["battle", "battle", "battle"],
 			["battle", "elite", "shop"], ["event", "battle", "battle"], ["rest", "rest", "rest"],
 		]
-	elif location == "moonwreck":
+	elif moonwreck:
 		seed_salt = 301
 		labels = MOONWRECK_NODE_LABELS
-		bosses = ["wreckmaster"]
+		bosses = MOONWRECK_BOSSES
 		opening = "Drowned Gate Trial"
 		first_leg = [
 			["event", "battle", "battle"], ["shop", "battle", "elite"],
@@ -710,6 +731,8 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 			gate = "Annealing Hall" if segment == 1 else "Tempering Causeway"
 		elif crown:
 			gate = "High Relay Gate" if segment == 1 else "Crown Causeway"
+		elif moonwreck:
+			gate = "Breakwater Gate"
 		layers.append([_node("battle", gate, layers.size(), 1)])
 		var leg := [
 			["battle", "event" if segment == 1 else "battle", "battle"],
@@ -737,6 +760,12 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 				leg_labels = CROWN_HIGH_RELAY_NODE_LABELS
 			else:
 				leg_labels = CROWN_REGENT_NODE_LABELS
+		elif moonwreck:
+			leg = [
+				["battle", "event", "battle"], ["elite", "battle", "shop"],
+				["battle", "event", "elite"], ["shop", "battle", "battle"], ["rest", "rest", "rest"],
+			]
+			leg_labels = MOONWRECK_BREAKWATER_NODE_LABELS
 		_append_layers(layers, leg, leg_labels, rng, used_events)
 		_append_boss(layers, bosses[segment])
 	for row in range(layers.size() - 1):

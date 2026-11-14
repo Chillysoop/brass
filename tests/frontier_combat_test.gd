@@ -40,6 +40,7 @@ func _initialize() -> void:
 	_check_crown_marshal_combo()
 	_check_crown_regent_combo()
 	_check_moonwreck_combat()
+	_check_tidekeeper_combo()
 	_check_regent_seals()
 	for failure in failures:
 		printerr(failure)
@@ -350,6 +351,61 @@ func _check_moonwreck_combat() -> void:
 		sim.step()
 	_check(sim.units[0].hp == 95 and not _has_event(sim, "miss", "wreckmaster_slam_miss"),
 		"Guard reduces Deck Slam's damage when the hero stays within reach")
+
+
+func _check_tidekeeper_combo() -> void:
+	var options := {"location": "moonwreck", "difficulty": "medium", "segment": 2, "encounter": "boss",
+		"boss_id": "tidekeeper", "seed": 42, "heroes": [{"hero": "warden"}, {"hero": "hexwright"}]}
+	var sim := ArenaSim.new()
+	sim.start([[{"id": "bash", "start": 3}], [{"id": "pull", "start": 3}]], "solo", options)
+	var boss: Dictionary = sim.units[2]
+	for frame in range(22):
+		sim.step()
+	_check(boss.get("sprite") == "tidekeeper" and boss.tidekeeper_phase == 1 and boss.intent_tick == 63
+		and boss.tidekeeper_targets == ["hero_1", "hero_2"],
+		"Twin Harpoons mark both living heroes through beat 3")
+	for frame in range(41):
+		sim.step()
+	for hero in [sim.units[0], sim.units[1]]:
+		var toward_boss: Vector2 = boss.pos - hero.pos
+		var impulse: Vector2 = hero.impulse
+		_check(impulse.dot(toward_boss) > 0.0, "Twin Harpoons physically pull %s toward the Tidekeeper" % hero.id)
+	_check(boss.tidekeeper_phase == 2 and boss.intent_tick == 168, "Breakwater Slam is due at beat 8")
+	for frame in range(42):
+		sim.step()
+	_check(boss.tidekeeper_phase == 3 and boss.tidekeeper_breaker == "hero_1",
+		"Common Bash at beat 5 knocks the Tidekeeper off its anchor")
+	for frame in range(63):
+		sim.step()
+	var cancels := sim.trace.filter(func(event: Dictionary) -> bool: return event.tile == "tidekeeper_interrupted")
+	_check(cancels.size() == 1 and cancels[0].amount == 1 and cancels[0].actor == "hero_2" and cancels[0].tick == 126
+		and boss.tidekeeper_phase == 0 and boss.intent_tick == 0 and boss.tidekeeper_targets.is_empty()
+		and not _has_event(sim, "intent", "tidekeeper_slam"),
+		"Other hero's common Pull at beat 6 cancels the Slam and clears its marks")
+
+	sim.start([[], []], "solo", options)
+	boss = sim.units[2]
+	for frame in range(63):
+		sim.step()
+	var hero: Dictionary = sim.units[0]
+	sim._displace("pull", hero, boss, "pull", Vector2.LEFT, 120.0)
+	_check(boss.tidekeeper_phase == 2, "Pull alone cannot unanchor the Tidekeeper")
+	sim._displace("push", hero, boss, "bash", Vector2.RIGHT, 120.0)
+	sim._displace("pull", hero, boss, "pull", Vector2.LEFT, 120.0)
+	_check(boss.tidekeeper_phase == 3, "Same hero cannot follow up while the other hero is alive")
+	for frame in range(105):
+		sim.step()
+	var slams := sim.trace.filter(func(event: Dictionary) -> bool: return event.tile == "tidekeeper_slam")
+	_check(slams.size() == 1 and slams[0].amount == 2 and sim.units[0].hp == 71 and sim.units[1].hp == 71,
+		"An unbroken Breakwater Slam hits both heroes inside its real radius")
+
+	options.heroes[1]["hp"] = 0
+	sim.start([[{"id": "bash", "start": 3}, {"id": "pull", "start": 5}], []], "solo", options)
+	for frame in range(168):
+		sim.step()
+	cancels = sim.trace.filter(func(event: Dictionary) -> bool: return event.tile == "tidekeeper_interrupted")
+	_check(cancels.size() == 1 and cancels[0].amount == 0 and cancels[0].actor == "hero_1",
+		"Last surviving hero can still cancel the Slam with a Bash–Pull sequence")
 
 
 func _fight(hero: String, encounter: String, hp: int, tile_ids: Array, relics: Array) -> RefCounted:

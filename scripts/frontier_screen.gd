@@ -56,6 +56,10 @@ const BOSS_BRIEFS := {
 	"wreckmaster": {
 		"portrait": "wreckmaster",
 		"hint": "Harpoon pulls its target close at the end of beat 3. Deck Slam hits inside the marked circle at the end of beat 6. Time a push between them to create distance, or use Guard before impact."
+	},
+	"tidekeeper": {
+		"portrait": "tidekeeper",
+		"hint": "Twin Harpoons pull both heroes close at the end of beat 3. Before Breakwater Slam strikes at the end of beat 8, push the Tidekeeper with one hero, then push or pull it with the other. If only one hero is standing, they can do both."
 	}
 }
 const MAP_ART := {

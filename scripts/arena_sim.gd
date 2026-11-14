@@ -21,6 +21,8 @@ const DOCK_WINCH_TICKS := 42
 const WRECKMASTER_HARPOON_TICKS := 2 * TICKS_PER_BEAT - 1
 const WRECKMASTER_SLAM_TICKS := 3 * TICKS_PER_BEAT
 const WRECKMASTER_SLAM_RADIUS := 126.0
+const TIDEKEEPER_SLAM_BEATS := 5
+const TIDEKEEPER_SLAM_RADIUS := 310.0
 const TARGET_RULES := ["nearest", "farthest", "lowest_hp", "highest_hp"]
 const RANGED_TILES := ["pull", "gravity_hook", "shot", "hook_bash", "graviton", "event_horizon", "meteor_seal"]
 const BASH_TIERS := [
@@ -103,7 +105,10 @@ const CAMPAIGN_ENEMIES := {
 	"dock_winch": {"name": "Winch Operator", "art": "dock_winch", "hp": 60, "radius": 24.0, "speed": 73.0,
 		"spacing": 102.0, "reach": 147.0, "damage": 4, "first": 52, "cooldown": 190, "windup": 34},
 	"wreckmaster": {"name": "The Wreckmaster", "art": "wreckmaster", "hp": 386, "radius": 42.0, "speed": 87.0,
-		"spacing": 112.0, "reach": 177.0, "damage": 10, "first": 128, "cooldown": 140, "windup": 37}
+		"spacing": 112.0, "reach": 177.0, "damage": 10, "first": 128, "cooldown": 140, "windup": 37},
+	"tidekeeper": {"name": "The Tidekeeper", "art": "tidekeeper", "hp": 755, "radius": 46.0, "speed": 87.0,
+		"spacing": 108.0, "reach": 191.0, "damage": 22, "first": 136, "cooldown": 119, "windup": 37,
+		"push": 315.0, "displacement": 0.77}
 }
 
 const TILES := {
@@ -278,7 +283,7 @@ func _start_campaign(options: Dictionary) -> void:
 		_start_crown_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""))
 		return
 	if options.get("location", "brass") == "moonwreck":
-		_start_moonwreck_encounter(encounter, rng, y)
+		_start_moonwreck_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""))
 		return
 	var health_scale: float = {"medium": [1.12, 2.15, 2.15], "hard": [1.21, 2.35, 3.0]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	var damage_scale: float = {"medium": [1.07, 1.58, 1.58], "hard": [1.10, 1.64, 1.80]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
@@ -385,6 +390,11 @@ func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_sca
 	elif kind == "wreckmaster":
 		enemy["wreckmaster_phase"] = 0
 		enemy["wreckmaster_slam_radius"] = WRECKMASTER_SLAM_RADIUS
+	elif kind == "tidekeeper":
+		enemy["tidekeeper_phase"] = 0
+		enemy["tidekeeper_slam_radius"] = TIDEKEEPER_SLAM_RADIUS
+		enemy["tidekeeper_targets"] = []
+		enemy["tidekeeper_breaker"] = ""
 	if kind == "regent":
 		enemy["regent_sealed"] = false
 		enemy["regent_seals_left"] = 0
@@ -436,17 +446,21 @@ func _start_crown_regent(y: float) -> void:
 	regent["crown_role"] = "relay_regent"
 
 
-func _start_moonwreck_encounter(encounter: String, rng: RandomNumberGenerator, y: float) -> void:
+func _start_moonwreck_encounter(encounter: String, rng: RandomNumberGenerator, y: float, difficulty: String, segment: int, boss_id: String) -> void:
+	var second_leg := difficulty == "medium" and segment >= 2
+	var health_scale := 2.22 if second_leg else 1.0
+	var damage_scale := 1.60 if second_leg else 1.0
 	match encounter:
 		"battle":
 			var flank := -1.0 if rng.randi_range(0, 1) == 0 else 1.0
-			_add_campaign_enemy("dock_bruiser", Vector2(633, y + flank * 42.0), 0, 0.65)
-			_add_campaign_enemy("dock_winch", Vector2(563, y - flank * 28.0), 0, 0.86)
+			_add_campaign_enemy("dock_bruiser", Vector2(633, y + flank * 42.0), 0, 0.65 * health_scale, damage_scale)
+			_add_campaign_enemy("dock_winch", Vector2(563, y - flank * 28.0), 0, 0.86 * health_scale, damage_scale)
 		"elite":
-			_add_campaign_enemy("dock_bruiser", Vector2(655, y + 42.0), 0, 1.18, 1.15)
-			_add_campaign_enemy("dock_winch", Vector2(571, y - 31.0), 0, 1.12)
+			_add_campaign_enemy("dock_bruiser", Vector2(655, y + 42.0), 0, 1.18 * health_scale, 1.15 * damage_scale)
+			_add_campaign_enemy("dock_winch", Vector2(571, y - 31.0), 0, 1.12 * health_scale, damage_scale)
 		"boss":
-			_add_campaign_enemy("wreckmaster", Vector2(595, 265.0))
+			var boss := "tidekeeper" if boss_id == "tidekeeper" or (boss_id.is_empty() and second_leg) else "wreckmaster"
+			_add_campaign_enemy(boss, Vector2(595, 265.0))
 		_:
 			_add_campaign_enemy("dock_recruit", Vector2(521, y))
 
@@ -848,7 +862,7 @@ func _gravity_strike(actor: Dictionary, target: Dictionary, tile_id: String, rad
 			_damage(actor, enemy, TILES[tile_id].damage, tile_id)
 		if collapse and enemy.intent != "" and enemy.get("colossus_stage", 0) == 0 \
 				and not enemy.get("relay_charge_active", false) and enemy.get("wreckmaster_phase", 0) == 0 \
-				and enemy.get("dock_winch_ally", "") == "":
+				and enemy.get("tidekeeper_phase", 0) == 0 and enemy.get("dock_winch_ally", "") == "":
 			enemy.intent = ""
 			enemy.next_attack = tick + TICKS_PER_BEAT * 3
 			_emit("interrupt", "%s interrupts %s." % [TILES[tile_id].label, enemy.name], actor, enemy, tile_id)
@@ -915,6 +929,8 @@ func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: Str
 		_clear_winch_intent(target)
 		target.next_attack = tick + TICKS_PER_BEAT * 5
 		_emit("interrupt", "%s interrupts Winch Pull." % actor.name, actor, target, "dock_winch_interrupted")
+	elif target.get("tidekeeper_phase", 0) >= 2 and actor.side == "hero" and force > 85.0:
+		_displace_tidekeeper(actor, target, kind)
 
 
 func _teleport(actor: Dictionary, target: Dictionary) -> bool:
@@ -962,6 +978,9 @@ func _run_enemies() -> void:
 			continue
 		elif enemy.get("sprite") == "wreckmaster" and tick % LOOP_TICKS == TICKS_PER_BEAT + 1:
 			_begin_wreckmaster_harpoon(enemy)
+			continue
+		elif enemy.get("sprite") == "tidekeeper" and tick % LOOP_TICKS == TICKS_PER_BEAT + 1:
+			_begin_tidekeeper_harpoons(enemy)
 			continue
 		if enemy.intent != "":
 			var winch_ally: String = enemy.get("dock_winch_ally", "")
@@ -1011,6 +1030,9 @@ func _resolve_intent(enemy: Dictionary) -> void:
 		return
 	if enemy.get("wreckmaster_phase", 0) > 0:
 		_resolve_wreckmaster(enemy, intent)
+		return
+	if enemy.get("tidekeeper_phase", 0) > 0:
+		_resolve_tidekeeper(enemy, intent, attack)
 		return
 	if enemy.get("relay_charge_active", false):
 		var marshal: bool = enemy.get("sprite") == "relay_marshal"
@@ -1151,6 +1173,73 @@ func _resolve_wreckmaster(enemy: Dictionary, intent: String) -> void:
 		_emit("miss", "Deck Slam misses. No hero is close enough.", enemy, target, "wreckmaster_slam_miss")
 	for hero in affected:
 		_damage(enemy, hero, 15, "enemy_attack")
+
+
+func _begin_tidekeeper_harpoons(enemy: Dictionary) -> void:
+	var target := _select(enemy, "nearest")
+	if target.is_empty():
+		return
+	enemy.tidekeeper_targets.clear()
+	for unit in units:
+		if unit.side == "hero" and unit.hp > 0:
+			enemy.tidekeeper_targets.append(unit.id)
+	enemy.tidekeeper_phase = 1
+	enemy.intent = target.id
+	enemy.intent_tick = tick + WRECKMASTER_HARPOON_TICKS
+	_emit("intent", "Twin Harpoons pull the party in at the end of beat 3.", enemy, target, "tidekeeper_harpoon")
+
+
+func _resolve_tidekeeper(enemy: Dictionary, intent: String, attack: Dictionary) -> void:
+	if enemy.tidekeeper_phase == 1:
+		for target_id: String in enemy.tidekeeper_targets:
+			var hero := _find_unit(target_id)
+			if hero.hp <= 0:
+				continue
+			var offset: Vector2 = enemy.pos - hero.pos
+			var travel := maxf(0.0, offset.length() - 80.0)
+			if travel > 0.0:
+				_emit("intent", "Twin Harpoons reel in %s." % hero.name, enemy, hero, "tidekeeper_pull")
+				var force := minf(930.0, sqrt(2.0 * IMPULSE_DECAY * travel))
+				_displace("pull", enemy, hero, "tidekeeper_harpoon", offset, force)
+		enemy.tidekeeper_phase = 2
+		enemy.intent = intent
+		enemy.intent_tick = tick + TIDEKEEPER_SLAM_BEATS * TICKS_PER_BEAT
+		_emit("intent", "Breakwater Slam in %d beats. Push the Tidekeeper off its anchor." % TIDEKEEPER_SLAM_BEATS,
+			enemy, enemy, "tidekeeper_slam_windup")
+		return
+	_clear_tidekeeper_intent(enemy)
+	var affected := _enemies_in_area(enemy, enemy.pos, enemy.tidekeeper_slam_radius)
+	_emit("intent", "The Tidekeeper releases Breakwater Slam.", enemy, enemy, "tidekeeper_slam", affected.size())
+	for hero in affected:
+		_damage(enemy, hero, attack.damage + 7, "enemy_attack")
+		if hero.hp > 0:
+			_displace("push", enemy, hero, "enemy_attack", hero.pos - enemy.pos, attack.push)
+
+
+func _displace_tidekeeper(actor: Dictionary, enemy: Dictionary, kind: String) -> void:
+	if enemy.tidekeeper_phase == 2:
+		if kind == "push":
+			enemy.tidekeeper_phase = 3
+			enemy.tidekeeper_breaker = actor.id
+			_emit("interrupt", "%s knocks the Tidekeeper off its anchor. Follow with a push or pull." % actor.name,
+				actor, enemy, "tidekeeper_unanchored")
+		return
+	var different_hero: bool = enemy.tidekeeper_breaker != actor.id
+	if not different_hero:
+		for unit in units:
+			if unit.side == "hero" and unit.hp > 0 and unit.id != actor.id:
+				return
+	_clear_tidekeeper_intent(enemy)
+	enemy.next_attack = tick + TICKS_PER_BEAT * 3
+	_emit("interrupt", "%s cancels Breakwater Slam." % actor.name, actor, enemy, "tidekeeper_interrupted", int(different_hero))
+
+
+func _clear_tidekeeper_intent(enemy: Dictionary) -> void:
+	enemy.tidekeeper_phase = 0
+	enemy.tidekeeper_targets.clear()
+	enemy.tidekeeper_breaker = ""
+	enemy.intent = ""
+	enemy.intent_tick = 0
 
 
 func _begin_relay_charge(enemy: Dictionary) -> void:
@@ -1395,6 +1484,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		if target.has("wreckmaster_phase"):
 			target.wreckmaster_phase = 0
 			target.intent_tick = 0
+		if target.has("tidekeeper_phase"):
+			_clear_tidekeeper_intent(target)
 		var relay := target if target.has("relay_link_target") else _find_unit(target.get("relay_shield_source", ""))
 		if not relay.is_empty() and relay.relay_link_target != "":
 			_break_relay_link(relay)

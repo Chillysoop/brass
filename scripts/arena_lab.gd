@@ -427,7 +427,7 @@ func _update_regent_status(regent: Dictionary) -> void:
 	var active: bool = regent.get("relay_charge_active", false)
 	var sources: Array = regent.get("relay_shield_sources", [])
 	var breakers: Dictionary = regent.get("crown_breakers", {})
-	var eligible := _available_relay_heroes(_live_regent_breakers(breakers))
+	var eligible := _eligible_hero_names(_live_regent_breakers(breakers))
 	var guidance := "Use tile targeting to assign each Guard to a different hero. Save a push from your third hero for the Regent."
 	var color := TEAL
 	if regent.get("crown_charge_interrupted", false):
@@ -447,7 +447,7 @@ func _update_regent_status(regent: Dictionary) -> void:
 	relay_status.add_theme_color_override("font_color", color)
 	relay_status.show()
 
-func _available_relay_heroes(excluded: Array) -> PackedStringArray:
+func _eligible_hero_names(excluded: Array) -> PackedStringArray:
 	var names := PackedStringArray()
 	for hero: Dictionary in sim.units:
 		if hero.side == "hero" and hero.hp > 0 and hero.id not in excluded:
@@ -486,7 +486,7 @@ func _marshal_charge_instruction(marshal: Dictionary) -> String:
 		1:
 			return "1 of 2 · Pull or push the pair apart"
 		2:
-			var eligible := _available_relay_heroes([marshal.get("relay_breaker", "")])
+			var eligible := _eligible_hero_names([marshal.get("relay_breaker", "")])
 			if not eligible.is_empty():
 				return "2 of 2 · Push the Marshal with " + " or ".join(eligible)
 			return "2 of 2 · A different hero must push the Marshal"
@@ -514,6 +514,12 @@ func _update_dock_status() -> void:
 						color = RUST
 					_:
 						instruction = "Harpoon → Deck Slam · Push after the pull to create distance, or Guard before impact."
+			"tidekeeper":
+				var phase: int = unit.get("tidekeeper_phase", 0)
+				instruction = _tidekeeper_instruction(unit, phase)
+				if phase > 0:
+					instruction += " · " + time
+					color = RUST if phase >= 2 and remaining <= 2 * ArenaSim.TICKS_PER_BEAT else GOLD
 			"dock_winch":
 				var ally: String = unit.get("dock_winch_ally", "")
 				if not ally.is_empty():
@@ -528,6 +534,22 @@ func _update_dock_status() -> void:
 			dock_status.add_theme_color_override("font_color", color)
 			dock_status.show()
 			return
+
+func _tidekeeper_instruction(unit: Dictionary, phase: int) -> String:
+	match phase:
+		1:
+			var marked := PackedStringArray()
+			for id: String in unit.get("tidekeeper_targets", []):
+				marked.append(_combatant_name(id, "a marked hero"))
+			return "Twin Harpoons · Pulls %s close" % (" and ".join(marked) if not marked.is_empty() else "the marked heroes")
+		2:
+			return "Breakwater Slam · 1 of 2 · Push the Tidekeeper"
+		3:
+			var eligible := _eligible_hero_names([unit.get("tidekeeper_breaker", "")])
+			if eligible.is_empty():
+				eligible = _eligible_hero_names([])
+			return "Breakwater Slam · 2 of 2 · Push or pull with " + " or ".join(eligible)
+	return "Twin Harpoons → Breakwater Slam · Push with one hero, then push or pull with your other hero."
 
 func _combatant_name(id: String, fallback: String) -> String:
 	for unit: Dictionary in sim.units:
