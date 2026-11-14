@@ -18,6 +18,8 @@ In the **Artifice** branch, unlock **Gravity Hook**, then **Blink Artifice** to 
 
 The starter relic draft rotates build options. **Towline Knot** rewards following displacement with a hit on the same enemy, **Bridgeplate** turns absorbed damage into a counter, and **Brass Metronome** rewards leaving a beat of space before a damaging tile. Their icons flash when they trigger. Battle rewards can offer a copy of an owned tile, a relic-compatible tile, and a wildcard. Hover or focus a reachable elite to preview its formation and a guaranteed reward choice.
 
+Your first elite victory offers a relic draft before the usual tile reward. The draft shows a fit for your loadout, a pivot, and a wildcard. Picking a relic can add a compatible tile to that reward. **Afterimage** lets an attack reach from the spot you blinked away from. **Barrage Rack** strips Guard on a quick follow-up against the same enemy. **Siege Fuse** pulls enemies together before a heavy attack. Battle Review records the tile and beat that triggered each effect.
+
 Seeded battle and elite formations can include a Rivet Bombardier, Kiln Duelist, Relay Mender, or Dock Corsair. The encounter preview shows who you will face.
 
 Medium starts solo. After the Tollkeeper, take a Legendary tile into your build and recruit a second hero with a starter tile. Both lanes fire on the same beat clock. Push or pull the Gilded Marshal to expose its armor, then land a hit with the other hero before it closes. Defeating the Marshal unlocks Brass Frontier Hard and Glass Foundry Easy.

@@ -6,6 +6,7 @@ const BASE_TILES := ["bash", "shot", "slam", "pull", "guard", "blink"]
 const STARTER_TILES := ["bash", "shot", "slam"]
 const STARTER_RELICS := ["pocket_bell", "copper_compass", "quartermasters_coin"]
 const BUILD_RELICS := ["towline_knot", "bridgeplate", "brass_metronome"]
+const ELITE_RELICS := ["afterimage", "barrage_rack", "siege_fuse"]
 const RELIC_STARTERS := {
 	"towline_knot": ["bash", "pull", "shot"],
 	"bridgeplate": ["shield_ram", "bash", "shot"],
@@ -21,6 +22,9 @@ const RELICS := {
 	"towline_knot": {"label": "Towline Knot", "description": "The first push or pull each loop marks its target. A separate tile that hits it within 2 beats deals 9 bonus damage."},
 	"bridgeplate": {"label": "Bridgeplate", "description": "When a hero's Guard absorbs damage, their next tile hit that loop deals 8 bonus damage. Once per hero per loop."},
 	"brass_metronome": {"label": "Brass Metronome", "description": "Leave an empty beat before a tile. Its hit deals 8 bonus damage. Once per loop."},
+	"afterimage": {"label": "Afterimage", "description": "After a successful Blink, your next damaging tile without movement can strike from where you blinked away."},
+	"barrage_rack": {"label": "Barrage Rack", "description": "Pair hits from separate tiles 2 beats wide or less. Hit the same enemy within 2 beats to strip up to 8 Guard before the second hit."},
+	"siege_fuse": {"label": "Siege Fuse", "description": "Once per loop, your first landed attack at least 4 beats wide pulls nearby enemies toward its target before impact."},
 }
 const META_NODES := {
 	"stout_start": {"label": "Stout Start", "description": "Begin each run with 8% more maximum HP.", "cost": 5, "requires": []},
@@ -237,7 +241,7 @@ func start_run(seed_value := 0, difficulty := "easy", location := "brass") -> bo
 		"hero": "", "heroes": [], "relics": [], "hp": hp, "max_hp": hp,
 		"gold": gold, "layers": layers, "node": layers[0][0], "visited": [layers[0][0].id],
 		"offers": _sample(HEROES.keys(), 3, run_seed, 11), "result": "", "marks_earned": 0,
-		"midpoint_paid": false, "node_notice": "",
+		"midpoint_paid": false, "elite_relic_drafted": false, "node_notice": "",
 	}
 	loadout = {"lanes": [[]], "storage": [[], [], []], "defaults": ["nearest"], "suppressed": {}}
 	save()
@@ -426,7 +430,10 @@ func elite_preview(node: Dictionary) -> Dictionary:
 		return {}
 	var tile := _elite_preview_tile(node)
 	var segment := 1 + floori(float(node.row) / NODES_PER_SEGMENT)
-	return {"encounter": _encounter_for(node, segment), "tile": tile, "reward_family": ArenaSim.TILES[tile].family}
+	return {
+		"encounter": _encounter_for(node, segment), "tile": tile, "reward_family": ArenaSim.TILES[tile].family,
+		"relic_draft": not _has_earned_elite_relic(),
+	}
 
 
 func _elite_preview_tile(node: Dictionary) -> String:
@@ -435,6 +442,141 @@ func _elite_preview_tile(node: Dictionary) -> String:
 	for tier in range(1, 4):
 		baseline.append_array(_specialist_pool(tier))
 	return _sample(baseline, 1, int(data.seed), _node_salt(81, node))[0]
+
+
+func will_draft_elite_relic() -> bool:
+	if data.get("phase") != "combat":
+		return false
+	return data.node.get("encounter_override", data.node.type) == "elite" and not _has_earned_elite_relic()
+
+
+func _has_earned_elite_relic() -> bool:
+	if data.has("elite_relic_drafted"):
+		return bool(data.elite_relic_drafted)
+	# Older saves record completed nodes, rather than whether an elite paid out.
+	var current: Dictionary = data.get("node", {})
+	if data.get("phase") in ["map", "reward"] and current.get("encounter_override", current.get("type")) == "elite":
+		return true
+	var completed: Array = data.get("visited", [])
+	for layer: Array in data.get("layers", []):
+		for saved_node: Dictionary in layer:
+			if saved_node.id not in completed:
+				continue
+			var node := saved_node
+			if saved_node.id == current.get("id"):
+				if data.get("phase") not in ["map", "reward"]:
+					continue
+				node = current
+			if node.get("encounter_override", node.type) == "elite":
+				return true
+	return false
+
+
+func elite_relic_offers() -> Array:
+	return data.get("elite_relic_offers", []) if data.get("phase") == "reward" else []
+
+
+func choose_elite_relic(id: String) -> bool:
+	for offer: Dictionary in elite_relic_offers():
+		if offer.id != id or id in data.relics:
+			continue
+		data.relics.append(id)
+		data.elite_relic_drafted = true
+		data.erase("elite_relic_offers")
+		var tile: String = offer.companion
+		if not tile.is_empty():
+			if tile not in data.offers:
+				var guaranteed := _elite_preview_tile(data.node) if data.node.type == "elite" else ""
+				for index in range(data.offers.size() - 1, -1, -1):
+					if data.offers[index] != guaranteed:
+						data.offers[index] = tile
+						break
+			data.reward_hints = {tile: "Pairs with " + RELICS[id].label}
+		data.node_notice = "Relic acquired: " + RELICS[id].label
+		save()
+		return true
+	return false
+
+
+func _build_elite_relic_offers() -> Array:
+	var salt := _node_salt(181)
+	var order := _sample(ELITE_RELICS, ELITE_RELICS.size(), int(data.seed), salt)
+	var equipped: Array = []
+	for lane_index in range(loadout.lanes.size()):
+		if lane_index < data.heroes.size() and int(data.heroes[lane_index].hp) > 0:
+			equipped.append(loadout.lanes[lane_index])
+	var offers: Array[Dictionary] = []
+	for id: String in order:
+		offers.append(_elite_relic_offer(id, equipped))
+	var fit := 0
+	for index in range(1, offers.size()):
+		if offers[index].fit > offers[fit].fit:
+			fit = index
+	var first: Dictionary = offers.pop_at(fit)
+	first.role = "Fits your build" if first.fit >= 2 else "Closest fit"
+	var pivot := 0
+	for index in range(offers.size()):
+		if offers[index].fit == 1:
+			pivot = index
+			break
+		if offers[pivot].fit == 0 and offers[index].fit > 0:
+			pivot = index
+	var second: Dictionary = offers.pop_at(pivot)
+	second.role = "Pivot" if second.fit > 0 else "Long-term pivot"
+	offers[0].role = "Wildcard"
+	offers.push_front(second)
+	offers.push_front(first)
+	for offer: Dictionary in offers:
+		offer.erase("fit")
+	return offers
+
+
+func _elite_relic_offer(id: String, equipped := []) -> Dictionary:
+	var owned: Array = loadout.lanes + loadout.storage
+	var fit := 0
+	var candidates: Array = []
+	match id:
+		"afterimage":
+			var blink := func(tile: String): return ArenaSim.TILES[tile].get("family", "") == "blink"
+			var follow_up := func(tile: String):
+				return ArenaSim.TILES[tile].damage > 0 and not blink.call(tile) and tile != "bulwark_charge"
+			var has_blink := _count_matching_tiles(owned, blink) > 0
+			var has_follow_up := _count_matching_tiles(owned, follow_up) > 0
+			if has_blink and has_follow_up:
+				fit = 2
+				for lane: Array in equipped:
+					if _count_matching_tiles([lane], blink) > 0 and _count_matching_tiles([lane], follow_up) > 0:
+						fit = 3
+						break
+			else:
+				fit = int(has_blink or has_follow_up)
+				candidates = ["shield_ram", "hook_bash"] if has_blink else ["phase_cut", "ward_step"]
+		"barrage_rack":
+			var short_hit := func(tile: String): return ArenaSim.TILES[tile].damage > 0 and ArenaSim.TILES[tile].width <= 2
+			var count := _count_matching_tiles(owned, short_hit)
+			if count >= 2:
+				fit = 3 if _count_matching_tiles(equipped, short_hit) >= 2 else 2
+			else:
+				fit = count
+				candidates = ["hook_bash", "shield_ram"]
+		"siege_fuse":
+			var heavy := func(tile: String): return ArenaSim.TILES[tile].damage > 0 and ArenaSim.TILES[tile].width >= 4
+			if _count_matching_tiles(owned, heavy) > 0:
+				fit = 3 if _count_matching_tiles(equipped, heavy) > 0 else 2
+			else:
+				fit = 1
+				candidates = ["shockwave", "sundering_slam"]
+	var tile: String = "" if candidates.is_empty() else _sample(candidates, 1, int(data.seed), _node_salt(182 + ELITE_RELICS.find(id)))[0]
+	return {"id": id, "fit": fit, "companion": tile}
+
+
+func _count_matching_tiles(rows: Array, matches: Callable) -> int:
+	var count := 0
+	for row: Array in rows:
+		for tile: Dictionary in row:
+			if matches.call(tile.id):
+				count += 1
+	return count
 
 
 func is_final_boss() -> bool:
@@ -458,6 +600,7 @@ func finish_combat(victory: bool, hp: Variant) -> bool:
 		return true
 	if "trail_ration" in data.relics:
 		_heal(5, false)
+	var draft_relic := will_draft_elite_relic()
 	data.phase = "reward"
 	match data.node.get("encounter_override", data.node.type):
 		"boss":
@@ -471,11 +614,14 @@ func finish_combat(victory: bool, hp: Variant) -> bool:
 				var guaranteed := _elite_preview_tile(data.node)
 				if guaranteed not in data.offers:
 					data.offers[-1] = guaranteed
-			var relic_pool := _available_relics()
-			if not relic_pool.is_empty():
-				var found: String = _sample(relic_pool, 1, int(data.seed), _node_salt(82))[0]
-				data.relics.append(found)
-				data.node_notice = "Relic acquired: " + RELICS[found].label
+			if draft_relic:
+				data.elite_relic_offers = _build_elite_relic_offers()
+			else:
+				var relic_pool := _available_relics()
+				if not relic_pool.is_empty():
+					var found: String = _sample(relic_pool, 1, int(data.seed), _node_salt(82))[0]
+					data.relics.append(found)
+					data.node_notice = "Relic acquired: " + RELICS[found].label
 		_:
 			data.gold += 12
 			data.offers = _standard_rewards()
@@ -557,6 +703,8 @@ func _resolve_boss() -> void:
 
 func reward(id: String) -> bool:
 	if data.get("phase") != "reward" or (id != "skip" and id not in data.offers):
+		return false
+	if not elite_relic_offers().is_empty():
 		return false
 	data.erase("reward_hints")
 	if is_final_boss():
@@ -1004,6 +1152,9 @@ func _owned_tile_count(id: String) -> int:
 
 
 func _relic_bridge(excluded: Array) -> Dictionary:
+	var elite := _elite_relic_bridge(excluded)
+	if not elite.is_empty():
+		return elite
 	var starter: String = data.relics.front() if not data.relics.is_empty() else ""
 	var candidates: Array
 	var hint: String
@@ -1028,6 +1179,27 @@ func _relic_bridge(excluded: Array) -> Dictionary:
 		return {}
 	var id: String = eligible[0] if data.node.type == "opening" else _sample(eligible, 1, int(data.seed), _node_salt(86))[0]
 	return {"tile": id, "hint": hint}
+
+
+func _elite_relic_bridge(excluded: Array) -> Dictionary:
+	for id: String in data.relics:
+		if id not in ELITE_RELICS:
+			continue
+		var companion: String = _elite_relic_offer(id).companion
+		if companion.is_empty():
+			continue
+		var candidates: Array
+		match id:
+			"afterimage":
+				candidates = ["blink"] if ArenaSim.TILES[companion].family == "blink" else ["bash", "shot"]
+			"barrage_rack":
+				candidates = ["shot", "bash"]
+			"siege_fuse":
+				candidates = ["slam"]
+		var eligible := candidates.filter(func(tile: String): return tile not in excluded)
+		if not eligible.is_empty():
+			return {"tile": _sample(eligible, 1, int(data.seed), _node_salt(186))[0], "hint": "Pairs with " + RELICS[id].label}
+	return {}
 
 
 func _has_build_tile(matches: Callable) -> bool:
@@ -1211,6 +1383,8 @@ func _restore_integers() -> void:
 		for node: Dictionary in layer:
 			_restore_node(node)
 	_restore_node(data.node)
+	if not data.has("elite_relic_drafted"):
+		data.elite_relic_drafted = _has_earned_elite_relic()
 	for items: Array in loadout.lanes + loadout.storage:
 		for tile: Dictionary in items:
 			tile.start = int(tile.start)

@@ -40,6 +40,7 @@ func _run() -> void:
 					break
 				game._action()
 			"reward":
+				_pick_elite_relic(run)
 				var id: String = run.data.offers[0]
 				if run.data.node.type != "boss":
 					for preferred in ["hook_bash", "shield_ram", "bash", "shot", "slam"]:
@@ -187,6 +188,7 @@ func _medium_playthrough(game: Control) -> Dictionary:
 						"The two timelines should open and shatter the Marshal's armor during the test clear.")
 				game._action()
 			"reward":
+				_pick_elite_relic(run)
 				var id: String = run.data.offers[0]
 				for preferred in ["dawn_bastion", "shield_ram", "hook_bash", "bash", "shot", "slam"]:
 					if preferred in run.data.offers:
@@ -361,6 +363,7 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 						"Bash, Pull, and Bash from the three timelines should cancel the first Undertow Sweep.")
 				game._action()
 			"reward":
+				_pick_elite_relic(run)
 				var chosen: String = run.data.offers[0]
 				for preferred in ["dawn_bastion", "event_horizon", "bulwark_charge", "shield_ram", "hook_bash", "bash", "shot", "slam"]:
 					if preferred in run.data.offers:
@@ -589,6 +592,11 @@ func _equip_stored_rewards(game: Control) -> void:
 						break
 				if equipped:
 					break
+
+func _pick_elite_relic(run: RefCounted) -> void:
+	var draft: Array = run.elite_relic_offers()
+	if not draft.is_empty():
+		_check(run.choose_elite_relic(draft[0].id), "Choose a first-elite relic before claiming its tile.")
 
 func _write_legacy_easy_save(run: RefCounted) -> void:
 	var legacy_run: Dictionary = run.data.duplicate(true)

@@ -27,6 +27,9 @@ const ADMIRAL_SWEEP_BEATS := 6
 const ADMIRAL_SWEEP_RADIUS := 330.0
 const PRECISION_BONUS_RANGE := 210.0
 const PRECISION_SPACING := 245.0
+const BARRAGE_GUARD_BREAK := 8
+const SIEGE_PULL_REACH := 185.0
+const SIEGE_PULL_DISTANCE := 82.0
 const BOSS_REVIEW_STAGES := {
 	"marshal_plate": "start", "marshal_exposed": "progress", "marshal_shattered": "success",
 	"regent_seals": "start", "regent_seal_struck": "progress", "regent_shattered": "success",
@@ -431,6 +434,8 @@ var _compass_loop := -1
 var _towline_loop := -1
 var _towline_mark: Dictionary = {}
 var _metronome_loop := -1
+var _barrage_hits: Dictionary = {}
+var _siege_loop := -1
 
 
 static func default_lanes(fixture: String = "duo") -> Array:
@@ -469,6 +474,8 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 	_towline_loop = -1
 	_towline_mark.clear()
 	_metronome_loop = -1
+	_barrage_hits.clear()
+	_siege_loop = -1
 	if not options.is_empty():
 		_start_campaign(options)
 	elif fixture == "solo":
@@ -908,16 +915,16 @@ func _bounded(position: Vector2, radius: float) -> Vector2:
 	return Vector2(clampf(position.x, margin, ARENA_SIZE.x - margin), clampf(position.y, margin, ARENA_SIZE.y - margin))
 
 
-func _select(actor: Dictionary, rule: String, reach: float = INF) -> Dictionary:
+func _select(actor: Dictionary, rule: String, reach: float = INF, origin: Vector2 = Vector2.INF) -> Dictionary:
 	var best := {}
 	var best_score := INF
 	var crown_target: bool = rule in CROWN_TARGET_RULES
+	var position: Vector2 = actor.pos if origin == Vector2.INF else origin
 	for candidate in units:
 		if candidate.side == actor.side or candidate.hp <= 0:
 			continue
 		if crown_target and candidate.get("crown_role", "") != rule:
 			continue
-		var position: Vector2 = actor.pos
 		var distance := position.distance_squared_to(candidate.pos)
 		if distance > reach * reach:
 			continue
@@ -937,7 +944,7 @@ func _select(actor: Dictionary, rule: String, reach: float = INF) -> Dictionary:
 	# A defeated named guard should not leave that tile inert for the rest of the fight.
 	if best.is_empty() and crown_target and not units.any(func(unit: Dictionary) -> bool:
 		return unit.hp > 0 and unit.get("crown_role", "") == rule):
-		return _select(actor, "nearest", reach)
+		return _select(actor, "nearest", reach, origin)
 	return best
 
 
@@ -1073,7 +1080,7 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 	if tile.get("family") == "guard":
 		_cast_guard(actor, tile_id, tile, rule)
 		return
-	var target := _select(actor, rule, tile.range)
+	var target := _select_attack_target(actor, tile_id, rule)
 	if target.is_empty():
 		var out_of_range := _select(actor, rule)
 		if not out_of_range.is_empty():
@@ -1087,12 +1094,14 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 			_activation.reason = "No eligible enemy remained when the tile finished."
 		return
 	_review_activation_target(target)
+	if tile.get("family") != "blink":
+		_prepare_siege_fuse(actor, target, tile_id)
 	match tile_id:
 		"pull", "gravity_hook":
 			var force := 935.0 if tile_id == "gravity_hook" else 735.0
 			if actor.name == "Hexwright":
 				force += 155.0
-			var direction: Vector2 = actor.pos - target.pos
+			var direction: Vector2 = _attack_origin(actor) - target.pos
 			_displace("pull", actor, target, tile_id, direction, force)
 			_damage(actor, target, tile.damage, tile_id)
 		"bash":
@@ -1102,7 +1111,7 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 			_guard(actor, 8, tile_id)
 		"hook_bash":
 			_damage(actor, target, tile.damage, tile_id)
-			_pull_toward(actor, target, tile_id, actor.pos, 780.0)
+			_pull_toward(actor, target, tile_id, _attack_origin(actor), 780.0)
 		"bulwark_charge":
 			if _charge(actor, target, tile_id):
 				_strike_and_push(actor, target, tile_id, tile.damage, 810.0)
@@ -1136,6 +1145,70 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 		_warden_guard(actor, tile_id)
 
 
+func _select_attack_target(actor: Dictionary, tile_id: String, rule: String) -> Dictionary:
+	var tile: Dictionary = TILES[tile_id]
+	if actor.has("afterimage") and tile.damage > 0 and tile.get("family") != "blink" and tile_id != "bulwark_charge":
+		var echo: Dictionary = actor.afterimage
+		actor.erase("afterimage")
+		var target := _select(actor, rule, tile.range, echo.position)
+		if not target.is_empty():
+			_activation["attack_origin"] = echo.position
+			_relic_proc("afterimage", "Afterimage", 0, actor, target, echo.source, echo.beat, "Struck from the Blink departure point", echo.position)
+			return target
+	return _select(actor, rule, tile.range)
+
+
+func _attack_origin(actor: Dictionary) -> Vector2:
+	return _activation.get("attack_origin", actor.pos) if _activation.get("actor") == actor.id else actor.pos
+
+
+func _prepare_siege_fuse(actor: Dictionary, target: Dictionary, tile_id: String) -> void:
+	var tile: Dictionary = TILES[tile_id]
+	if tile.width < 4 or tile.damage <= 0 or _siege_loop == _loop_index() or not _has_relic(actor, "siege_fuse"):
+		return
+	_siege_loop = _loop_index()
+	var count := 0
+	var center: Vector2 = target.pos
+	for enemy in _enemies_in_area(actor, center, SIEGE_PULL_REACH):
+		if enemy.id == target.id:
+			continue
+		var start: Vector2 = enemy.pos
+		var destination := _siege_pull_landing(enemy, center)
+		if start.is_equal_approx(destination):
+			continue
+		enemy.pos = destination
+		enemy.prev_pos = destination
+		_emit("pull", "Siege Fuse draws %s toward %s." % [enemy.name, target.name], actor, enemy, "siege_fuse",
+			roundi(start.distance_to(destination)), start, destination)
+		_break_displaced_relay_link(enemy, destination, actor)
+		count += 1
+	if count > 0:
+		var effect := "Pulled one enemy inward" if count == 1 else "Pulled %d enemies inward" % count
+		_relic_proc("siege_fuse", "Siege Fuse", count, actor, target, tile.label, 0, effect, center)
+
+
+func _siege_pull_landing(enemy: Dictionary, center: Vector2) -> Vector2:
+	var start: Vector2 = enemy.pos
+	var resistance: float = enemy.get("attack", {}).get("displacement", 1.0)
+	var end := _bounded(start.move_toward(center, SIEGE_PULL_DISTANCE * resistance), enemy.radius)
+	if end.is_equal_approx(start):
+		return start
+	var fraction := 1.0
+	for unit: Dictionary in units:
+		if unit.id == enemy.id or unit.hp <= 0:
+			continue
+		var minimum: float = enemy.radius + unit.radius + 3.0
+		var offset: Vector2 = unit.pos - start
+		if offset.length_squared() <= minimum * minimum:
+			if offset.dot(end - start) > 0.0:
+				return start
+			continue
+		var contact := Geometry2D.segment_intersects_circle(start, end, unit.pos, minimum)
+		if contact >= 0.0:
+			fraction = minf(fraction, contact)
+	return start.lerp(end, fraction)
+
+
 func _review_activation_target(target: Dictionary) -> void:
 	if not _activation.is_empty():
 		_activation.target = target.id
@@ -1157,7 +1230,7 @@ func _activation_result(activation: Dictionary) -> String:
 
 
 func _cast_shot(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
-	var origin: Vector2 = actor.pos
+	var origin := _attack_origin(actor)
 	var damage: int = tile.damage
 	if origin.distance_squared_to(target.pos) > PRECISION_BONUS_RANGE * PRECISION_BONUS_RANGE:
 		damage += int(tile.get("distance_bonus", 0))
@@ -1179,9 +1252,10 @@ func _cast_shot(actor: Dictionary, target: Dictionary, tile_id: String, tile: Di
 
 func _cast_guard(actor: Dictionary, tile_id: String, tile: Dictionary, rule: String) -> void:
 	if tile.has("guard_bonus_cap"):
-		var target := _select(actor, rule, tile.range)
+		var target := _select_attack_target(actor, tile_id, rule)
 		_review_activation_target(actor if target.is_empty() else target)
 		if not target.is_empty():
+			_prepare_siege_fuse(actor, target, tile_id)
 			var spent := mini(actor.guard, tile.guard_bonus_cap)
 			actor.guard -= spent
 			var damage: int = tile.damage + spent
@@ -1218,9 +1292,13 @@ func _guard_recipient(actor: Dictionary, tile: Dictionary) -> Dictionary:
 
 
 func _cast_blink(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
+	var departure: Vector2 = actor.pos
 	if not _teleport(actor, target, tile_id, tile.get("retreat", 0.0)):
 		_emit("miss", "%s: %s had no clear landing." % [actor.name, tile.label], actor, target, tile_id)
 		return
+	if _has_relic(actor, "afterimage"):
+		actor["afterimage"] = {"position": departure, "source": tile.label, "beat": _beat()}
+	_prepare_siege_fuse(actor, target, tile_id)
 	var enemies: Array = _enemies_in_area(actor, target.pos, tile.splash) if tile.has("splash") else [target]
 	for enemy: Dictionary in enemies:
 		if tile.has("push"):
@@ -1241,7 +1319,7 @@ func _warden_guard(actor: Dictionary, tile_id: String) -> void:
 func _strike_and_push(actor: Dictionary, target: Dictionary, tile_id: String, damage: int, force: float) -> void:
 	_damage(actor, target, damage, tile_id)
 	if target.hp > 0:
-		_displace("push", actor, target, tile_id, target.pos - actor.pos, force)
+		_displace("push", actor, target, tile_id, target.pos - _attack_origin(actor), force)
 
 
 func _area_push(actor: Dictionary, target: Dictionary, tile_id: String, damage: int, radius: float, force: float, guard_break := 0) -> void:
@@ -1281,7 +1359,7 @@ func _gravity_strike(actor: Dictionary, target: Dictionary, tile_id: String, rad
 			enemy.intent = ""
 			enemy.next_attack = tick + TICKS_PER_BEAT * 3
 			_emit("interrupt", "%s interrupts %s." % [TILES[tile_id].label, enemy.name], actor, enemy, tile_id)
-		var center: Vector2 = actor.pos if enemy.id == target.id else impact
+		var center: Vector2 = _attack_origin(actor) if enemy.id == target.id else impact
 		_pull_toward(actor, enemy, tile_id, center, 990.0 if collapse else 860.0)
 
 
@@ -2080,6 +2158,7 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		amount = _class_attack_damage(actor, target, amount)
 		if not _activation.is_empty() and actor.side == "hero" and target.side == "enemy":
 			amount += _relic_attack_bonus(actor, target)
+			_apply_barrage_rack(actor, target, tile_id)
 		if target.get("marshal_plated", false) and actor.side == "hero":
 			amount = _marshal_damage(actor, target, amount)
 		elif target.get("prism_warded", false) and actor.side == "hero":
@@ -2119,7 +2198,7 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		action = "Mortar"
 	var blocked_text := " (%d blocked)" % blocked if blocked > 0 else ""
 	var details := "%s: %s hits %s for %d%s." % [actor.name, action, target.name, dealt, blocked_text]
-	_emit("hit", details, actor, target, tile_id, dealt)
+	_emit("hit", details, actor, target, tile_id, dealt, _attack_origin(actor))
 	if target.hp == 0:
 		target.velocity = Vector2.ZERO
 		target.impulse = Vector2.ZERO
@@ -2189,6 +2268,23 @@ func _relic_attack_bonus(actor: Dictionary, target: Dictionary) -> int:
 	return bonus
 
 
+func _apply_barrage_rack(actor: Dictionary, target: Dictionary, tile_id: String) -> void:
+	if int(TILES[tile_id].width) > 2 or not _has_relic(actor, "barrage_rack"):
+		return
+	var previous: Dictionary = _barrage_hits.get(target.id, {})
+	if previous.get("order", -1) == _activation.order:
+		return
+	if not previous.is_empty() and tick - int(previous.tick) <= 2 * TICKS_PER_BEAT:
+		_barrage_hits.erase(target.id)
+		var stripped := mini(BARRAGE_GUARD_BREAK, target.guard)
+		if stripped > 0:
+			target.guard -= stripped
+			_relic_proc("barrage_rack", "Barrage Rack", stripped, actor, target, previous.source, previous.beat,
+				"Stripped %d Guard before the hit" % stripped)
+		return
+	_barrage_hits[target.id] = {"order": _activation.order, "tick": tick, "beat": _activation.beat, "source": TILES[tile_id].label}
+
+
 func _has_gap_before_activation() -> bool:
 	var start: int = _activation.start
 	if start == 0 and tick <= LOOP_TICKS:
@@ -2197,11 +2293,16 @@ func _has_gap_before_activation() -> bool:
 	return not _lanes[_activation.lane].any(func(tile: Dictionary): return tile.end == previous_edge)
 
 
-func _relic_proc(id: String, label: String, amount: int, actor: Dictionary, target: Dictionary, source: String, source_beat := 0) -> int:
+func _relic_proc(id: String, label: String, amount: int, actor: Dictionary, target: Dictionary, source: String,
+		source_beat := 0, effect := "", origin := Vector2.INF) -> int:
 	if not _activation.has("relics"):
 		_activation["relics"] = []
-	_activation.relics.append({"id": id, "amount": amount, "target_name": target.name, "source": source, "source_beat": source_beat})
-	_emit("relic_proc", "%s · +%d damage" % [label, amount], actor, target, id, amount)
+	var proc := {"id": id, "amount": amount, "target_name": target.name, "source": source, "source_beat": source_beat}
+	if not effect.is_empty():
+		proc["effect"] = effect
+	_activation.relics.append(proc)
+	var message := effect if not effect.is_empty() else "+%d damage" % amount
+	_emit("relic_proc", "%s · %s" % [label, message], actor, target, id, amount, origin)
 	var event: Dictionary = trace.back()
 	event["source_tile"] = _activation.tile
 	event["lane"] = _activation.lane
@@ -2305,7 +2406,7 @@ func _class_attack_damage(actor: Dictionary, target: Dictionary, amount: int) ->
 				actor["rune_charged"] = false
 				amount += 5
 		"starshot":
-			var position: Vector2 = actor.pos
+			var position := _attack_origin(actor)
 			if position.distance_squared_to(target.pos) > 200.0 * 200.0:
 				amount += 5
 		"cinder_mage":

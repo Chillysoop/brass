@@ -111,6 +111,7 @@ func open(activations: Array, boss_events: Array, outcome: String, encounter := 
 	_summary.text = results
 	_retry.visible = can_retry
 	_filters.boss.visible = not boss_events.is_empty()
+	_filters.relics.visible = activations.any(func(event: Dictionary): return not event.get("relics", []).is_empty())
 	_focus_misses = outcome == "defeat"
 	show()
 	_show_filter("all")
@@ -141,7 +142,7 @@ func _build() -> void:
 	filters.add_theme_constant_override("separation", 6)
 	column.add_child(filters)
 	var group := ButtonGroup.new()
-	for entry in [["all", "All events"], ["misses", "Misses"], ["boss", "Boss counter"]]:
+	for entry in [["all", "All events"], ["misses", "Misses"], ["boss", "Boss counter"], ["relics", "Relics"]]:
 		var id: String = entry[0]
 		var button := _button(entry[1], func(): _show_filter(id))
 		button.name = "Review_" + id
@@ -212,11 +213,18 @@ func _show_filter(filter: String) -> void:
 	for event: Dictionary in _events:
 		var is_boss := event.has("boss_event")
 		var is_miss: bool = not is_boss and event.status == "miss"
-		if (filter == "misses" and not is_miss) or (filter == "boss" and not is_boss):
+		var procs: Array = event.get("relics", [])
+		if (filter == "misses" and not is_miss) or (filter == "boss" and not is_boss) or (filter == "relics" and procs.is_empty()):
 			continue
 		var index := _visible_events.size()
 		_visible_events.append(event)
-		_list.add_item("Loop %d · Beat %02d    %s" % [event.loop, event.beat, _event_caption(event)])
+		var caption := _event_caption(event)
+		if filter == "relics":
+			var names := PackedStringArray()
+			for proc: Dictionary in procs:
+				names.append(FrontierRun.RELICS.get(proc.id, {}).get("label", proc.id))
+			caption = ", ".join(names) + " · " + ArenaSim.TILES[event.tile].label
+		_list.add_item("Loop %d · Beat %02d    %s" % [event.loop, event.beat, caption])
 		_list.set_item_tooltip(index, event.get("message", event.get("reason", "")))
 		_list.set_item_custom_fg_color(index, _event_color(event))
 		if preferred == -1 and _focus_misses and (is_miss or event.get("stage") == "miss"):
@@ -253,7 +261,12 @@ func _select(index: int) -> void:
 			var source: String = proc.source
 			if int(proc.get("source_beat", 0)) > 0:
 				source += " on beat %d" % int(proc.source_beat)
-			_detail.text += "\n%s · +%d damage to %s\n%s" % [label, proc.amount, proc.target_name, source]
+			var effect: String = proc.get("effect", "")
+			if effect.is_empty():
+				effect = "+%d damage to %s" % [proc.amount, proc.target_name]
+			_detail.text += "\n%s · %s" % [label, effect]
+			if not source.is_empty():
+				_detail.text += "\n" + source
 		var rule: String = RULE_NAMES.get(event.rule, str(event.rule).capitalize())
 		var target: String = event.get("target_name", "")
 		_hint.text = "Targeting: %s" % rule if target.is_empty() else "Targeting: %s  ·  %s" % [rule, target]

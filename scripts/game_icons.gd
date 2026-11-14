@@ -1,7 +1,10 @@
 extends RefCounted
 
 const FAMILY_ICONS := {"bash": "push", "blink": "teleport", "shot": "shot", "guard": "guard", "slam": "area"}
-const RELIC_ICONS := {"towline_knot": "pull", "bridgeplate": "guard", "brass_metronome": "review"}
+const RELIC_ICONS := {
+	"towline_knot": "pull", "bridgeplate": "guard", "brass_metronome": "review",
+	"afterimage": "teleport", "barrage_rack": "shot", "siege_fuse": "area",
+}
 const TILE_ICONS := {"pull": "pull", "gravity_hook": "pull", "slam": "area", "meteor_seal": "area",
 	"hook_bash": "pull", "graviton": "pull", "event_horizon": "pull",
 	"split_shot": "area", "volley": "area", "flak_burst": "area", "meteor_volley": "area",

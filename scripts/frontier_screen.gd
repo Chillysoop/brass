@@ -81,6 +81,9 @@ const ENEMY_HINTS := {
 	"dock_winch": "Pulls a bruiser into striking range.",
 	"relay_guard": "Shields a nearby ally.",
 }
+const ELITE_RELIC_TONES := {
+	"afterimage": Color("#c8b7ec"), "barrage_rack": Color("#efbe8a"), "siege_fuse": Color("#9ddbd1"),
+}
 const ARCHETYPES := {
 	"warden": "Vanguard", "bulwark": "Vanguard", "breaker": "Displacement", "hexwright": "Displacement",
 	"wayfarer": "Mobility", "lancer": "Mobility", "cantor": "Support", "apothecary": "Support",
@@ -392,7 +395,10 @@ func _elite_preview_copy(node: Dictionary) -> String:
 	var formation := ", ".join(enemies)
 	if not threat.is_empty():
 		formation += "\n" + threat
-	return "%s\n%s\n\nReward choice · %s (%s)" % [node.label, formation, tile.label, str(tile.rarity).capitalize()]
+	var reward := "%s (%s)" % [tile.label, str(tile.rarity).capitalize()]
+	if info.get("relic_draft", false):
+		reward += "\nChoose a relic after victory"
+	return "%s\n%s\n\nReward choice · %s" % [node.label, formation, reward]
 
 
 func _draw_route_field(canvas: Control, image_path: String) -> void:
@@ -415,7 +421,10 @@ func _choose_node(id: String) -> void:
 func _combat() -> void:
 	var node: Dictionary = _run.data.get("node", {})
 	var type: String = node.get("encounter_override", node.get("type", "battle"))
-	_page_title(node.get("label", "Opening battle"), "%s  ·  %s" % [TYPE_NAMES.get(type, "Battle"), _route_caption()])
+	var caption := "%s  ·  %s" % [TYPE_NAMES.get(type, "Battle"), _route_caption()]
+	if type == "elite" and _run.will_draft_elite_relic():
+		caption += "  ·  Relic draft"
+	_page_title(node.get("label", "Opening battle"), caption)
 	var region := _cards_row()
 	var boss_id: String = node.get("boss_id", "")
 	var brief: Dictionary = BOSS_BRIEFS.get(boss_id, {})
@@ -450,6 +459,10 @@ func _add_enemy_preview(card: VBoxContainer) -> void:
 
 
 func _reward() -> void:
+	var relic_offers: Array = _run.elite_relic_offers()
+	if not relic_offers.is_empty():
+		_elite_relic_draft(relic_offers)
+		return
 	var boss: bool = _run.data.get("node", {}).get("type") == "boss"
 	var final_boss: bool = boss and _run.is_final_boss()
 	var title := "Choose a trophy" if final_boss else ("Legendary reward" if boss else "Choose a reward")
@@ -472,6 +485,7 @@ func _reward() -> void:
 			notice.text = ""
 		)
 		var select_tile: Button = card.get_child(card.get_child_count() - 1)
+		select_tile.name = "RewardTile_" + id
 		select_tile.toggle_mode = true
 		select_tile.button_group = group
 		_add_card_icon(card, GameIcons.tile(id, tile), GameIcons.rarity(tile))
@@ -484,6 +498,54 @@ func _reward() -> void:
 		else:
 			var bonus := 9 if "quartermasters_coin" in _run.data.get("relics", []) else 6
 			actions.add_child(_button("Skip for +%d gold" % bonus, func(): _claim_reward("skip", notice)))
+
+
+func _elite_relic_draft(offers: Array) -> void:
+	_page_title("Choose an elite relic", "Tile reward follows.")
+	var cards := _cards_row()
+	var selected := {"id": ""}
+	var advance := _continue(func():
+		if _run.choose_elite_relic(selected.id):
+			_host.run_return()
+	)
+	advance.disabled = true
+	var group := ButtonGroup.new()
+	for offer: Dictionary in offers:
+		var id: String = offer.id
+		var spec: Dictionary = FrontierRun.RELICS[id]
+		var tone: Color = ELITE_RELIC_TONES[id]
+		var card := _choice(cards, spec.label, spec.description, "Select", func():
+			selected.id = id
+			advance.disabled = false
+		)
+		var panel := card.get_parent() as PanelContainer
+		panel.size_flags_vertical = SIZE_SHRINK_CENTER
+		panel.custom_minimum_size.y = 426
+		panel.add_theme_stylebox_override("panel", _box(PANEL, tone.darkened(0.50), 9, 18))
+		var select_relic: Button = card.get_child(card.get_child_count() - 1)
+		select_relic.name = "EliteRelic_" + id
+		select_relic.toggle_mode = true
+		select_relic.button_group = group
+		select_relic.toggled.connect(func(pressed: bool):
+			panel.add_theme_stylebox_override("panel", _box(PANEL, tone if pressed else tone.darkened(0.50), 9, 18))
+		)
+		if panel.get_index() == 0:
+			select_relic.grab_focus()
+		var role := _label(offer.role, 15, tone)
+		card.add_child(role)
+		card.move_child(role, 0)
+		var companion: String = offer.companion
+		var support := HBoxContainer.new()
+		support.custom_minimum_size.y = 24
+		card.add_child(support)
+		card.move_child(support, select_relic.get_index())
+		if not companion.is_empty():
+			var tile: Dictionary = ArenaSim.TILES[companion]
+			var texture := GameIcons.icon(GameIcons.tile(companion, tile))
+			if texture != null:
+				support.add_child(_icon_view(texture, 21))
+			support.add_child(_label("Tile offer · " + tile.label, 15, CREAM))
+		_add_card_icon(card, GameIcons.relic(id), tone)
 
 
 func _claim_reward(id: String, notice: Label) -> void:

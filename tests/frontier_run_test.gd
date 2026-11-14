@@ -81,6 +81,9 @@ func _initialize() -> void:
 				check(resumed.encounter().hp == resumed.data.hp, "Next fight must keep HP.")
 				check(resumed.finish_combat(true, resumed.data.hp), "Battle resolution failed.")
 				if node.type == "elite":
+					var draft := resumed.elite_relic_offers()
+					check(draft.size() == 3 and resumed.choose_elite_relic(draft[0].id),
+						"The first elite must let the player choose their relic.")
 					check(resumed.data.relics.size() > 1, "Elite victory must award a relic.")
 					for id: String in resumed.data.offers:
 						check(ArenaSim.TILES[id].rarity != "common", "Elite choices must be Uncommon+.")
@@ -925,7 +928,11 @@ func _reach_boss(run: RefCounted) -> void:
 				for hero: Dictionary in run.data.heroes:
 					hp.append(hero.hp)
 				run.finish_combat(true, hp)
-			"reward": run.reward("skip")
+			"reward":
+				var draft: Array = run.elite_relic_offers()
+				if not draft.is_empty():
+					check(run.choose_elite_relic(draft[0].id), "Choose the elite relic before traveling on.")
+				run.reward("skip")
 			"shop": run.leave_node()
 			"event": run.event_choice(0)
 			"rest": run.rest("heal")
