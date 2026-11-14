@@ -18,10 +18,13 @@ func _initialize() -> void:
 		_check_rune_smith(TilePacking.forge_tiers("runic_anvil")[tier])
 		_check_duelist(TilePacking.forge_tiers("needle_point")[tier])
 		_check_cantor(TilePacking.forge_tiers("chorus_bolt")[tier])
+		_check_bulwark(TilePacking.forge_tiers("bastion_oath")[tier])
+		_check_lancer(TilePacking.forge_tiers("comet_charge")[tier])
+		_check_cinder_mage(TilePacking.forge_tiers("cinder_wave")[tier])
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Rare, Epic, and Legendary signature combat checks passed for nine heroes.")
+		print("Rare, Epic, and Legendary signature combat checks passed for all twelve heroes.")
 	quit(0 if failures.is_empty() else 1)
 
 
@@ -410,6 +413,186 @@ func _check_cantor(choices: Array) -> void:
 	_check(_damage_at(expired, "tap_bolt", too_late * BEAT) == tap_damage
 		and not expired.trace.any(func(event: Dictionary): return event.kind == "chorus_guard"),
 		"%s should grant no party Guard after its mark expires." % ward)
+
+
+func _check_bulwark(choices: Array) -> void:
+	var rescue: String = choices[0]
+	var ward: String = choices[1]
+	var impact_tick: int = ArenaSim.TILES[ward].width * BEAT
+	var rescue_sim := _fixture([[_tile(rescue, 0)], [], []], ["bulwark", "warden", "hexwright"])
+	_layout_cantor_party(rescue_sim)
+	rescue_sim.units[0].hp = 70
+	rescue_sim.units[1].hp = 45
+	rescue_sim.units[2].hp = 0
+	_advance(rescue_sim, impact_tick - 1)
+	_check(rescue_sim.units[1].guard == 0, "%s should wait until its right edge." % rescue)
+	rescue_sim.step()
+	_check(rescue_sim.units[1].guard == ArenaSim.TILES[rescue].guard and rescue_sim.units[0].guard == 0
+		and rescue_sim.units[2].guard == 0 and _damage_at(rescue_sim, rescue, impact_tick) > 0,
+		"%s should guard the lowest-HP living ally on a hit." % rescue)
+
+	var ward_spec: Dictionary = ArenaSim.TILES[ward]
+	var defend := _fixture([[_tile(ward, 0)], [], []], ["bulwark", "warden", "hexwright"])
+	_layout_cantor_party(defend)
+	defend.units[2].hp = 0
+	_advance(defend, impact_tick - 1)
+	_check(_events_of(defend, "bastion_ready").is_empty(), "%s should arm only at its right edge." % ward)
+	defend.step()
+	var caster: Dictionary = defend.units[0]
+	var foe: Dictionary = defend.units[3]
+	var threshold: int = ward_spec.bastion_block_threshold
+	_check(_events_of(defend, "bastion_ready").size() == 1 and caster.guard == ward_spec.guard,
+		"%s should grant its own Guard and arm the release on a hit." % ward)
+	# The innate first-hit reduction leaves one less than the threshold for Guard to absorb.
+	defend._damage(foe, caster, threshold + 5, "enemy_attack")
+	_check(_events_of(defend, "bastion_release").is_empty() and defend.units[1].guard == 0,
+		"%s should ignore a hit below its actual absorption threshold." % ward)
+	var last_tick: int = impact_tick + ward_spec.bastion_beats * BEAT
+	_advance(defend, last_tick)
+	caster.guard = threshold
+	var hp_before: int = caster.hp
+	defend._damage(foe, caster, threshold + 3, "enemy_attack")
+	_check(caster.hp == hp_before - 3 and caster.guard == ward_spec.bastion_party_guard
+		and defend.units[1].guard == ward_spec.bastion_party_guard and defend.units[2].guard == 0,
+		"%s should still release at the expiry beat, after incoming damage, for living heroes only." % ward)
+	caster.guard = threshold
+	defend._damage(foe, caster, threshold, "enemy_attack")
+	_check(_events_of(defend, "bastion_release").size() == 1,
+		"%s should release only once even if another hit meets the threshold." % ward)
+
+	var expired := _fixture([[_tile(ward, 0)], []], ["bulwark", "warden"])
+	_layout_cantor_party(expired)
+	_advance(expired, last_tick + 1)
+	expired._damage(expired.units[2], expired.units[0], threshold + 6, "enemy_attack")
+	_check(_events_of(expired, "bastion_release").is_empty() and expired.units[1].guard == 0,
+		"%s should not release after its window ends." % ward)
+
+
+func _check_lancer(choices: Array) -> void:
+	var stride: String = choices[0]
+	var return_charge: String = choices[1]
+	var stride_spec: Dictionary = ArenaSim.TILES[stride]
+	var impact_tick: int = stride_spec.width * BEAT
+	for walks in [false, true]:
+		var stride_sim := _fixture([[_tile(stride, 0)]], ["lancer"])
+		_move(stride_sim.units[0], Vector2(200, 240))
+		_move(stride_sim.units[1], Vector2(500, 240))
+		if walks:
+			stride_sim.units[0].speed = 150.0
+		_advance(stride_sim, impact_tick - 1)
+		_check(stride_sim.activations.is_empty(), "%s should wait until its right edge." % stride)
+		stride_sim.step()
+		var bonuses := _events_of(stride_sim, "lance_travel_spent")
+		var expected: int = stride_spec.damage + (stride_spec.lance_travel_bonus + 6 if walks else 0)
+		_check(_damage_at(stride_sim, stride, impact_tick) == expected
+			and (bonuses.size() == 1 and bonuses[0].amount == stride_spec.lance_travel_bonus if walks else bonuses.is_empty()),
+			"%s should reward distance walked and stack with the passive, without counting the lunge itself." % stride)
+
+	var charge_spec: Dictionary = ArenaSim.TILES[return_charge]
+	var base: int = ArenaSim.TILES.spur.damage
+	var followups := _fixture([[_tile(return_charge, 0), _tile("spur", 3), _tile("spur", 5), _tile("spur", 7)], []],
+		["lancer", "warden"])
+	var actor: Dictionary = followups.units[0]
+	var blocker: Dictionary = followups.units[1]
+	var target: Dictionary = followups.units[2]
+	var origin := Vector2(200, 240)
+	_move(actor, origin)
+	_move(target, Vector2(380, 240))
+	_move(blocker, Vector2(275, 410))
+	_advance(followups, impact_tick)
+	var prepared := _events_of(followups, "lance_return_ready")
+	_check(prepared.size() == 1 and prepared[0].tick == impact_tick
+		and _damage_at(followups, return_charge, impact_tick) == charge_spec.damage,
+		"%s should prime after pushing a surviving enemy without boosting the same hit." % return_charge)
+	target.impulse = Vector2.ZERO
+	_move(actor, origin)
+	_move(target, Vector2(380, 240))
+	_move(blocker, Vector2(275, 240))
+	_advance(followups, 5 * BEAT)
+	_check(_damage_at(followups, "spur", 5 * BEAT) == 0 and _events_of(followups, "lance_return_spent").is_empty(),
+		"%s should retain its bonus through a blocked charge." % return_charge)
+	_move(blocker, Vector2(275, 410))
+	_advance(followups, 9 * BEAT)
+	var spent := _events_of(followups, "lance_return_spent")
+	_check(spent.size() == 1 and spent[0].tick == 7 * BEAT and spent[0].amount == charge_spec.lance_return_bonus
+		and _damage_at(followups, "spur", 7 * BEAT) == base + charge_spec.lance_return_bonus
+		and _damage_at(followups, "spur", 9 * BEAT) == base,
+		"%s should boost one landed follow-up charge and leave later hits alone." % return_charge)
+
+	var expired := _fixture([[_tile(return_charge, 0), _tile("spur", 10)]], ["lancer"])
+	_move(expired.units[0], origin)
+	_move(expired.units[1], Vector2(380, 240))
+	_advance(expired, impact_tick)
+	expired.units[1].impulse = Vector2.ZERO
+	_advance(expired, 12 * BEAT)
+	_check(_events_of(expired, "lance_return_ready").size() == 1
+		and _events_of(expired, "lance_return_spent").is_empty()
+		and _damage_at(expired, "spur", 12 * BEAT) == base,
+		"%s should leave a successful charge unboosted after the follow-up window ends." % return_charge)
+
+
+func _check_cinder_mage(choices: Array) -> void:
+	var long_burn: String = choices[0]
+	var spread: String = choices[1]
+	var long_spec: Dictionary = ArenaSim.TILES[long_burn]
+	var impact_tick: int = long_spec.width * BEAT
+	var single := _fixture([[_tile(long_burn, 0)]], ["cinder_mage"], "elite")
+	_layout_two_targets(single, 1, 110, Vector2(120, 80))
+	single.units[1]["displaced_until"] = impact_tick
+	_advance(single, impact_tick - 1)
+	_check(_events_of(single, "ember_ignite").is_empty(), "%s should wait for its right edge." % long_burn)
+	_advance(single, impact_tick + (long_spec.ember_burn_ticks + 1) * BEAT)
+	var ignitions := _events_of(single, "ember_ignite")
+	var burns := _events_of(single, "ember_tick")
+	var main_id: String = single.units[1].id
+	_check(ignitions.size() == 1 and ignitions[0].tick == impact_tick and ignitions[0].target == main_id
+		and burns.size() == long_spec.ember_burn_ticks and burns.all(func(event: Dictionary):
+			return event.target == main_id and event.amount == long_spec.ember_burn_damage)
+		and burns[0].tick == impact_tick + BEAT and burns.back().tick == impact_tick + long_spec.ember_burn_ticks * BEAT,
+		"%s should burn only its displaced primary at one tick per beat for the full duration." % long_burn)
+
+	var group := _fixture([[_tile(spread, 0)]], ["cinder_mage"], "elite")
+	_layout_two_targets(group, 1, 110, Vector2(120, 80))
+	group.units[1].hp = 1
+	group.units[1]["displaced_until"] = impact_tick
+	var spread_spec: Dictionary = ArenaSim.TILES[spread]
+	_advance(group, impact_tick + (spread_spec.ember_burn_ticks + 1) * BEAT)
+	ignitions = _events_of(group, "ember_ignite")
+	burns = _events_of(group, "ember_tick")
+	var neighbor_id: String = group.units[2].id
+	_check(group.units[1].hp == 0 and ignitions.size() == 1 and ignitions[0].target == neighbor_id
+		and burns.size() == spread_spec.ember_burn_ticks and burns.all(func(event: Dictionary):
+			return event.target == neighbor_id and event.amount == spread_spec.ember_burn_damage),
+		"%s should still light nearby foes on a lethal primary hit and exclude foes outside the radius." % spread)
+
+	var stale := _fixture([[_tile(spread, 0)]], ["cinder_mage"], "elite")
+	_layout_two_targets(stale, 1, 110, Vector2(120, 80))
+	stale.units[1]["displaced_until"] = impact_tick - 1
+	_advance(stale, impact_tick + BEAT)
+	_check(_damage_at(stale, spread, impact_tick) > 0 and _events_of(stale, "ember_ignite").is_empty(),
+		"%s should still hit after displacement expires without applying burn." % spread)
+	if long_spec.rarity == "legendary":
+		_check_reapplied_ember_burn(long_burn, spread)
+
+
+func _check_reapplied_ember_burn(long_burn: String, spread: String) -> void:
+	var long_spec: Dictionary = ArenaSim.TILES[long_burn]
+	var spread_spec: Dictionary = ArenaSim.TILES[spread]
+	var impact_tick: int = long_spec.width * BEAT
+	var reapplied := _fixture([[_tile(long_burn, 0), _tile(spread, long_spec.width)]], ["cinder_mage"], "elite")
+	_layout_two_targets(reapplied, 1, 110, Vector2(120, 80))
+	reapplied.units[1]["displaced_until"] = impact_tick + spread_spec.width * BEAT
+	_advance(reapplied, impact_tick + long_spec.ember_burn_ticks * BEAT)
+	var main_id: String = reapplied.units[1].id
+	var burns := _events_of(reapplied, "ember_tick").filter(func(event: Dictionary): return event.target == main_id)
+	_check(burns.size() == long_spec.ember_burn_ticks
+		and burns.all(func(event: Dictionary): return event.tile == long_burn)
+		and burns.back().tick == impact_tick + long_spec.ember_burn_ticks * BEAT,
+		"A weaker burn from the same hero should neither stack nor shorten a stronger burn already ticking.")
+
+
+func _events_of(sim: ArenaSim, kind: String) -> Array:
+	return sim.trace.filter(func(event: Dictionary): return event.kind == kind)
 
 
 func _layout_two_targets(sim: ArenaSim, first: int, reach: float, near_neighbor: Vector2) -> void:

@@ -28,6 +28,7 @@ func _run() -> void:
 	game.run.load_save(save_path)
 	_check_class_decks()
 	_check_signature_elite_progression()
+	_check_signature_milestones()
 	await _check_medium_rewards(game)
 	game.queue_free()
 	await process_frame
@@ -104,7 +105,7 @@ func _check_class_decks() -> void:
 
 func _check_signature_elite_progression() -> void:
 	for pairing in [["warden", "starshot"], ["breaker", "wayfarer"], ["apothecary", "hexwright"],
-		["rune_smith", "duelist"], ["cantor", "rune_smith"]]:
+		["rune_smith", "duelist"], ["cantor", "rune_smith"], ["bulwark", "lancer"], ["cinder_mage", "warden"]]:
 		_check_signature_elite_pair(pairing[0], pairing[1])
 
 
@@ -152,6 +153,56 @@ func _check_signature_elite_pair(lead: String, recruit: String) -> void:
 
 func _signature_tile(id: String, start: int) -> Dictionary:
 	return {"id": id, "start": start, "target": ArenaSim.TILES[id].targets[0]}
+
+
+func _check_signature_milestones() -> void:
+	for takes_uncommon in [false, true]:
+		var run := FrontierRun.new()
+		run.load_save(save_path)
+		run.profile.hard_unlocked = true
+		_check(run.start_run(42, "hard"), "Expected a Hard route for signature pacing.")
+		run.data.offers = ["bulwark"]
+		run.choose_hero("bulwark")
+		run.choose_relic("pocket_bell")
+		run.choose_starter(ClassDecks.starter("bulwark"))
+		run.finish_combat(true, 100)
+		run.reward("skip")
+		var lead := ClassDecks.signature("bulwark")
+		if takes_uncommon:
+			run.loadout.storage[0].append(_signature_tile(lead, 0))
+			run.data.node = run.data.layers[1].filter(func(node: Dictionary): return node.type == "battle")[0]
+			run.data.phase = "combat"
+			_check(run.finish_combat(true, 100) and _draft_offers_rare(run, lead),
+				"The lead can draft a Rare after taking their Leg 1 Uncommon.")
+			run.reward("skip")
+		for recruit in ["lancer", "cinder_mage"]:
+			var leg: int = run.data.heroes.size()
+			run.data.node = run.data.layers[FrontierRun.NODES_PER_SEGMENT * leg - 1][0]
+			run.data.phase = "combat"
+			var hp := [100] if leg == 1 else [100, 100]
+			_check(run.finish_combat(true, hp), "Expected a victory before recruiting.")
+			for hero_index in range(leg):
+				run.reward("skip")
+			run.data.offers = [recruit]
+			_check(run.choose_recruit(recruit) and run.choose_recruit_starter(ClassDecks.starter(recruit)),
+				"Expected the recruit to have a normal starter.")
+			var gate: Dictionary = run.data.layers[FrontierRun.NODES_PER_SEGMENT * leg][0]
+			hp.append(100)
+			_check(run.choose_node(gate.id) and run.finish_combat(true, hp), "Expected a real gate reward draft.")
+			if leg == 1 and not takes_uncommon:
+				_check(_draft_offers_rare(run, lead), "The Leg 2 gate offers the lead a Rare if they missed the Leg 1 chance.")
+			for hero_index in range(leg):
+				run.reward("skip")
+			_check(run.reward_lane() == leg and _draft_offers_rare(run, ClassDecks.signature(recruit)),
+				"The new recruit should see a Rare on their first gate win.")
+			_check(run.data.offers.size() == 3 and run.load_save(save_path)
+				and _draft_offers_rare(run, ClassDecks.signature(recruit)), "The three gate offers should survive reload.")
+			run.reward("skip")
+		run.abandon_run()
+
+
+func _draft_offers_rare(run: FrontierRun, signature: String) -> bool:
+	return run.data.offers.any(func(id: String): return id in TilePacking.next_options(signature))
 
 
 func _check_medium_rewards(game: Control) -> void:

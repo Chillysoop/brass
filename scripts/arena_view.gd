@@ -87,6 +87,13 @@ const EFFECT_LENGTHS := {
 	"duel_stack": 0.24,
 	"duel_kill_ready": 0.42,
 	"duel_kill_spent": 0.30,
+	"ember_ignite": 0.45,
+	"ember_tick": 0.30,
+	"bastion_ready": 0.35,
+	"bastion_release": 0.48,
+	"lance_travel_spent": 0.34,
+	"lance_return_ready": 0.40,
+	"lance_return_spent": 0.34,
 }
 const MARK_COLOR := Color("#e4adff")
 const ELITE_RELIC_EFFECTS := ["afterimage", "barrage_rack", "siege_fuse"]
@@ -574,11 +581,11 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 				draw_circle(to_point + ray * (8.0 + progress * 27.0), 2.2 * opacity, Color(TELEPORT_COLOR, opacity), true, -1.0, true)
 		"retreat":
 			_draw_arrow(from_point, to_point, Color(HERO_COLOR, opacity))
-		"ranged_followup_ready":
+		"ranged_followup_ready", "lance_return_ready":
 			var center := to_point - Vector2(0.0, 16.0)
 			var radius := lerpf(21.0, 8.0, progress)
 			draw_arc(center, radius, -2.6, -0.5, 12, Color(TELEPORT_COLOR, opacity), 2.0, true)
-		"ranged_followup_spent":
+		"ranged_followup_spent", "lance_travel_spent", "lance_return_spent":
 			var lift := Vector2(0.0, -19.0)
 			draw_line(from_point + lift, to_point + lift, Color(TELEPORT_COLOR, opacity), 3.0, true)
 		"rune_charge_ready", "rune_charge_spent":
@@ -592,6 +599,17 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			var spread := lerpf(5.0, 13.0, progress)
 			var color := WHITE if kind == "duel_stack" else GOLD
 			draw_line(center + Vector2(-spread, spread), center + Vector2(spread, -spread), Color(color, opacity), 2.3, true)
+		"ember_ignite", "ember_tick":
+			var radius := lerpf(10.0, 27.0, progress)
+			var glow := Color(ENEMY_COLOR.lightened(0.30), opacity)
+			for index in range(3):
+				var angle := index * TAU / 3.0 + progress
+				draw_arc(to_point, radius, angle, angle + 0.85, 7, glow, 2.5, true)
+		"bastion_ready", "bastion_release":
+			var radius := lerpf(9.0, 24.0, progress) if kind == "bastion_ready" else lerpf(16.0, 49.0, progress)
+			for index in range(4):
+				var angle := index * TAU / 4.0 + 0.20
+				draw_arc(to_point, radius, angle, angle + 0.9, 8, Color(RELAY_SHIELD_COLOR, opacity), 2.5, true)
 		"mark", "mark_spent":
 			var radius := lerpf(26.0, 12.0, progress) if kind == "mark" else lerpf(12.0, 28.0, progress)
 			for index in range(4):

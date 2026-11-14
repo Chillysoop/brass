@@ -5,6 +5,7 @@ const ClassExpansionTiles = preload("res://scripts/class_expansion_tiles.gd")
 const UniversalTileUpgrades = preload("res://scripts/universal_tile_upgrades.gd")
 
 const BEATS := 12
+const LANCE_TRAVEL_CAP := 80.0
 const TICKS_PER_BEAT := 21
 const TICKS_PER_SECOND := 60
 const LOOP_TICKS := BEATS * TICKS_PER_BEAT
@@ -542,6 +543,8 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 			has_precision = has_precision or spec.has("distance_bonus") or spec.has("ranged_followup_bonus")
 			has_close_attack = has_close_attack or (spec.damage > 0
 				and (spec.range < PRECISION_SPACING or spec.get("blink_strike", false)))
+			if spec.has("lance_travel_bonus"):
+				unit["lance_travel"] = 0.0
 		unit["ranged_damage"] = ranged_damage
 		if has_precision and not has_close_attack:
 			unit.preferred_range = maxf(unit.preferred_range, PRECISION_SPACING)
@@ -905,6 +908,7 @@ func _valid_tiles(tiles: Array) -> Array:
 func _move_units() -> void:
 	const DELTA := 1.0 / TICKS_PER_SECOND
 	var next_positions: Array[Vector2] = []
+	var lance_steps := {}
 	for unit in units:
 		var position: Vector2 = unit.pos
 		unit.prev_pos = position
@@ -925,6 +929,8 @@ func _move_units() -> void:
 			var retreat_speed := minf(55.0, speed) if unit.get("precision_spacing", false) else 0.0
 			drive = offset.normalized() * clampf(margin * 4.0, -retreat_speed, speed)
 		var impulse: Vector2 = unit.impulse
+		if unit.has("lance_travel") and impulse.is_zero_approx() and not drive.is_zero_approx():
+			lance_steps[next_positions.size()] = drive * DELTA
 		unit.velocity = drive + impulse
 		unit.impulse = impulse.move_toward(Vector2.ZERO, IMPULSE_DECAY * DELTA)
 		var next := _bounded(position + unit.velocity * DELTA, unit.radius)
@@ -949,7 +955,13 @@ func _move_units() -> void:
 			next_positions[i] = _bounded(next_positions[i] - separation, units[i].radius)
 			next_positions[j] = _bounded(next_positions[j] + separation, units[j].radius)
 	for i in range(units.size()):
-		units[i].pos = next_positions[i]
+		var unit: Dictionary = units[i]
+		if lance_steps.has(i):
+			var step: Vector2 = lance_steps[i]
+			var actual: Vector2 = next_positions[i] - unit.pos
+			var walked := clampf(actual.dot(step.normalized()), 0.0, step.length())
+			unit.lance_travel = minf(LANCE_TRAVEL_CAP, unit.lance_travel + walked)
+		unit.pos = next_positions[i]
 
 
 func _bounded(position: Vector2, radius: float) -> Vector2:
@@ -1361,13 +1373,17 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 	_apply_splash(actor, target, tile_id, tile)
 	if target.hp > 0:
 		if tile.has("push"):
-			_displace("push", actor, target, tile_id, target.pos - _attack_origin(actor), tile.push)
+			var moved := _displace("push", actor, target, tile_id, target.pos - _attack_origin(actor), tile.push)
+			if moved and tile.has("lance_return_bonus"):
+				_prime_return_charge(actor, tile_id, tile)
 		if tile.has("pull") and not pull_first:
 			_pull_toward(actor, target, tile_id, _attack_origin(actor), tile.pull)
 		if tile.has("mark_bonus") and not _activation.is_empty():
 			_apply_arsenal_mark(actor, target, tile_id, tile)
 		if tile.has("chorus_mark_bonus") or tile.has("chorus_guard"):
 			_apply_cantor_mark(actor, target, tile_id, tile)
+	if tile.has("ember_burn_damage") and tick <= target.get("displaced_until", -1):
+		_apply_ember_burn(actor, target, tile_id, tile, impact)
 	if tile.has("cluster_pull_radius"):
 		_cluster_pull(actor, target, tile_id, impact, tile.cluster_pull_radius, tile.cluster_pull_force)
 	if tile.has("sweep_push_radius"):
@@ -1379,6 +1395,23 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 		_apply_arsenal_support(actor, _arsenal_support_target(actor, tile), tile_id, tile)
 	if tile.has("ally_guard"):
 		_guard(_weakest_other_ally(actor), tile.ally_guard, tile_id, actor)
+	if tile.has("bastion_party_guard"):
+		_prime_bastion_ward(actor, tile_id, tile)
+
+
+func _apply_ember_burn(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary, impact: Vector2) -> void:
+	var targets: Array = [target] if target.hp > 0 else []
+	if tile.has("ember_burn_radius"):
+		targets = _enemies_in_area(actor, impact, tile.ember_burn_radius)
+	for enemy: Dictionary in targets:
+		var burns: Dictionary = enemy.get_or_add("ember_burns", {})
+		var active: Dictionary = burns.get(actor.id, {})
+		if not active.is_empty() and active.damage * active.remaining > tile.ember_burn_damage * tile.ember_burn_ticks:
+			continue
+		burns[actor.id] = {"damage": tile.ember_burn_damage, "remaining": tile.ember_burn_ticks,
+			"next_tick": int(active.get("next_tick", tick + TICKS_PER_BEAT)), "tile": tile_id}
+		_emit("ember_ignite", "%s ignites %s for %d beats." % [tile.label, enemy.name, tile.ember_burn_ticks],
+			actor, enemy, tile_id, tile.ember_burn_damage)
 
 
 func _weakest_other_ally(actor: Dictionary) -> Dictionary:
@@ -1648,7 +1681,7 @@ func _charge(actor: Dictionary, target: Dictionary, tile_id: String) -> bool:
 	return true
 
 
-func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: String, offset: Vector2, force: float) -> void:
+func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: String, offset: Vector2, force: float) -> bool:
 	if kind == "push" and _has_relic(actor, "copper_compass") and _compass_loop != _loop_index():
 		_compass_loop = _loop_index()
 		force += 145.0
@@ -1661,7 +1694,8 @@ func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: Str
 	target.impulse = impulse.limit_length(IMPULSE_CAP)
 	var launch: Vector2 = target.impulse
 	var endpoint := _bounded(start_position + launch.normalized() * (launch.length_squared() / (2.0 * IMPULSE_DECAY)), target.radius)
-	if force > 0.0 and not start_position.is_equal_approx(endpoint):
+	var moved := force > 0.0 and not start_position.is_equal_approx(endpoint)
+	if moved:
 		target["displaced_until"] = tick + DISPLACEMENT_BONUS_WINDOW
 	var action := "pulls" if kind == "pull" else "knocks back"
 	_emit(kind, "%s %s %s." % [actor.name, action, target.name], actor, target, tile_id, roundi(force), start_position, endpoint)
@@ -1692,6 +1726,7 @@ func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: Str
 		_displace_tidekeeper(actor, target, kind)
 	elif target.get("admiral_phase", 0) >= 2 and actor.side == "hero" and force > 85.0:
 		_displace_admiral(actor, target, kind)
+	return moved
 
 
 func _track_collision_push(kind: String, actor: Dictionary, target: Dictionary, tile_id: String) -> void:
@@ -2435,6 +2470,7 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 			amount += _consume_arsenal_mark(actor, target, tile_id)
 			amount += _consume_cantor_mark(actor, target, tile_id)
 			amount += _consume_ranged_followup(actor, target, tile_id)
+			amount += _lance_hit_bonus(actor, target, tile_id)
 			amount += _consume_rune_charge(actor, target, tile_id)
 			amount += _needle_attack_bonus(actor, target, tile_id)
 			amount += _relic_attack_bonus(actor, target)
@@ -2479,6 +2515,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 	var blocked_text := " (%d blocked)" % blocked if blocked > 0 else ""
 	var details := "%s: %s hits %s for %d%s." % [actor.name, action, target.name, dealt, blocked_text]
 	_emit("hit", details, actor, target, tile_id, dealt, _attack_origin(actor))
+	if actor.side == "enemy" and target.side == "hero" and target.has("bastion_ward"):
+		_release_bastion_ward(target, blocked)
 	if target.hp == 0:
 		if not _activation.is_empty() and actor.side == "hero" and target.side == "enemy":
 			_prime_duel_followup(actor, target, tile_id)
@@ -2533,6 +2571,63 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		target["regent_contributors"] = []
 		_guard(target, 22, "regent_seals")
 		_emit("intent", "The Regent raises three seals. Land a hit from each hero within 4 beats to break them.", target, actor, "regent_seals")
+
+
+func _prime_bastion_ward(actor: Dictionary, tile_id: String, tile: Dictionary) -> void:
+	var threshold: int = tile.bastion_block_threshold
+	actor["bastion_ward"] = {
+		"tile": tile_id, "threshold": threshold, "guard": tile.bastion_party_guard,
+		"until": tick + int(tile.bastion_beats) * TICKS_PER_BEAT, "activation": _activation,
+	}
+	_emit("bastion_ready", "Ready to shield allies when Guard absorbs %d damage from one hit." % threshold,
+		actor, actor, tile_id, threshold)
+
+
+func _release_bastion_ward(carrier: Dictionary, blocked: int) -> void:
+	var ward: Dictionary = carrier.bastion_ward
+	if tick > ward.until:
+		carrier.erase("bastion_ward")
+		return
+	if blocked < ward.threshold:
+		return
+	carrier.erase("bastion_ward")
+	_guard_allies(carrier, ward.tile, ward.guard)
+	var message := "Absorbed %d damage with Guard, granting up to %d Guard to each living hero." % [blocked, ward.guard]
+	_emit("bastion_release", message, carrier, carrier, ward.tile, ward.guard)
+	var activation: Dictionary = ward.activation
+	if not activation.is_empty():
+		activation.get_or_add("effect_details", []).append(message)
+		activation.reason = _activation_result(activation)
+
+
+func _prime_return_charge(actor: Dictionary, tile_id: String, tile: Dictionary) -> void:
+	var bonus: int = tile.lance_return_bonus
+	actor["lance_return"] = {"bonus": bonus, "until": tick + int(tile.lance_return_beats) * TICKS_PER_BEAT}
+	_emit("lance_return_ready", "The push readies a charge for %d extra damage." % bonus, actor, actor, tile_id, bonus)
+
+
+func _lance_hit_bonus(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
+	var tile: Dictionary = TILES[tile_id]
+	if not tile.get("charge", false) and tile_id != "bulwark_charge":
+		return 0
+	var bonus := 0
+	var travel_cap: int = tile.get("lance_travel_bonus", 0)
+	if travel_cap > 0:
+		var traveled: float = actor.get("lance_travel", 0.0)
+		var travel_bonus := roundi(travel_cap * traveled / LANCE_TRAVEL_CAP)
+		actor["lance_travel"] = 0.0
+		if travel_bonus > 0:
+			_emit("lance_travel_spent", "Travel adds %d damage to the charge." % travel_bonus,
+				actor, target, tile_id, travel_bonus, _attack_origin(actor))
+		bonus += travel_bonus
+	var followup: Dictionary = actor.get("lance_return", {})
+	if not followup.is_empty():
+		actor.erase("lance_return")
+		if tick <= followup.until:
+			_emit("lance_return_spent", "The return charge adds %d damage." % followup.bonus,
+				actor, target, tile_id, followup.bonus, _attack_origin(actor))
+			bonus += int(followup.bonus)
+	return bonus
 
 
 func _prime_rune_charge(actor: Dictionary, tile_id: String) -> void:
@@ -2846,13 +2941,37 @@ func _class_attack_damage(actor: Dictionary, target: Dictionary, amount: int) ->
 
 func _run_burns() -> void:
 	for target in units:
-		if target.hp <= 0 or target.get("burn_left", 0) == 0 or tick < target.get("burn_tick", 0):
+		if target.hp <= 0:
 			continue
-		var source := _find_unit(target.burn_source)
-		target.burn_left -= 1
-		target.burn_tick += TICKS_PER_BEAT
-		if not source.is_empty():
-			_damage(source, target, 3, "cinder_mage")
+		if target.get("burn_left", 0) > 0 and tick >= target.get("burn_tick", 0):
+			var source := _find_unit(target.burn_source)
+			target.burn_left -= 1
+			target.burn_tick += TICKS_PER_BEAT
+			if not source.is_empty():
+				_damage(source, target, 3, "cinder_mage")
+		if target.hp > 0 and target.has("ember_burns"):
+			_tick_ember_burns(target)
+
+
+func _tick_ember_burns(target: Dictionary) -> void:
+	var burns: Dictionary = target.ember_burns
+	for source_id: String in burns.keys():
+		var burn: Dictionary = burns[source_id]
+		if tick < burn.next_tick:
+			continue
+		var source := _find_unit(source_id)
+		burn.next_tick += TICKS_PER_BEAT
+		burn.remaining -= 1
+		if burn.remaining == 0:
+			burns.erase(source_id)
+		if source.is_empty():
+			continue
+		var before: int = target.hp
+		_damage(source, target, burn.damage, "cinder_mage")
+		_emit("ember_tick", "%s burns %s for %d damage." % [TILES[burn.tile].label, target.name, before - int(target.hp)],
+			source, target, burn.tile, before - int(target.hp))
+		if target.hp <= 0:
+			break
 
 
 func _breaker_collision(moving: Dictionary, other: Dictionary) -> void:
@@ -2959,7 +3078,9 @@ func _emit(kind: String, message: String, actor: Dictionary = {}, target: Dictio
 				_activation.get_or_add("effect_details", []).append(message)
 			"ranged_followup_ready", "ranged_followup_spent", "sweep_push", "chorus_mark", "chorus_mark_spent", "chorus_guard":
 				_activation.get_or_add("effect_details", []).append(message)
-			"rune_charge_ready", "rune_charge_spent", "duel_stack", "duel_kill_ready", "duel_kill_spent":
+			"rune_charge_ready", "rune_charge_spent", "duel_stack", "duel_kill_ready", "duel_kill_spent", "ember_ignite":
+				_activation.get_or_add("effect_details", []).append(message)
+			"bastion_ready", "lance_travel_spent", "lance_return_ready", "lance_return_spent":
 				_activation.get_or_add("effect_details", []).append(message)
 	if kind in ["intent", "interrupt", "miss"] and BOSS_REVIEW_STAGES.has(tile_id):
 		_review_boss_event(BOSS_REVIEW_STAGES[tile_id], tile_id, message, actor, target, kind)

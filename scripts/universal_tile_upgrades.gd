@@ -139,6 +139,54 @@ const AUTHORED_SIGNATURES := {
 				"chorus_guard": 9, "chorus_guard_beats": 6, "icon": "guard"},
 		],
 	},
+	"bastion_oath": {
+		"power": [
+			{"label": "Vigil Strike", "damage": 20, "range": 180.0, "guard_bonus": 11, "guard": 13, "support": "weakest"},
+			{"label": "Guardian's Vow", "damage": 24, "range": 190.0, "guard_bonus": 13, "guard": 16, "support": "weakest"},
+			{"label": "Last Bulwark", "damage": 28, "range": 200.0, "guard_bonus": 15, "guard": 20, "support": "weakest"},
+		],
+		"technique": [
+			{"label": "Shield Beacon", "damage": 19, "range": 180.0, "guard": 7, "support": "self",
+				"bastion_block_threshold": 6, "bastion_party_guard": 7, "bastion_beats": 5},
+			{"label": "Bastion Relay", "damage": 22, "range": 190.0, "guard": 8, "support": "self",
+				"bastion_block_threshold": 7, "bastion_party_guard": 9, "bastion_beats": 6},
+			{"label": "Unbroken Line", "damage": 25, "range": 200.0, "guard": 9, "support": "self",
+				"bastion_block_threshold": 8, "bastion_party_guard": 11, "bastion_beats": 7},
+		],
+	},
+	"comet_charge": {
+		"power": [
+			{"label": "Running Lance", "damage": 23, "range": 440.0, "push": 660.0, "windup_bonus": 6, "lance_travel_bonus": 12},
+			{"label": "Meteor Run", "damage": 27, "range": 475.0, "push": 700.0, "windup_bonus": 7, "lance_travel_bonus": 16},
+			{"label": "Thunder Gallop", "damage": 31, "range": 510.0, "push": 750.0, "windup_bonus": 8, "lance_travel_bonus": 20},
+		],
+		"technique": [
+			{"label": "Second Pass", "damage": 22, "range": 430.0, "push": 725.0, "windup_bonus": 6,
+				"lance_return_bonus": 10, "lance_return_beats": 4},
+			{"label": "Turnback Charge", "damage": 25, "range": 465.0, "push": 780.0, "windup_bonus": 7,
+				"lance_return_bonus": 14, "lance_return_beats": 5},
+			{"label": "Comet's Return", "damage": 28, "range": 500.0, "push": 830.0, "windup_bonus": 8,
+				"lance_return_bonus": 18, "lance_return_beats": 6},
+		],
+	},
+	"cinder_wave": {
+		"power": [
+			{"label": "Coal Brand", "damage": 18, "range": 345.0, "splash_damage": 11,
+				"ember_burn_damage": 4, "ember_burn_ticks": 3},
+			{"label": "Kilnbrand", "damage": 21, "range": 365.0, "splash_damage": 12,
+				"ember_burn_damage": 5, "ember_burn_ticks": 4},
+			{"label": "Evercoal", "damage": 24, "range": 385.0, "splash_damage": 14,
+				"ember_burn_damage": 5, "ember_burn_ticks": 5},
+		],
+		"technique": [
+			{"label": "Ember Wake", "damage": 16, "range": 345.0, "splash_damage": 12,
+				"ember_burn_damage": 4, "ember_burn_ticks": 2, "ember_burn_radius": 142.0},
+			{"label": "Cinder Bloom", "damage": 19, "range": 365.0, "splash_damage": 14,
+				"ember_burn_damage": 5, "ember_burn_ticks": 2, "ember_burn_radius": 165.0},
+			{"label": "Ashstorm", "damage": 22, "range": 385.0, "splash_damage": 17,
+				"ember_burn_damage": 6, "ember_burn_ticks": 2, "ember_burn_radius": 185.0},
+		],
+	},
 }
 
 
@@ -283,6 +331,17 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 		if tile.has("chorus_guard"):
 			lines.append("Mark the target for %d beats. The next hit on it from another hero gives all living heroes %d Guard." % [
 				tile.chorus_guard_beats, tile.chorus_guard])
+		if tile.has("lance_travel_bonus"):
+			lines.append("Gain up to %d damage for walking 80 units. Hitting with this upgrade resets the distance." % tile.lance_travel_bonus)
+		if tile.has("lance_return_bonus"):
+			lines.append("If this hit pushes an enemy, your next charging hit within %d beats deals %d extra damage." % [
+				tile.lance_return_beats, tile.lance_return_bonus])
+		if tile.has("ember_burn_damage"):
+			var burn_target := "the target"
+			if tile.has("ember_burn_radius"):
+				burn_target = "surviving enemies within %d range of the impact" % int(tile.ember_burn_radius)
+			lines.append("If the target was pushed or pulled in the last 3 beats, burn %s for %d damage per beat for %d beats." % [
+				burn_target, tile.ember_burn_damage, tile.ember_burn_ticks])
 	if tile.has("ally_guard"):
 		lines.append("On hit, give %d Guard to the living ally with the lowest HP. Gain it yourself if no ally is alive." % tile.ally_guard)
 	if tile.has("guard"):
@@ -294,6 +353,9 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 				lines.append("Give the lowest-HP living hero %d Guard%s" % [tile.guard, when])
 			_:
 				lines.append("Gain %d Guard%s" % [tile.guard, when])
+	if tile.has("bastion_block_threshold"):
+		lines.append("On hit, ready a ward for %d beats. Absorb at least %d damage with Guard from a single enemy hit to give each living hero %d Guard once." % [
+			tile.bastion_beats, tile.bastion_block_threshold, tile.bastion_party_guard])
 	if tile.has("heal"):
 		var recipient := "yourself"
 		if tile.get("party_heal", false):

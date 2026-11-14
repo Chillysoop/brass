@@ -1211,22 +1211,49 @@ func _combat_reward_draft(kind: String, lane: int) -> Dictionary:
 		var remaining := pool.filter(func(id: String): return id not in fixed)
 		fixed.append_array(_sample(remaining, 3 - fixed.size(), int(data.seed), _node_salt(81 + salt)))
 		return {"offers": _sample(fixed, 3, int(data.seed), _node_salt(85 + salt)), "hints": hints}
-	return _normal_reward_draft(lane, rows)
+	var signature_offer := _signature_milestone_offer(kind, lane, hero_id, salt)
+	return _normal_reward_draft(lane, rows, signature_offer)
 
 
 func _elite_signature_offer(hero_id: String, lane: int, salt: int) -> String:
 	var signature := ClassDecks.signature(hero_id)
 	if not UniversalTileUpgrades.AUTHORED_SIGNATURES.has(signature):
 		return ""
-	var owned_tier := 0
 	var tiers := TilePacking.forge_tiers(signature)
+	var owned_tier := _owned_signature_tier(signature, lane)
+	if owned_tier >= 3:
+		return ""
+	return _sample(tiers[owned_tier + 1], 1, int(data.seed), _node_salt(185 + salt))[0]
+
+
+func _signature_milestone_offer(kind: String, lane: int, hero_id: String, salt: int) -> String:
+	if kind != "battle":
+		return ""
+	var signature := ClassDecks.signature(hero_id)
+	var tiers := TilePacking.forge_tiers(signature)
+	var owned_tier := _owned_signature_tier(signature, lane)
+	if tiers.is_empty() or owned_tier >= 2:
+		return ""
+	var row: int = data.node.row
+	if lane == 0:
+		if data.get("lead_signature_offered", false):
+			return ""
+		var leg_one_followup := row < NODES_PER_SEGMENT and owned_tier == 1
+		if not leg_one_followup and row != NODES_PER_SEGMENT:
+			return ""
+		data.lead_signature_offered = true
+	elif row != lane * NODES_PER_SEGMENT:
+		return ""
+	return _sample(tiers[2], 1, int(data.seed), _node_salt(185 + salt))[0]
+
+
+func _owned_signature_tier(signature: String, lane: int) -> int:
+	var owned_tier := 0
 	for items: Array in [loadout.lanes[lane]] + loadout.storage:
 		for item: Dictionary in items:
 			if ArenaSim.TILES[item.id].get("family") == signature:
 				owned_tier = maxi(owned_tier, TILE_RARITIES.find(ArenaSim.TILES[item.id].rarity))
-	if owned_tier >= 3:
-		return ""
-	return _sample(tiers[owned_tier + 1], 1, int(data.seed), _node_salt(185 + salt))[0]
+	return owned_tier
 
 
 func _activate_reward_draft(draft: Dictionary) -> void:
@@ -1288,7 +1315,7 @@ func _standard_rewards() -> Array:
 	return draft.offers
 
 
-func _normal_reward_draft(lane: int, rows: Array) -> Dictionary:
+func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dictionary:
 	var rewards: Array = []
 	var hints := {}
 	var hero_id: String = data.heroes[lane].id
@@ -1313,6 +1340,8 @@ func _normal_reward_draft(lane: int, rows: Array) -> Dictionary:
 		if not bridge.is_empty():
 			rewards.append(bridge.tile)
 			hints[bridge.tile] = bridge.hint
+	if not signature_offer.is_empty() and signature_offer not in rewards:
+		rewards.append(signature_offer)
 	var rng := _rng(int(data.seed), _node_salt(84 + salt))
 	while rewards.size() < 3:
 		var roll := rng.randi_range(1, 100)

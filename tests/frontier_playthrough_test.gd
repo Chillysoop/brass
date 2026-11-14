@@ -103,11 +103,11 @@ func _run() -> void:
 	_check(game.run.finish_run(), "Close the Moonwreck Docks Medium victory recap.")
 	var moonwreck_hard_fights := _new_route_playthrough(game, "hard", "moonwreck")
 	_check(game.run.finish_run(), "Close the Moonwreck Docks Hard victory recap.")
-	var crown_hard_fights := _new_route_playthrough(game, "hard", "crown")
+	var crown_hard_fights := _new_route_playthrough(game, "hard", "crown", 1)
 	_check(game.run.finish_run(), "Close the Crown Relay Hard victory recap.")
 	var glass_hard_fights := _new_route_playthrough(game, "hard", "glass")
 	_check(game.run.finish_run(), "Close the Glass Foundry Hard victory recap.")
-	var hard_fights := _new_route_playthrough(game, "hard", "brass")
+	var hard_fights := _new_route_playthrough(game, "hard", "brass", 3)
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(save_path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path + suffix))
@@ -238,10 +238,10 @@ func _check(condition: bool, message: String) -> void:
 	if not condition:
 		failures.append(message)
 
-func _new_route_playthrough(game: Control, difficulty: String, location: String) -> int:
+func _new_route_playthrough(game: Control, difficulty: String, location: String, run_seed := 42) -> int:
 	var run: RefCounted = game.run
 	var brass_hard := location == "brass" and difficulty == "hard"
-	game.run_start(3 if brass_hard else 42, difficulty, location)
+	game.run_start(run_seed, difficulty, location)
 	if run.data.is_empty():
 		_check(false, "Expected to start " + location + " " + difficulty)
 		return 0
