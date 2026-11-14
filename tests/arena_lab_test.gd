@@ -74,6 +74,7 @@ func _run() -> void:
 	_check(lab.state == "setup" and lab.lanes == original, "Reset should return to setup and retain the edited layout.")
 	lab._load_fixture("solo")
 	_check(lab.lanes.size() == 1, "Solo setup should switch to one lane.")
+	_check_forge(lab)
 	if failures.is_empty():
 		print("Arena controls checks passed.")
 	else:
@@ -82,6 +83,66 @@ func _run() -> void:
 	lab.queue_free()
 	await process_frame
 	quit(0 if failures.is_empty() else 1)
+
+func _check_forge(lab: Control) -> void:
+	lab._open_storage()
+	var original: Array = lab.storage_rows[0].duplicate(true)
+	lab.storage_combine(0, 0, false)
+	lab.decline_dialog.canceled.emit()
+	lab.decline_dialog.hide()
+	_check(lab.suppressed_combines.is_empty(), "Canceling decline should leave the offer active.")
+	lab.storage_combine(0, 0, false)
+	lab.decline_dialog.confirmed.emit()
+	lab.decline_dialog.hide()
+	_check(lab.suppressed_combines.has("bash"), "Confirmed decline should hide offers for Bash.")
+	lab.storage_place(2, 0, {"id": "bash", "lane": -1, "row": 0, "start": 4})
+	_check(lab.suppressed_combines.has("bash"), "Moving a Bash must not restore a declined offer.")
+	lab.storage_place(0, 4, {"id": "bash"})
+	_check(not lab.suppressed_combines.has("bash"), "Acquiring a new Bash must restore offers.")
+	lab.storage_combine(0, 0, true)
+	_check(lab.forge_screen.visible, "Storage Combine should open the forge.")
+	lab.forge_choose("event_horizon")
+	_check(lab.storage_rows[0] == original, "A future tier must not consume any copies.")
+	lab.forge_close()
+	_check(lab.storage_rows[0] == original and lab.storage_screen.visible, "Back should preserve the triple and return to storage.")
+	lab.storage_combine(0, 0, true)
+	lab.forge_choose("hook_bash")
+	_check(lab.storage_rows[0].size() == 1 and lab.storage_rows[0][0].id == "hook_bash",
+		"Storage forge should replace exactly three copies with the chosen upgrade.")
+	lab.storage_pick(0, lab.storage_rows[0][0])
+	lab.storage_send_to_timeline()
+	lab._place_selected(0, 10)
+	_check(lab.storage_rows[0].size() == 1, "A blocked transfer must keep the source tile.")
+	lab.lanes[0].clear()
+	lab._place_selected(0, 2)
+	_check(lab.storage_rows[0].is_empty() and lab.lanes[0][0].id == "hook_bash", "Transfer must move the upgraded tile once.")
+	lab.lanes[0].clear()
+	for beat in [0, 2, 4]:
+		lab._place({"id": "bash"}, 0, beat)
+	lab._offer_combine(-1, 0, 0, true)
+	_check(lab.forge_screen.visible, "Timeline Combine should open the forge.")
+	lab.forge_choose("shield_ram")
+	_check(lab.lanes[0].size() == 1 and lab.lanes[0][0].id == "shield_ram",
+		"Timeline forge should replace the triple in place.")
+	lab._action()
+	for tick in range(252):
+		lab._physics_process(1.0 / 60.0)
+	_check(lab.sim.trace.any(func(event: Dictionary): return event.tile == "shield_ram"),
+		"The equipped forged tile should activate in battle.")
+	lab._load_fixture("forge")
+	lab._offer_combine(-1, 1, 0, true)
+	lab.forge_choose("event_horizon")
+	_check(lab.lanes[1].size() == 1 and lab.lanes[1][0].id == "event_horizon",
+		"The 12-beat practice triple should combine into the six-wide Legendary.")
+	lab._open_storage()
+	lab.storage_place(0, 2, {"id": "event_horizon", "lane": 1, "start": 0})
+	_check(lab.lanes[1].size() == 1, "Storage should reject overlap with a wide tile.")
+	lab.storage_place(2, 0, {"id": "event_horizon", "lane": 1, "start": 0})
+	_check(lab.lanes[1].size() == 1, "Storage should keep a wide tile on its timeline if the destination is blocked.")
+	lab.storage_rows[2].clear()
+	lab.storage_place(2, 2, {"id": "event_horizon", "lane": 1, "start": 0})
+	_check(lab.lanes[1].is_empty() and lab.storage_rows[2][0].start == 2,
+		"A six-wide Legendary should fit as one tile in eight-column storage.")
 
 func _check(passed: bool, description: String) -> void:
 	if not passed:

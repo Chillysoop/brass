@@ -9,6 +9,13 @@ const WALL_MARGIN := 26.0
 const IMPULSE_CAP := 1000.0
 const IMPULSE_DECAY := 1850.0
 const TARGET_RULES := ["nearest", "farthest", "lowest_hp", "highest_hp"]
+const BASH_TIERS := [
+	["bash"],
+	["shield_ram", "hook_bash"],
+	["bulwark_charge", "rebound"],
+	["sunwall", "graviton"],
+	["dawn_bastion", "event_horizon"],
+]
 
 const TILES := {
 	"pull": {
@@ -17,6 +24,7 @@ const TILES := {
 	},
 	"bash": {
 		"label": "Bash", "width": 2, "range": 150.0, "damage": 17,
+		"family": "bash", "rarity": "common",
 		"targets": TARGET_RULES, "description": "Hit an enemy and knock them back."
 	},
 	"guard": {
@@ -34,6 +42,46 @@ const TILES := {
 	"slam": {
 		"label": "Slam", "width": 4, "range": 190.0, "damage": 20,
 		"targets": TARGET_RULES, "description": "Strike near the target and push every enemy caught in the impact."
+	},
+	"shield_ram": {
+		"label": "Shield Ram", "width": 2, "range": 160.0, "damage": 21,
+		"family": "bash", "rarity": "uncommon",
+		"targets": TARGET_RULES, "description": "Hit and push an enemy. Gain 8 guard."
+	},
+	"hook_bash": {
+		"label": "Hook Bash", "width": 2, "range": 490.0, "damage": 18,
+		"family": "bash", "rarity": "uncommon",
+		"targets": TARGET_RULES, "description": "Hit at range and pull the enemy toward you."
+	},
+	"bulwark_charge": {
+		"label": "Bulwark Charge", "width": 3, "range": 330.0, "damage": 28,
+		"family": "bash", "rarity": "rare",
+		"targets": TARGET_RULES, "description": "Rush the target if the path is clear, then hit and push. Gain 12 guard on hit."
+	},
+	"rebound": {
+		"label": "Rebound", "width": 3, "range": 275.0, "damage": 24,
+		"family": "bash", "rarity": "rare",
+		"targets": TARGET_RULES, "description": "Hit and push. Deal 12 extra damage if the target is still moving from a push or pull."
+	},
+	"sunwall": {
+		"label": "Sunwall", "width": 4, "range": 205.0, "damage": 26,
+		"family": "bash", "rarity": "epic",
+		"targets": TARGET_RULES, "description": "Push a cluster around the target. Give 14 guard to yourself and nearby allies."
+	},
+	"graviton": {
+		"label": "Graviton", "width": 4, "range": 540.0, "damage": 28,
+		"family": "bash", "rarity": "epic",
+		"targets": TARGET_RULES, "description": "Hit and reel in the target. Pull nearby enemies into the impact point."
+	},
+	"dawn_bastion": {
+		"label": "Dawn Bastion", "width": 5, "range": 260.0, "damage": 38,
+		"family": "bash", "rarity": "legendary",
+		"targets": TARGET_RULES, "description": "Hit and scatter a cluster around the target. Give every living ally 22 guard."
+	},
+	"event_horizon": {
+		"label": "Event Horizon", "width": 6, "range": 620.0, "damage": 39,
+		"family": "bash", "rarity": "legendary",
+		"targets": TARGET_RULES, "description": "Damage and pull enemies around the target. Interrupt their active windups."
 	}
 }
 
@@ -250,29 +298,118 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 			_displace("pull", actor, target, tile_id, direction, force)
 			_damage(actor, target, tile.damage, tile_id)
 		"bash":
-			var direction: Vector2 = target.pos - actor.pos
+			_strike_and_push(actor, target, tile_id, tile.damage, 600.0)
+		"shield_ram":
+			_strike_and_push(actor, target, tile_id, tile.damage, 635.0)
+			_guard(actor, 8, tile_id)
+		"hook_bash":
 			_damage(actor, target, tile.damage, tile_id)
-			if target.hp > 0:
-				_displace("push", actor, target, tile_id, direction, 600.0)
-			var loop_index := floori(float(tick - 1) / LOOP_TICKS)
-			if actor.name == "Warden" and actor.last_bash_loop != loop_index:
-				actor.last_bash_loop = loop_index
-				_guard(actor, 4, tile_id)
+			_pull_toward(actor, target, tile_id, actor.pos, 780.0)
+		"bulwark_charge":
+			if _charge(actor, target, tile_id):
+				_strike_and_push(actor, target, tile_id, tile.damage, 810.0)
+				_guard(actor, 12, tile_id)
+			else:
+				_emit("miss", "%s: Bulwark Charge has no clear path." % actor.name, actor, target, tile_id)
+				return
+		"rebound":
+			var impulse: Vector2 = target.impulse
+			var bonus := 12 if not impulse.is_zero_approx() else 0
+			_strike_and_push(actor, target, tile_id, tile.damage + bonus, 710.0)
+		"sunwall":
+			_area_push(actor, target, tile_id, tile.damage, 155.0, 650.0)
+			_guard_allies(actor, tile_id, 14, 235.0)
+		"graviton":
+			_gravity_strike(actor, target, tile_id, 170.0, false)
+		"dawn_bastion":
+			_area_push(actor, target, tile_id, tile.damage, 205.0, 875.0)
+			_guard_allies(actor, tile_id, 22)
+		"event_horizon":
+			_gravity_strike(actor, target, tile_id, 245.0, true)
 		"blink":
 			if _teleport(actor, target):
 				_damage(actor, target, tile.damage, tile_id)
 			else:
 				_emit("miss", "%s: Blink had no clear landing." % actor.name, actor, target, tile_id)
 		"slam":
-			var impact: Vector2 = target.pos
-			for enemy in units:
-				var point: Vector2 = enemy.pos
-				if enemy.side != actor.side and enemy.hp > 0 and point.distance_to(impact) <= 115.0:
-					_damage(actor, enemy, tile.damage, tile_id)
-					if enemy.hp > 0:
-						_displace("push", actor, enemy, tile_id, point - actor.pos, 520.0)
+			_area_push(actor, target, tile_id, tile.damage, 115.0, 520.0)
 		"shot":
 			_damage(actor, target, tile.damage, tile_id)
+	if tile.get("family") == "bash":
+		_warden_guard(actor, tile_id)
+
+
+func _warden_guard(actor: Dictionary, tile_id: String) -> void:
+	var loop_index := floori(float(tick - 1) / LOOP_TICKS)
+	if actor.name == "Warden" and actor.last_bash_loop != loop_index:
+		actor.last_bash_loop = loop_index
+		_guard(actor, 4, tile_id)
+
+
+func _strike_and_push(actor: Dictionary, target: Dictionary, tile_id: String, damage: int, force: float) -> void:
+	_damage(actor, target, damage, tile_id)
+	if target.hp > 0:
+		_displace("push", actor, target, tile_id, target.pos - actor.pos, force)
+
+
+func _area_push(actor: Dictionary, target: Dictionary, tile_id: String, damage: int, radius: float, force: float) -> void:
+	for enemy in _enemies_in_area(actor, target.pos, radius):
+		_strike_and_push(actor, enemy, tile_id, damage, force)
+
+
+func _enemies_in_area(actor: Dictionary, center: Vector2, radius: float) -> Array[Dictionary]:
+	var affected: Array[Dictionary] = []
+	for enemy in units:
+		var point: Vector2 = enemy.pos
+		if enemy.side != actor.side and enemy.hp > 0 and point.distance_to(center) <= radius:
+			affected.append(enemy)
+	return affected
+
+
+func _guard_allies(actor: Dictionary, tile_id: String, amount: int, radius: float = INF) -> void:
+	var position: Vector2 = actor.pos
+	for ally in units:
+		if ally.side == actor.side and ally.hp > 0 and position.distance_to(ally.pos) <= radius:
+			_guard(ally, amount, tile_id, actor)
+
+
+func _gravity_strike(actor: Dictionary, target: Dictionary, tile_id: String, radius: float, collapse: bool) -> void:
+	var impact: Vector2 = target.pos
+	for enemy in _enemies_in_area(actor, impact, radius):
+		if enemy.id == target.id or collapse:
+			_damage(actor, enemy, TILES[tile_id].damage, tile_id)
+		if collapse and enemy.intent != "":
+			enemy.intent = ""
+			enemy.next_attack = tick + TICKS_PER_BEAT * 3
+			_emit("interrupt", "%s interrupts %s." % [TILES[tile_id].label, enemy.name], actor, enemy, tile_id)
+		var center: Vector2 = actor.pos if enemy.id == target.id else impact
+		_pull_toward(actor, enemy, tile_id, center, 990.0 if collapse else 860.0)
+
+
+func _pull_toward(actor: Dictionary, enemy: Dictionary, tile_id: String, center: Vector2, force: float) -> void:
+	var offset: Vector2 = center - enemy.pos
+	if enemy.hp > 0 and offset.length_squared() > 0.001:
+		_displace("pull", actor, enemy, tile_id, offset, force)
+
+
+func _charge(actor: Dictionary, target: Dictionary, tile_id: String) -> bool:
+	var origin: Vector2 = actor.pos
+	var destination: Vector2 = target.pos
+	var direction := origin.direction_to(destination)
+	var clearance: float = actor.radius + target.radius + 18.0
+	if origin.distance_to(destination) <= clearance:
+		return true
+	var landing := _bounded(destination - direction * clearance, actor.radius)
+	for unit in units:
+		if unit.hp <= 0 or unit.id == actor.id:
+			continue
+		var closest := Geometry2D.get_closest_point_to_segment(unit.pos, origin, landing)
+		if closest.distance_to(unit.pos) < actor.radius + unit.radius + 5.0:
+			return false
+	actor.pos = landing
+	actor.impulse = Vector2.ZERO
+	_emit("charge", "%s charges toward %s." % [actor.name, target.name], actor, target, tile_id, 0, origin, landing)
+	return true
 
 
 func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: String, offset: Vector2, force: float) -> void:
@@ -355,11 +492,12 @@ func _resolve_intent(enemy: Dictionary) -> void:
 		return
 
 
-func _guard(actor: Dictionary, amount: int, tile_id: String) -> void:
-	var gain := mini(amount, 28 - actor.guard)
-	actor.guard += gain
+func _guard(recipient: Dictionary, amount: int, tile_id: String, source: Dictionary = {}) -> void:
+	var gain := mini(amount, 28 - recipient.guard)
+	recipient.guard += gain
 	if gain > 0:
-		_emit("guard", "%s gains %d guard." % [actor.name, gain], actor, actor, tile_id, gain)
+		var actor := recipient if source.is_empty() else source
+		_emit("guard", "%s gains %d guard." % [recipient.name, gain], actor, recipient, tile_id, gain)
 
 
 func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String) -> void:
