@@ -93,7 +93,7 @@ func open(activations: Array, boss_events: Array, outcome: String, encounter := 
 		var entry := activation.duplicate()
 		var previous: Dictionary = preceding.get(entry.lane, {})
 		if entry.status == "miss" and not previous.is_empty() and previous.loop == entry.loop \
-				and previous.status == "landed" and ArenaSim.TILES[previous.tile].get("family") == "blink":
+				and previous.status == "landed" and ArenaSim.is_blink_tile(previous.tile):
 			entry["preceding_teleport"] = ArenaSim.TILES[previous.tile].label
 		preceding[entry.lane] = entry
 		_events.append(entry)

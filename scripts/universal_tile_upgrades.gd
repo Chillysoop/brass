@@ -51,6 +51,48 @@ const AUTHORED_SIGNATURES := {
 				"mark_bonus": 27, "mark_beats": 5, "ally_only_mark": true},
 		],
 	},
+	"ghost_volley": {
+		"power": [
+			{"label": "Rift Ambush", "damage": 27, "range": 435.0, "ranged": false, "blink_strike": true, "icon": "teleport"},
+			{"label": "Veilstrike", "damage": 32, "range": 470.0, "ranged": false, "blink_strike": true, "icon": "teleport"},
+			{"label": "Phantom Ambush", "damage": 38, "range": 515.0, "ranged": false, "blink_strike": true, "icon": "teleport"},
+		],
+		"technique": [
+			{"label": "Covering Shot", "damage": 17, "range": 480.0, "retreat": 105.0,
+				"ranged_followup_bonus": 12, "ranged_followup_beats": 3},
+			{"label": "Ghost Feint", "damage": 20, "range": 505.0, "retreat": 118.0,
+				"ranged_followup_bonus": 17, "ranged_followup_beats": 4},
+			{"label": "Fadefire Volley", "damage": 23, "range": 530.0, "retreat": 130.0,
+				"ranged_followup_bonus": 22, "ranged_followup_beats": 5},
+		],
+	},
+	"collision_hammer": {
+		"power": [
+			{"label": "Wrecking Drive", "damage": 28, "range": 180.0, "push": 840.0, "displaced_bonus": 12, "collision_bonus": 9},
+			{"label": "Rivet Ram", "damage": 32, "range": 190.0, "push": 910.0, "displaced_bonus": 14, "collision_bonus": 13},
+			{"label": "Wrecking Blow", "damage": 37, "range": 200.0, "push": 980.0, "displaced_bonus": 16, "collision_bonus": 18},
+		],
+		"technique": [
+			{"label": "Scatter Swing", "damage": 24, "range": 180.0, "push": 650.0, "displaced_bonus": 11,
+				"sweep_push_radius": 118.0, "sweep_push_force": 400.0, "icon": "area"},
+			{"label": "Fault Sweep", "damage": 27, "range": 190.0, "push": 700.0, "displaced_bonus": 12,
+				"sweep_push_radius": 140.0, "sweep_push_force": 480.0, "icon": "area"},
+			{"label": "Shatterline", "damage": 30, "range": 200.0, "push": 760.0, "displaced_bonus": 14,
+				"sweep_push_radius": 162.0, "sweep_push_force": 560.0, "icon": "area"},
+		],
+	},
+	"triage_kit": {
+		"power": [
+			{"label": "Emergency Dose", "guard": 14, "heal": 20},
+			{"label": "Critical Care", "guard": 17, "heal": 26},
+			{"label": "Lifeline Kit", "guard": 20, "heal": 32},
+		],
+		"technique": [
+			{"label": "Triage Mist", "support": "party", "party_heal": true, "guard": 6, "heal": 9},
+			{"label": "Mercy Fog", "support": "party", "party_heal": true, "guard": 8, "heal": 12},
+			{"label": "Mercy Rain", "support": "party", "party_heal": true, "guard": 10, "heal": 15},
+		],
+	},
 }
 
 
@@ -88,12 +130,13 @@ static func _upgrade(id: String, base: Dictionary, tier: int, ranks: int, techni
 	tile.rarity = RARITIES[tier]
 	if AUTHORED_SIGNATURES.has(id):
 		var choice := "technique" if technique else "power"
-		if not technique:
-			if id == "rampart_counter":
-				tile.erase("guard_bonus")
-			elif id == "horizon_round":
-				tile.erase("mark_bonus")
-				tile.erase("mark_beats")
+		if id == "rampart_counter" and not technique:
+			tile.erase("guard_bonus")
+		if (id == "horizon_round" and not technique) or id == "ghost_volley":
+			tile.erase("mark_bonus")
+			tile.erase("mark_beats")
+		if id == "ghost_volley" and not technique:
+			tile.erase("retreat")
 		tile.merge(AUTHORED_SIGNATURES[id][choice][ranks - 1], true)
 		tile.description = _describe_upgrade(tile)
 		return tile
@@ -138,6 +181,8 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 	if tile.damage > 0:
 		if tile.get("charge", false):
 			lines.append("Rush the target if the path is clear.")
+		if tile.get("blink_strike", false):
+			lines.append("Blink beside the target and strike if there is a clear landing.")
 		lines.append("%d reach." % int(tile.range))
 		if tile.has("pull_before_hit"):
 			lines.append("Pull the target toward you with %d force before the hit." % int(tile.pull))
@@ -158,6 +203,11 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 			lines.append("Deal %d damage to other enemies within %d range of the target." % [tile.splash_damage, int(tile.splash)])
 		if tile.has("push"):
 			lines.append("Push the target with %d force." % int(tile.push))
+		if tile.has("collision_bonus"):
+			lines.append("If the pushed target collides with another enemy shortly afterward, deal %d extra collision damage to both." % tile.collision_bonus)
+		if tile.has("sweep_push_radius"):
+			lines.append("Push other enemies within %d range of the impact away from you with %d force." % [
+				int(tile.sweep_push_radius), int(tile.sweep_push_force)])
 		if tile.has("pull") and not tile.has("pull_before_hit"):
 			lines.append("Pull the target toward you with %d force." % int(tile.pull))
 		if tile.has("cluster_pull_radius"):
@@ -165,6 +215,9 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 				int(tile.cluster_pull_radius), int(tile.cluster_pull_force)])
 		if tile.has("retreat"):
 			lines.append("Back away by up to %d." % int(tile.retreat))
+		if tile.has("ranged_followup_bonus"):
+			lines.append("If you back away, your next ranged hit within %d beats deals %d extra damage." % [
+				tile.ranged_followup_beats, tile.ranged_followup_bonus])
 		if tile.has("mark_bonus"):
 			var follow_up := "The next hit from another hero" if tile.get("ally_only_mark", false) else "The next hit"
 			lines.append("%s on the target within %d beats deals %d extra damage." % [follow_up, tile.mark_beats, tile.mark_bonus])
@@ -180,6 +233,10 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 			_:
 				lines.append("Gain %d Guard%s" % [tile.guard, when])
 	if tile.has("heal"):
-		var recipient := "the lowest-HP living hero" if tile.get("support") == "weakest" else "yourself"
+		var recipient := "yourself"
+		if tile.get("party_heal", false):
+			recipient = "each living hero"
+		elif tile.get("support") == "weakest":
+			recipient = "the lowest-HP living hero"
 		lines.append("Restore up to %d HP to %s once per fight." % [tile.heal, recipient])
 	return " ".join(lines)

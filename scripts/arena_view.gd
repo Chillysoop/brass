@@ -75,6 +75,10 @@ const EFFECT_LENGTHS := {
 	"guard_break": 0.34,
 	"guard_spent": 0.34,
 	"cluster_pull": 0.46,
+	"ranged_followup_ready": 0.40,
+	"ranged_followup_spent": 0.26,
+	"sweep_push": 0.42,
+	"hammer_collision": 0.30,
 }
 const MARK_COLOR := Color("#e4adff")
 const ELITE_RELIC_EFFECTS := ["afterimage", "barrage_rack", "siege_fuse"]
@@ -562,6 +566,13 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 				draw_circle(to_point + ray * (8.0 + progress * 27.0), 2.2 * opacity, Color(TELEPORT_COLOR, opacity), true, -1.0, true)
 		"retreat":
 			_draw_arrow(from_point, to_point, Color(HERO_COLOR, opacity))
+		"ranged_followup_ready":
+			var center := to_point - Vector2(0.0, 16.0)
+			var radius := lerpf(21.0, 8.0, progress)
+			draw_arc(center, radius, -2.6, -0.5, 12, Color(TELEPORT_COLOR, opacity), 2.0, true)
+		"ranged_followup_spent":
+			var lift := Vector2(0.0, -19.0)
+			draw_line(from_point + lift, to_point + lift, Color(TELEPORT_COLOR, opacity), 3.0, true)
 		"mark", "mark_spent":
 			var radius := lerpf(26.0, 12.0, progress) if kind == "mark" else lerpf(12.0, 28.0, progress)
 			for index in range(4):
@@ -582,6 +593,17 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			for index in range(6):
 				var angle := index * TAU / 6.0
 				draw_arc(to_point, radius, angle, angle + 0.60, 6, Color(HERO_COLOR, opacity), 2.5, true)
+		"sweep_push":
+			var radius := lerpf(10.0, 46.0, progress)
+			for index in range(6):
+				var angle := index * TAU / 6.0
+				draw_arc(to_point, radius, angle, angle + 0.65, 6, Color(GOLD, opacity), 3.0, true)
+		"hammer_collision":
+			var impact := from_point.lerp(to_point, 0.5)
+			for index in range(5):
+				var direction := Vector2.RIGHT.rotated(index * TAU / 5.0)
+				draw_line(impact + direction * (4.0 + progress * 8.0), impact + direction * (11.0 + progress * 13.0),
+					Color(GOLD, opacity), 2.0, true)
 		"hazard_burst":
 			var extent := float(effect.amount) * field.size / WORLD_SIZE
 			_draw_ellipse(from_point, extent * lerpf(0.38, 1.0, progress), Color(GOLD, opacity * 0.53))

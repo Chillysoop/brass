@@ -103,44 +103,49 @@ func _check_class_decks() -> void:
 
 
 func _check_signature_elite_progression() -> void:
+	for pairing in [["warden", "starshot"], ["breaker", "wayfarer"], ["apothecary", "hexwright"]]:
+		_check_signature_elite_pair(pairing[0], pairing[1])
+
+
+func _check_signature_elite_pair(lead: String, recruit: String) -> void:
 	var run := FrontierRun.new()
 	run.load_save(save_path)
 	run.profile.medium_unlocked = true
 	if not run.start_run(42, "medium"):
 		_check(false, "Expected a new run for signature upgrade rewards.")
 		return
-	run.data.offers = ["warden"]
-	var started := run.choose_hero("warden") and run.choose_relic("pocket_bell") \
-		and run.choose_starter("shield_tap") and run.finish_combat(true, 100) and run.reward("skip")
+	run.data.offers = [lead]
+	var started := run.choose_hero(lead) and run.choose_relic("pocket_bell") \
+		and run.choose_starter(ClassDecks.starter(lead)) and run.finish_combat(true, 100) and run.reward("skip")
 	_enter_boss(run, false)
 	started = started and run.finish_combat(true, 100) and run.reward("skip")
-	run.data.offers = ["starshot"]
-	started = started and run.choose_recruit("starshot") and run.choose_recruit_starter("rivet_bolt")
+	run.data.offers = [recruit]
+	started = started and run.choose_recruit(recruit) and run.choose_recruit_starter(ClassDecks.starter(recruit))
 	_check(started, "Expected a two-hero party for signature upgrade rewards.")
 	if not started:
 		return
 
-	var rampart := ClassDecks.signature("warden")
-	var horizon := ClassDecks.signature("starshot")
-	var warden_rare: String = TilePacking.next_options(rampart)[0]
-	var warden_epics := TilePacking.next_options(warden_rare)
+	var lead_signature := ClassDecks.signature(lead)
+	var recruit_signature := ClassDecks.signature(recruit)
+	var lead_rare: String = TilePacking.next_options(lead_signature)[0]
+	var lead_epics := TilePacking.next_options(lead_rare)
 	run.data.elite_relic_drafted = true
-	run.loadout.lanes[0] = [_signature_tile(rampart, 0), _signature_tile(rampart, 2)]
-	run.loadout.lanes[1] = [_signature_tile(horizon, 0)]
-	run.loadout.storage[0] = [_signature_tile(warden_rare, 0)]
+	run.loadout.lanes[0] = [_signature_tile(lead_signature, 0), _signature_tile(lead_signature, ArenaSim.TILES[lead_signature].width)]
+	run.loadout.lanes[1] = [_signature_tile(recruit_signature, 0)]
+	run.loadout.storage[0] = [_signature_tile(lead_rare, 0)]
 	var row := FrontierRun.NODES_PER_SEGMENT + 3
 	var elite: Dictionary = run.data.layers[row].filter(func(node: Dictionary): return node.type == "elite")[0]
 	run.data.node = run.data.layers[row - 1][elite.column]
 	var preview := run.elite_preview(elite)
 	var won := run.choose_node(elite.id) and run.finish_combat(true, [100, 100])
 	_check(won and run.data.offers.size() == 3 and preview.get("tile") in run.data.offers
-		and rampart in run.data.offers and run.reward_hint(rampart) == "Third copy"
-		and run.data.offers.any(func(id: String): return id in warden_epics),
-		"Later elites retain the advertised tile and third copy, and offer an Epic for an owned Rare in storage.")
+		and lead_signature in run.data.offers and run.reward_hint(lead_signature) == "Third copy"
+		and run.data.offers.any(func(id: String): return id in lead_epics),
+		"Later elites retain the preview and third copy, and offer an Epic for %s's owned Rare." % lead)
 	_check(won and run.reward("skip") and run.reward_lane() == 1
-		and run.data.offers.any(func(id: String): return id in TilePacking.next_options(horizon))
-		and not run.data.offers.any(func(id: String): return id in warden_epics),
-		"The recruit gets a chance to draft their own Rare signature upgrade.")
+		and run.data.offers.any(func(id: String): return id in TilePacking.next_options(recruit_signature))
+		and not run.data.offers.any(func(id: String): return id in lead_epics),
+		"%s receives their own Rare signature upgrade in the second draft." % recruit)
 	run.abandon_run()
 
 

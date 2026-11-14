@@ -157,9 +157,16 @@ func _check_practice_arsenal(lab: Control) -> void:
 	var upgrade_id: String = TilePacking.next_options("gravity_spike")[1]
 	var upgrade := lab.arsenal_panel.find_child("PracticeTile_" + upgrade_id, true, false) as Button
 	_check(upgrade != null and upgrade.is_visible_in_tree(), "The signature page should expose upgraded tiles in Practice.")
-	if upgrade != null:
-		_click(upgrade.get_global_rect().get_center())
-		_check(lab.selected.get("id") == upgrade_id, "A signature upgrade should be available to place from Practice.")
+	var triage_id: String = TilePacking.next_options("triage_kit")[1]
+	var triage := lab.arsenal_panel.find_child("PracticeTile_" + triage_id, true, false) as Button
+	var signature_scroll := lab.arsenal_panel.find_child("PracticeSignatureScroll", true, false) as ScrollContainer
+	if triage == null or signature_scroll == null:
+		_check(false, "Apothecary's upgrades should appear in the scrollable signature page.")
+		return
+	signature_scroll.ensure_control_visible(triage)
+	await process_frame
+	_click(triage.get_global_rect().get_center())
+	_check(lab.selected.get("id") == triage_id, "The signature page should scroll to Apothecary and let a player equip the upgrade.")
 
 func _check_tile_identity(lab: Control) -> void:
 	var common := GameIcons.rarity({})

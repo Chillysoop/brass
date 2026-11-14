@@ -817,18 +817,27 @@ func _build_practice_arsenal() -> void:
 		pages.append(page)
 		layout.add_child(page)
 		_add_practice_tiles(page, pools)
+	var signature_page := VBoxContainer.new()
+	signature_page.hide()
+	pages.append(signature_page)
+	layout.add_child(signature_page)
+	var signature_scroll := ScrollContainer.new()
+	signature_scroll.name = "PracticeSignatureScroll"
+	signature_scroll.custom_minimum_size = Vector2(1070, 300)
+	signature_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	signature_scroll.follow_focus = true
+	signature_page.add_child(signature_scroll)
 	var signatures := VBoxContainer.new()
+	signatures.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	signatures.add_theme_constant_override("separation", 5)
-	signatures.hide()
-	pages.append(signatures)
-	layout.add_child(signatures)
+	signature_scroll.add_child(signatures)
 	for hero_id: String in FrontierRun.HEROES:
 		var signature := ClassDecks.signature(hero_id)
 		if not UniversalTileUpgrades.AUTHORED_SIGNATURES.has(signature):
 			continue
 		signatures.add_child(_label(FrontierRun.HEROES[hero_id].label, 15, GOLD))
 		var tiers := TilePacking.forge_tiers(signature)
-		_add_practice_tiles(signatures, [tiers[2] + tiers[3] + tiers[4]])
+		_add_practice_tiles(signatures, [tiers[2] + tiers[3] + tiers[4]], 6)
 	collection.item_selected.connect(func(index: int):
 		for page_index in range(pages.size()):
 			pages[page_index].visible = page_index == index
@@ -836,12 +845,12 @@ func _build_practice_arsenal() -> void:
 	arsenal_panel.hide()
 
 
-func _add_practice_tiles(page: VBoxContainer, pools: Array) -> void:
+func _add_practice_tiles(page: VBoxContainer, pools: Array, columns := 4) -> void:
 	for ids: Array in pools:
 		if ids != pools.front():
 			page.add_child(HSeparator.new())
 		var grid := GridContainer.new()
-		grid.columns = 4
+		grid.columns = columns
 		grid.add_theme_constant_override("h_separation", 5)
 		grid.add_theme_constant_override("v_separation", 4)
 		page.add_child(grid)
@@ -858,8 +867,12 @@ func _add_practice_tiles(page: VBoxContainer, pools: Array) -> void:
 			)
 			button.name = "PracticeTile_" + id
 			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 			GameIcons.decorate(button, GameIcons.tile(id, tile), 17)
-			_style_tile_button(button, tile, Color("#263642"), false, 14)
+			var compact := columns > 4
+			if compact:
+				button.add_theme_font_size_override("font_size", 13)
+			_style_tile_button(button, tile, Color("#263642"), false, 20 if compact else 14)
 			_add_tile_badges(button, tile, GameIcons.tile_origin(id, tile))
 			button.tooltip_text = _practice_tile_tooltip(id, tile)
 			_drag_source(button, payload)

@@ -566,7 +566,7 @@ func _elite_relic_offer(id: String, equipped := []) -> Dictionary:
 	var candidates: Array = []
 	match id:
 		"afterimage":
-			var blink := func(tile: String): return ArenaSim.TILES[tile].get("family", "") == "blink"
+			var blink := func(tile: String): return ArenaSim.is_blink_tile(tile)
 			var follow_up := func(tile: String): return ArenaSim.can_trigger_afterimage(tile)
 			var has_blink := _count_matching_tiles(owned, blink) > 0
 			var has_follow_up := _count_matching_tiles(owned, follow_up) > 0
@@ -1386,7 +1386,7 @@ func _elite_relic_bridge(excluded: Array) -> Dictionary:
 		var candidates: Array
 		match id:
 			"afterimage":
-				candidates = ["blink"] if ArenaSim.TILES[companion].family == "blink" else ["bash", "shot"]
+				candidates = ["blink"] if ArenaSim.is_blink_tile(companion) else ["bash", "shot"]
 			"barrage_rack":
 				candidates = ["shot", "bash"]
 			"siege_fuse":
