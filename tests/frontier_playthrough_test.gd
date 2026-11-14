@@ -91,6 +91,8 @@ func _run() -> void:
 	_check(game.run.finish_run(), "Close the Glass Foundry victory recap.")
 	var glass_medium_fights := _new_route_playthrough(game, "medium", "glass")
 	_check(game.run.finish_run(), "Close the Glass Foundry Medium victory recap.")
+	var glass_hard_fights := _new_route_playthrough(game, "hard", "glass")
+	_check(game.run.finish_run(), "Close the Glass Foundry Hard victory recap.")
 	var hard_fights := _new_route_playthrough(game, "hard", "brass")
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(save_path + suffix):
@@ -98,8 +100,8 @@ func _run() -> void:
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Playthroughs passed: Brass Easy %d fights (%d HP), Medium %d (%d HP combined), Glass Easy %d, Glass Medium %d, Brass Hard %d." % [
-			battles, easy_hp, medium.fights, medium.hp, glass_fights, glass_medium_fights, hard_fights])
+		print("Playthroughs passed: Brass Easy %d fights (%d HP), Medium %d (%d HP combined), Brass Hard %d, Glass Easy %d, Glass Medium %d, Glass Hard %d." % [
+			battles, easy_hp, medium.fights, medium.hp, hard_fights, glass_fights, glass_medium_fights, glass_hard_fights])
 	game.queue_free()
 	await process_frame
 	quit(0 if failures.is_empty() else 1)
@@ -231,6 +233,8 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 		return 0
 	var fights := 0
 	var boss_party_sizes: Array[int] = []
+	var glass_hard := location == "glass" and difficulty == "hard"
+	var recruit_checkpoints := 0
 	for step in range(100):
 		match run.data.phase:
 			"hero", "recruit":
@@ -246,6 +250,12 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 				run.choose_starter("bash")
 			"recruit_starter":
 				run.choose_starter("shot")
+				if glass_hard:
+					var saved := FrontierRun.new()
+					_check(saved.load_save(save_path) and saved.data.segment == run.data.segment
+						and saved.data.heroes == run.data.heroes and saved.loadout.lanes == run.loadout.lanes,
+						"Glass Hard must save the party and timelines after each recruitment.")
+					recruit_checkpoints += 1
 			"combat":
 				game.run_show_arena()
 				_equip_stored_rewards(game)
@@ -262,12 +272,22 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 				if game.sim.outcome != "victory":
 					_check(false, "%s %s lost to %s after %d fights." % [location, difficulty, run.data.node.label, fights])
 					break
-				if final and difficulty == "hard":
+				if final and difficulty == "hard" and location == "brass":
 					_check(game.sim.trace.any(func(event: Dictionary): return event.tile == "regent_shattered"),
 						"Three heroes should break the Iron Regent's seals during the test clear.")
 				if final and location == "glass" and difficulty == "medium":
 					_check(game.sim.trace.any(func(event: Dictionary): return event.tile == "prism_shattered"),
 						"Both heroes should contribute to the Prism Warden's ward break.")
+				if final and glass_hard:
+					var combo: Array = game.sim.trace.filter(func(event: Dictionary):
+						return event.tile in ["colossus_displaced", "colossus_cracked", "colossus_shattered"])
+					_check(combo.map(func(event: Dictionary): return event.tile) ==
+						["colossus_displaced", "colossus_cracked", "colossus_shattered"],
+						"The expedition loadout should complete the Colossus combo in order.")
+					var contributors := {}
+					for event: Dictionary in combo:
+						contributors[event.actor] = true
+					_check(contributors.size() == 3, "A different hero must contribute each step of the combo.")
 				game._action()
 			"reward":
 				var chosen: String = run.data.offers[0]
@@ -309,7 +329,13 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 	match difficulty:
 		"easy": _check(run.profile.glass_medium_unlocked, "Glass Easy should unlock Glass Medium.")
 		"medium": _check(run.profile.glass_hard_unlocked and run.profile.crown_easy_unlocked, "Glass Medium should unlock Glass Hard and Crown Easy.")
-		"hard": _check(run.profile.brass_hard_cleared, "Brass Hard should record its clear.")
+		"hard":
+			if glass_hard:
+				var saved := FrontierRun.new()
+				_check(recruit_checkpoints == 2 and saved.load_save(save_path) and saved.profile.glass_hard_cleared
+					and saved.data.get("result") == "victory", "Glass Hard should persist both recruits and its first clear.")
+			else:
+				_check(run.profile.brass_hard_cleared, "Brass Hard should record its clear.")
 	return fights
 
 func _equip_stored_rewards(game: Control) -> void:

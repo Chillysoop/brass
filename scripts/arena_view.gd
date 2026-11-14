@@ -21,6 +21,7 @@ const SPRITE_PATHS := {
 	"glass_skirmisher": "res://assets/glass_skirmisher.png",
 	"glass_twin": "res://assets/glass_twin.png",
 	"prism_warden": "res://assets/prism_warden.png",
+	"tempered_colossus": "res://assets/tempered_colossus.png",
 	"glass_arena": "res://assets/glass-arena.webp",
 }
 const EFFECT_LENGTHS := {
@@ -157,7 +158,9 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		texture = _textures.get("clockwork")
 	var radius := maxf(8.0, float(unit.radius) * unit_scale)
 	var model_height := 132.0
-	if art_key in ["marshal", "regent", "glass_twin", "prism_warden"]:
+	if art_key == "tempered_colossus":
+		model_height = 218.0
+	elif art_key in ["marshal", "regent", "glass_twin", "prism_warden"]:
 		model_height = 191.0
 	elif art_key == "clockwork":
 		model_height = 154.0
@@ -217,6 +220,25 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		var ward_color := HERO_COLOR if exposed else TELEPORT_COLOR
 		_draw_centered("WARD OPEN" if exposed else "PRISM WARD", bar.get_center() - Vector2(0.0, 9.0), 14, ward_color)
 		draw_arc(point, radius * 1.4, 0.0, TAU, 32, Color(ward_color, 0.8), 2.0, true)
+	if art_key == "tempered_colossus":
+		_draw_colossus_stage(unit, point, radius, bar)
+
+
+func _draw_colossus_stage(unit: Dictionary, point: Vector2, radius: float, bar: Rect2) -> void:
+	var stage: int = unit.get("colossus_stage", 0)
+	if unit.get("colossus_shattered", false):
+		_draw_centered("ARMOR SHATTERED", bar.get_center() - Vector2(0.0, 9.0), 14, HERO_COLOR)
+		return
+	if stage == 0:
+		return
+	var caption: String = ["", "PUSH OR PULL", "FOLLOW-UP HIT", "FINAL HIT"][stage]
+	_draw_centered(caption, bar.get_center() - Vector2(0.0, 9.0), 14, GOLD)
+	for index in range(3):
+		var start_angle := index * TAU / 3.0
+		var color := HERO_COLOR if index < stage - 1 else GOLD
+		if index >= stage:
+			color = GOLD.darkened(0.6)
+		draw_arc(point, radius * 1.45, start_angle, start_angle + TAU / 3.0 - 0.18, 18, color, 3.0, true)
 
 
 func _draw_intents(field: Rect2) -> void:
@@ -225,6 +247,10 @@ func _draw_intents(field: Rect2) -> void:
 		if unit.hp <= 0 or target_id.is_empty():
 			continue
 		var start := _project(_positions.get(unit.id, unit.pos), field)
+		var sweep_radius: float = unit.get("colossus_sweep_radius", 0.0)
+		if sweep_radius > 0.0 and int(unit.get("colossus_stage", 0)) > 0:
+			_draw_sweep_warning(start, sweep_radius * field.size / WORLD_SIZE)
+			continue
 		var secondary: String = unit.get("prism_secondary", "")
 		for target in units:
 			if target.hp <= 0 or target.id not in [target_id, secondary]:
@@ -235,6 +261,17 @@ func _draw_intents(field: Rect2) -> void:
 				warning = TELEPORT_COLOR.darkened(0.21)
 			draw_dashed_line(start, end, Color(warning, 0.8), 2.0, 6.0)
 			draw_arc(end, 14.0 + sin(_animation_time * 22.0) * 2.0, 0.0, TAU, 24, warning, 2.0, true)
+
+
+func _draw_sweep_warning(center: Vector2, radius: Vector2) -> void:
+	var warning := Color("#f29c76")
+	_draw_ellipse(center, radius, Color(warning, 0.11))
+	for dash in range(24):
+		var start := float(dash) * TAU / 24.0
+		var points := PackedVector2Array()
+		for step in range(4):
+			points.append(center + Vector2.RIGHT.rotated(start + float(step) * 0.054) * radius)
+		draw_polyline(points, warning, 2.0, true)
 
 
 func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:

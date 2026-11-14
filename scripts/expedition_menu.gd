@@ -290,21 +290,19 @@ func _region_hint(id: String) -> String:
 
 func _difficulty_status(difficulty: String, available: bool) -> String:
 	if not available:
-		return "Coming soon" if _location == "glass" and difficulty == "hard" else "Locked"
+		return "Locked"
 	var profile_key := ""
 	match _location:
 		"brass":
 			profile_key = {"easy": "medium_unlocked", "medium": "hard_unlocked", "hard": "brass_hard_cleared"}[difficulty]
 		"glass":
-			profile_key = {"easy": "glass_medium_unlocked", "medium": "glass_hard_unlocked"}.get(difficulty, "")
-	return "Cleared" if _run.profile.get(profile_key, false) else "Available"
+			profile_key = {"easy": "glass_medium_unlocked", "medium": "glass_hard_unlocked", "hard": "glass_hard_cleared"}[difficulty]
+	if _run.profile.get(profile_key, false):
+		return "Mastered" if _location == "glass" and difficulty == "hard" else "Cleared"
+	return "Available"
 
 
 func _difficulty_hint(difficulty: String) -> String:
-	if _location == "glass" and difficulty == "hard":
-		if _run.profile.get("glass_hard_unlocked", false):
-			return "Unlocked. Hard arrives in a future update."
-		return "Clear Glass Foundry Medium to unlock when available."
 	if difficulty == "easy":
 		return "Begin a solo expedition."
 	if difficulty == "medium":

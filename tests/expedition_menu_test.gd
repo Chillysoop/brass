@@ -29,6 +29,7 @@ func _run() -> void:
 	if menu != null and chart != null:
 		await _check_navigation()
 		await _check_chart()
+		await _check_glass_hard_entry()
 	game.queue_free()
 	await process_frame
 	for suffix in ["", ".tmp", ".bak"]:
@@ -118,6 +119,22 @@ func _check_chart() -> void:
 		"Chart purchases persist across reload.")
 	await _press_named(chart, "ChartBack")
 	_check(menu.is_visible_in_tree() and not chart.is_visible_in_tree(), "Chart Back returns to the title.")
+
+
+func _check_glass_hard_entry() -> void:
+	game.run.profile.glass_easy_unlocked = true
+	game.run.profile.glass_medium_unlocked = true
+	game.run_menu()
+	await _press_named(menu, "NewExpedition")
+	await _press_named(menu, "Region_glass")
+	_check_disabled(menu, "Difficulty_hard", "Locked")
+	game.run.profile.glass_hard_unlocked = true
+	game.run_menu()
+	await _press_named(menu, "NewExpedition")
+	await _press_named(menu, "Region_glass")
+	await _press_named(menu, "Difficulty_hard")
+	_check(game.run.data.get("phase") == "hero" and game.run.data.get("location") == "glass"
+		and game.run.data.get("difficulty") == "hard", "Glass Hard should start from the expedition menu after its unlock.")
 
 
 func _press_text(parent: Control, prefix: String) -> void:

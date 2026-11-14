@@ -36,6 +36,10 @@ const BOSS_BRIEFS := {
 	"prism_warden": {
 		"portrait": "prism_warden",
 		"hint": "Push or pull the Warden, then strike with your other hero within three beats to shatter the prism ward. Give guard to your ranged leader and the hero with the lowest HP."
+	},
+	"tempered_colossus": {
+		"portrait": "tempered_colossus",
+		"hint": "When Forge Sweep begins, push or pull the Colossus with one hero. Hit with a different hero, then with your third hero. All three actions must land in order during the same nine-beat window. Shatter its armor to stop the sweep."
 	}
 }
 

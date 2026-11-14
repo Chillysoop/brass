@@ -8,6 +8,8 @@ const ARENA_SIZE := Vector2(1000, 520)
 const WALL_MARGIN := 26.0
 const IMPULSE_CAP := 1000.0
 const IMPULSE_DECAY := 1850.0
+const COLOSSUS_SWEEP_BEATS := 9
+const COLOSSUS_EXTRA_REACH := 110.0
 const TARGET_RULES := ["nearest", "farthest", "lowest_hp", "highest_hp"]
 const RANGED_TILES := ["pull", "gravity_hook", "shot", "hook_bash", "graviton", "event_horizon", "meteor_seal"]
 const BASH_TIERS := [
@@ -62,7 +64,10 @@ const CAMPAIGN_ENEMIES := {
 		"twin": true, "push": 210.0, "displacement": 0.76},
 	"prism_warden": {"name": "The Prism Warden", "art": "prism_warden", "hp": 870, "radius": 46.0, "speed": 98.0,
 		"spacing": 136.0, "reach": 266.0, "damage": 29, "first": 120, "cooldown": 118, "windup": 49,
-		"target": "ranged_damage", "push": 320.0, "displacement": 0.82}
+		"target": "ranged_damage", "push": 320.0, "displacement": 0.82},
+	"tempered_colossus": {"name": "The Tempered Colossus", "art": "tempered_colossus", "hp": 1220, "radius": 52.0, "speed": 86.0,
+		"spacing": 130.0, "reach": 232.0, "damage": 39, "first": 116, "cooldown": 117, "windup": 48,
+		"target": "ranged_damage", "push": 335.0, "displacement": 0.66}
 }
 
 const TILES := {
@@ -267,26 +272,30 @@ func _start_campaign(options: Dictionary) -> void:
 
 
 func _start_glass_encounter(encounter: String, rng: RandomNumberGenerator, y: float, difficulty: String, segment: int, boss_id: String) -> void:
-	var medium := difficulty == "medium"
-	var second_leg := medium and segment >= 2
-	var health_scale := 2.15 if second_leg else (1.14 if medium else 1.0)
-	var damage_scale := 1.51 if second_leg else (1.08 if medium else 1.0)
+	var extra_leg := difficulty != "easy" and segment >= 2
+	var third_leg := difficulty == "hard" and segment == 3
+	var health_scale: float = {"medium": [1.14, 2.15, 2.15], "hard": [1.20, 2.27, 2.90]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
+	var damage_scale: float = {"medium": [1.08, 1.51, 1.51], "hard": [1.12, 1.55, 1.70]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	match encounter:
 		"battle":
 			if rng.randi_range(0, 1) == 0:
 				_add_campaign_enemy("glass_hunter", Vector2(615, y), 0, health_scale, damage_scale)
-				if second_leg:
+				if extra_leg:
 					_add_campaign_enemy("glass_skirmisher", Vector2(686, y + 90.0), 16, 1.15, damage_scale)
 			else:
 				_add_campaign_enemy("glass_skirmisher", Vector2(589, y - 63.0), 0, health_scale, damage_scale)
-				var partner := "glass_hunter" if second_leg else "glass_skirmisher"
+				var partner := "glass_hunter" if extra_leg else "glass_skirmisher"
 				_add_campaign_enemy(partner, Vector2(668, y + 68.0), 25, health_scale, damage_scale)
 		"elite":
 			_add_campaign_enemy("glass_overseer", Vector2(644, y), 0, health_scale, damage_scale)
 			_add_campaign_enemy("glass_skirmisher", Vector2(676, y + 108.0), 25, health_scale, damage_scale)
+			if third_leg:
+				_add_campaign_enemy("glass_hunter", Vector2(676, y - 108.0), 47, 1.25, damage_scale)
 		"boss":
-			if boss_id == "prism_warden" or (boss_id.is_empty() and second_leg):
-				_add_campaign_enemy("prism_warden", Vector2(647, y))
+			if boss_id == "tempered_colossus" or (boss_id.is_empty() and third_leg):
+				_add_campaign_enemy("tempered_colossus", Vector2(635, y))
+			elif boss_id == "prism_warden" or (boss_id.is_empty() and extra_leg):
+				_add_campaign_enemy("prism_warden", Vector2(647, y), 0, 1.06 if difficulty == "hard" else 1.0, 1.02 if difficulty == "hard" else 1.0)
 			else:
 				_add_campaign_enemy("glass_twin", Vector2(615, y - 70.0), 0, health_scale, damage_scale)
 				_add_campaign_enemy("ember_twin", Vector2(661, y + 62.0), 0, health_scale, damage_scale)
@@ -308,6 +317,13 @@ func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_sca
 	elif kind == "prism_warden":
 		enemy["prism_warded"] = false
 		enemy["prism_window_until"] = 0
+	elif kind == "tempered_colossus":
+		enemy["colossus_stage"] = 0
+		enemy["colossus_window_until"] = 0
+		enemy["colossus_sweep_radius"] = spec.reach + COLOSSUS_EXTRA_REACH
+		enemy["colossus_first"] = ""
+		enemy["colossus_second"] = ""
+		enemy["colossus_shattered"] = false
 	if kind == "regent":
 		enemy["regent_sealed"] = false
 		enemy["regent_seals_left"] = 0
@@ -593,7 +609,7 @@ func _gravity_strike(actor: Dictionary, target: Dictionary, tile_id: String, rad
 	for enemy in _enemies_in_area(actor, impact, radius):
 		if enemy.id == target.id or collapse:
 			_damage(actor, enemy, TILES[tile_id].damage, tile_id)
-		if collapse and enemy.intent != "":
+		if collapse and enemy.intent != "" and enemy.get("colossus_stage", 0) == 0:
 			enemy.intent = ""
 			enemy.next_attack = tick + TICKS_PER_BEAT * 3
 			_emit("interrupt", "%s interrupts %s." % [TILES[tile_id].label, enemy.name], actor, enemy, tile_id)
@@ -648,6 +664,11 @@ func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: Str
 		_expose_marshal(actor, target)
 	elif target.get("prism_warded", false) and actor.side == "hero" and force > 100.0:
 		_expose_prism(actor, target)
+	elif target.get("colossus_stage", 0) == 1 and actor.side == "hero" and force > 100.0:
+		target.colossus_stage = 2
+		target.colossus_first = actor.id
+		_emit("interrupt", "%s displaces the Colossus. Hit it with a different hero." % actor.name,
+			actor, target, "colossus_displaced")
 
 
 func _teleport(actor: Dictionary, target: Dictionary) -> bool:
@@ -683,6 +704,10 @@ func _run_enemies() -> void:
 	for enemy in units:
 		if enemy.side != "enemy" or enemy.hp <= 0:
 			continue
+		if enemy.get("sprite") == "tempered_colossus" and not enemy.colossus_shattered:
+			if tick > LOOP_TICKS and tick % LOOP_TICKS == 1:
+				_begin_forge_sweep(enemy)
+				continue
 		if enemy.intent != "":
 			if tick >= enemy.intent_tick:
 				_resolve_intent(enemy)
@@ -719,6 +744,11 @@ func _resolve_intent(enemy: Dictionary) -> void:
 	var attack: Dictionary = enemy.get("attack", {})
 	enemy.intent = ""
 	enemy.next_attack = tick + int(attack.get("cooldown", 116 if enemy.id == "scout" else 138))
+	if enemy.get("colossus_stage", 0) > 0:
+		_reset_colossus_sequence(enemy)
+		_emit("intent", "The Tempered Colossus releases its Forge Sweep.", enemy, enemy, "colossus_forge_sweep")
+		_sweep(enemy, attack, COLOSSUS_EXTRA_REACH, 8)
+		return
 	if enemy.get("sprite") == "prism_warden":
 		_prism_beam(enemy, intent, attack)
 		return
@@ -757,6 +787,46 @@ func _sweep(enemy: Dictionary, attack: Dictionary, extra_reach: float, bonus_dam
 			_displace("push", enemy, target, "enemy_attack", target.pos - enemy.pos, attack.push)
 	if affected.is_empty():
 		_emit("miss", "%s's sweep hits no one." % enemy.name, enemy, enemy, "enemy_attack")
+
+
+func _begin_forge_sweep(enemy: Dictionary) -> void:
+	var target := _select(enemy, _attack_target_rule(enemy))
+	if target.is_empty():
+		return
+	enemy.intent = target.id
+	enemy.intent_tick = tick + TICKS_PER_BEAT * COLOSSUS_SWEEP_BEATS - 1
+	enemy.colossus_stage = 1
+	enemy.colossus_window_until = enemy.intent_tick
+	_emit("intent", "Forge Sweep in 9 beats. Push or pull the Colossus, then land hits from two different allies.",
+		enemy, target, "colossus_forging")
+
+
+func _reset_colossus_sequence(enemy: Dictionary) -> void:
+	enemy.colossus_stage = 0
+	enemy.colossus_window_until = 0
+	enemy.colossus_first = ""
+	enemy.colossus_second = ""
+
+
+func _colossus_damage(actor: Dictionary, enemy: Dictionary, amount: int) -> int:
+	match int(enemy.colossus_stage):
+		2:
+			if actor.id != enemy.colossus_first:
+				enemy.colossus_stage = 3
+				enemy.colossus_second = actor.id
+				_emit("interrupt", "%s cracks the Colossus's guard. Hit it with the remaining hero." % actor.name,
+					actor, enemy, "colossus_cracked")
+		3:
+			if actor.id != enemy.colossus_first and actor.id != enemy.colossus_second:
+				_reset_colossus_sequence(enemy)
+				enemy.colossus_shattered = true
+				enemy.guard = 0
+				enemy.intent = ""
+				enemy.next_attack = tick + TICKS_PER_BEAT * 5
+				_emit("interrupt", "%s shatters the guard. The Colossus staggers and its Forge Sweep is canceled." % actor.name,
+					actor, enemy, "colossus_shattered")
+				return amount + 28
+	return maxi(1, roundi(amount * 0.60))
 
 
 func _prism_mark(enemy: Dictionary, ranged_leader: Dictionary) -> String:
@@ -835,6 +905,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 			amount = _prism_damage(actor, target, amount)
 		elif target.get("regent_sealed", false) and actor.side == "hero":
 			amount = _regent_damage(actor, target, amount)
+		elif target.get("colossus_stage", 0) > 0 and actor.side == "hero":
+			amount = _colossus_damage(actor, target, amount)
 	if tile_id == "enemy_attack" and target.get("class") == "bulwark" and target.get("bulwark_loop", -1) != _loop_index():
 		target["bulwark_loop"] = _loop_index()
 		amount = maxi(0, amount - 6)

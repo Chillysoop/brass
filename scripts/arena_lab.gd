@@ -54,6 +54,7 @@ var speed_picker: OptionButton
 var action: Button
 var status: Label
 var log_text: Label
+var colossus_status: Label
 var setup_hint: Label
 var playheads: Array[ColorRect] = []
 var log_lines: Array[String] = []
@@ -167,6 +168,11 @@ func _build() -> void:
 	log_text.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	log_text.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	readout.add_child(log_text)
+	colossus_status = _label("", 15, GOLD)
+	colossus_status.name = "ColossusStatus"
+	colossus_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	colossus_status.hide()
+	stack.add_child(colossus_status)
 	lane_stack = VBoxContainer.new()
 	lane_stack.add_theme_constant_override("separation", 5)
 	stack.add_child(lane_stack)
@@ -311,12 +317,49 @@ func _update_controls() -> void:
 		log_text.tooltip_text = "\n".join(log_lines)
 	else:
 		log_text.tooltip_text = ""
+	_update_colossus_status()
 	for head in playheads:
 		var board := head.get_parent() as Control
 		head.visible = state != "setup"
 		var progress := 0 if elapsed == 0 else 1 + (elapsed - 1) % cycle
 		head.position.x = clampf(board.size.x * float(progress) / cycle, 0, maxf(0, board.size.x - 2))
 		head.size.y = board.size.y
+
+func _update_colossus_status() -> void:
+	colossus_status.hide()
+	if not campaign or not encounter_setup or run.data.get("node", {}).get("boss_id") != "tempered_colossus":
+		return
+	for unit: Dictionary in sim.units:
+		if unit.get("sprite") != "tempered_colossus":
+			continue
+		colossus_status.show()
+		var stage: int = unit.get("colossus_stage", 0)
+		var instruction := ""
+		var color := GOLD
+		match stage:
+			1:
+				instruction = "1 of 3 · Push or pull the Colossus."
+			2, 3:
+				var contributors: Array = [unit.get("colossus_first", ""), unit.get("colossus_second", "")]
+				var eligible := PackedStringArray()
+				for hero: Dictionary in sim.units:
+					if hero.side == "hero" and hero.hp > 0 and hero.id not in contributors:
+						eligible.append(hero.name)
+				instruction = "%d of 3 · Hit with %s." % [stage, " or ".join(eligible)] if not eligible.is_empty() else "%d of 3 · A different hero must land the next hit." % stage
+		if stage > 0:
+			var remaining := maxi(0, int(unit.get("colossus_window_until", unit.get("intent_tick", 0))) - sim.tick)
+			instruction = "Forge Sweep · %s  %.1f beats left" % [instruction, float(remaining) / ArenaSim.TICKS_PER_BEAT]
+			if remaining <= 2 * ArenaSim.TICKS_PER_BEAT:
+				color = RUST
+		elif unit.get("colossus_shattered", false):
+			instruction = "Armor shattered · Forge Sweep canceled."
+			color = TEAL
+		else:
+			instruction = "Forge Sweep · Push or pull, then hit with each of your other two heroes in order."
+		colossus_status.text = instruction
+		colossus_status.tooltip_text = instruction
+		colossus_status.add_theme_color_override("font_color", color)
+		return
 
 func _party_has_tiles() -> bool:
 	for index in range(lanes.size()):

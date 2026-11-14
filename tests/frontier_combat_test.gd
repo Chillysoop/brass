@@ -35,6 +35,7 @@ func _initialize() -> void:
 	_check(_has_event(healer, "heal", "apothecary"), "Apothecary heals on a tile hit")
 	_check_glass_targeting()
 	_check_prism_ward()
+	_check_tempered_colossus()
 	_check_regent_seals()
 	for failure in failures:
 		printerr(failure)
@@ -113,6 +114,46 @@ func _check_regent_seals() -> void:
 		sim._damage(sim.units[lane], regent, 14, "shot")
 	_check(not regent.regent_sealed and _has_event(sim, "interrupt", "regent_shattered"),
 		"Three distinct heroes break the seals and stagger the Regent")
+
+
+func _check_tempered_colossus() -> void:
+	var options := {"location": "glass", "difficulty": "hard", "segment": 3, "encounter": "boss",
+		"boss_id": "tempered_colossus", "seed": 42,
+		"heroes": [{"hero": "warden"}, {"hero": "starshot"}, {"hero": "duelist"}]}
+	var common_lanes := [[{"id": "bash", "start": 2}], [{"id": "shot", "start": 3}], [{"id": "shot", "start": 4}]]
+	var sim := ArenaSim.new()
+	sim.start(common_lanes, "solo", options)
+	var boss: Dictionary = sim.units[3]
+	_check(boss.get("sprite") == "tempered_colossus", "Glass Hard leg three summons the Tempered Colossus")
+	for frame in range(ArenaSim.LOOP_TICKS + 1):
+		sim.step()
+	_check(boss.colossus_stage == 1 and boss.colossus_window_until == 441, "First Forge Sweep telegraphs on loop two")
+	for frame in range(190):
+		sim.step()
+	_check(_has_event(sim, "interrupt", "colossus_displaced") and _has_event(sim, "interrupt", "colossus_cracked"),
+		"Common Bash and Shot produce the opening and crack")
+	_check(boss.colossus_shattered and boss.colossus_stage == 0 and _has_event(sim, "interrupt", "colossus_shattered"),
+		"The third distinct hero shatters the guard")
+	_check(not _has_event(sim, "intent", "colossus_forge_sweep"), "Shatter cancels the attack")
+
+	sim.start([[], [], []], "solo", options)
+	boss = sim.units[3]
+	for frame in range(ArenaSim.LOOP_TICKS + 1):
+		sim.step()
+	sim._damage(sim.units[1], boss, 14, "shot")
+	_check(boss.colossus_stage == 1, "Damage before displacement does not crack the guard")
+	sim._displace("pull", sim.units[0], boss, "pull", Vector2.LEFT, 700.0)
+	sim._damage(sim.units[0], boss, 14, "shot")
+	_check(boss.colossus_stage == 2, "Opening hero cannot also crack the guard")
+	sim._damage(sim.units[1], boss, 14, "shot")
+	sim._damage(sim.units[1], boss, 14, "shot")
+	sim._damage(sim.units[0], boss, 14, "shot")
+	_check(boss.colossus_stage == 3, "Third hit requires the hero who has not contributed")
+	for frame in range(190):
+		sim.step()
+	_check(boss.colossus_stage == 0 and boss.colossus_first == "" and boss.colossus_second == "",
+		"A missed Forge Sweep window resets progress")
+	_check(_has_event(sim, "intent", "colossus_forge_sweep"), "Incomplete sequence releases the attack")
 
 
 func _fight(hero: String, encounter: String, hp: int, tile_ids: Array, relics: Array) -> RefCounted:

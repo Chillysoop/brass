@@ -40,6 +40,12 @@ const GLASS_UPPER_NODE_LABELS := {
 	"event": ["Steam Infirmary", "Lenswright's Bench", "Prism Cache"],
 	"rest": ["Tempering Refuge", "Coolant Cistern"],
 }
+const GLASS_TEMPERING_NODE_LABELS := {
+	"battle": ["Fused Walkway", "Basalt Crucible", "Stress Gallery", "Quench Works", "Glaze Gantry"],
+	"elite": ["Obsidian Wardens", "Temper Guard"],
+	"shop": ["Frit Exchange", "Crucible Quartermaster"],
+	"rest": ["Quench Chamber", "Blackglass Shelter"],
+}
 const EVENT_KINDS := {
 	"Jammed Crane": "salvage", "Loaded Beacon": "ambush", "Relay Auction": "trade",
 	"Cracked Mold": "salvage", "Smelter Relay": "ambush", "Cinder Exchange": "trade",
@@ -49,14 +55,15 @@ const LOCATION_LABELS := {"brass": "Brass Frontier", "glass": "Glass Foundry"}
 const BOSS_LABELS := {
 	"tollkeeper": "The Tollkeeper", "gilded_marshal": "The Gilded Marshal",
 	"iron_regent": "The Iron Regent", "crucible_twins": "The Crucible Twins", "prism_warden": "The Prism Warden",
+	"tempered_colossus": "The Tempered Colossus",
 }
 const BRASS_BOSSES := ["tollkeeper", "gilded_marshal", "iron_regent"]
-const GLASS_BOSSES := ["crucible_twins", "prism_warden"]
+const GLASS_BOSSES := ["crucible_twins", "prism_warden", "tempered_colossus"]
 const SEGMENT_COUNTS := {"easy": 1, "medium": 2, "hard": 3}
 const DEFAULT_PROFILE := {
 	"marks": 0, "medium_unlocked": false, "hard_unlocked": false, "glass_easy_unlocked": false,
 	"brass_hard_cleared": false, "glass_medium_unlocked": false, "glass_hard_unlocked": false,
-	"crown_easy_unlocked": false, "meta": [],
+	"glass_hard_cleared": false, "crown_easy_unlocked": false, "meta": [],
 }
 const NODES_PER_SEGMENT := 7
 const VERSION := 1
@@ -143,6 +150,7 @@ func can_start(difficulty: String, location := "brass") -> bool:
 		match difficulty:
 			"easy": return profile.glass_easy_unlocked
 			"medium": return profile.glass_medium_unlocked
+			"hard": return profile.glass_hard_unlocked
 		return false
 	if location != "brass":
 		return false
@@ -332,7 +340,12 @@ func _resolve_boss() -> void:
 		data.node_notice = "%s fell. Choose a Legendary and draft a %s hero." % [data.node.label, rank]
 		return
 	data.result = "victory"
-	if data.location == "glass" and data.difficulty == "medium":
+	if data.location == "glass" and data.difficulty == "hard":
+		var first_clear := not bool(profile.glass_hard_cleared)
+		_grant_marks(50 if first_clear else 35)
+		profile.glass_hard_cleared = true
+		data.node_notice = "Glass Foundry Hard mastered." if first_clear else "Glass Foundry Hard cleared."
+	elif data.location == "glass" and data.difficulty == "medium":
 		var first_clear := not bool(profile.glass_hard_unlocked)
 		_grant_marks(30 if first_clear else 20)
 		profile.glass_hard_unlocked = true
@@ -578,7 +591,9 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 	_append_boss(layers, bosses[0])
 	var segments: int = SEGMENT_COUNTS[difficulty]
 	for segment in range(1, segments):
-		var gate := "Annealing Hall" if glass else ("Upper Gate Patrol" if segment == 1 else "Regent's Outer Guard")
+		var gate := "Upper Gate Patrol" if segment == 1 else "Regent's Outer Guard"
+		if glass:
+			gate = "Annealing Hall" if segment == 1 else "Tempering Causeway"
 		layers.append([_node("battle", gate, layers.size(), 1)])
 		var leg := [
 			["battle", "event" if segment == 1 else "battle", "battle"],
@@ -589,11 +604,14 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 		]
 		var leg_labels := labels
 		if glass:
-			leg = [
-				["battle", "event", "shop"], ["battle", "elite", "battle"],
-				["event", "shop", "battle"], ["battle", "battle", "battle"], ["rest", "rest", "rest"],
-			]
-			leg_labels = GLASS_UPPER_NODE_LABELS
+			if segment == 1:
+				leg = [
+					["battle", "event", "shop"], ["battle", "elite", "battle"],
+					["event", "shop", "battle"], ["battle", "battle", "battle"], ["rest", "rest", "rest"],
+				]
+				leg_labels = GLASS_UPPER_NODE_LABELS
+			else:
+				leg_labels = GLASS_TEMPERING_NODE_LABELS
 		_append_layers(layers, leg, leg_labels, rng, used_events)
 		_append_boss(layers, bosses[segment])
 	for row in range(layers.size() - 1):
