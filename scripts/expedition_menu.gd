@@ -292,8 +292,6 @@ func _region_hint(id: String) -> String:
 
 func _difficulty_status(difficulty: String, available: bool) -> String:
 	if not available:
-		if _location == "moonwreck" and difficulty == "hard":
-			return "Coming soon"
 		return "Locked"
 	var profile_key := ""
 	match _location:
@@ -304,17 +302,15 @@ func _difficulty_status(difficulty: String, available: bool) -> String:
 		"crown":
 			profile_key = {"easy": "crown_medium_unlocked", "medium": "crown_hard_unlocked", "hard": "crown_hard_cleared"}[difficulty]
 		"moonwreck":
-			profile_key = {"easy": "moonwreck_medium_unlocked", "medium": "moonwreck_hard_unlocked"}.get(difficulty, "")
+			profile_key = {"easy": "moonwreck_medium_unlocked", "medium": "moonwreck_hard_unlocked", "hard": "moonwreck_hard_cleared"}[difficulty]
 	if _run.profile.get(profile_key, false):
-		return "Mastered" if _location in ["glass", "crown"] and difficulty == "hard" else "Cleared"
+		return "Mastered" if _location in ["glass", "crown", "moonwreck"] and difficulty == "hard" else "Cleared"
 	return "Available"
 
 
 func _difficulty_hint(difficulty: String) -> String:
 	if difficulty == "easy":
 		return "Begin a solo expedition."
-	if _location == "moonwreck" and difficulty == "hard" and _run.profile.get("moonwreck_hard_unlocked", false):
-		return "Unlock earned by defeating the Tidekeeper. Available in a future build."
 	if difficulty == "medium":
 		return "Clear %s Easy to unlock." % REGIONS[_location].name
 	return "Clear %s Medium to unlock." % REGIONS[_location].name

@@ -41,6 +41,7 @@ func _initialize() -> void:
 	_check_crown_regent_combo()
 	_check_moonwreck_combat()
 	_check_tidekeeper_combo()
+	_check_admiral_combo()
 	_check_regent_seals()
 	for failure in failures:
 		printerr(failure)
@@ -406,6 +407,76 @@ func _check_tidekeeper_combo() -> void:
 	cancels = sim.trace.filter(func(event: Dictionary) -> bool: return event.tile == "tidekeeper_interrupted")
 	_check(cancels.size() == 1 and cancels[0].amount == 0 and cancels[0].actor == "hero_1",
 		"Last surviving hero can still cancel the Slam with a Bash–Pull sequence")
+
+
+func _check_admiral_combo() -> void:
+	var options := {"location": "moonwreck", "difficulty": "hard", "segment": 3, "encounter": "boss",
+		"boss_id": "drowned_admiral", "seed": 42, "heroes": [{"hero": "warden"}, {"hero": "hexwright"}, {"hero": "bulwark"}]}
+	var sim := ArenaSim.new()
+	var lanes := [[{"id": "bash", "start": 3}], [{"id": "pull", "start": 3}], [{"id": "bash", "start": 5}]]
+	sim.start(lanes, "solo", options)
+	var boss: Dictionary = sim.units[3]
+	for frame in range(22):
+		sim.step()
+	_check(boss.get("sprite") == "drowned_admiral" and boss.admiral_phase == 1 and boss.intent_tick == 63
+		and boss.admiral_targets == ["hero_1", "hero_2", "hero_3"], "Undertow marks the entire party through beat 3")
+	for frame in range(41):
+		sim.step()
+	for hero in [sim.units[0], sim.units[1], sim.units[2]]:
+		var toward_boss: Vector2 = boss.pos - hero.pos
+		var impulse: Vector2 = hero.impulse
+		_check(impulse.dot(toward_boss) > 0.0, "Undertow physically pulls %s toward the Admiral" % hero.id)
+	_check(boss.admiral_phase == 2 and boss.intent_tick == 189, "Undertow Sweep is due at beat 9")
+	for frame in range(42):
+		sim.step()
+	_check(boss.admiral_phase == 3 and boss.admiral_breaker == "hero_1", "Beat-5 Bash breaks the Admiral's anchor")
+	for frame in range(21):
+		sim.step()
+	_check(boss.admiral_phase == 4 and boss.admiral_reverser == "hero_2", "Beat-6 Pull by another hero reverses Undertow")
+	for frame in range(63):
+		sim.step()
+	var cancels := sim.trace.filter(func(event: Dictionary) -> bool: return event.tile == "admiral_interrupted")
+	_check(cancels.size() == 1 and cancels[0].amount == 1 and cancels[0].actor == "hero_3" and cancels[0].tick == 147
+		and boss.admiral_phase == 0 and boss.intent_tick == 0 and boss.admiral_targets.is_empty()
+		and not _has_event(sim, "intent", "admiral_sweep"), "Beat-7 Bash by a third hero cancels the Sweep and clears its marks")
+
+	sim.start([[], [], []], "solo", options)
+	boss = sim.units[3]
+	for frame in range(63):
+		sim.step()
+	var first: Dictionary = sim.units[0]
+	var second: Dictionary = sim.units[1]
+	var third: Dictionary = sim.units[2]
+	sim._displace("pull", first, boss, "pull", Vector2.LEFT, 120.0)
+	_check(boss.admiral_phase == 2, "The first step must be a push")
+	sim._displace("push", first, boss, "bash", Vector2.RIGHT, 120.0)
+	sim._displace("pull", first, boss, "pull", Vector2.LEFT, 120.0)
+	sim._displace("push", second, boss, "bash", Vector2.RIGHT, 120.0)
+	_check(boss.admiral_phase == 3, "Only a different hero's Pull reverses the Undertow while all three heroes live")
+	sim._displace("pull", second, boss, "pull", Vector2.LEFT, 120.0)
+	sim._displace("push", first, boss, "bash", Vector2.RIGHT, 120.0)
+	sim._displace("pull", third, boss, "pull", Vector2.LEFT, 120.0)
+	_check(boss.admiral_phase == 4, "Only a third hero's push cancels the Sweep while all three heroes live")
+	for frame in range(126):
+		sim.step()
+	var sweeps := sim.trace.filter(func(event: Dictionary) -> bool: return event.tile == "admiral_sweep")
+	_check(sweeps.size() == 1 and sweeps[0].amount == 3 and [first.hp, second.hp, third.hp] == [62, 62, 68],
+		"An uncanceled Undertow Sweep hits all three heroes in reach and respects Bulwark's passive")
+
+	options.heroes[2]["hp"] = 0
+	sim.start(lanes, "solo", options)
+	for frame in range(189):
+		sim.step()
+	cancels = sim.trace.filter(func(event: Dictionary) -> bool: return event.tile == "admiral_interrupted")
+	_check(cancels.size() == 1 and cancels[0].amount == 0 and cancels[0].actor == "hero_2",
+		"Two survivors can cancel the Sweep with their first two displacements")
+	options.heroes[1]["hp"] = 0
+	sim.start(lanes, "solo", options)
+	for frame in range(189):
+		sim.step()
+	cancels = sim.trace.filter(func(event: Dictionary) -> bool: return event.tile == "admiral_interrupted")
+	_check(cancels.size() == 1 and cancels[0].amount == 0 and cancels[0].actor == "hero_1",
+		"A lone survivor can cancel the Sweep with one push")
 
 
 func _fight(hero: String, encounter: String, hp: int, tile_ids: Array, relics: Array) -> RefCounted:

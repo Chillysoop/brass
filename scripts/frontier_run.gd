@@ -80,6 +80,12 @@ const MOONWRECK_BREAKWATER_NODE_LABELS := {
 	"event": ["Lifeboat Clinic", "Pearl Diver's Bench", "Storm-Tossed Crate"],
 	"rest": ["Dry Berth", "Lantern Platform"],
 }
+const MOONWRECK_BLACKWATER_NODE_LABELS := {
+	"battle": ["Deadlight Deck", "Bilge Locks", "Sundered Gunwale", "Blackwater Moorings", "Flooded Battery"],
+	"elite": ["Admiral's Boarders", "Keelwatch"],
+	"shop": ["Lantern Tender", "Wreckwright's Stores"],
+	"rest": ["Bulkhead Shelter", "Stillwater Berth"],
+}
 const EVENT_KINDS := {
 	"Jammed Crane": "salvage", "Loaded Beacon": "ambush", "Relay Auction": "trade",
 	"Cracked Mold": "salvage", "Smelter Relay": "ambush", "Cinder Exchange": "trade",
@@ -95,19 +101,20 @@ const BOSS_LABELS := {
 	"iron_regent": "The Iron Regent", "crucible_twins": "The Crucible Twins", "prism_warden": "The Prism Warden",
 	"tempered_colossus": "The Tempered Colossus",
 	"relay_captain": "The Relay Captain", "relay_marshal": "The Relay Marshal", "crown_regent": "The Crown Regent",
-	"wreckmaster": "The Wreckmaster", "tidekeeper": "The Tidekeeper",
+	"wreckmaster": "The Wreckmaster", "tidekeeper": "The Tidekeeper", "drowned_admiral": "The Drowned Admiral",
 }
 const BRASS_BOSSES := ["tollkeeper", "gilded_marshal", "iron_regent"]
 const GLASS_BOSSES := ["crucible_twins", "prism_warden", "tempered_colossus"]
 const CROWN_BOSSES := ["relay_captain", "relay_marshal", "crown_regent"]
-const MOONWRECK_BOSSES := ["wreckmaster", "tidekeeper"]
+const MOONWRECK_BOSSES := ["wreckmaster", "tidekeeper", "drowned_admiral"]
 const SEGMENT_COUNTS := {"easy": 1, "medium": 2, "hard": 3}
 const DEFAULT_PROFILE := {
 	"marks": 0, "medium_unlocked": false, "hard_unlocked": false, "glass_easy_unlocked": false,
 	"brass_hard_cleared": false, "glass_medium_unlocked": false, "glass_hard_unlocked": false,
 	"glass_hard_cleared": false, "crown_easy_unlocked": false, "crown_medium_unlocked": false,
 	"crown_hard_unlocked": false, "crown_hard_cleared": false,
-	"moonwreck_easy_unlocked": false, "moonwreck_medium_unlocked": false, "moonwreck_hard_unlocked": false, "meta": [],
+	"moonwreck_easy_unlocked": false, "moonwreck_medium_unlocked": false,
+	"moonwreck_hard_unlocked": false, "moonwreck_hard_cleared": false, "meta": [],
 }
 const NODES_PER_SEGMENT := 7
 const VERSION := 1
@@ -194,6 +201,7 @@ func can_start(difficulty: String, location := "brass") -> bool:
 		match difficulty:
 			"easy": return profile.moonwreck_easy_unlocked
 			"medium": return profile.moonwreck_medium_unlocked
+			"hard": return profile.moonwreck_hard_unlocked
 		return false
 	if location == "crown":
 		match difficulty:
@@ -395,7 +403,12 @@ func _resolve_boss() -> void:
 		data.node_notice = "%s fell. Choose a Legendary and draft a %s hero." % [data.node.label, rank]
 		return
 	data.result = "victory"
-	if data.location == "moonwreck" and data.difficulty == "medium":
+	if data.location == "moonwreck" and data.difficulty == "hard":
+		var first_clear := not bool(profile.moonwreck_hard_cleared)
+		_grant_marks(50 if first_clear else 35)
+		profile.moonwreck_hard_cleared = true
+		data.node_notice = "Moonwreck Docks Hard mastered." if first_clear else "Moonwreck Docks Hard cleared."
+	elif data.location == "moonwreck" and data.difficulty == "medium":
 		var first_clear := not bool(profile.moonwreck_hard_unlocked)
 		_grant_marks(30 if first_clear else 20)
 		profile.moonwreck_hard_unlocked = true
@@ -732,7 +745,7 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 		elif crown:
 			gate = "High Relay Gate" if segment == 1 else "Crown Causeway"
 		elif moonwreck:
-			gate = "Breakwater Gate"
+			gate = "Breakwater Gate" if segment == 1 else "Blackwater Gate"
 		layers.append([_node("battle", gate, layers.size(), 1)])
 		var leg := [
 			["battle", "event" if segment == 1 else "battle", "battle"],
@@ -761,11 +774,14 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 			else:
 				leg_labels = CROWN_REGENT_NODE_LABELS
 		elif moonwreck:
-			leg = [
-				["battle", "event", "battle"], ["elite", "battle", "shop"],
-				["battle", "event", "elite"], ["shop", "battle", "battle"], ["rest", "rest", "rest"],
-			]
-			leg_labels = MOONWRECK_BREAKWATER_NODE_LABELS
+			if segment == 1:
+				leg = [
+					["battle", "event", "battle"], ["elite", "battle", "shop"],
+					["battle", "event", "elite"], ["shop", "battle", "battle"], ["rest", "rest", "rest"],
+				]
+				leg_labels = MOONWRECK_BREAKWATER_NODE_LABELS
+			else:
+				leg_labels = MOONWRECK_BLACKWATER_NODE_LABELS
 		_append_layers(layers, leg, leg_labels, rng, used_events)
 		_append_boss(layers, bosses[segment])
 	for row in range(layers.size() - 1):

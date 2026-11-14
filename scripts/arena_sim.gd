@@ -23,6 +23,8 @@ const WRECKMASTER_SLAM_TICKS := 3 * TICKS_PER_BEAT
 const WRECKMASTER_SLAM_RADIUS := 126.0
 const TIDEKEEPER_SLAM_BEATS := 5
 const TIDEKEEPER_SLAM_RADIUS := 310.0
+const ADMIRAL_SWEEP_BEATS := 6
+const ADMIRAL_SWEEP_RADIUS := 330.0
 const TARGET_RULES := ["nearest", "farthest", "lowest_hp", "highest_hp"]
 const RANGED_TILES := ["pull", "gravity_hook", "shot", "hook_bash", "graviton", "event_horizon", "meteor_seal"]
 const BASH_TIERS := [
@@ -108,7 +110,10 @@ const CAMPAIGN_ENEMIES := {
 		"spacing": 112.0, "reach": 177.0, "damage": 10, "first": 128, "cooldown": 140, "windup": 37},
 	"tidekeeper": {"name": "The Tidekeeper", "art": "tidekeeper", "hp": 755, "radius": 46.0, "speed": 87.0,
 		"spacing": 108.0, "reach": 191.0, "damage": 22, "first": 136, "cooldown": 119, "windup": 37,
-		"push": 315.0, "displacement": 0.77}
+		"push": 315.0, "displacement": 0.77},
+	"drowned_admiral": {"name": "The Drowned Admiral", "art": "drowned_admiral", "hp": 1150, "radius": 50.0, "speed": 87.0,
+		"spacing": 111.0, "reach": 205.0, "damage": 31, "first": 150, "cooldown": 119, "windup": 39,
+		"push": 345.0, "displacement": 0.73}
 }
 
 const TILES := {
@@ -395,6 +400,12 @@ func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_sca
 		enemy["tidekeeper_slam_radius"] = TIDEKEEPER_SLAM_RADIUS
 		enemy["tidekeeper_targets"] = []
 		enemy["tidekeeper_breaker"] = ""
+	elif kind == "drowned_admiral":
+		enemy["admiral_phase"] = 0
+		enemy["admiral_sweep_radius"] = ADMIRAL_SWEEP_RADIUS
+		enemy["admiral_targets"] = []
+		enemy["admiral_breaker"] = ""
+		enemy["admiral_reverser"] = ""
 	if kind == "regent":
 		enemy["regent_sealed"] = false
 		enemy["regent_seals_left"] = 0
@@ -447,9 +458,11 @@ func _start_crown_regent(y: float) -> void:
 
 
 func _start_moonwreck_encounter(encounter: String, rng: RandomNumberGenerator, y: float, difficulty: String, segment: int, boss_id: String) -> void:
-	var second_leg := difficulty == "medium" and segment >= 2
-	var health_scale := 2.22 if second_leg else 1.0
-	var damage_scale := 1.60 if second_leg else 1.0
+	var hard := difficulty == "hard"
+	var second_leg := (difficulty == "medium" or hard) and segment >= 2
+	var third_leg := hard and segment == 3
+	var health_scale: float = {"medium": [1.0, 2.22, 2.22], "hard": [1.0, 2.34, 2.95]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
+	var damage_scale: float = {"medium": [1.0, 1.60, 1.60], "hard": [1.0, 1.64, 1.80]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	match encounter:
 		"battle":
 			var flank := -1.0 if rng.randi_range(0, 1) == 0 else 1.0
@@ -458,9 +471,15 @@ func _start_moonwreck_encounter(encounter: String, rng: RandomNumberGenerator, y
 		"elite":
 			_add_campaign_enemy("dock_bruiser", Vector2(655, y + 42.0), 0, 1.18 * health_scale, 1.15 * damage_scale)
 			_add_campaign_enemy("dock_winch", Vector2(571, y - 31.0), 0, 1.12 * health_scale, damage_scale)
+			if third_leg:
+				_add_campaign_enemy("dock_recruit", Vector2(650, y - 113.0), 46, 3.1, damage_scale)
 		"boss":
-			var boss := "tidekeeper" if boss_id == "tidekeeper" or (boss_id.is_empty() and second_leg) else "wreckmaster"
-			_add_campaign_enemy(boss, Vector2(595, 265.0))
+			if boss_id == "drowned_admiral" or (boss_id.is_empty() and third_leg):
+				_add_campaign_enemy("drowned_admiral", Vector2(595, 265.0))
+			elif boss_id == "tidekeeper" or (boss_id.is_empty() and second_leg):
+				_add_campaign_enemy("tidekeeper", Vector2(595, 265.0), 0, 1.04 if hard else 1.0)
+			else:
+				_add_campaign_enemy("wreckmaster", Vector2(595, 265.0))
 		_:
 			_add_campaign_enemy("dock_recruit", Vector2(521, y))
 
@@ -862,7 +881,8 @@ func _gravity_strike(actor: Dictionary, target: Dictionary, tile_id: String, rad
 			_damage(actor, enemy, TILES[tile_id].damage, tile_id)
 		if collapse and enemy.intent != "" and enemy.get("colossus_stage", 0) == 0 \
 				and not enemy.get("relay_charge_active", false) and enemy.get("wreckmaster_phase", 0) == 0 \
-				and enemy.get("tidekeeper_phase", 0) == 0 and enemy.get("dock_winch_ally", "") == "":
+				and enemy.get("tidekeeper_phase", 0) == 0 and enemy.get("admiral_phase", 0) == 0 \
+				and enemy.get("dock_winch_ally", "") == "":
 			enemy.intent = ""
 			enemy.next_attack = tick + TICKS_PER_BEAT * 3
 			_emit("interrupt", "%s interrupts %s." % [TILES[tile_id].label, enemy.name], actor, enemy, tile_id)
@@ -931,6 +951,8 @@ func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: Str
 		_emit("interrupt", "%s interrupts Winch Pull." % actor.name, actor, target, "dock_winch_interrupted")
 	elif target.get("tidekeeper_phase", 0) >= 2 and actor.side == "hero" and force > 85.0:
 		_displace_tidekeeper(actor, target, kind)
+	elif target.get("admiral_phase", 0) >= 2 and actor.side == "hero" and force > 85.0:
+		_displace_admiral(actor, target, kind)
 
 
 func _teleport(actor: Dictionary, target: Dictionary) -> bool:
@@ -981,6 +1003,9 @@ func _run_enemies() -> void:
 			continue
 		elif enemy.get("sprite") == "tidekeeper" and tick % LOOP_TICKS == TICKS_PER_BEAT + 1:
 			_begin_tidekeeper_harpoons(enemy)
+			continue
+		elif enemy.get("sprite") == "drowned_admiral" and tick % LOOP_TICKS == TICKS_PER_BEAT + 1:
+			_begin_admiral_undertow(enemy)
 			continue
 		if enemy.intent != "":
 			var winch_ally: String = enemy.get("dock_winch_ally", "")
@@ -1033,6 +1058,9 @@ func _resolve_intent(enemy: Dictionary) -> void:
 		return
 	if enemy.get("tidekeeper_phase", 0) > 0:
 		_resolve_tidekeeper(enemy, intent, attack)
+		return
+	if enemy.get("admiral_phase", 0) > 0:
+		_resolve_admiral(enemy, intent, attack)
 		return
 	if enemy.get("relay_charge_active", false):
 		var marshal: bool = enemy.get("sprite") == "relay_marshal"
@@ -1238,6 +1266,97 @@ func _clear_tidekeeper_intent(enemy: Dictionary) -> void:
 	enemy.tidekeeper_phase = 0
 	enemy.tidekeeper_targets.clear()
 	enemy.tidekeeper_breaker = ""
+	enemy.intent = ""
+	enemy.intent_tick = 0
+
+
+func _begin_admiral_undertow(enemy: Dictionary) -> void:
+	var target := _select(enemy, "nearest")
+	if target.is_empty():
+		return
+	for unit in units:
+		if unit.side == "hero" and unit.hp > 0:
+			enemy.admiral_targets.append(unit.id)
+	enemy.admiral_phase = 1
+	enemy.intent = target.id
+	enemy.intent_tick = tick + WRECKMASTER_HARPOON_TICKS
+	_emit("intent", "Undertow pulls the party in at the end of beat 3.", enemy, target, "admiral_undertow")
+
+
+func _resolve_admiral(enemy: Dictionary, intent: String, attack: Dictionary) -> void:
+	if enemy.admiral_phase == 1:
+		for target_id: String in enemy.admiral_targets:
+			var hero := _find_unit(target_id)
+			if hero.hp <= 0:
+				continue
+			var offset: Vector2 = enemy.pos - hero.pos
+			var travel := maxf(0.0, offset.length() - 84.0)
+			if travel > 0.0:
+				_emit("intent", "The Undertow draws %s in." % hero.name, enemy, hero, "admiral_pull")
+				var force := minf(965.0, sqrt(2.0 * IMPULSE_DECAY * travel))
+				_displace("pull", enemy, hero, "admiral_undertow", offset, force)
+		enemy.admiral_phase = 2
+		enemy.intent = intent
+		enemy.intent_tick = tick + ADMIRAL_SWEEP_BEATS * TICKS_PER_BEAT
+		_emit("intent", "Undertow Sweep in %d beats. Push the Admiral off its anchor." % ADMIRAL_SWEEP_BEATS,
+			enemy, enemy, "admiral_sweep_windup")
+		return
+	_clear_admiral_intent(enemy)
+	var affected := _enemies_in_area(enemy, enemy.pos, enemy.admiral_sweep_radius)
+	_emit("intent", "The Drowned Admiral releases Undertow Sweep.", enemy, enemy, "admiral_sweep", affected.size())
+	for hero in affected:
+		_damage(enemy, hero, attack.damage + 7, "enemy_attack")
+		if hero.hp > 0:
+			_displace("push", enemy, hero, "enemy_attack", hero.pos - enemy.pos, attack.push)
+
+
+func _displace_admiral(actor: Dictionary, enemy: Dictionary, kind: String) -> void:
+	var living: Array[String] = []
+	for unit in units:
+		if unit.side == "hero" and unit.hp > 0:
+			living.append(unit.id)
+	match int(enemy.admiral_phase):
+		2:
+			if kind != "push":
+				return
+			if living.size() == 1:
+				_cancel_admiral_sweep(actor, enemy, false)
+				return
+			enemy.admiral_phase = 3
+			enemy.admiral_breaker = actor.id
+			var follow_up := "Another hero must Pull." if living.size() >= 3 else "The other hero can push or pull to cancel."
+			_emit("interrupt", "%s breaks the anchor. %s" % [actor.name, follow_up], actor, enemy, "admiral_unanchored")
+		3:
+			if actor.id == enemy.admiral_breaker and living.size() > 1:
+				return
+			if living.size() < 3:
+				_cancel_admiral_sweep(actor, enemy, false)
+				return
+			if kind != "pull":
+				return
+			enemy.admiral_phase = 4
+			enemy.admiral_reverser = actor.id
+			_emit("interrupt", "%s reverses the Undertow. The third hero must push." % actor.name,
+				actor, enemy, "admiral_reversed")
+		4:
+			if kind != "push":
+				return
+			var unused := living.filter(func(id: String) -> bool: return id != enemy.admiral_breaker and id != enemy.admiral_reverser)
+			if unused.is_empty() or actor.id in unused:
+				_cancel_admiral_sweep(actor, enemy, living.size() == 3)
+
+
+func _cancel_admiral_sweep(actor: Dictionary, enemy: Dictionary, full_counter: bool) -> void:
+	_clear_admiral_intent(enemy)
+	enemy.next_attack = tick + TICKS_PER_BEAT * 3
+	_emit("interrupt", "%s cancels Undertow Sweep." % actor.name, actor, enemy, "admiral_interrupted", int(full_counter))
+
+
+func _clear_admiral_intent(enemy: Dictionary) -> void:
+	enemy.admiral_phase = 0
+	enemy.admiral_targets.clear()
+	enemy.admiral_breaker = ""
+	enemy.admiral_reverser = ""
 	enemy.intent = ""
 	enemy.intent_tick = 0
 
@@ -1486,6 +1605,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 			target.intent_tick = 0
 		if target.has("tidekeeper_phase"):
 			_clear_tidekeeper_intent(target)
+		if target.has("admiral_phase"):
+			_clear_admiral_intent(target)
 		var relay := target if target.has("relay_link_target") else _find_unit(target.get("relay_shield_source", ""))
 		if not relay.is_empty() and relay.relay_link_target != "":
 			_break_relay_link(relay)

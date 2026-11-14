@@ -34,6 +34,7 @@ const SPRITE_PATHS := {
 	"dock_bruiser": "res://assets/dock_bruiser.png",
 	"wreckmaster": "res://assets/wreckmaster.png",
 	"tidekeeper": "res://assets/tidekeeper.png",
+	"drowned_admiral": "res://assets/drowned_admiral.png",
 	"glass_arena": "res://assets/glass-arena.webp",
 	"crown_arena": "res://assets/crown-arena.webp",
 	"moonwreck_arena": "res://assets/moonwreck-arena.webp",
@@ -52,6 +53,7 @@ const EFFECT_LENGTHS := {
 	"wreckmaster_slam": 0.42,
 	"wreckmaster_slam_miss": 0.55,
 	"tidekeeper_unanchored": 0.55,
+	"admiral_reversed": 0.55,
 }
 const ENCOUNTER_EFFECTS := {
 	"relay_interrupted": "relay_interrupted",
@@ -66,6 +68,17 @@ const ENCOUNTER_EFFECTS := {
 	"tidekeeper_slam": "wreckmaster_slam",
 	"tidekeeper_unanchored": "tidekeeper_unanchored",
 	"tidekeeper_interrupted": "relay_interrupted",
+	"admiral_sweep": "wreckmaster_slam",
+	"admiral_unanchored": "tidekeeper_unanchored",
+	"admiral_reversed": "admiral_reversed",
+	"admiral_interrupted": "relay_interrupted",
+}
+const FLOATING_CUES := {
+	"relay_interrupted": "INTERRUPTED",
+	"relay_link_broken": "LINK BROKEN",
+	"relay_marshal_separated": "SEPARATED",
+	"tidekeeper_unanchored": "UNANCHORED",
+	"admiral_reversed": "UNDERTOW REVERSED",
 }
 
 var units: Array = []
@@ -108,10 +121,10 @@ func present(units_data: Array, events: Array) -> void:
 		var kind: String = ENCOUNTER_EFFECTS.get(tile, event.get("kind", ""))
 		if not EFFECT_LENGTHS.has(kind):
 			continue
-		if kind in ["relay_marshal_separated", "relay_interrupted"]:
+		if kind in ["relay_marshal_separated", "relay_interrupted", "admiral_reversed"]:
 			for index in range(_effects.size() - 1, -1, -1):
 				var older := _effects[index]
-				if older.target == event.target and older.kind in ["relay_link_broken", "relay_marshal_separated", "tidekeeper_unanchored"]:
+				if older.target == event.target and FLOATING_CUES.has(older.kind):
 					_effects.remove_at(index)
 		if kind == "teleport":
 			_positions[event.actor] = event.to
@@ -121,7 +134,7 @@ func present(units_data: Array, events: Array) -> void:
 		if kind == "wreckmaster_slam":
 			for unit: Dictionary in units:
 				if unit.id == event.actor:
-					effect["slam_radius"] = unit.get("tidekeeper_slam_radius", unit.get("wreckmaster_slam_radius", 0.0))
+					effect["slam_radius"] = _dock_sweep_radius(unit)
 					break
 		_effects.append(effect)
 	queue_redraw()
@@ -209,7 +222,7 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		texture = _textures.get("clockwork")
 	var radius := maxf(8.0, float(unit.radius) * unit_scale)
 	var model_height := 132.0
-	if art_key in ["tempered_colossus", "crown_regent", "wreckmaster", "tidekeeper"]:
+	if art_key in ["tempered_colossus", "crown_regent", "wreckmaster", "tidekeeper", "drowned_admiral"]:
 		model_height = 218.0
 	elif art_key in ["marshal", "regent", "glass_twin", "prism_warden", "relay_captain", "relay_marshal"]:
 		model_height = 191.0
@@ -295,12 +308,17 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		_draw_centered(caption, bar.get_center() - Vector2(0.0, 9.0), 12, _relay_link_color(unit))
 	var wreck_phase: int = unit.get("wreckmaster_phase", 0)
 	var tide_phase: int = unit.get("tidekeeper_phase", 0)
-	if tide_phase > 0:
+	var admiral_phase: int = unit.get("admiral_phase", 0)
+	if admiral_phase > 0:
+		var caption: String = ["", "UNDERTOW", "UNDERTOW SWEEP · PUSH", "UNDERTOW SWEEP · PULL", "UNDERTOW SWEEP · FINAL PUSH"][admiral_phase]
+		_draw_centered(caption, bar.get_center() - Vector2(0.0, 9.0), 14, GOLD)
+		if admiral_phase >= 2:
+			_draw_combo_ring(point, radius * 1.45, 3, admiral_phase - 2)
+	elif tide_phase > 0:
 		var caption: String = ["", "TWIN HARPOONS", "BREAKWATER SLAM · PUSH", "BREAKWATER SLAM · FOLLOW UP"][tide_phase]
 		_draw_centered(caption, bar.get_center() - Vector2(0.0, 9.0), 14, GOLD)
 		if tide_phase >= 2:
-			draw_arc(point, radius * 1.45, 0.0, PI - 0.18, 18, HERO_COLOR if tide_phase == 3 else GOLD, 3.0, true)
-			draw_arc(point, radius * 1.45, PI, TAU - 0.18, 18, GOLD if tide_phase == 3 else GOLD.darkened(0.6), 3.0, true)
+			_draw_combo_ring(point, radius * 1.45, 2, tide_phase - 2)
 	elif wreck_phase > 0:
 		_draw_centered("HARPOON" if wreck_phase == 1 else "DECK SLAM", bar.get_center() - Vector2(0.0, 9.0), 14, GOLD)
 	elif not str(unit.get("dock_winch_ally", "")).is_empty():
@@ -320,11 +338,18 @@ func _draw_relay_charge(unit: Dictionary, point: Vector2, radius: float, bar: Re
 		caption = "CROWN CHARGE · BREAK LINKS" if not sources.is_empty() else "CROWN CHARGE · INTERRUPT"
 	_draw_centered(caption, bar.get_center() - Vector2(0.0, 9.0), 14, GOLD)
 	if stage in [1, 2]:
-		draw_arc(point, radius * 1.45, 0.0, PI - 0.18, 18, HERO_COLOR if stage == 2 else GOLD, 3.0, true)
-		draw_arc(point, radius * 1.45, PI, TAU - 0.18, 18, GOLD if stage == 2 else GOLD.darkened(0.6), 3.0, true)
+		_draw_combo_ring(point, radius * 1.45, 2, stage - 1)
 	else:
 		draw_arc(point, radius * 1.45, 0.0, TAU, 28, GOLD, 2.5, true)
 
+func _draw_combo_ring(point: Vector2, radius: float, steps: int, completed: int) -> void:
+	var angle := TAU / float(steps)
+	for index in range(steps):
+		var start := index * angle
+		var color := HERO_COLOR if index < completed else GOLD
+		if index > completed:
+			color = GOLD.darkened(0.6)
+		draw_arc(point, radius, start, start + angle - 0.18, 18, color, 3.0, true)
 
 func _draw_shield_mark(center: Vector2, color: Color) -> void:
 	var points := PackedVector2Array([
@@ -381,8 +406,9 @@ func _draw_intents(field: Rect2) -> void:
 		var start := _project(_positions.get(unit.id, unit.pos), field)
 		var wreck_phase: int = unit.get("wreckmaster_phase", 0)
 		var tide_phase: int = unit.get("tidekeeper_phase", 0)
-		if wreck_phase == 2 or tide_phase >= 2:
-			var slam_radius: float = unit.get("tidekeeper_slam_radius", unit.get("wreckmaster_slam_radius", 0.0))
+		var admiral_phase: int = unit.get("admiral_phase", 0)
+		if wreck_phase == 2 or tide_phase >= 2 or admiral_phase >= 2:
+			var slam_radius := _dock_sweep_radius(unit)
 			_draw_sweep_warning(start, slam_radius * field.size / WORLD_SIZE)
 			continue
 		var sweep_radius: float = unit.get("colossus_sweep_radius", 0.0)
@@ -390,7 +416,11 @@ func _draw_intents(field: Rect2) -> void:
 			_draw_sweep_warning(start, sweep_radius * field.size / WORLD_SIZE)
 			continue
 		var secondary: String = unit.get("prism_secondary", "")
-		var marked: Array = unit.get("tidekeeper_targets", []) if tide_phase == 1 else [target_id, secondary]
+		var marked: Array = [target_id, secondary]
+		if tide_phase == 1:
+			marked = unit.get("tidekeeper_targets", [])
+		elif admiral_phase == 1:
+			marked = unit.get("admiral_targets", [])
 		var winch_ally: String = unit.get("dock_winch_ally", "")
 		if not winch_ally.is_empty():
 			for ally: Dictionary in units:
@@ -405,7 +435,7 @@ func _draw_intents(field: Rect2) -> void:
 				continue
 			var end := _project(_positions.get(target.id, target.pos), field)
 			var warning := ENEMY_COLOR.darkened(0.34)
-			if unit.get("relay_charge_active", false) or wreck_phase == 1 or tide_phase == 1:
+			if unit.get("relay_charge_active", false) or wreck_phase == 1 or tide_phase == 1 or admiral_phase == 1:
 				warning = GOLD
 			elif not winch_ally.is_empty():
 				warning = DOCK_WINCH_COLOR
@@ -413,6 +443,10 @@ func _draw_intents(field: Rect2) -> void:
 				warning = TELEPORT_COLOR.darkened(0.21)
 			draw_dashed_line(start, end, Color(warning, 0.8), 2.0, 6.0)
 			draw_arc(end, 14.0 + sin(_animation_time * 22.0) * 2.0, 0.0, TAU, 24, warning, 2.0, true)
+
+
+func _dock_sweep_radius(unit: Dictionary) -> float:
+	return unit.get("admiral_sweep_radius", unit.get("tidekeeper_slam_radius", unit.get("wreckmaster_slam_radius", 0.0)))
 
 
 func _draw_sweep_warning(center: Vector2, radius: Vector2) -> void:
@@ -447,9 +481,9 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			draw_dashed_line(from_point, to_point, Color(TELEPORT_COLOR, opacity * 0.75), 2.0, 6.0)
 			draw_arc(from_point, 7.0 + progress * 18.0, 0.0, TAU, 24, Color(TELEPORT_COLOR, opacity), 2.0, true)
 			draw_arc(to_point, 8.0 + opacity * 14.0, 0.0, TAU, 24, Color(TELEPORT_COLOR, opacity), 2.0, true)
-		"guard", "defeat_unit", "relay_interrupted", "relay_link_broken", "relay_marshal_separated", "tidekeeper_unanchored":
+		"guard", "defeat_unit", "relay_interrupted", "relay_link_broken", "relay_marshal_separated", "tidekeeper_unanchored", "admiral_reversed":
 			var color := GOLD if kind == "guard" else ENEMY_COLOR
-			if kind in ["relay_interrupted", "relay_link_broken", "relay_marshal_separated", "tidekeeper_unanchored"]:
+			if FLOATING_CUES.has(kind):
 				color = RELAY_SHIELD_COLOR
 			draw_arc(to_point, 7.0 + progress * 24.0, 0.0, TAU, 24, Color(color, opacity), 2.0, true)
 		"wreckmaster_slam":
@@ -460,7 +494,7 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 
 func _draw_feedback(effect: Dictionary, field: Rect2) -> void:
 	var kind: String = effect.kind
-	if kind not in ["hit", "miss", "relay_interrupted", "relay_link_broken", "relay_marshal_separated", "wreckmaster_slam_miss", "tidekeeper_unanchored"]:
+	if kind not in ["hit", "miss", "wreckmaster_slam_miss"] and not FLOATING_CUES.has(kind):
 		return
 	var point := _project(effect.to, field)
 	var progress := float(effect.age) / float(EFFECT_LENGTHS[kind])
@@ -469,8 +503,8 @@ func _draw_feedback(effect: Dictionary, field: Rect2) -> void:
 	var color := WHITE
 	if kind == "wreckmaster_slam_miss":
 		label = "SLAM MISSED"
-	if kind in ["relay_interrupted", "relay_link_broken", "relay_marshal_separated", "tidekeeper_unanchored"]:
-		label = {"relay_interrupted": "INTERRUPTED", "relay_link_broken": "LINK BROKEN", "relay_marshal_separated": "SEPARATED", "tidekeeper_unanchored": "UNANCHORED"}[kind]
+	if FLOATING_CUES.has(kind):
+		label = FLOATING_CUES[kind]
 		color = RELAY_SHIELD_COLOR
 	if kind == "hit":
 		color = GOLD if String(effect.actor).begins_with("hero") else ENEMY_COLOR.lightened(0.19)

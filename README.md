@@ -1,6 +1,6 @@
 # Brass & Aether
 
-The Windows playtest includes Easy, Medium, and Hard expeditions in Brass Frontier, Glass Foundry, and Crown Relay, plus Moonwreck Docks Easy and Medium and a separate practice arena. Open `project.godot` in Godot 4.7.2 and press F5.
+The Windows playtest includes Easy, Medium, and Hard expeditions in Brass Frontier, Glass Foundry, Crown Relay, and Moonwreck Docks, plus a separate practice arena. Open `project.godot` in Godot 4.7.2 and press F5.
 
 ## Playtest
 
@@ -25,6 +25,8 @@ Crown Relay Hard adds the Crown Causeway and a third hero after the Relay Marsha
 Moonwreck Docks Easy is a solo expedition through a wrecked harbor. Winch Operators pull Dock Bruisers into striking range. Target the Operator or push the Bruiser away before it swings. The Wreckmaster pulls your hero in with a harpoon before slamming the area around it. Bash it after the pull to move the slam out of reach. A clear earns the Moonwreck Docks Medium unlock.
 
 Moonwreck Docks Medium adds Breakwater Gate and a second hero after the Wreckmaster. The Tidekeeper harpoons both heroes and winds up Breakwater Slam. Push it with one hero to break the anchor, then push or pull it with the other hero before the slam lands. A clear earns the Moonwreck Docks Hard unlock.
+
+Moonwreck Docks Hard adds Blackwater Gate and a third hero after the Tidekeeper. The Drowned Admiral reels the party in before charging Undertow Sweep. Break its anchor with a push, reverse the undertow with a pull from a second hero, then interrupt the sweep with a push from the third. Stagger the tiles across all three timelines so they finish in that order before the sweep lands.
 
 Brass Frontier Hard has three legs. Recruit after the Tollkeeper and the Gilded Marshal. When the Iron Regent raises its seals, land damaging hits from three different heroes within four beats to break them.
 

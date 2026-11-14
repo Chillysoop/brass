@@ -520,6 +520,12 @@ func _update_dock_status() -> void:
 				if phase > 0:
 					instruction += " · " + time
 					color = RUST if phase >= 2 and remaining <= 2 * ArenaSim.TICKS_PER_BEAT else GOLD
+			"drowned_admiral":
+				var phase: int = unit.get("admiral_phase", 0)
+				instruction = _admiral_instruction(unit, phase)
+				if phase > 0:
+					instruction += " · " + time
+					color = RUST if phase >= 2 and remaining <= 2 * ArenaSim.TICKS_PER_BEAT else GOLD
 			"dock_winch":
 				var ally: String = unit.get("dock_winch_ally", "")
 				if not ally.is_empty():
@@ -538,10 +544,7 @@ func _update_dock_status() -> void:
 func _tidekeeper_instruction(unit: Dictionary, phase: int) -> String:
 	match phase:
 		1:
-			var marked := PackedStringArray()
-			for id: String in unit.get("tidekeeper_targets", []):
-				marked.append(_combatant_name(id, "a marked hero"))
-			return "Twin Harpoons · Pulls %s close" % (" and ".join(marked) if not marked.is_empty() else "the marked heroes")
+			return "Twin Harpoons · Pulls %s close" % _marked_hero_names(unit.get("tidekeeper_targets", []))
 		2:
 			return "Breakwater Slam · 1 of 2 · Push the Tidekeeper"
 		3:
@@ -550,6 +553,36 @@ func _tidekeeper_instruction(unit: Dictionary, phase: int) -> String:
 				eligible = _eligible_hero_names([])
 			return "Breakwater Slam · 2 of 2 · Push or pull with " + " or ".join(eligible)
 	return "Twin Harpoons → Breakwater Slam · Push with one hero, then push or pull with your other hero."
+
+func _admiral_instruction(unit: Dictionary, phase: int) -> String:
+	match phase:
+		1:
+			return "Undertow · Pulls %s close" % _marked_hero_names(unit.get("admiral_targets", []))
+		2:
+			if _eligible_hero_names([]).size() == 1:
+				return "Undertow Sweep · Push the Admiral to interrupt"
+			return "Undertow Sweep · 1 of 3 · Push the Admiral"
+		3:
+			var eligible := _eligible_hero_names([unit.get("admiral_breaker", "")])
+			if eligible.is_empty():
+				eligible = _eligible_hero_names([])
+			if _eligible_hero_names([]).size() < 3:
+				return "Undertow Sweep · Push or pull with " + " or ".join(eligible)
+			return "Undertow Sweep · 2 of 3 · Pull with " + " or ".join(eligible)
+		4:
+			var eligible := _eligible_hero_names([unit.get("admiral_breaker", ""), unit.get("admiral_reverser", "")])
+			if eligible.is_empty():
+				eligible = _eligible_hero_names([])
+			return "Undertow Sweep · 3 of 3 · Push with " + " or ".join(eligible)
+	return "Undertow Sweep · Push, Pull, then push again, using a different hero for each step."
+
+func _marked_hero_names(ids: Array) -> String:
+	var names := PackedStringArray()
+	for id: String in ids:
+		names.append(_combatant_name(id, "a marked hero"))
+	if names.size() > 2:
+		return ", ".join(names.slice(0, names.size() - 1)) + " and " + names[-1]
+	return " and ".join(names) if not names.is_empty() else "the marked heroes"
 
 func _combatant_name(id: String, fallback: String) -> String:
 	for unit: Dictionary in sim.units:

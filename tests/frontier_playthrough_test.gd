@@ -100,6 +100,8 @@ func _run() -> void:
 	_check(game.run.finish_run(), "Close the Moonwreck Docks victory recap.")
 	var moonwreck_medium_fights := _new_route_playthrough(game, "medium", "moonwreck")
 	_check(game.run.finish_run(), "Close the Moonwreck Docks Medium victory recap.")
+	var moonwreck_hard_fights := _new_route_playthrough(game, "hard", "moonwreck")
+	_check(game.run.finish_run(), "Close the Moonwreck Docks Hard victory recap.")
 	var crown_hard_fights := _new_route_playthrough(game, "hard", "crown")
 	_check(game.run.finish_run(), "Close the Crown Relay Hard victory recap.")
 	var glass_hard_fights := _new_route_playthrough(game, "hard", "glass")
@@ -111,8 +113,8 @@ func _run() -> void:
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Playthroughs passed: Brass Easy %d fights (%d HP), Medium %d (%d HP combined), Brass Hard %d, Glass Easy %d, Glass Medium %d, Glass Hard %d, Crown Easy %d, Crown Medium %d, Crown Hard %d, Moonwreck Easy %d, Moonwreck Medium %d." % [
-			battles, easy_hp, medium.fights, medium.hp, hard_fights, glass_fights, glass_medium_fights, glass_hard_fights, crown_fights, crown_medium_fights, crown_hard_fights, moonwreck_fights, moonwreck_medium_fights])
+		print("Playthroughs passed: Brass Easy %d fights (%d HP), Medium %d (%d HP combined), Brass Hard %d, Glass Easy %d, Glass Medium %d, Glass Hard %d, Crown Easy %d, Crown Medium %d, Crown Hard %d, Moonwreck Easy %d, Moonwreck Medium %d, Moonwreck Hard %d." % [
+			battles, easy_hp, medium.fights, medium.hp, hard_fights, glass_fights, glass_medium_fights, glass_hard_fights, crown_fights, crown_medium_fights, crown_hard_fights, moonwreck_fights, moonwreck_medium_fights, moonwreck_hard_fights])
 	game.queue_free()
 	await process_frame
 	quit(0 if failures.is_empty() else 1)
@@ -248,6 +250,7 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 	var crown_medium := location == "crown" and difficulty == "medium"
 	var crown_hard := location == "crown" and difficulty == "hard"
 	var moonwreck_medium := location == "moonwreck" and difficulty == "medium"
+	var moonwreck_hard := location == "moonwreck" and difficulty == "hard"
 	var recruit_checkpoints := 0
 	for step in range(100):
 		match run.data.phase:
@@ -263,8 +266,9 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 			"starter":
 				run.choose_starter("bash")
 			"recruit_starter":
-				run.choose_starter("shot")
-				if glass_hard or crown_medium or crown_hard or moonwreck_medium:
+				var recruit_tile := "bash" if moonwreck_hard and run.data.heroes.size() == 3 else "shot"
+				_check(run.choose_starter(recruit_tile), "Equip the recruited hero.")
+				if glass_hard or crown_medium or crown_hard or moonwreck_medium or moonwreck_hard:
 					var saved := FrontierRun.new()
 					_check(saved.load_save(save_path) and saved.data.segment == run.data.segment
 						and saved.data.heroes == run.data.heroes and saved.loadout.lanes == run.loadout.lanes,
@@ -288,8 +292,14 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 				if final and location == "moonwreck":
 					if moonwreck_medium:
 						_stow_early_hook(game)
+					elif moonwreck_hard:
+						_arrange_hard_combo(game, [
+							{"id": "bash", "start": 2, "target": "nearest"},
+							{"id": "pull", "start": 2, "target": "nearest"},
+							{"id": "bash", "start": 4, "target": "nearest"},
+						], 5)
 					var saved := FrontierRun.new()
-					var boss_id := "tidekeeper" if moonwreck_medium else "wreckmaster"
+					var boss_id: String = {"easy": "wreckmaster", "medium": "tidekeeper", "hard": "drowned_admiral"}[difficulty]
 					_check(saved.load_save(save_path) and saved.encounter().get("boss_id") == boss_id
 						and saved.loadout.lanes == run.loadout.lanes, "Moonwreck Docks must resume its saved boss setup.")
 				if run.data.node.type == "boss":
@@ -342,6 +352,13 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 						return event.tile == "tidekeeper_pull" and event.beat == 3 and event.tick <= ArenaSim.LOOP_TICKS)
 					_check(marked.size() == 2 and marked[0].target != marked[1].target,
 						"The Tidekeeper should reel in both heroes before its first slam.")
+				if final and moonwreck_hard:
+					var opening: Array = game.sim.trace.filter(func(event: Dictionary): return event.tick <= ArenaSim.LOOP_TICKS)
+					var combo: Array = opening.filter(func(event: Dictionary):
+						return event.tile in ["admiral_unanchored", "admiral_reversed", "admiral_interrupted"])
+					_check(combo.map(func(event: Dictionary): return event.tile) ==
+						["admiral_unanchored", "admiral_reversed", "admiral_interrupted"] and combo[-1].amount == 1,
+						"Bash, Pull, and Bash from the three timelines should cancel the first Undertow Sweep.")
 				game._action()
 			"reward":
 				var chosen: String = run.data.offers[0]
@@ -349,7 +366,7 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 					if preferred in run.data.offers:
 						chosen = preferred
 						break
-				if "pull" in run.data.offers and (crown_medium and run.data.node.row == 0
+				if "pull" in run.data.offers and ((crown_medium or moonwreck_hard) and run.data.node.row == 0
 					or crown_hard and run.data.node.row in [0, 4]):
 					chosen = "pull"
 				if not game.run_claim_reward(chosen):
@@ -408,7 +425,11 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 			else:
 				_check(run.profile.glass_hard_unlocked and run.profile.crown_easy_unlocked, "Glass Medium should unlock Glass Hard and Crown Easy.")
 		"hard":
-			if crown_hard:
+			if moonwreck_hard:
+				var saved := FrontierRun.new()
+				_check(recruit_checkpoints == 2 and saved.load_save(save_path) and saved.profile.moonwreck_hard_cleared
+					and saved.data.get("result") == "victory", "Moonwreck Hard should persist both recruits and its first clear.")
+			elif crown_hard:
 				var saved := FrontierRun.new()
 				_check(recruit_checkpoints == 2 and saved.load_save(save_path) and saved.profile.crown_hard_cleared
 					and saved.data.get("result") == "victory", "Crown Hard should persist both recruits and its first clear.")
@@ -503,17 +524,20 @@ func _arrange_crown_combo(game: Control) -> void:
 
 
 func _arrange_crown_hard_combo(game: Control) -> void:
-	var remaining: Array = []
-	for lane: Array in game.lanes + game.storage_rows:
-		remaining.append_array(lane)
-	var combo := [
+	_arrange_hard_combo(game, [
 		{"id": "pull", "start": 0, "target": "relay_left"},
 		{"id": "pull", "start": 1, "target": "relay_right"},
 		{"id": "bash", "start": 2, "target": "relay_regent"},
-	]
+	], 4)
+
+
+func _arrange_hard_combo(game: Control, combo: Array, first_free_beat: int) -> void:
+	var remaining: Array = []
+	for lane: Array in game.lanes + game.storage_rows:
+		remaining.append_array(lane)
 	for tile: Dictionary in combo:
 		var index := remaining.find_custom(func(item: Dictionary): return item.id == tile.id)
-		_check(index >= 0, "Crown Hard must earn both Pull tiles and Bash before the Regent.")
+		_check(index >= 0, "The Hard expedition must earn every combo tile before its final boss.")
 		if index < 0:
 			return
 		remaining.remove_at(index)
@@ -527,7 +551,7 @@ func _arrange_crown_hard_combo(game: Control) -> void:
 		var equipped := false
 		for lane_index in range(game.lanes.size()):
 			var lane: Array = game.lanes[lane_index]
-			for beat in range(4, ArenaSim.BEATS):
+			for beat in range(first_free_beat, ArenaSim.BEATS):
 				if game._can_place(tile, lane_index, beat):
 					tile.start = beat
 					lane.append(tile)
@@ -546,7 +570,7 @@ func _arrange_crown_hard_combo(game: Control) -> void:
 					break
 			if equipped:
 				break
-		_check(equipped, "The Crown Hard test should retain all earned tiles.")
+		_check(equipped, "The Hard combo should fit alongside the rest of the earned tiles.")
 	game._save_loadout()
 
 

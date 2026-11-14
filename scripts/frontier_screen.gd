@@ -60,6 +60,10 @@ const BOSS_BRIEFS := {
 	"tidekeeper": {
 		"portrait": "tidekeeper",
 		"hint": "Twin Harpoons pull both heroes close at the end of beat 3. Before Breakwater Slam strikes at the end of beat 8, push the Tidekeeper with one hero, then push or pull it with the other. If only one hero is standing, they can do both."
+	},
+	"drowned_admiral": {
+		"portrait": "drowned_admiral",
+		"hint": "Undertow draws your party in at the end of beat 3. Before the sweep lands at the end of beat 9, push the Admiral with one hero, pull with another, then push with the third. A smaller surviving party can interrupt in fewer steps."
 	}
 }
 const MAP_ART := {
