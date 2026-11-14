@@ -13,7 +13,7 @@ const FORGE_UNLOCKS := {"blink": "blink_artifice", "shot": "shot_artifice", "gua
 const RELICS := {
 	"pocket_bell": {"label": "Pocket Bell", "description": "Gain guard at the start of each combat loop."},
 	"copper_compass": {"label": "Copper Compass", "description": "Your first push each loop travels farther."},
-	"quartermasters_coin": {"label": "Quartermaster's Coin", "description": "Gain 3 extra gold when you skip a combat tile reward."},
+	"quartermasters_coin": {"label": "Quartermaster's Coin", "description": "Gain 3 extra gold on the first skipped tile reward from each fight."},
 	"trail_ration": {"label": "Trail Ration", "description": "Recover 5 HP after each victory."},
 	"wayfarers_pin": {"label": "Wayfarer's Pin", "description": "Each hero gains 6 guard on their first successful teleport each loop."},
 	"towline_knot": {"label": "Towline Knot", "description": "The first push or pull each loop marks its target. A separate tile that hits it within 2 beats deals 9 bonus damage."},
@@ -497,10 +497,14 @@ func choose_elite_relic(id: String) -> bool:
 				if data.node.type == "elite":
 					guaranteed = _elite_preview_tile(data.node) if reward_lane() >= 0 else _legacy_elite_preview_tile()
 				for index in range(data.offers.size() - 1, -1, -1):
-					if data.offers[index] != guaranteed:
-						data.offers[index] = tile
-						break
-			data.reward_hints = {tile: "Pairs with " + RELICS[id].label}
+					var replaced: String = data.offers[index]
+					if replaced == guaranteed or not reward_hint(replaced).is_empty():
+						continue
+					data.offers[index] = tile
+					break
+			var hints: Dictionary = data.get("reward_hints", {})
+			hints[tile] = "Pairs with " + RELICS[id].label
+			data.reward_hints = hints
 		data.node_notice = "Relic acquired: " + RELICS[id].label
 		save()
 		return true
