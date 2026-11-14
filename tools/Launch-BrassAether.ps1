@@ -12,6 +12,11 @@ $builds = Join-Path $StateDirectory 'builds'
 $marker = Join-Path $StateDirectory 'current-build.txt'
 $activity = Join-Path $StateDirectory 'launcher.log'
 $cache = Join-Path $StateDirectory 'repository.git'
+$installedGodot = Join-Path $StateDirectory 'tools/Godot_v4.7.2-stable_win64.exe'
+$installedTemplate = Join-Path $StateDirectory 'tools/windows_release_x86_64.exe'
+if (-not $PSBoundParameters.ContainsKey('Godot') -and (Test-Path -LiteralPath $installedGodot -PathType Leaf)) {
+    $Godot = $installedGodot
+}
 
 function Invoke-LauncherCommand {
     param([string] $Name, [string] $Program, [string[]] $Arguments, [int] $Seconds)
@@ -71,9 +76,9 @@ function Update-PlayableBuild {
     $env:GCM_INTERACTIVE = 'never'
     $gitOptions = @('--git-dir', $cache)
     $branch = 'refs/remotes/origin/main'
-    $fetch = @('-c', 'http.lowSpeedLimit=1', '-c', 'http.lowSpeedTime=8', 'fetch',
+    $fetch = @('-c', 'http.version=HTTP/1.1', '-c', 'http.lowSpeedLimit=1', '-c', 'http.lowSpeedTime=20', 'fetch',
         '--depth=1', '--no-tags', $Repository, "+refs/heads/main:$branch")
-    $null = Invoke-LauncherCommand 'git-fetch' $git ($gitOptions + $fetch) 14
+    $null = Invoke-LauncherCommand 'git-fetch' $git ($gitOptions + $fetch) 90
     $version = (Invoke-LauncherCommand 'git-version' $git ($gitOptions + @('rev-parse', '--verify', $branch)) 8).Trim()
     if ($version -notmatch '^[0-9a-f]{40}$') { throw 'Git returned an invalid revision.' }
 
@@ -91,6 +96,12 @@ function Update-PlayableBuild {
             $gitArchive = @('archive', '--format=zip', "--output=$archive", $version)
             $null = Invoke-LauncherCommand 'git-archive' $git ($gitOptions + $gitArchive) 20
             Expand-Archive -LiteralPath $archive -DestinationPath $source
+            if (Test-Path -LiteralPath $installedTemplate -PathType Leaf) {
+                $presets = Join-Path $source 'export_presets.cfg'
+                $template = $installedTemplate.Replace('\', '/')
+                $config = (Get-Content -LiteralPath $presets -Raw).Replace('[preset.0.options]', "[preset.0.options]`ncustom_template/release=`"$template`"")
+                [IO.File]::WriteAllText($presets, $config)
+            }
             $importLog = Join-Path $StateDirectory 'godot-import.log'
             $exportLog = Join-Path $StateDirectory 'godot-export.log'
             $smokeLog = Join-Path $StateDirectory 'godot-smoke.log'
