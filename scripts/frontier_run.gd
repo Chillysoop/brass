@@ -8,8 +8,8 @@ const UniversalTileUpgrades = preload("res://scripts/universal_tile_upgrades.gd"
 const HEROES = ArenaSim.HERO_CLASSES
 const BASE_TILES := ["bash", "shot", "slam", "pull", "guard", "blink"]
 const STARTER_RELICS := ["pocket_bell", "copper_compass", "quartermasters_coin"]
-const BUILD_RELICS := ["towline_knot", "bridgeplate", "brass_metronome"]
-const ELITE_RELICS := ["afterimage", "barrage_rack", "siege_fuse"]
+const BUILD_RELICS := ["towline_knot", "bridgeplate", "brass_metronome", "overflow_chalice", "stepped_gear", "mercy_seal"]
+const ELITE_RELICS := ["afterimage", "barrage_rack", "siege_fuse", "switchback_lens", "longshot_prism", "twin_bell"]
 const RELIC_STARTERS := {"towline_knot": "pull", "bridgeplate": "shield_ram"}
 const FORGE_UNLOCKS := {"blink": "blink_artifice", "shot": "shot_artifice", "guard": "guard_artifice"}
 const RELICS := {
@@ -24,6 +24,12 @@ const RELICS := {
 	"afterimage": {"label": "Afterimage", "description": "After a successful Blink, your next damaging tile without movement can strike from where you blinked away."},
 	"barrage_rack": {"label": "Barrage Rack", "description": "Pair hits from separate tiles 2 beats wide or less. Hit the same enemy within 2 beats to strip up to 8 Guard before the second hit."},
 	"siege_fuse": {"label": "Siege Fuse", "description": "Once per loop, your first landed attack at least 4 beats wide pulls nearby enemies toward its target before impact."},
+	"overflow_chalice": {"label": "Overflow Chalice", "description": "When a tile would raise Guard above 28, the living hero missing the most HP heals for the excess. Up to 6 HP per loop."},
+	"stepped_gear": {"label": "Stepped Gear", "description": "Put a 1–2 beat attack directly after a 3+ beat tile in the same loop. The first such hit deals +7 damage each loop."},
+	"mercy_seal": {"label": "Mercy Seal", "description": "A direct tile hit on a foe already at 25% HP or less grants the attacker up to 6 Guard. Once per loop while below the Guard cap."},
+	"switchback_lens": {"label": "Switchback Lens", "description": "Hit a different main target with your next landed attack tile for +10 damage. Once per hero per loop."},
+	"longshot_prism": {"label": "Longshot Prism", "description": "The first direct tile hit from 180 units away or farther deals +11 damage each loop."},
+	"twin_bell": {"label": "Twin Bell", "description": "Two heroes hit the same foe on the same beat. The second hit deals +12 damage once per loop."},
 }
 const META_NODES := {
 	"stout_start": {"label": "Stout Start", "description": "Begin each run with 8% more maximum HP.", "cost": 5, "requires": []},
@@ -283,7 +289,7 @@ func choose_hero(id: String) -> bool:
 	data.hero = id
 	data.heroes.append({"id": id, "hp": data.hp, "max_hp": data.max_hp})
 	data.phase = "relic"
-	var pool := _available_relics()
+	var pool := _classic_relics()
 	var offer_pin := pool.has("wayfarers_pin")
 	pool.erase("wayfarers_pin")
 	data.offers = _sample(pool, 3, int(data.seed), 21)
@@ -529,7 +535,8 @@ func _legacy_elite_preview_tile() -> String:
 
 func _build_elite_relic_offers() -> Array:
 	var salt := _node_salt(181)
-	var order := _sample(ELITE_RELICS, ELITE_RELICS.size(), int(data.seed), salt)
+	var pool := _available_elite_relics()
+	var order := _sample(pool, pool.size(), int(data.seed), salt)
 	var equipped: Array = []
 	for lane_index in range(loadout.lanes.size()):
 		if lane_index < data.heroes.size() and int(data.heroes[lane_index].hp) > 0:
@@ -537,6 +544,11 @@ func _build_elite_relic_offers() -> Array:
 	var offers: Array[Dictionary] = []
 	for id: String in order:
 		offers.append(_elite_relic_offer(id, equipped))
+	if offers.size() < 3:
+		for offer: Dictionary in offers:
+			offer.role = "Elite relic"
+			offer.erase("fit")
+		return offers
 	var fit := 0
 	for index in range(1, offers.size()):
 		if offers[index].fit > offers[fit].fit:
@@ -552,12 +564,12 @@ func _build_elite_relic_offers() -> Array:
 			pivot = index
 	var second: Dictionary = offers.pop_at(pivot)
 	second.role = "Pivot" if second.fit > 0 else "Long-term pivot"
-	offers[0].role = "Wildcard"
-	offers.push_front(second)
-	offers.push_front(first)
-	for offer: Dictionary in offers:
+	var wildcard: Dictionary = offers.front()
+	wildcard.role = "Wildcard"
+	var draft := [first, second, wildcard]
+	for offer: Dictionary in draft:
 		offer.erase("fit")
-	return offers
+	return draft
 
 
 func _elite_relic_offer(id: String, equipped := []) -> Dictionary:
@@ -594,6 +606,39 @@ func _elite_relic_offer(id: String, equipped := []) -> Dictionary:
 			else:
 				fit = 1
 				candidates = ["shockwave", "sundering_slam"]
+		"switchback_lens":
+			for lane: Array in equipped:
+				var attacks := lane.filter(func(tile: Dictionary): return ArenaSim.TILES[tile.id].damage > 0)
+				if attacks.size() >= 2:
+					fit = 1
+					if attacks.any(func(tile: Dictionary): return tile.target != attacks.front().target):
+						fit = 3
+						break
+		"longshot_prism":
+			var ranged := func(tile: String):
+				return ArenaSim.is_ranged_tile(tile) and ArenaSim.TILES[tile].damage > 0 \
+					and ArenaSim.TILES[tile].range >= ArenaSim.LONGSHOT_PRISM_RANGE
+			var equipped_count := _count_matching_tiles(equipped, ranged)
+			if equipped_count > 1:
+				fit = 3
+			elif equipped_count == 1:
+				fit = 2
+			elif _count_matching_tiles(owned, ranged) > 0:
+				fit = 1
+		"twin_bell":
+			var finishing_beats := {}
+			fit = 1
+			for lane: Array in equipped:
+				var attack_beats: Array[int] = []
+				for tile: Dictionary in lane:
+					var spec: Dictionary = ArenaSim.TILES[tile.id]
+					if spec.damage > 0:
+						attack_beats.append(int(tile.start) + int(spec.width))
+				if attack_beats.any(func(beat: int): return finishing_beats.has(beat)):
+					fit = 3
+					break
+				for beat: int in attack_beats:
+					finishing_beats[beat] = true
 	var tile: String = "" if candidates.is_empty() else _sample(candidates, 1, int(data.seed), _node_salt(182 + ELITE_RELICS.find(id)))[0]
 	return {"id": id, "fit": fit, "companion": tile}
 
@@ -641,7 +686,9 @@ func finish_combat(victory: bool, hp: Variant) -> bool:
 				data.elite_relic_offers = _build_elite_relic_offers()
 				data.elite_guaranteed_tile = ClassDecks.signature(data.hero)
 			else:
-				var relic_pool := _available_relics()
+				# Later elites favor elite relics and can still award metaprogression unlocks.
+				var elite_pool := _available_elite_relics()
+				var relic_pool := _available_relics() + elite_pool + elite_pool
 				if not relic_pool.is_empty():
 					var found: String = _sample(relic_pool, 1, int(data.seed), _node_salt(82))[0]
 					data.relics.append(found)
@@ -1550,12 +1597,29 @@ func _normal_pool() -> Array:
 	return pool
 
 
-func _available_relics() -> Array:
+func _classic_relics() -> Array:
 	var pool := STARTER_RELICS.duplicate()
 	if "relic_archive" in profile.meta:
 		pool.append("trail_ration")
 	if "wayfarers_pin" in profile.meta:
 		pool.append("wayfarers_pin")
+	return pool
+
+
+func _available_relics() -> Array:
+	var pool := _classic_relics() + BUILD_RELICS
+	if _has_earned_elite_relic():
+		pool.append_array(_available_elite_relics())
+	for held: String in data.get("relics", []):
+		pool.erase(held)
+	return pool
+
+
+func _available_elite_relics() -> Array:
+	var pool := ELITE_RELICS.duplicate()
+	var living_count: int = data.get("heroes", []).filter(func(hero: Dictionary): return int(hero.hp) > 0).size()
+	if living_count < 2:
+		pool.erase("twin_bell")
 	for held: String in data.get("relics", []):
 		pool.erase(held)
 	return pool

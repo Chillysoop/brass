@@ -75,14 +75,17 @@ func _check_reward_flow() -> void:
 	}
 	var seed_value := 1
 	var drafts := {}
+	var observed := {}
 	var run := FrontierRun.new()
 	run.load_save(save_path)
-	while not cases.is_empty() and seed_value <= 24:
+	while seed_value <= 24:
 		_check(run.start_run(seed_value) and run.choose_hero(run.data.offers[0]), "A new Easy run must reach the relic draft.")
 		var offers := run.build_relic_offers()
 		drafts[str(offers)] = true
 		_check(offers.size() == 3 and offers.filter(func(id): return id in FrontierRun.BUILD_RELICS).size() == 2,
 			"The seeded starter draft must mix two build relics and one classic combat relic.")
+		for id: String in offers:
+			observed[id] = true
 		var restored := FrontierRun.new()
 		_check(restored.load_save(save_path) and offers == restored.build_relic_offers(), "Resuming must preserve the exact relic offers.")
 		var relic := ""
@@ -112,6 +115,8 @@ func _check_reward_flow() -> void:
 		run.abandon_run()
 		seed_value += 1
 	_check(cases.is_empty() and drafts.size() > 1, "Seeds must vary which build relics can begin a run.")
+	_check(["overflow_chalice", "stepped_gear", "mercy_seal"].all(func(id: String): return observed.has(id)),
+		"Each of the new build relics must appear in the seeded starter pool.")
 
 
 func _check_elite_preview(run: FrontierRun) -> void:

@@ -3,7 +3,7 @@ extends SceneTree
 const ArenaScene = preload("res://arena.tscn")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
-const RELIC_IDS := ["afterimage", "barrage_rack", "siege_fuse"]
+const SOLO_RELIC_IDS := ["afterimage", "barrage_rack", "siege_fuse", "switchback_lens", "longshot_prism"]
 const ROLES := ["Fits your build", "Pivot", "Wildcard"]
 
 var failures: Array[String] = []
@@ -16,6 +16,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_check_seeded_draft()
+	_check_party_eligibility()
 	await _check_reward_screen()
 	await _check_review_filter()
 	_check_bounty_and_legacy()
@@ -33,8 +34,10 @@ func _check_seeded_draft() -> void:
 	var run := FrontierRun.new()
 	run.load_save(save_path)
 	var wildcard_roles := {}
+	var observed := {}
 	var same_seed: Array = []
-	for seed_value in range(1, 9):
+	var comparison_seed := 0
+	for seed_value in range(1, 25):
 		if not _start(run, seed_value):
 			return
 		run.loadout.lanes[0].append({"id": "shot", "start": 2, "target": "nearest"})
@@ -45,19 +48,26 @@ func _check_seeded_draft() -> void:
 		var draft: Array = run.elite_relic_offers()
 		_check(draft.map(func(offer: Dictionary): return offer.role) == ROLES,
 			"Every first elite draft must explain fit, pivot, and wildcard.")
-		_check(RELIC_IDS.all(func(id: String): return draft.any(func(offer: Dictionary): return offer.id == id)),
-			"The first elite must offer all three distinct prototype relics.")
 		if draft.size() != 3:
 			return
+		var ids := {}
+		for offer: Dictionary in draft:
+			_check(offer.id in SOLO_RELIC_IDS and not ids.has(offer.id),
+				"A solo draft must contain distinct solo-compatible relics.")
+			if offer.id in ["switchback_lens", "longshot_prism"]:
+				_check(offer.companion.is_empty(), "The new relics let the player choose their own tile pairings.")
+			ids[offer.id] = true
+			observed[offer.id] = true
 		_check(draft[0].id == "barrage_rack" and draft[0].companion.is_empty(),
 			"Two already-equipped short attacks should make Barrage Rack the fit.")
-		_check(draft[1].id in ["afterimage", "siege_fuse"] and not str(draft[1].companion).is_empty(),
-			"The pivot should name an immediately useful companion for this loadout.")
 		wildcard_roles[draft[2].id] = true
-		if seed_value == 1:
+		if comparison_seed == 0 and ids.has("afterimage") and ids.has("siege_fuse"):
+			comparison_seed = seed_value
 			same_seed = draft.duplicate(true)
 	_check(wildcard_roles.size() > 1, "Seeds should change the roles of otherwise equally viable offers.")
-	if not _start(run, 1):
+	_check(observed.size() == SOLO_RELIC_IDS.size(), "The eligible relics must all be reachable across seeded drafts.")
+	_check(comparison_seed != 0, "The companion comparison needs a draft offering both prototype relics.")
+	if comparison_seed == 0 or not _start(run, comparison_seed):
 		return
 	run.loadout.lanes[0].append({"id": "shot", "start": 2, "target": "nearest"})
 	var preview := _reach_elite(run, _elites(run)[0])
@@ -77,6 +87,38 @@ func _check_seeded_draft() -> void:
 		"Two relic picks on the same seed must surface different companion tiles.")
 	if not teleport.is_empty() and not heavy.is_empty():
 		_check_same_seed_battle(run, same_checkpoint, teleport, heavy)
+
+
+func _check_party_eligibility() -> void:
+	var run := FrontierRun.new()
+	run.load_save(save_path)
+	if not _start(run, 42):
+		return
+	var preview := _reach_elite(run, _elites(run)[0])
+	if preview.is_empty():
+		return
+	run.data.heroes.append({"id": "warden", "hp": 100, "max_hp": 100})
+	var sweep := {"id": "sweep", "start": 0, "target": "nearest"}
+	run.loadout.lanes = [[sweep], [sweep.duplicate()]]
+	run.loadout.defaults = ["nearest", "nearest"]
+	_check(run.save(), "Save the two-hero battle before the elite win.")
+	var survivor := FrontierRun.new()
+	_check(survivor.load_save(save_path) and survivor.finish_combat(true, [80, 0]),
+		"Resolve the same elite with one hero down.")
+	_check(not survivor.elite_relic_offers().any(func(offer: Dictionary): return offer.id == "twin_bell"),
+		"A defeated recruit must not make Twin Bell eligible.")
+	_check(run.finish_combat(true, [80, 80]), "Resolve a win with both heroes alive.")
+	var offers: Array = run.elite_relic_offers().duplicate(true)
+	_check(offers.size() == 3 and offers[0].id == "twin_bell" and offers[0].role == "Fits your build",
+		"Matched attack finishing beats across two living heroes should rank Twin Bell as the fit.")
+	var restored := FrontierRun.new()
+	_check(restored.load_save(save_path) and restored.elite_relic_offers() == offers,
+		"The expanded party draft must preserve its exact offers on resume.")
+	var tiles: Array = restored.data.offers.duplicate()
+	_check(restored.choose_elite_relic("twin_bell") and restored.data.offers == tiles,
+		"Selecting Twin Bell should preserve the hero's tile draft.")
+	_check("twin_bell" not in restored._available_relics() and "switchback_lens" in restored._available_relics(),
+		"Shop and event pools should unlock elite relics after the draft without offering held relics.")
 
 
 func _check_same_seed_battle(first: FrontierRun, second: FrontierRun, teleport: String, heavy: String) -> void:

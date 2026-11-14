@@ -69,6 +69,10 @@ const EFFECT_LENGTHS := {
 	"afterimage": 0.44,
 	"barrage_rack": 0.34,
 	"siege_fuse": 0.46,
+	"stepped_gear": 0.32,
+	"twin_bell": 0.46,
+	"switchback_lens": 0.36,
+	"longshot_prism": 0.38,
 	"retreat": 0.30,
 	"mark": 0.36,
 	"mark_spent": 0.32,
@@ -96,7 +100,7 @@ const EFFECT_LENGTHS := {
 	"lance_return_spent": 0.34,
 }
 const MARK_COLOR := Color("#e4adff")
-const ELITE_RELIC_EFFECTS := ["afterimage", "barrage_rack", "siege_fuse"]
+const RELIC_EFFECTS := ["afterimage", "barrage_rack", "siege_fuse", "stepped_gear", "twin_bell", "switchback_lens", "longshot_prism"]
 const ENCOUNTER_EFFECTS := {
 	"relay_interrupted": "relay_interrupted",
 	"relay_link_broken": "relay_link_broken",
@@ -172,7 +176,7 @@ func present(units_data: Array, events: Array, tick := 0) -> void:
 		if tile == "relay_link_broken" and str(event.target).begins_with("crown_regent"):
 			continue
 		var kind: String = ENCOUNTER_EFFECTS.get(tile, event.get("kind", ""))
-		if kind == "relic_proc" and tile in ELITE_RELIC_EFFECTS:
+		if kind == "relic_proc" and tile in RELIC_EFFECTS:
 			kind = tile
 		if not EFFECT_LENGTHS.has(kind):
 			continue
@@ -637,6 +641,22 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			for index in range(6):
 				var angle := index * TAU / 6.0
 				draw_arc(to_point, radius, angle, angle + 0.60, 6, Color(HERO_COLOR, opacity), 2.5, true)
+		"stepped_gear", "twin_bell":
+			var radius := lerpf(11.0, 31.0, progress)
+			var color := Color(GOLD, opacity)
+			draw_arc(to_point, radius, 0.0, TAU, 28, color, 2.0, true)
+			if kind == "twin_bell":
+				draw_arc(to_point, radius + 8.0, 0.0, TAU, 28, color, 2.0, true)
+		"switchback_lens":
+			var radius := lerpf(28.0, 13.0, progress)
+			for index in range(2):
+				var angle := index * PI + progress * 1.7
+				draw_arc(to_point, radius, angle, angle + 1.2, 10, Color(RELAY_SHIELD_COLOR, opacity), 2.5, true)
+		"longshot_prism":
+			var lift := Vector2(0.0, -19.0)
+			var color := Color(TELEPORT_COLOR.lightened(0.18), opacity * opacity)
+			draw_line(from_point + lift, to_point + lift, color, 3.0, true)
+			draw_circle(to_point + lift, lerpf(7.0, 2.0, progress), color, true, -1.0, true)
 		"sweep_push":
 			var radius := lerpf(10.0, 46.0, progress)
 			for index in range(6):

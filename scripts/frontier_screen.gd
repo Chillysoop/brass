@@ -84,6 +84,7 @@ const ENEMY_HINTS := {
 }
 const ELITE_RELIC_TONES := {
 	"afterimage": Color("#c8b7ec"), "barrage_rack": Color("#efbe8a"), "siege_fuse": Color("#9ddbd1"),
+	"twin_bell": Color("#f1cc79"), "switchback_lens": Color("#9dcce7"), "longshot_prism": Color("#d7bcee"),
 }
 
 var _host
@@ -629,7 +630,7 @@ func _elite_relic_draft(offers: Array) -> void:
 	for offer: Dictionary in offers:
 		var id: String = offer.id
 		var spec: Dictionary = FrontierRun.RELICS[id]
-		var tone: Color = ELITE_RELIC_TONES[id]
+		var tone: Color = ELITE_RELIC_TONES.get(id, GOLD)
 		var card := _choice(cards, spec.label, spec.description, "Select", func():
 			selected.id = id
 			advance.disabled = false

@@ -37,6 +37,9 @@ const COLLISION_WINDOW_TICKS := 24
 const BARRAGE_GUARD_BREAK := 8
 const SIEGE_PULL_REACH := 185.0
 const SIEGE_PULL_DISTANCE := 82.0
+const MAX_GUARD := 28
+const OVERFLOW_HEAL_CAP := 6
+const LONGSHOT_PRISM_RANGE := 180.0
 const BOSS_REVIEW_STAGES := {
 	"marshal_plate": "start", "marshal_exposed": "progress", "marshal_shattered": "success",
 	"regent_seals": "start", "regent_seal_struck": "progress", "regent_shattered": "success",
@@ -447,6 +450,9 @@ var _towline_mark: Dictionary = {}
 var _metronome_loop := -1
 var _barrage_hits: Dictionary = {}
 var _siege_loop := -1
+var _spent_timeline_relics: Dictionary = {}
+var _overflow_healed := 0
+var _twin_bell_hits: Dictionary = {}
 var _healed_tiles: Dictionary = {}
 
 
@@ -515,6 +521,9 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 	_metronome_loop = -1
 	_barrage_hits.clear()
 	_siege_loop = -1
+	_spent_timeline_relics.clear()
+	_overflow_healed = 0
+	_twin_bell_hits.clear()
 	_healed_tiles.clear()
 	if not options.is_empty():
 		_start_campaign(options)
@@ -829,6 +838,8 @@ func step() -> Array[Dictionary]:
 			unit.regent_seals_left = 3
 			unit.regent_contributors.clear()
 	if (tick - 1) % LOOP_TICKS == 0:
+		_spent_timeline_relics.clear()
+		_overflow_healed = 0
 		for unit in units:
 			if unit.hp > 0 and _has_relic(unit, "pocket_bell"):
 				_guard(unit, 5, "pocket_bell")
@@ -1106,6 +1117,7 @@ func _relay_support_drive(guard: Dictionary, focus: Dictionary) -> Vector2:
 
 func _activate_lanes() -> void:
 	var current_beat := _beat()
+	_twin_bell_hits.clear()
 	for lane in range(_lanes.size()):
 		var actor: Dictionary = units[lane]
 		for tile in _lanes[lane]:
@@ -2448,10 +2460,13 @@ func _intercept_target(target: Dictionary) -> Dictionary:
 
 
 func _guard(recipient: Dictionary, amount: int, tile_id: String, source: Dictionary = {}, echo := true) -> void:
-	var gain := mini(amount, 28 - recipient.guard)
+	var gain := mini(amount, MAX_GUARD - recipient.guard)
+	var actor := recipient if source.is_empty() else source
 	recipient.guard += gain
+	if amount > gain and tile_id == _activation.get("tile") and actor.id == _activation.get("actor") \
+			and _has_relic(actor, "overflow_chalice"):
+		_heal_guard_overflow(actor, tile_id, amount - gain)
 	if gain > 0:
-		var actor := recipient if source.is_empty() else source
 		_emit("guard", "%s gains %d guard." % [recipient.name, gain], actor, recipient, tile_id, gain)
 		if echo and actor.get("class") == "cantor":
 			var weakest := recipient
@@ -2459,6 +2474,25 @@ func _guard(recipient: Dictionary, amount: int, tile_id: String, source: Diction
 				if ally.side == actor.side and ally.hp > 0 and ally.hp < weakest.hp:
 					weakest = ally
 			_guard(weakest, 3, "cantor", actor, false)
+
+
+func _heal_guard_overflow(actor: Dictionary, tile_id: String, excess: int) -> void:
+	if _overflow_healed >= OVERFLOW_HEAL_CAP:
+		return
+	var recipient := {}
+	var missing := 0
+	for ally: Dictionary in units:
+		if ally.side == actor.side and ally.hp > 0 and ally.max_hp - ally.hp > missing:
+			recipient = ally
+			missing = ally.max_hp - ally.hp
+	if recipient.is_empty():
+		return
+	var healed := mini(mini(excess, missing), OVERFLOW_HEAL_CAP - _overflow_healed)
+	_overflow_healed += healed
+	recipient.hp += healed
+	var effect := "Overflow restored %d HP to %s" % [healed, recipient.name]
+	_emit("heal", effect + ".", actor, recipient, "overflow_chalice", healed)
+	_relic_proc("overflow_chalice", "Overflow Chalice", healed, actor, recipient, TILES[tile_id].label, _activation.beat, effect)
 
 
 func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String) -> void:
@@ -2474,6 +2508,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 			amount += _consume_rune_charge(actor, target, tile_id)
 			amount += _needle_attack_bonus(actor, target, tile_id)
 			amount += _relic_attack_bonus(actor, target)
+			if tile_id == _activation.tile and actor.id == _activation.actor and amount > 0:
+				amount += _timeline_relic_bonus(actor, target, tile_id)
 			_apply_barrage_rack(actor, target, tile_id)
 		if target.get("marshal_plated", false) and actor.side == "hero":
 			amount = _marshal_damage(actor, target, amount)
@@ -2779,6 +2815,62 @@ func _relic_attack_bonus(actor: Dictionary, target: Dictionary) -> int:
 		_metronome_loop = _loop_index()
 		bonus += _relic_proc("brass_metronome", "Brass Metronome", 8, actor, target, "Empty beat before the tile")
 	return bonus
+
+
+func _timeline_relic_bonus(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
+	var bonus := _twin_bell_bonus(actor, target, tile_id)
+	if target.id != _activation.target:
+		return bonus
+	bonus += _stepped_gear_bonus(actor, target, tile_id)
+	bonus += _switchback_lens_bonus(actor, target, tile_id)
+	if _has_relic(actor, "longshot_prism") and not _spent_timeline_relics.has("longshot_prism"):
+		var origin := _attack_origin(actor)
+		var distance := origin.distance_to(target.pos)
+		if distance >= LONGSHOT_PRISM_RANGE:
+			_spent_timeline_relics["longshot_prism"] = true
+			bonus += _relic_proc("longshot_prism", "Longshot Prism", 11, actor, target, "Hit from %d units away" % roundi(distance), 0, "", origin)
+	if _has_relic(actor, "mercy_seal") and not _spent_timeline_relics.has("mercy_seal") \
+			and target.hp * 4 <= target.max_hp and actor.guard < MAX_GUARD:
+		_spent_timeline_relics["mercy_seal"] = true
+		var gained := mini(6, MAX_GUARD - actor.guard)
+		_guard(actor, gained, "mercy_seal", {}, false)
+		_relic_proc("mercy_seal", "Mercy Seal", gained, actor, actor, target.name, 0, "Gained %d Guard" % gained)
+	return bonus
+
+
+func _twin_bell_bonus(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
+	if not _has_relic(actor, "twin_bell") or _spent_timeline_relics.has("twin_bell"):
+		return 0
+	var previous: Dictionary = _twin_bell_hits.get(target.id, {})
+	if previous.is_empty():
+		_twin_bell_hits[target.id] = {"actor": actor.id, "source": "%s's %s" % [actor.name, TILES[tile_id].label]}
+	elif previous.actor != actor.id:
+		_spent_timeline_relics["twin_bell"] = true
+		return _relic_proc("twin_bell", "Twin Bell", 12, actor, target, previous.source, _activation.beat)
+	return 0
+
+
+func _stepped_gear_bonus(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
+	if not _has_relic(actor, "stepped_gear") or _spent_timeline_relics.has("stepped_gear") or TILES[tile_id].width > 2:
+		return 0
+	for preceding: Dictionary in _lanes[_activation.lane]:
+		if preceding.end == _activation.start and TILES[preceding.id].width >= 3:
+			_spent_timeline_relics["stepped_gear"] = true
+			return _relic_proc("stepped_gear", "Stepped Gear", 7, actor, target, TILES[preceding.id].label, preceding.end)
+	return 0
+
+
+func _switchback_lens_bonus(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
+	if not _has_relic(actor, "switchback_lens"):
+		return 0
+	var previous: Dictionary = actor.get("switchback_last_hit", {})
+	if previous.get("order", -1) == _activation.order:
+		return 0
+	actor["switchback_last_hit"] = {"target": target.id, "source": TILES[tile_id].label, "beat": _activation.beat, "order": _activation.order}
+	if previous.is_empty() or previous.target == target.id or actor.get("switchback_loop", -1) == _loop_index():
+		return 0
+	actor["switchback_loop"] = _loop_index()
+	return _relic_proc("switchback_lens", "Switchback Lens", 10, actor, target, previous.source, previous.beat)
 
 
 func _apply_barrage_rack(actor: Dictionary, target: Dictionary, tile_id: String) -> void:
