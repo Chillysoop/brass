@@ -1112,6 +1112,8 @@ func _activate_lanes() -> void:
 				_cast(actor, tile.id, tile.target)
 				if actor.get("class") == "rune_smith" and TILES[tile.id].width >= 3:
 					actor["rune_charged"] = true
+				if _activation.status == "landed":
+					_prime_rune_charge(actor, tile.id)
 				if _activation.status == "landed" and _activation.reason.is_empty():
 					_activation.reason = _activation_result(_activation)
 			_activation = {}
@@ -1364,6 +1366,8 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 			_pull_toward(actor, target, tile_id, _attack_origin(actor), tile.pull)
 		if tile.has("mark_bonus") and not _activation.is_empty():
 			_apply_arsenal_mark(actor, target, tile_id, tile)
+		if tile.has("chorus_mark_bonus") or tile.has("chorus_guard"):
+			_apply_cantor_mark(actor, target, tile_id, tile)
 	if tile.has("cluster_pull_radius"):
 		_cluster_pull(actor, target, tile_id, impact, tile.cluster_pull_radius, tile.cluster_pull_force)
 	if tile.has("sweep_push_radius"):
@@ -1421,6 +1425,20 @@ func _apply_arsenal_mark(actor: Dictionary, target: Dictionary, tile_id: String,
 	if for_ally:
 		message += " Only another hero can spend it."
 	_emit("mark", message, actor, target, tile_id, tile.mark_bonus)
+
+
+func _apply_cantor_mark(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
+	var bonus: int = tile.get("chorus_mark_bonus", 0)
+	var guard: int = tile.get("chorus_guard", 0)
+	var beats: int = tile.get("chorus_mark_beats", tile.get("chorus_guard_beats", 0))
+	target["cantor_mark"] = {
+		"marker": actor.id, "expires": tick + beats * TICKS_PER_BEAT,
+		"bonus": bonus, "guard": guard, "contributors": [],
+	}
+	var message := "%s marks %s for %d beats. %s" % [tile.label, target.name, beats,
+		"The next hit from each of two other heroes gains damage." if bonus > 0
+		else "A hit from another hero grants the party Guard."]
+	_emit("chorus_mark", message, actor, target, tile_id, bonus if bonus > 0 else guard)
 
 
 func _retreat_from(actor: Dictionary, target: Dictionary, tile_id: String, distance: float) -> bool:
@@ -2415,7 +2433,10 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		amount = _class_attack_damage(actor, target, amount)
 		if not _activation.is_empty() and actor.side == "hero" and target.side == "enemy":
 			amount += _consume_arsenal_mark(actor, target, tile_id)
+			amount += _consume_cantor_mark(actor, target, tile_id)
 			amount += _consume_ranged_followup(actor, target, tile_id)
+			amount += _consume_rune_charge(actor, target, tile_id)
+			amount += _needle_attack_bonus(actor, target, tile_id)
 			amount += _relic_attack_bonus(actor, target)
 			_apply_barrage_rack(actor, target, tile_id)
 		if target.get("marshal_plated", false) and actor.side == "hero":
@@ -2459,6 +2480,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 	var details := "%s: %s hits %s for %d%s." % [actor.name, action, target.name, dealt, blocked_text]
 	_emit("hit", details, actor, target, tile_id, dealt, _attack_origin(actor))
 	if target.hp == 0:
+		if not _activation.is_empty() and actor.side == "hero" and target.side == "enemy":
+			_prime_duel_followup(actor, target, tile_id)
 		target.velocity = Vector2.ZERO
 		target.impulse = Vector2.ZERO
 		target.intent = ""
@@ -2512,6 +2535,86 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		_emit("intent", "The Regent raises three seals. Land a hit from each hero within 4 beats to break them.", target, actor, "regent_seals")
 
 
+func _prime_rune_charge(actor: Dictionary, tile_id: String) -> void:
+	var tile: Dictionary = TILES[tile_id]
+	var heavy: int = tile.get("rune_heavy_bonus", 0)
+	var quick: int = tile.get("rune_quick_bonus", 0)
+	if heavy <= 0 and quick <= 0:
+		return
+	var hits: int = tile.get("rune_quick_hits", 1) if quick > 0 else 1
+	var bonus := maxi(heavy, quick)
+	var width := "quick" if quick > 0 else "wide"
+	actor["signature_rune"] = {"quick": quick > 0, "hits": hits, "bonus": bonus, "until": tick + LOOP_TICKS}
+	_emit("rune_charge_ready", "%s charges %d %s hits for +%d damage each." % [actor.name, hits, width, bonus],
+		actor, actor, tile_id, bonus)
+
+
+func _consume_rune_charge(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
+	var charge: Dictionary = actor.get("signature_rune", {})
+	if charge.is_empty():
+		return 0
+	if tick > charge.until:
+		actor.erase("signature_rune")
+		return 0
+	var quick: bool = TILES[tile_id].width <= 2
+	if quick != charge.quick or _activation.get("signature_rune_spent", false):
+		return 0
+	_activation["signature_rune_spent"] = true
+	charge.hits -= 1
+	var bonus: int = charge.bonus
+	if charge.hits <= 0:
+		actor.erase("signature_rune")
+	_emit("rune_charge_spent", "%s's rune adds %d damage." % [actor.name, bonus],
+		actor, target, tile_id, bonus, _attack_origin(actor))
+	return bonus
+
+
+func _needle_attack_bonus(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
+	var bonus := _consume_duel_followup(actor, target, tile_id)
+	if target.id != _activation.target:
+		return bonus
+	var focus: Dictionary = actor.get("needle_focus", {})
+	if target.id != focus.get("target", ""):
+		actor.erase("needle_focus")
+		focus = {}
+	var tile: Dictionary = TILES[tile_id]
+	if tile.get("family", "") != "needle_point":
+		return bonus
+	var gain: int = tile.get("duel_stack_gain", 0)
+	if focus.is_empty():
+		actor["needle_focus"] = {"target": target.id, "bonus": 0}
+	elif gain > 0:
+		focus.bonus = mini(focus.bonus + gain, tile.duel_stack_cap)
+		_emit("duel_stack", "%s's focus adds %d damage against %s." % [actor.name, focus.bonus, target.name],
+			actor, target, tile_id, focus.bonus, _attack_origin(actor))
+		bonus += focus.bonus
+	return bonus
+
+
+func _prime_duel_followup(actor: Dictionary, target: Dictionary, tile_id: String) -> void:
+	var bonus: int = TILES.get(tile_id, {}).get("duel_kill_bonus", 0)
+	if bonus <= 0:
+		return
+	actor["duel_followup"] = {"target": target.id, "bonus": bonus, "until": tick + LOOP_TICKS}
+	_emit("duel_kill_ready", "%s's next hit on another enemy gains %d damage." % [actor.name, bonus],
+		actor, actor, tile_id, bonus)
+
+
+func _consume_duel_followup(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
+	var followup: Dictionary = actor.get("duel_followup", {})
+	if followup.is_empty():
+		return 0
+	if tick > followup.until:
+		actor.erase("duel_followup")
+		return 0
+	if followup.target == target.id:
+		return 0
+	actor.erase("duel_followup")
+	_emit("duel_kill_spent", "%s carries %d bonus damage into the next attack." % [actor.name, followup.bonus],
+		actor, target, tile_id, followup.bonus, _attack_origin(actor))
+	return followup.bonus
+
+
 func _consume_ranged_followup(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
 	var followup: Dictionary = actor.get("ranged_followup", {})
 	if followup.is_empty():
@@ -2543,6 +2646,29 @@ func _consume_arsenal_mark(actor: Dictionary, target: Dictionary, tile_id: Strin
 			actor, target, tile_id, mark.bonus)
 		return mark.bonus
 	return 0
+
+
+func _consume_cantor_mark(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
+	var mark: Dictionary = target.get("cantor_mark", {})
+	if mark.is_empty():
+		return 0
+	if mark.expires < tick:
+		target.erase("cantor_mark")
+		return 0
+	if actor.id == mark.marker or actor.id in mark.contributors:
+		return 0
+	if mark.guard > 0:
+		target.erase("cantor_mark")
+		_guard_allies(actor, tile_id, mark.guard)
+		_emit("chorus_guard", "The mark on %s grants each living hero up to %d Guard." % [target.name, mark.guard],
+			actor, target, tile_id, mark.guard)
+		return 0
+	mark.contributors.append(actor.id)
+	if mark.contributors.size() == 2:
+		target.erase("cantor_mark")
+	_emit("chorus_mark_spent", "The mark on %s adds %d damage to %s's hit." % [target.name, mark.bonus, actor.name],
+		actor, target, tile_id, mark.bonus)
+	return mark.bonus
 
 
 func _relic_attack_bonus(actor: Dictionary, target: Dictionary) -> int:
@@ -2831,7 +2957,9 @@ func _emit(kind: String, message: String, actor: Dictionary = {}, target: Dictio
 					_activation.get_or_add("effect_details", []).append(message)
 			"heal", "retreat", "charge", "mark", "mark_spent", "guard_break", "guard_spent", "cluster_pull":
 				_activation.get_or_add("effect_details", []).append(message)
-			"ranged_followup_ready", "ranged_followup_spent", "sweep_push":
+			"ranged_followup_ready", "ranged_followup_spent", "sweep_push", "chorus_mark", "chorus_mark_spent", "chorus_guard":
+				_activation.get_or_add("effect_details", []).append(message)
+			"rune_charge_ready", "rune_charge_spent", "duel_stack", "duel_kill_ready", "duel_kill_spent":
 				_activation.get_or_add("effect_details", []).append(message)
 	if kind in ["intent", "interrupt", "miss"] and BOSS_REVIEW_STAGES.has(tile_id):
 		_review_boss_event(BOSS_REVIEW_STAGES[tile_id], tile_id, message, actor, target, kind)

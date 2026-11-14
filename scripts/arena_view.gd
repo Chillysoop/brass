@@ -79,6 +79,14 @@ const EFFECT_LENGTHS := {
 	"ranged_followup_spent": 0.26,
 	"sweep_push": 0.42,
 	"hammer_collision": 0.30,
+	"chorus_mark": 0.42,
+	"chorus_mark_spent": 0.36,
+	"chorus_guard": 0.42,
+	"rune_charge_ready": 0.45,
+	"rune_charge_spent": 0.33,
+	"duel_stack": 0.24,
+	"duel_kill_ready": 0.42,
+	"duel_kill_spent": 0.30,
 }
 const MARK_COLOR := Color("#e4adff")
 const ELITE_RELIC_EFFECTS := ["afterimage", "barrage_rack", "siege_fuse"]
@@ -573,11 +581,29 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 		"ranged_followup_spent":
 			var lift := Vector2(0.0, -19.0)
 			draw_line(from_point + lift, to_point + lift, Color(TELEPORT_COLOR, opacity), 3.0, true)
+		"rune_charge_ready", "rune_charge_spent":
+			var radius := lerpf(10.0, 24.0, progress)
+			var color := HERO_COLOR if kind == "rune_charge_ready" else GOLD
+			for index in range(4):
+				var angle := index * TAU / 4.0
+				draw_arc(to_point, radius, angle, angle + 0.8, 6, Color(color, opacity), 2.0, true)
+		"duel_stack", "duel_kill_ready", "duel_kill_spent":
+			var center := to_point - Vector2(0.0, 16.0)
+			var spread := lerpf(5.0, 13.0, progress)
+			var color := WHITE if kind == "duel_stack" else GOLD
+			draw_line(center + Vector2(-spread, spread), center + Vector2(spread, -spread), Color(color, opacity), 2.3, true)
 		"mark", "mark_spent":
 			var radius := lerpf(26.0, 12.0, progress) if kind == "mark" else lerpf(12.0, 28.0, progress)
 			for index in range(4):
 				var angle := index * TAU / 4.0
 				draw_arc(to_point, radius, angle, angle + 0.65, 7, Color(MARK_COLOR, opacity), 2.0, true)
+		"chorus_mark", "chorus_mark_spent", "chorus_guard":
+			var contracting := kind == "chorus_mark"
+			var radius := lerpf(27.0, 13.0, progress) if contracting else lerpf(11.0, 36.0, progress)
+			var color := HERO_COLOR if kind == "chorus_guard" else MARK_COLOR
+			for index in range(3):
+				var angle := index * TAU / 3.0
+				draw_arc(to_point, radius, angle, angle + 1.1, 10, Color(color, opacity), 2.5, true)
 		"afterimage":
 			var lift := Vector2(0.0, -19.0)
 			var shimmer := Color(TELEPORT_COLOR.lightened(0.15), opacity)

@@ -28,7 +28,7 @@ Fresh expeditions can draft moves such as one-beat strikes, shots that create di
 
 Your first elite victory offers a relic draft before the tile rewards, which include each hero's signature Uncommon. Picking a relic can add a compatible tile to that reward. **Afterimage** lets an attack reach from the spot you blinked away from. **Barrage Rack** strips Guard on a quick follow-up against the same enemy. **Siege Fuse** pulls enemies together before a heavy attack. Battle Review records the tile and beat that triggered each effect.
 
-Warden, Hexwright, Starshot, Wayfarer, Breaker, and Apothecary have signature choices at Rare, Epic, and Legendary. Later elite wins can offer those heroes their signature tile or one rarity above their best owned copy, up to Epic. Try the choices in **Arena Practice → Combat tiles → Signature upgrades**.
+Nine classes have signature choices at Rare, Epic, and Legendary, including Rune Smith, Duelist, and Cantor. Later elite wins can offer those heroes their signature tile or one rarity above their best owned copy, up to Epic. Try the choices in **Arena Practice → Combat tiles → Signature upgrades**.
 
 Seeded battle and elite formations can include a Rivet Bombardier, Kiln Duelist, Relay Mender, or Dock Corsair. The encounter preview shows who you will face.
 

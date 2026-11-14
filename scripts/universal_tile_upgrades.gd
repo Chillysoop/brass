@@ -93,6 +93,52 @@ const AUTHORED_SIGNATURES := {
 			{"label": "Mercy Rain", "support": "party", "party_heal": true, "guard": 10, "heal": 15},
 		],
 	},
+	"runic_anvil": {
+		"power": [
+			{"label": "Weight Rune", "damage": 34, "range": 170.0, "guard_break": 12, "rune_heavy_bonus": 10},
+			{"label": "Siege Rune", "damage": 38, "range": 180.0, "guard_break": 14, "rune_heavy_bonus": 14},
+			{"label": "Titan Rune", "damage": 42, "range": 190.0, "guard_break": 16, "rune_heavy_bonus": 19},
+		],
+		"technique": [
+			{"label": "Spark Anvil", "damage": 31, "range": 170.0, "splash_damage": 15,
+				"rune_quick_bonus": 4, "rune_quick_hits": 2, "icon": "forge"},
+			{"label": "Ember Anvil", "damage": 34, "range": 175.0, "splash_damage": 17,
+				"rune_quick_bonus": 5, "rune_quick_hits": 3, "icon": "forge"},
+			{"label": "Star Anvil", "damage": 37, "range": 185.0, "splash_damage": 19,
+				"rune_quick_bonus": 6, "rune_quick_hits": 3, "icon": "forge"},
+		],
+	},
+	"needle_point": {
+		"power": [
+			{"label": "Needle Lock", "short_label": "Lock", "damage": 8, "duel_stack_gain": 3, "duel_stack_cap": 9},
+			{"label": "Piercing Rhythm", "short_label": "Rhythm", "damage": 9, "range": 130.0,
+				"duel_stack_gain": 4, "duel_stack_cap": 12},
+			{"label": "Master's Point", "short_label": "Point", "damage": 10, "range": 135.0,
+				"duel_stack_gain": 5, "duel_stack_cap": 15},
+		],
+		"technique": [
+			{"label": "Passing Cut", "short_label": "Passing", "damage": 8, "low_hp_bonus": 6, "duel_kill_bonus": 8},
+			{"label": "Victor's Step", "short_label": "Victor", "damage": 9, "range": 130.0, "low_hp_bonus": 7,
+				"duel_kill_bonus": 11},
+			{"label": "Finishing Dance", "short_label": "Dance", "damage": 10, "range": 135.0, "low_hp_bonus": 8,
+				"duel_kill_bonus": 14},
+		],
+	},
+	"chorus_bolt": {
+		"power": [
+			{"label": "Battle Chorus", "damage": 15, "range": 465.0, "guard": 7, "chorus_mark_bonus": 11, "chorus_mark_beats": 4},
+			{"label": "War Choir", "damage": 18, "range": 485.0, "guard": 8, "chorus_mark_bonus": 14, "chorus_mark_beats": 5},
+			{"label": "Grand Refrain", "damage": 21, "range": 510.0, "guard": 10, "chorus_mark_bonus": 17, "chorus_mark_beats": 6},
+		],
+		"technique": [
+			{"label": "Ward Chime", "damage": 14, "range": 465.0, "guard": 8,
+				"chorus_guard": 5, "chorus_guard_beats": 4, "icon": "guard"},
+			{"label": "Shield Hymn", "damage": 16, "range": 485.0, "guard": 10,
+				"chorus_guard": 7, "chorus_guard_beats": 5, "icon": "guard"},
+			{"label": "Sanctuary Song", "damage": 19, "range": 510.0, "guard": 12,
+				"chorus_guard": 9, "chorus_guard_beats": 6, "icon": "guard"},
+		],
+	},
 }
 
 
@@ -132,7 +178,7 @@ static func _upgrade(id: String, base: Dictionary, tier: int, ranks: int, techni
 		var choice := "technique" if technique else "power"
 		if id == "rampart_counter" and not technique:
 			tile.erase("guard_bonus")
-		if (id == "horizon_round" and not technique) or id == "ghost_volley":
+		if (id == "horizon_round" and not technique) or id in ["ghost_volley", "chorus_bolt"]:
 			tile.erase("mark_bonus")
 			tile.erase("mark_beats")
 		if id == "ghost_volley" and not technique:
@@ -221,6 +267,22 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 		if tile.has("mark_bonus"):
 			var follow_up := "The next hit from another hero" if tile.get("ally_only_mark", false) else "The next hit"
 			lines.append("%s on the target within %d beats deals %d extra damage." % [follow_up, tile.mark_beats, tile.mark_bonus])
+		if tile.has("rune_heavy_bonus"):
+			lines.append("On hit, empower your next attack tile at least 3 beats wide within 12 beats. Its first target takes %d extra damage." % tile.rune_heavy_bonus)
+		if tile.has("rune_quick_bonus"):
+			lines.append("On hit, empower your next %d attack tiles 1–2 beats wide within 12 beats. Each deals %d extra damage to its first target." % [
+				tile.rune_quick_hits, tile.rune_quick_bonus])
+		if tile.has("duel_stack_gain"):
+			lines.append("Repeat Needle Point hits on the same enemy build %d bonus damage per repeat, up to %d. Hitting another enemy resets the bonus." % [
+				tile.duel_stack_gain, tile.duel_stack_cap])
+		if tile.has("duel_kill_bonus"):
+			lines.append("On kill, your next hit on another enemy within 12 beats deals %d extra damage." % tile.duel_kill_bonus)
+		if tile.has("chorus_mark_bonus"):
+			lines.append("Mark the target for %d beats. Up to two other heroes each deal %d extra damage on their first hit against it." % [
+				tile.chorus_mark_beats, tile.chorus_mark_bonus])
+		if tile.has("chorus_guard"):
+			lines.append("Mark the target for %d beats. The next hit on it from another hero gives all living heroes %d Guard." % [
+				tile.chorus_guard_beats, tile.chorus_guard])
 	if tile.has("ally_guard"):
 		lines.append("On hit, give %d Guard to the living ally with the lowest HP. Gain it yourself if no ally is alive." % tile.ally_guard)
 	if tile.has("guard"):

@@ -103,7 +103,8 @@ func _check_class_decks() -> void:
 
 
 func _check_signature_elite_progression() -> void:
-	for pairing in [["warden", "starshot"], ["breaker", "wayfarer"], ["apothecary", "hexwright"]]:
+	for pairing in [["warden", "starshot"], ["breaker", "wayfarer"], ["apothecary", "hexwright"],
+		["rune_smith", "duelist"], ["cantor", "rune_smith"]]:
 		_check_signature_elite_pair(pairing[0], pairing[1])
 
 
