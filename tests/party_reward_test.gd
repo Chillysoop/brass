@@ -217,8 +217,11 @@ func _check_medium_rewards(game: Control) -> void:
 	_check(_reward_header_has(game.frontier_screen, "RewardHero", FrontierRun.HEROES[lead].label)
 		and _reward_header_has(game.frontier_screen, "RewardProgress", "1"),
 		"The first reward screen identifies the lead hero and pick position.")
+	_check_reward_tile_identity(game.frontier_screen, first_offers, lead)
 	var first_tile: String = first_offers[0]
-	await _claim_from_screen(game.frontier_screen, first_tile)
+	await _click(game.frontier_screen, "RewardTile_" + first_tile)
+	_check_reward_tile_identity(game.frontier_screen, [first_tile], lead)
+	await _click(game.frontier_screen, "Continue")
 	_check(run.data.phase == "reward" and run.reward_position() == 1 and run.reward_lane() == 1
 		and run.loadout.lanes[0].size() == 1 and run.loadout.lanes[0][0].id == first_tile
 		and run.loadout.lanes[1].is_empty(), "Claiming the lead's tile equips it in their own lane and advances to the recruit.")
@@ -235,6 +238,7 @@ func _check_medium_rewards(game: Control) -> void:
 	_check(_reward_header_has(game.frontier_screen, "RewardHero", FrontierRun.HEROES[recruit].label)
 		and _reward_header_has(game.frontier_screen, "RewardProgress", "2"),
 		"The resumed screen identifies the recruit and second pick.")
+	_check_reward_tile_identity(game.frontier_screen, second_offers, recruit)
 	var second_tile: String = second_offers[0]
 	await _claim_from_screen(game.frontier_screen, second_tile)
 	_check(run.data.phase == "map" and run.reward_lane() == -1 and run.loadout.lanes[1].size() == 1
@@ -315,6 +319,22 @@ func _enter_boss(run: FrontierRun, final: bool) -> void:
 func _reward_header_has(page: Control, node_name: String, copy: String) -> bool:
 	var label := page.find_child(node_name, true, false) as Label
 	return label != null and label.is_visible_in_tree() and copy in label.text
+
+
+func _check_reward_tile_identity(page: Control, offers: Array, hero: String) -> void:
+	for id: String in offers:
+		var select := page.find_child("RewardTile_" + id, true, false) as Button
+		if select == null:
+			_check(false, "Expected a reward card for " + id)
+			continue
+		var card := select.get_parent()
+		var owner := card.find_child("TileHeroBadge", true, false) as Control
+		var rarity := card.find_child("TileRarityBadge", true, false) as Label
+		var spec: Dictionary = ArenaSim.TILES[id]
+		_check(owner != null and owner.is_visible_in_tree() and owner.get_meta("hero_class", "") == hero
+			and rarity != null and rarity.is_visible_in_tree() and rarity.get_meta("rarity", "") == spec.rarity
+			and rarity.text.begins_with(str(spec.rarity).capitalize()),
+			"Reward tile %s should show its rarity and recipient %s." % [id, hero])
 
 
 func _descendant_buttons(node: Node) -> Array[String]:

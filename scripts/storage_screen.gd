@@ -5,7 +5,7 @@ const TilePacking = preload("res://scripts/tile_packing.gd")
 
 const COLUMNS := TilePacking.STORAGE_COLUMNS
 const ROWS := TilePacking.STORAGE_ROWS
-const TILE_HEIGHT := 36.0
+const TILE_HEIGHT := 42.0
 const COMBINE_HEIGHT := 29.0
 const INK := Color("#101820")
 const PANEL := Color("#192732")
@@ -177,17 +177,55 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 	var caption: String = tile.get("short_label", name)
 	var width: int = tile.width
 	var damage := int(tile.get("damage", 0))
-	var card := _button("%s · %d" % [caption, damage] if damage > 0 else caption, func(): _host.storage_pick(row_index, item))
+	var card := _button(caption, func(): _host.storage_pick(row_index, item))
+	card.name = "StoredTile_%s_%d_%d" % [item.id, row_index, item.start]
+	card.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	GameIcons.decorate(card, GameIcons.tile(item.id, tile), 15 if width == 1 else 22)
 	if width == 1:
 		card.add_theme_constant_override("h_separation", 3)
 		card.add_theme_font_size_override("font_size", 13)
 	card.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	card.tooltip_text = "%s · %s\n%s" % [name, GameIcons.tile_stats(tile), tile.get("description", "")]
-	card.add_theme_stylebox_override("normal", _box(SELECTED if chosen else STORED, GOLD if chosen else TEAL))
-	card.add_theme_stylebox_override("hover", _box(STORED.lightened(0.16), GOLD))
-	card.add_theme_stylebox_override("pressed", _box(SELECTED, GOLD))
+	var origin := GameIcons.tile_origin(item.id, tile)
+	var ownership := "Shared storage"
+	if not origin.is_empty():
+		ownership += " · %s signature" % GameIcons.hero_label(origin)
+	card.tooltip_text = "%s · %s · %s\n%s\n%s" % [name, GameIcons.rarity_name(tile), GameIcons.tile_stats(tile),
+		ownership, tile.get("description", "")]
+	var rarity := GameIcons.rarity(tile)
+	for mode: String in ["normal", "hover", "pressed"]:
+		var fill := STORED.lightened(0.16) if mode == "hover" else STORED
+		if chosen or mode == "pressed":
+			fill = SELECTED
+		var box := _box(fill, rarity)
+		box.border_width_top = 3
+		box.content_margin_top = 16
+		box.content_margin_bottom = 2
+		if width == 1:
+			box.content_margin_left = 4
+			box.content_margin_right = 4
+		if damage > 0:
+			box.content_margin_right = 25
+		card.add_theme_stylebox_override(mode, box)
 	_span(row, card, int(item.start), width)
+	var rarity_badge := GameIcons.rarity_badge(tile, true)
+	card.add_child(rarity_badge)
+	rarity_badge.position = Vector2(6, 3)
+	if not origin.is_empty():
+		var hero_badge := GameIcons.hero_badge(origin)
+		card.add_child(hero_badge)
+		hero_badge.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 4)
+		hero_badge.offset_top = 3
+	if damage > 0:
+		var amount := _label(str(damage), 12, CREAM)
+		amount.name = "TileDamage"
+		amount.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		card.add_child(amount)
+		amount.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+		amount.offset_left = -26
+		amount.offset_right = -6
+		amount.offset_top = -21
+		amount.offset_bottom = -4
 	_keep_cell_focus(card, row_index, item.start)
 	_drop_target(card, row, row_index, tiles, payload)
 
@@ -255,7 +293,7 @@ func _drop_target(control: Control, row: Control, row_index: int, tiles: Array, 
 		get_data = func(point: Vector2):
 			var tile: Dictionary = _host.tile_spec(payload.id)
 			var preview := Control.new()
-			var caption := _label(tile.label, 16, GOLD)
+			var caption := _label(tile.label, 16, GameIcons.rarity(tile))
 			caption.position = Vector2(13, -32)
 			preview.add_child(caption)
 			var dragged := payload.duplicate()

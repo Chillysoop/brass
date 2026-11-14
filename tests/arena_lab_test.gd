@@ -4,6 +4,7 @@ const ArenaScene = preload("res://arena.tscn")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
+const GameIcons = preload("res://scripts/game_icons.gd")
 
 var failures: Array[String] = []
 
@@ -49,6 +50,7 @@ func _run() -> void:
 	_check(lab.lanes[1].size() == 4, "Dragging the palette tile to an open span should place it.")
 	await _check_nudge(lab)
 	await _check_practice_arsenal(lab)
+	await _check_tile_identity(lab)
 	await _check_target_icons(lab)
 	_check_enemy_windup(lab)
 	lab._load_fixture("duo")
@@ -129,6 +131,9 @@ func _check_practice_arsenal(lab: Control) -> void:
 	await process_frame
 	_check(lab.tile_cards[0].has(0) and lab.tile_cards[0][0].get_meta("tile").id == "jab",
 		"The one-beat tile should equip through the picker and timeline.")
+	if lab.tile_cards[0].has(0):
+		_check(_tile_has_badges(lab.tile_cards[0][0].get_child(0), "common", "hexwright"),
+			"A one-beat timeline tile should still show both rarity and owner.")
 	_click(lab.arsenal_button.get_global_rect().get_center())
 	await process_frame
 	board = lab.lane_stack.get_child(1).get_child(1)
@@ -155,6 +160,71 @@ func _check_practice_arsenal(lab: Control) -> void:
 	if upgrade != null:
 		_click(upgrade.get_global_rect().get_center())
 		_check(lab.selected.get("id") == upgrade_id, "A signature upgrade should be available to place from Practice.")
+
+func _check_tile_identity(lab: Control) -> void:
+	var common := GameIcons.rarity({})
+	var uncommon := GameIcons.rarity({"rarity": "uncommon"})
+	var rare := GameIcons.rarity({"rarity": "rare"})
+	var epic := GameIcons.rarity({"rarity": "epic"})
+	var legendary := GameIcons.rarity({"rarity": "legendary"})
+	_check(common.s < 0.18 and uncommon.h > 0.24 and uncommon.h < 0.45
+		and rare.h > 0.50 and rare.h < 0.67 and epic.h > 0.69 and epic.h < 0.87
+		and legendary.h > 0.06 and legendary.h < 0.18,
+		"Rarity colors should read as gray, green, blue, purple, and gold.")
+
+	lab._load_fixture("duo")
+	lab.lanes[0].assign([lab._entry("gravity_spike", 0, "nearest")])
+	lab.lanes[1].clear()
+	lab.storage_rows[0].assign([lab._entry("jab", 0, "nearest")])
+	lab._reset_fight()
+	await process_frame
+	var tile: Button = lab.tile_cards[0][0].get_child(0)
+	_check(_tile_has_badges(tile, "uncommon", "hexwright"),
+		"The equipped signature should show its rarity and the current lane's class.")
+	_click(tile.get_global_rect().get_center())
+	await process_frame
+	var warden_lane: Control = lab.lane_stack.get_child(1).get_child(1)
+	_click(_cell_point(warden_lane, 0, ArenaSim.BEATS))
+	await process_frame
+	if not lab.tile_cards[1].has(0):
+		_check(false, "Tile labels must allow selecting and moving a signature to another hero.")
+		return
+	tile = lab.tile_cards[1][0].get_child(0)
+	_check(_tile_has_badges(tile, "uncommon", "warden") and "Warden" in tile.tooltip_text and "Hexwright" in tile.tooltip_text,
+		"After transfer, the badge names the new owner and the tooltip still identifies the signature's class.")
+	_click(tile.get_global_rect().get_center())
+	await process_frame
+	tile = lab.tile_cards[1][0].get_child(0)
+	_check(_tile_has_badges(tile, "uncommon", "warden"),
+		"Selecting an equipped tile should retain both visible indicators.")
+
+	lab._open_storage()
+	await process_frame
+	var storage_row: Control = lab.storage_screen._board.get_child(0).get_child(1)
+	_click(_cell_point(storage_row, 2, TilePacking.STORAGE_COLUMNS))
+	await process_frame
+	var stored: Control = lab.storage_screen.find_child("StoredTile_gravity_spike_0_2", true, false)
+	var generic: Control = lab.storage_screen.find_child("StoredTile_jab_0_0", true, false)
+	_check(_tile_has_badges(stored, "uncommon", "hexwright") and _tile_has_badges(generic, "common", ""),
+		"Shared storage should retain rarity everywhere and identify signature origin for class tiles.")
+	lab.storage_close()
+
+
+func _tile_has_badges(tile: Control, rarity: String, hero: String) -> bool:
+	if not is_instance_valid(tile):
+		return false
+	var rarity_badge := tile.find_child("TileRarityBadge", true, false) as Label
+	var hero_badge := tile.find_child("TileHeroBadge", true, false) as Control
+	var spec := {"rarity": rarity}
+	var rarity_matches: bool = (rarity_badge != null and rarity_badge.is_visible_in_tree()
+		and rarity_badge.get_meta("rarity", "") == rarity
+		and rarity_badge.get_theme_color("font_color") == GameIcons.rarity(spec)
+		and (rarity_badge.text == GameIcons.rarity_pips(spec) or rarity_badge.text == GameIcons.rarity_name(spec)))
+	if hero.is_empty():
+		return rarity_matches and (hero_badge == null or not hero_badge.is_visible_in_tree())
+	return (rarity_matches and hero_badge != null and hero_badge.is_visible_in_tree()
+		and hero_badge.get_meta("hero_class", "") == hero)
+
 
 func _check_nudge(lab: Control) -> void:
 	lab.lanes[0].assign([lab._entry("bash", 1, "nearest"), lab._entry("shot", 3, "lowest_hp"), lab._entry("bash", 7, "farthest")])

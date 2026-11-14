@@ -6,6 +6,7 @@ signal event_selected(event: Dictionary)
 
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
+const GameIcons = preload("res://scripts/game_icons.gd")
 const INK := Color("#101820")
 const PANEL := Color("#192732")
 const EDGE := Color("#3c505b")
@@ -75,6 +76,7 @@ var _filters: Dictionary = {}
 var _list: ItemList
 var _stamp: Label
 var _title: Label
+var _tile_badges: HBoxContainer
 var _detail: Label
 var _hint: Label
 var _retry: Button
@@ -189,9 +191,13 @@ func _build() -> void:
 	_title = _label("", 21, CREAM)
 	_detail = _label("", 15, CREAM)
 	_hint = _label("", 14, TEAL)
+	_tile_badges = HBoxContainer.new()
+	_tile_badges.add_theme_constant_override("separation", 8)
+	_tile_badges.hide()
+	for control in [_stamp, _tile_badges, _title, _detail, _hint]:
+		details.add_child(control)
 	for label in [_stamp, _title, _detail, _hint]:
 		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		details.add_child(label)
 	var footer := HBoxContainer.new()
 	footer.alignment = BoxContainer.ALIGNMENT_END
 	footer.add_theme_constant_override("separation", 8)
@@ -231,6 +237,7 @@ func _show_filter(filter: String) -> void:
 			preferred = index
 	if _visible_events.is_empty():
 		_stamp.text = ""
+		_tile_badges.hide()
 		_title.text = "No misses" if filter == "misses" else "No combat events to review"
 		_title.add_theme_color_override("font_color", CREAM)
 		_detail.text = ""
@@ -250,6 +257,7 @@ func _select(index: int) -> void:
 	_stamp.text = "Loop %d  ·  Beat %d  ·  %.2fs" % [event.loop, event.beat, float(event.tick) / ArenaSim.TICKS_PER_SECOND]
 	_title.text = _event_caption(event)
 	_title.add_theme_color_override("font_color", _event_color(event))
+	_show_tile_badges(event)
 	if event.has("boss_event"):
 		_detail.text = event.message
 		var source: Dictionary = ArenaSim.TILES.get(event.tile, {})
@@ -275,6 +283,20 @@ func _select(index: int) -> void:
 			if not advice.is_empty():
 				_hint.text += "\n" + advice
 	event_selected.emit(event)
+
+
+func _show_tile_badges(event: Dictionary) -> void:
+	for badge in _tile_badges.get_children():
+		_tile_badges.remove_child(badge)
+		badge.queue_free()
+	var tile: Dictionary = ArenaSim.TILES.get(event.tile, {})
+	_tile_badges.visible = not tile.is_empty()
+	if tile.is_empty():
+		return
+	_tile_badges.add_child(GameIcons.rarity_badge(tile))
+	var class_id := GameIcons.hero_class_for_label(event.get("hero", ""))
+	if not class_id.is_empty():
+		_tile_badges.add_child(GameIcons.hero_badge(class_id, false))
 
 
 func _event_caption(event: Dictionary) -> String:

@@ -1,5 +1,8 @@
 extends RefCounted
 
+const ArenaSim = preload("res://scripts/arena_sim.gd")
+const ClassDecks = preload("res://scripts/class_decks.gd")
+
 const FAMILY_ICONS := {"bash": "push", "blink": "teleport", "shot": "shot", "guard": "guard", "slam": "area"}
 const RELIC_ICONS := {
 	"towline_knot": "pull", "bridgeplate": "guard", "brass_metronome": "review",
@@ -15,9 +18,14 @@ const HERO_ART := {
 	"duelist": "duelist", "lancer": "duelist", "starshot": "marksman",
 	"cantor": "apothecary", "apothecary": "apothecary"
 }
+const HERO_CODES := {
+	"warden": "WD", "bulwark": "BW", "breaker": "BR", "hexwright": "HX",
+	"wayfarer": "WF", "lancer": "LN", "cantor": "CT", "apothecary": "AP",
+	"rune_smith": "RS", "starshot": "ST", "cinder_mage": "CM", "duelist": "DL",
+}
 const RARITY_COLORS := {
-	"common": Color("#acbac0"), "uncommon": Color("#8dd6b2"), "rare": Color("#8fbbff"),
-	"epic": Color("#d3a4f1"), "legendary": Color("#ecc482")
+	"common": Color("#b4bdc5"), "uncommon": Color("#78d992"), "rare": Color("#77b8ff"),
+	"epic": Color("#cf9dff"), "legendary": Color("#ffc86d")
 }
 const RARITIES := ["common", "uncommon", "rare", "epic", "legendary"]
 
@@ -45,8 +53,84 @@ static func portrait(class_id: String) -> String:
 	return HERO_ART.get(class_id, "warden")
 
 
+static func hero_label(class_id: String) -> String:
+	return ArenaSim.HERO_CLASSES.get(class_id, {}).get("label", "")
+
+
+static func hero_class_for_label(label: String) -> String:
+	for class_id: String in ArenaSim.HERO_CLASSES:
+		if hero_label(class_id) == label:
+			return class_id
+	return ""
+
+
+static func tile_origin(id: String, spec: Dictionary) -> String:
+	var base: String = spec.get("base_tile", id)
+	for class_id: String in ClassDecks.DECKS:
+		if ClassDecks.signature(class_id) == base:
+			return class_id
+	return ""
+
+
+static func hero_badge(class_id: String, compact := true) -> PanelContainer:
+	var badge := PanelContainer.new()
+	badge.name = "TileHeroBadge"
+	badge.set_meta("hero_class", class_id)
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.tooltip_text = hero_label(class_id)
+	badge.visible = HERO_CODES.has(class_id)
+	badge.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
+	badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var frame := StyleBoxFlat.new()
+	frame.bg_color = Color("#172229")
+	frame.border_color = Color("#6d8189")
+	frame.set_border_width_all(1)
+	frame.set_corner_radius_all(3)
+	frame.content_margin_left = 4 if compact else 6
+	frame.content_margin_right = frame.content_margin_left
+	frame.content_margin_top = 0 if compact else 2
+	frame.content_margin_bottom = frame.content_margin_top
+	badge.add_theme_stylebox_override("panel", frame)
+	var row := HBoxContainer.new()
+	row.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_theme_constant_override("separation", 4)
+	badge.add_child(row)
+	if not compact and badge.visible:
+		var face := TextureRect.new()
+		face.texture = load("res://assets/%s.png" % portrait(class_id)) as Texture2D
+		face.custom_minimum_size = Vector2(18, 18)
+		face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		face.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		row.add_child(face)
+	var label := Label.new()
+	label.text = HERO_CODES.get(class_id, "") if compact else hero_label(class_id)
+	label.add_theme_font_size_override("font_size", 10 if compact else 13)
+	label.add_theme_color_override("font_color", Color("#eef0ed"))
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	row.add_child(label)
+	return badge
+
+
 static func rarity(spec: Dictionary) -> Color:
 	return RARITY_COLORS.get(spec.get("rarity", "common"), RARITY_COLORS.common)
+
+
+static func rarity_name(spec: Dictionary) -> String:
+	var value: String = spec.get("rarity", "common")
+	return value.capitalize() if value in RARITIES else "Common"
+
+
+static func rarity_badge(spec: Dictionary, compact := false) -> Label:
+	var label := Label.new()
+	label.name = "TileRarityBadge"
+	label.set_meta("rarity", rarity_name(spec).to_lower())
+	label.text = rarity_pips(spec) if compact else rarity_name(spec)
+	label.tooltip_text = rarity_name(spec)
+	label.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	label.add_theme_font_size_override("font_size", 11 if compact else 13)
+	label.add_theme_color_override("font_color", rarity(spec))
+	return label
 
 
 static func tile_stats(spec: Dictionary) -> String:

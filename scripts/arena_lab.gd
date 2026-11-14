@@ -769,10 +769,10 @@ func _rebuild_loadout() -> void:
 		var payload := {"id": id}
 		var button := _button("%s · %d" % [tile.label, tile.width], func(): _select(payload))
 		GameIcons.decorate(button, GameIcons.tile(id, tile), 16)
-		button.tooltip_text = "%s\n%s" % [GameIcons.tile_stats(tile), tile.description]
+		button.tooltip_text = _practice_tile_tooltip(id, tile)
 		button.disabled = state != "setup"
-		if selected.get("id") == id and not selected.has("lane"):
-			button.add_theme_stylebox_override("normal", _box(Color("#4d4430"), GOLD))
+		var active: bool = selected.get("id") == id and not selected.has("lane")
+		_style_tile_button(button, tile, Color("#263642"), active)
 		_drag_source(button, payload)
 		palette.add_child(button)
 	if camp_forge:
@@ -858,11 +858,18 @@ func _add_practice_tiles(page: VBoxContainer, pools: Array) -> void:
 			)
 			button.name = "PracticeTile_" + id
 			button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			button.add_theme_color_override("font_color", GameIcons.rarity(tile))
 			GameIcons.decorate(button, GameIcons.tile(id, tile), 17)
-			button.tooltip_text = "%s · %s\n%s" % [str(tile.rarity).capitalize(), GameIcons.tile_stats(tile), tile.description]
+			_style_tile_button(button, tile, Color("#263642"), false, 14)
+			_add_tile_badges(button, tile, GameIcons.tile_origin(id, tile))
+			button.tooltip_text = _practice_tile_tooltip(id, tile)
 			_drag_source(button, payload)
 			grid.add_child(button)
+
+
+func _practice_tile_tooltip(id: String, tile: Dictionary) -> String:
+	var origin := GameIcons.tile_origin(id, tile)
+	var signature := "\n%s signature" % GameIcons.hero_label(origin) if not origin.is_empty() else ""
+	return "%s · %s · %s%s\n%s" % [tile.label, GameIcons.rarity_name(tile), GameIcons.tile_stats(tile), signature, tile.description]
 
 
 func _toggle_practice_arsenal() -> void:
@@ -917,6 +924,7 @@ func _build_lane(lane_index: int) -> void:
 	identity.add_theme_constant_override("separation", 3)
 	row.add_child(identity)
 	var hero: Dictionary = sim.units[lane_index]
+	var class_id := _lane_hero_class(lane_index)
 	var profile := HBoxContainer.new()
 	profile.add_theme_constant_override("separation", 6)
 	identity.add_child(profile)
@@ -933,7 +941,12 @@ func _build_lane(lane_index: int) -> void:
 	health_column.add_theme_constant_override("separation", 2)
 	profile.add_child(health_column)
 	var hero_name := _label(hero.name, 15, TEAL)
-	health_column.add_child(hero_name)
+	var name_row := HBoxContainer.new()
+	name_row.add_theme_constant_override("separation", 4)
+	health_column.add_child(name_row)
+	if not class_id.is_empty():
+		name_row.add_child(GameIcons.hero_badge(class_id))
+	name_row.add_child(hero_name)
 	var health := ProgressBar.new()
 	health.show_percentage = false
 	health.max_value = hero.max_hp
@@ -957,7 +970,12 @@ func _build_lane(lane_index: int) -> void:
 	tile_cards.append(cards)
 	var offers: Array = _combine_offers(lanes[lane_index]) if state == "setup" else []
 	var offer_height := 0 if offers.is_empty() else 33
-	board.custom_minimum_size.y = 69 + offer_height
+	var row_height := 69
+	if lanes[lane_index].any(func(item: Dictionary):
+		return ArenaSim.TILES[item.id].width == 1 and sim.target_rules(item.id).size() > 4
+	):
+		row_height += 20
+	board.custom_minimum_size.y = row_height + offer_height
 	board.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	row.add_child(board)
 	_drop_destination(board, board, lane_index, offer_height)
@@ -973,7 +991,7 @@ func _build_lane(lane_index: int) -> void:
 		_build_tile(board, lane_index, item, offer_height)
 	for offer: Dictionary in offers:
 		var prompt := _combine_prompt(-1, lane_index, offer)
-		_add_span(board, prompt, offer.start, offer.width, 0, -71)
+		_add_span(board, prompt, offer.start, offer.width, 0, -row_height - 2)
 	var head := ColorRect.new()
 	head.color = GOLD
 	head.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -1003,11 +1021,10 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	card.set_meta("tile", item)
 	tile_cards[lane_index][item.start] = card
 	var tile_title: String = tile.get("short_label", tile.label)
-	if int(tile.get("damage", 0)) > 0:
-		tile_title += "  ·  %d" % int(tile.damage)
 	var name_button := _button(tile_title, func(): _select(payload))
 	var icon_key := GameIcons.tile(item.id, tile)
 	GameIcons.decorate(name_button, icon_key, 15 if tile.width == 1 else 20)
+	name_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	if tile.width == 1:
 		name_button.add_theme_constant_override("h_separation", 3)
 	name_button.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -1019,7 +1036,7 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	}
 	var family: String = tile.get("family", "")
 	var tint: Color = tones.get(family, tones.get(icon_key, Color("#583b35")))
-	var rarity_edge := GameIcons.rarity(tile).lerp(EDGE, 0.5)
+	var rarity_edge := GameIcons.rarity(tile).darkened(0.36)
 	var tile_back := Panel.new()
 	tile_back.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	tile_back.add_theme_stylebox_override("panel", _box(tint.darkened(0.30), GOLD if active else rarity_edge))
@@ -1028,16 +1045,21 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	board.move_child(tile_back, card.get_index())
 	card.set_meta("tile_back", tile_back)
 	name_button.tooltip_text = _tile_tooltip(lane_index, item, tile)
-	for mode in ["normal", "disabled"]:
-		var background := _box(tint, GOLD if active and mode == "normal" else rarity_edge)
-		if tile.width == 1:
-			background.content_margin_left = 3
-			background.content_margin_right = 3
-			background.content_margin_top = 0
-			background.content_margin_bottom = 0
-		name_button.add_theme_stylebox_override(mode, background)
+	_style_tile_button(name_button, tile, tint, active, 16, tile.width == 1, tile.damage > 0)
 	name_button.disabled = state != "setup"
 	card.add_child(name_button)
+	_add_tile_badges(name_button, tile, _lane_hero_class(lane_index))
+	if tile.damage > 0:
+		var amount := _label(str(int(tile.damage)), 12, CREAM)
+		amount.name = "TileDamage"
+		amount.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+		name_button.add_child(amount)
+		amount.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
+		amount.offset_left = -26
+		amount.offset_right = -6
+		amount.offset_top = -21
+		amount.offset_bottom = -4
 	_drag_source(name_button, payload, board, lane_index, offer_height)
 	var available_rules: Array = sim.target_rules(item.id)
 	var current_rule: String = item.target if item.target in available_rules else available_rules[0]
@@ -1074,15 +1096,36 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	marker.offset_bottom = -1
 	marker.hide()
 	card.set_meta("timing_marker", marker)
-	var pips := _label(GameIcons.rarity_pips(tile), 11, GameIcons.rarity(tile))
-	pips.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	pips.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	board.add_child(pips)
-	pips.anchor_left = float(item.start + int(tile.width)) / ArenaSim.BEATS
-	pips.anchor_right = pips.anchor_left
-	pips.offset_left = -38
-	pips.offset_right = -5
-	pips.offset_top = offer_height + 1
+
+
+func _style_tile_button(button: Button, tile: Dictionary, tint: Color, active: bool,
+		badge_space := 0, compact := false, show_damage := false) -> void:
+	var rarity := GameIcons.rarity(tile)
+	for mode: String in ["normal", "hover", "pressed", "disabled"]:
+		var fill := tint.lightened(0.12) if mode == "hover" else tint
+		if mode == "pressed" or active:
+			fill = fill.lerp(GOLD, 0.16)
+		var box := _box(fill, rarity)
+		box.border_width_top = 3
+		box.content_margin_top = maxf(4, badge_space)
+		box.content_margin_bottom = 2
+		if compact:
+			box.content_margin_left = 5
+			box.content_margin_right = 5
+		if show_damage:
+			box.content_margin_right = 25
+		button.add_theme_stylebox_override(mode, box)
+
+
+func _add_tile_badges(button: Button, tile: Dictionary, class_id: String) -> void:
+	var rarity_badge := GameIcons.rarity_badge(tile, true)
+	button.add_child(rarity_badge)
+	rarity_badge.position = Vector2(6, 3)
+	if not class_id.is_empty():
+		var hero_badge := GameIcons.hero_badge(class_id)
+		button.add_child(hero_badge)
+		hero_badge.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 4)
+		hero_badge.offset_top = 3
 
 func _target_buttons(rules: Array, current: String, choose: Callable, all := false, group: ButtonGroup = null) -> HBoxContainer:
 	var row := HBoxContainer.new()
@@ -1118,10 +1161,22 @@ func _tile_tooltip(lane_index: int, item: Dictionary, tile: Dictionary) -> Strin
 	var available_rules: Array = sim.target_rules(item.id)
 	var rule: String = item.target if item.target in available_rules else available_rules[0]
 	var preview: Dictionary = sim.target_for(lane_index, item.id, rule)
-	return "%s · %s · %s\n%s\nFires on beat %d · %s" % [
-		tile.label, str(tile.get("rarity", "common")).capitalize(), GameIcons.tile_stats(tile), tile.description,
+	var owner := _lane_hero_class(lane_index)
+	var origin := GameIcons.tile_origin(item.id, tile)
+	var identity := "Equipped by %s" % sim.units[lane_index].name
+	if not origin.is_empty() and origin != owner:
+		identity += " · %s signature" % GameIcons.hero_label(origin)
+	return "%s · %s · %s\n%s\n%s\nFires on beat %d · %s" % [
+		tile.label, GameIcons.rarity_name(tile), GameIcons.tile_stats(tile), identity, tile.description,
 		item.start + tile.width, preview.get("name", "No target in range at setup")
 	]
+
+
+func _lane_hero_class(lane: int) -> String:
+	if lane < 0 or lane >= sim.units.size():
+		return ""
+	var hero: Dictionary = sim.units[lane]
+	return hero.get("class", GameIcons.hero_class_for_label(hero.name))
 
 func _set_all(lane_index: int, rule: String) -> void:
 	defaults[lane_index] = rule
@@ -1160,7 +1215,7 @@ func _drag_source(control: Control, payload: Dictionary, board: Control = null, 
 		if board != null:
 			var at := _lane_point(board, control, point)
 			drag.grab_offset = clampi(floori(at.x * ArenaSim.BEATS / board.size.x) - int(payload.start), 0, int(tile.width) - 1)
-		var preview := _label(tile.label, 17, GOLD)
+		var preview := _label(tile.label, 17, GameIcons.rarity(tile))
 		preview.position = Vector2(12, -28)
 		control.set_drag_preview(preview)
 		return drag
@@ -1544,6 +1599,19 @@ func forge_can_fit(id: String) -> bool:
 		var capacity := TilePacking.STORAGE_COLUMNS if stored else ArenaSim.BEATS
 		return TilePacking.can_place(items, id, source.start, capacity, source.start)
 	return int(ArenaSim.TILES[id].width) <= int(pending_forge.offer.width)
+
+func forge_owner() -> String:
+	if pending_forge.has("reward"):
+		var heroes: Array = run.data.get("heroes", [])
+		var lane := maxi(0, run.reward_lane())
+		if lane < heroes.size():
+			return heroes[lane].get("id", "")
+		return run.data.get("hero", "")
+	if pending_forge.has("inventory_copies"):
+		var source: Dictionary = pending_forge.inventory_copies[0]
+		return _lane_hero_class(source.lane)
+	var source: Dictionary = pending_forge.get("camp", pending_forge)
+	return _lane_hero_class(source.get("lane", -1))
 
 func forge_firing_beat(id: String) -> int:
 	if pending_forge.has("reward"):

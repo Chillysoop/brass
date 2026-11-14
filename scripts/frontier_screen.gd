@@ -271,12 +271,12 @@ func _add_draft_cards(cards: HBoxContainer, offers: Array, phase: String) -> voi
 		elif phase == "relic":
 			_add_card_icon(card, GameIcons.relic(id))
 		else:
-			_add_card_icon(card, GameIcons.tile(id, entry), GameIcons.rarity(entry))
 			var hero_id: String = _run.data.get("pending_recruit", _run.data.get("hero", ""))
+			_add_tile_header(card, id, entry, hero_id)
 			if id == ClassDecks.starter(hero_id):
-				var badge := _label("%s starter" % _hero_name(hero_id), 15, TEAL)
+				var badge := _label("Class starter", 15, TEAL)
 				card.add_child(badge)
-				card.move_child(badge, 2)
+				card.move_child(badge, 3)
 
 
 func _show_class_deck(hero_id: String) -> void:
@@ -296,26 +296,37 @@ func _show_class_deck(hero_id: String) -> void:
 	var details := _label("", 15, CREAM)
 	details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	details.custom_minimum_size = Vector2(640, 42)
-	for pool in [{"title": "Common", "ids": common}, {"title": "Uncommon", "ids": uncommon}]:
-		deck.add_child(_label("%s  ·  %d" % [pool.title, pool.ids.size()], 16, GOLD))
+	for pool in [common, uncommon]:
+		var rarity_spec: Dictionary = ArenaSim.TILES[pool[0]]
+		var heading := HBoxContainer.new()
+		heading.add_theme_constant_override("separation", 8)
+		deck.add_child(heading)
+		heading.add_child(GameIcons.hero_badge(hero_id, false))
+		var rarity := GameIcons.rarity_badge(rarity_spec)
+		rarity.text += "  ·  %d" % pool.size()
+		rarity.add_theme_font_size_override("font_size", 16)
+		heading.add_child(rarity)
 		var grid := GridContainer.new()
 		grid.columns = 3
 		grid.add_theme_constant_override("h_separation", 9)
 		grid.add_theme_constant_override("v_separation", 4)
 		deck.add_child(grid)
-		for tile_id: String in pool.ids:
+		for tile_id: String in pool:
 			var spec: Dictionary = ArenaSim.TILES[tile_id]
 			var tile := Button.new()
 			tile.text = "%s  ·  %s" % [spec.label, GameIcons.tile_stats(spec).replace("damage", "dmg")]
 			tile.custom_minimum_size.y = 30
 			tile.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 			tile.size_flags_horizontal = SIZE_EXPAND_FILL
-			tile.tooltip_text = spec.description
+			tile.tooltip_text = "%s · %s\n%s" % [_hero_name(hero_id), GameIcons.rarity_name(spec), spec.description]
 			tile.mouse_default_cursor_shape = CURSOR_POINTING_HAND
 			GameIcons.decorate(tile, GameIcons.tile(tile_id, spec), 18)
+			var fill := PANEL.lerp(GameIcons.rarity(spec), 0.16 if tile_id == signature else 0.07)
+			tile.add_theme_stylebox_override("normal", _rarity_frame(spec, fill, 6, 8))
+			tile.add_theme_stylebox_override("hover", _rarity_frame(spec, fill.lightened(0.12), 6, 8))
+			tile.add_theme_stylebox_override("pressed", _rarity_frame(spec, fill.lightened(0.18), 6, 8))
 			var detail_copy := "%s · %s" % [spec.label, spec.description]
 			if tile_id == signature:
-				tile.add_theme_stylebox_override("normal", _box(Color("#30473e"), TEAL, 6, 8))
 				detail_copy = "%s signature · %s" % [_hero_name(hero_id), detail_copy]
 				details.text = detail_copy
 			tile.pressed.connect(func(): details.text = detail_copy)
@@ -529,6 +540,7 @@ func _reward() -> void:
 		milestone = str(_run.data.get("node_notice", "")) if final_boss else "Leg %d cleared · Recruit for Leg %d next" % [_leg_number(), _leg_number() + 1]
 	var lane: int = _run.reward_lane()
 	var party := _party()
+	var owner := _reward_owner(lane, party)
 	if lane >= 0 and lane < party.size():
 		var hero_id: String = party[lane].id
 		_reward_heading(title, milestone, hero_id)
@@ -545,9 +557,8 @@ func _reward() -> void:
 		var hint: String = _run.reward_hint(id)
 		if _host.run_can_combine_reward(id):
 			hint = "Combine with 2 owned copies" if hint in ["", "Third copy", "Owned copy"] else "%s · Combine with 2 owned copies" % hint
-		if lane >= 0 and lane < party.size() and tile.get("base_tile", id) == ClassDecks.signature(party[lane].id):
-			var signature := "%s signature" % _hero_name(party[lane].id)
-			hint = signature if hint.is_empty() else "%s · %s" % [signature, hint]
+		if not owner.is_empty() and tile.get("base_tile", id) == ClassDecks.signature(owner):
+			hint = "Signature tile" if hint.is_empty() else "Signature tile · " + hint
 		var card := _choice(cards, tile.label, _tile_info(tile) + ("\n\n" + hint if not hint.is_empty() else ""), "Select", func():
 			selected.id = id
 			advance.disabled = false
@@ -557,7 +568,11 @@ func _reward() -> void:
 		select_tile.name = "RewardTile_" + id
 		select_tile.toggle_mode = true
 		select_tile.button_group = group
-		_add_card_icon(card, GameIcons.tile(id, tile), GameIcons.rarity(tile))
+		_add_tile_header(card, id, tile, owner)
+		var panel := card.get_parent() as PanelContainer
+		select_tile.toggled.connect(func(pressed: bool):
+			panel.add_theme_stylebox_override("panel", _tile_card_frame(tile, pressed))
+		)
 	_layout.add_child(notice)
 	var actions := _footer_actions()
 	if not final_boss:
@@ -566,6 +581,15 @@ func _reward() -> void:
 	var skip := _button("Skip for +%d gold" % bonus if bonus > 0 else "Skip reward", func(): _claim_reward("skip", notice))
 	skip.name = "SkipReward"
 	actions.add_child(skip)
+
+
+func _reward_owner(lane: int, party: Array) -> String:
+	if lane >= 0 and lane < party.size():
+		return str(party[lane].id)
+	var node: Dictionary = _run.data.get("node", {})
+	if not party.is_empty() and node.get("encounter_override", node.get("type", "")) in ["opening", "battle", "elite", "boss"]:
+		return str(party[0].id)
+	return ""
 
 
 func _reward_heading(title: String, milestone: String, hero_id: String) -> void:
@@ -636,7 +660,11 @@ func _elite_relic_draft(offers: Array) -> void:
 			var texture := GameIcons.icon(GameIcons.tile(companion, tile))
 			if texture != null:
 				support.add_child(_icon_view(texture, 21))
-			support.add_child(_label("Tile offer · " + tile.label, 15, CREAM))
+			support.add_child(_label("Tile offer · " + tile.label, 15, GameIcons.rarity(tile)))
+			support.add_child(GameIcons.rarity_badge(tile, true))
+			var owner := _reward_owner(_run.reward_lane(), _party())
+			if not owner.is_empty():
+				support.add_child(GameIcons.hero_badge(owner))
 		_add_card_icon(card, GameIcons.relic(id), tone)
 
 
@@ -655,7 +683,7 @@ func _shop() -> void:
 		var tile: Dictionary = ArenaSim.TILES[id]
 		var price: int = _run.shop_price(id)
 		var card := _choice(cards, tile.label, _tile_info(tile), "Buy · %d gold" % price, func(): _buy_tile(id, notice), int(_run.data.get("gold", 0)) < price)
-		_add_card_icon(card, GameIcons.tile(id, tile), GameIcons.rarity(tile))
+		_add_tile_header(card, id, tile)
 	if _run.data.get("offers", []).is_empty():
 		cards.add_child(_label("No tiles left.", 20, MUTED))
 	_layout.add_child(notice)
@@ -889,7 +917,44 @@ func _choice(parent: Control, name: String, body: String, cta: String, chosen: C
 
 
 func _tile_info(tile: Dictionary) -> String:
-	return "%s · %s\n%s" % [str(tile.get("rarity", "common")).capitalize(), GameIcons.tile_stats(tile), tile.description]
+	return "%s\n%s" % [GameIcons.tile_stats(tile), tile.description]
+
+
+func _add_tile_header(card: VBoxContainer, id: String, spec: Dictionary, owner := "") -> void:
+	var panel := card.get_parent() as PanelContainer
+	panel.add_theme_stylebox_override("panel", _tile_card_frame(spec))
+	var color := GameIcons.rarity(spec)
+	_add_card_icon(card, GameIcons.tile(id, spec), color)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 8)
+	var rarity := GameIcons.rarity_badge(spec)
+	rarity.text += "  " + GameIcons.rarity_pips(spec)
+	rarity.size_flags_horizontal = SIZE_EXPAND_FILL
+	row.add_child(rarity)
+	var origin := GameIcons.tile_origin(id, spec)
+	var class_id := owner if not owner.is_empty() else origin
+	if not class_id.is_empty():
+		row.add_child(GameIcons.hero_badge(class_id, false))
+		panel.tooltip_text = "%s signature" % _hero_name(origin) if owner.is_empty() else _hero_name(owner)
+		if not owner.is_empty() and not origin.is_empty() and origin != owner:
+			panel.tooltip_text += " · %s signature" % _hero_name(origin)
+	card.add_child(row)
+	card.move_child(row, 0)
+
+
+func _tile_card_frame(spec: Dictionary, selected := false) -> StyleBoxFlat:
+	var color := GameIcons.rarity(spec)
+	var frame := _rarity_frame(spec, PANEL.lerp(color, 0.13 if selected else 0.04), 9, 18)
+	if selected:
+		frame.set_border_width_all(2)
+		frame.border_width_left = 5
+	return frame
+
+
+func _rarity_frame(spec: Dictionary, fill: Color, radius: int, margin: int) -> StyleBoxFlat:
+	var frame := _box(fill, GameIcons.rarity(spec), radius, margin)
+	frame.border_width_left = 4
+	return frame
 
 
 func _icon_view(texture: Texture2D, height: int) -> TextureRect:

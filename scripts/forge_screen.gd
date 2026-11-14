@@ -9,7 +9,6 @@ const GOLD := Color("#ecc482")
 const CREAM := Color("#f3e7d1")
 const MUTED := Color("#aababc")
 const TEAL := Color("#9ddbd1")
-const RARITIES := ["Common", "Uncommon", "Rare", "Epic", "Legendary"]
 const TARGETS := {
 	"nearest": "Nearest", "farthest": "Farthest", "lowest_hp": "Lowest HP",
 	"highest_hp": "Highest HP", "self": "Self"
@@ -24,6 +23,7 @@ var _is_combine := true
 var _cards: Dictionary = {}
 var _title: Label
 var _subtitle: Label
+var _owner_slot: HBoxContainer
 var _columns: HBoxContainer
 var _links: Control
 var _detail_name: Label
@@ -51,6 +51,16 @@ func open(source_id: String, copies := 3, reward := false, can_keep_reward := fa
 	_subtitle.text = "Combine 3 × %s" % source.label if _is_combine else "Upgrade %s" % source.label
 	if reward:
 		_subtitle.text = "%s · uses the reward and two owned copies" % _subtitle.text
+	for child in _owner_slot.get_children():
+		_owner_slot.remove_child(child)
+		child.queue_free()
+	var origin := GameIcons.tile_origin(source_id, source)
+	var owner: String = _host.forge_owner()
+	var class_id := owner if not owner.is_empty() else origin
+	if not class_id.is_empty():
+		_owner_slot.add_child(GameIcons.hero_badge(class_id, false))
+	if not owner.is_empty() and not origin.is_empty() and origin != owner:
+		_subtitle.text += " · %s signature" % GameIcons.hero_label(origin)
 	_keep_reward.visible = reward
 	_keep_reward.disabled = not can_keep_reward
 	_keep_reward.tooltip_text = "No room for the original tile." if not can_keep_reward else "Claim the tile without combining."
@@ -105,9 +115,15 @@ func _build() -> void:
 	back.name = "BackFromForge"
 	back.custom_minimum_size = Vector2(100, 40)
 	header.add_child(back)
+	var source_row := HBoxContainer.new()
+	source_row.add_theme_constant_override("separation", 10)
+	layout.add_child(source_row)
+	_owner_slot = HBoxContainer.new()
+	source_row.add_child(_owner_slot)
 	_subtitle = _label("", 16, MUTED)
 	_subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	layout.add_child(_subtitle)
+	_subtitle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	source_row.add_child(_subtitle)
 
 	var board := Panel.new()
 	board.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -184,7 +200,9 @@ func _add_tier(tier: int) -> void:
 	column.add_theme_constant_override("separation", 7)
 	_columns.add_child(column)
 
-	var rarity := _label(RARITIES[tier], 19, GOLD if available else CREAM)
+	var spec: Dictionary = _host.tile_spec(ids[0])
+	var rarity := GameIcons.rarity_badge(spec)
+	rarity.add_theme_font_size_override("font_size", 19)
 	rarity.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(rarity)
 	var note := "Choose one" if available else ("Current rarity" if _source_id in ids else "Inspect")
@@ -203,6 +221,13 @@ func _add_tier(tier: int) -> void:
 		card.custom_minimum_size.y = 88
 		card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		card.add_theme_font_size_override("font_size", 17)
+		card.add_theme_color_override("font_color", CREAM)
+		card.add_theme_color_override("font_hover_color", CREAM)
+		card.add_theme_color_override("font_pressed_color", CREAM)
+		card.tooltip_text = "%s · %s\n%s" % [GameIcons.rarity_name(tile), GameIcons.tile_stats(tile), tile.description]
+		var focus := _box(Color.TRANSPARENT, CREAM, 2)
+		focus.draw_center = false
+		card.add_theme_stylebox_override("focus", focus)
 		card.item_rect_changed.connect(_links.queue_redraw)
 		options.add_child(card)
 		_cards[id] = card
@@ -232,7 +257,7 @@ func _draw_links() -> void:
 func _inspect(id: String) -> void:
 	_inspected_id = id
 	var tile: Dictionary = _host.tile_spec(id)
-	var rarity := str(tile.rarity).capitalize()
+	var rarity := GameIcons.rarity_name(tile)
 	var targeting := PackedStringArray()
 	for rule: String in tile.get("targets", []):
 		targeting.append(TARGETS.get(rule, rule.capitalize()))
@@ -247,6 +272,7 @@ func _inspect(id: String) -> void:
 			stats.append("Fires on beat %d" % beat)
 	_detail_name.text = tile.label
 	_detail_stats.text = "  ·  ".join(stats)
+	_detail_stats.add_theme_color_override("font_color", GameIcons.rarity(tile))
 	_detail_description.text = tile.description
 	_confirm.disabled = not can_choose or not fits
 	var prompt := "Combine into " if _is_combine else "Upgrade to "
@@ -260,14 +286,18 @@ func _inspect(id: String) -> void:
 		var card: Button = _cards[card_id]
 		var available := card_id in _next_ids
 		var selected := card_id == id
-		var fill := Color("#392f25") if available else PANEL
-		var border := GOLD if available else EDGE
-		if selected:
-			fill = Color("#5b442a") if available else Color("#233e41")
-			border = GOLD if available else TEAL
-		card.add_theme_stylebox_override("normal", _box(fill, border, 2 if selected else 1))
-		card.add_theme_stylebox_override("hover", _box(fill.lightened(0.13), border))
-		card.add_theme_stylebox_override("pressed", _box(fill.darkened(0.1), border))
+		var option: Dictionary = _host.tile_spec(card_id)
+		var color := GameIcons.rarity(option)
+		var fill := PANEL.lerp(color, 0.24 if selected else (0.13 if available else 0.04))
+		var frame := _box(fill, color, 2 if selected or available else 1)
+		frame.border_width_top = 5 if selected or available else 3
+		card.add_theme_stylebox_override("normal", frame)
+		var hover := frame.duplicate() as StyleBoxFlat
+		hover.bg_color = fill.lightened(0.11)
+		card.add_theme_stylebox_override("hover", hover)
+		var pressed := frame.duplicate() as StyleBoxFlat
+		pressed.bg_color = fill.darkened(0.10)
+		card.add_theme_stylebox_override("pressed", pressed)
 
 
 func _confirm_upgrade() -> void:

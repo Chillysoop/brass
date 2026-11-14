@@ -10,6 +10,8 @@ Each class has 18 Commons and eight Uncommons in its combat reward deck. Use **V
 
 Enemies fill a charge gauge above their heads before an attack. Tiles show damage and fire on their right edge. Each hero's timeline shows a portrait, live health, and targeting buttons. The left and right arrows select nearest and farthest. The solid and hollow hearts select highest and lowest HP. The **All** buttons apply the same rule to compatible tiles on the lane.
 
+Tile rarity runs gray, green, blue, purple, and gold from Common to Legendary. Hero badges identify who has a tile equipped or who receives a reward. In shared storage, a signature tile's badge identifies its class of origin.
+
 Open **Battle review** after a fight to inspect activations, misses, relic bonuses, and boss counters. Selecting an activation highlights the tile and its firing beat. Expedition defeats open the review automatically. **Retry in Practice** replays the original encounter with an editable copy of your equipment and pre-fight health.
 
 Defeat the Tollkeeper on Easy to bank Aether Marks and unlock **Medium**. Open the **Aether Chart** from the title or after a run to inspect prerequisites and spend Marks on permanent upgrades between expeditions.
