@@ -38,6 +38,7 @@ func _initialize() -> void:
 	_check_tempered_colossus()
 	_check_crown_coordination()
 	_check_crown_marshal_combo()
+	_check_crown_regent_combo()
 	_check_regent_seals()
 	for failure in failures:
 		printerr(failure)
@@ -251,6 +252,60 @@ func _check_crown_marshal_combo() -> void:
 	interrupted = sim.trace.filter(func(event: Dictionary) -> bool: return event.tile == "relay_marshal_interrupted")
 	_check(interrupted.size() == 1 and interrupted[0].amount == 0 and not marshal.relay_charge_active,
 		"Any hero can Bash an unshielded Marshal without counting a linked combo")
+
+
+func _check_crown_regent_combo() -> void:
+	var options := {"location": "crown", "difficulty": "hard", "segment": 3, "encounter": "boss",
+		"boss_id": "crown_regent", "seed": 42,
+		"heroes": [{"hero": "warden"}, {"hero": "duelist"}, {"hero": "bulwark"}]}
+	var lanes := [
+		[{"id": "pull", "start": 0, "target": "relay_left"}],
+		[{"id": "pull", "start": 1, "target": "relay_right"}],
+		[{"id": "bash", "start": 2, "target": "relay_regent"}],
+	]
+	var sim := ArenaSim.new()
+	sim.start(lanes, "solo", options)
+	var regent: Dictionary = sim.units[3]
+	var left: Dictionary = sim.units[4]
+	var right: Dictionary = sim.units[5]
+	_check(regent.get("sprite") == "crown_regent" and regent.relay_shield_sources == [left.id, right.id],
+		"The Crown Regent starts with two independent Relay Guard links")
+	_check("relay_left" in sim.target_rules("pull") and "relay_regent" in sim.target_rules("bash")
+		and sim.target_rules("guard") == ["self"], "Only offensive tiles can select Crown Regent targets")
+	var hp: int = regent.hp
+	sim._damage(sim.units[0], regent, 20, "shot")
+	_check(hp - regent.hp == 8, "Two live links block 60% of incoming tile damage")
+	for frame in range(63):
+		sim.step()
+	_check(regent.relay_charge_active and regent.intent_tick == 189 and regent.relay_shield_sources == [right.id],
+		"First common Pull drops only the left link during Crown Charge")
+	_check(left.relay_relink_tick == 168 and regent.crown_breakers.get(left.id) == "hero_1",
+		"Left guard tracks its own cooldown and the hero that separated it")
+	for frame in range(21):
+		sim.step()
+	var combo: Array = sim.trace.filter(func(event: Dictionary) -> bool:
+		return event.tile in ["crown_link_separated", "crown_regent_interrupted"])
+	_check(combo.map(func(event: Dictionary) -> String: return event.actor) == ["hero_1", "hero_2", "hero_3"],
+		"Two distinct common Pulls followed by a third hero's Bash cancel Crown Charge")
+	_check(not regent.relay_charge_active and right.relay_relink_tick == 189
+		and combo.size() == 3 and combo[2].amount == 1, "Only the full live-link combo earns a full interrupt")
+
+	sim.start([[], [], []], "solo", options)
+	regent = sim.units[3]
+	left = sim.units[4]
+	right = sim.units[5]
+	for frame in range(22):
+		sim.step()
+	sim._displace("pull", sim.units[0], left, "pull", Vector2.LEFT, 1000.0)
+	sim._displace("pull", sim.units[0], right, "pull", Vector2.LEFT, 1000.0)
+	sim._displace("push", sim.units[2], regent, "bash", Vector2.RIGHT, 600.0)
+	_check(regent.relay_charge_active, "The same hero cannot qualify as both link breakers")
+	sim._damage(sim.units[1], left, 1000, "shot")
+	sim._damage(sim.units[1], right, 1000, "shot")
+	sim._displace("push", sim.units[0], regent, "bash", Vector2.RIGHT, 600.0)
+	var interrupts: Array = sim.trace.filter(func(event: Dictionary) -> bool: return event.tile == "crown_regent_interrupted")
+	_check(not regent.relay_charge_active and interrupts.size() == 1 and interrupts[0].amount == 0,
+		"Defeating the guards leaves a normal Bash fallback without awarding a full interrupt")
 
 
 func _fight(hero: String, encounter: String, hp: int, tile_ids: Array, relics: Array) -> RefCounted:

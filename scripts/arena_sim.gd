@@ -14,6 +14,9 @@ const RELAY_LINK_REACH := 115.0
 const RELAY_BREAK_REACH := 162.0
 const RELAY_CHARGE_BEATS := 6
 const RELAY_MARSHAL_CHARGE_BEATS := 8
+const CROWN_CHARGE_BEATS := 8
+const CROWN_LINK_RECONNECT_BEATS := 5
+const CROWN_TARGET_RULES := ["relay_left", "relay_right", "relay_regent"]
 const TARGET_RULES := ["nearest", "farthest", "lowest_hp", "highest_hp"]
 const RANGED_TILES := ["pull", "gravity_hook", "shot", "hook_bash", "graviton", "event_horizon", "meteor_seal"]
 const BASH_TIERS := [
@@ -85,7 +88,10 @@ const CAMPAIGN_ENEMIES := {
 		"displacement": 0.58},
 	"relay_marshal": {"name": "The Relay Marshal", "art": "relay_marshal", "hp": 750, "radius": 46.0, "speed": 93.0,
 		"spacing": 110.0, "reach": 208.0, "damage": 24, "first": 121, "cooldown": 117, "windup": 39, "push": 300.0,
-		"displacement": 0.82}
+		"displacement": 0.82},
+	"crown_regent": {"name": "The Crown Regent", "art": "crown_regent", "hp": 1100, "radius": 49.0, "speed": 90.0,
+		"spacing": 116.0, "reach": 220.0, "damage": 33, "first": 116, "cooldown": 115, "windup": 45, "push": 330.0,
+		"displacement": 0.72}
 }
 
 const TILES := {
@@ -353,6 +359,12 @@ func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_sca
 		enemy["relay_charge_active"] = false
 		enemy["relay_combo_stage"] = 0
 		enemy["relay_breaker"] = ""
+	elif kind == "crown_regent":
+		enemy["relay_charge_active"] = false
+		enemy["relay_shield_sources"] = []
+		enemy["crown_breakers"] = {}
+		enemy["crown_guard_ids"] = []
+		enemy["crown_charge_interrupted"] = false
 	if kind == "regent":
 		enemy["regent_sealed"] = false
 		enemy["regent_seals_left"] = 0
@@ -362,9 +374,11 @@ func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_sca
 
 func _start_crown_encounter(encounter: String, rng: RandomNumberGenerator, y: float, difficulty: String, segment: int, boss_id: String) -> void:
 	var medium := difficulty == "medium"
-	var second_leg := medium and segment >= 2
-	var health_scale := 2.05 if second_leg else (1.10 if medium else 1.0)
-	var damage_scale := 1.55 if second_leg else (1.07 if medium else 1.0)
+	var hard := difficulty == "hard"
+	var extra_leg := (medium or hard) and segment >= 2
+	var third_leg := hard and segment == 3
+	var health_scale: float = {"medium": [1.10, 2.05, 2.05], "hard": [1.14, 2.15, 2.82]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
+	var damage_scale: float = {"medium": [1.07, 1.55, 1.55], "hard": [1.08, 1.59, 1.72]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	match encounter:
 		"battle":
 			var partner := "relay_runner" if rng.randi_range(0, 1) == 0 else "relay_lancer"
@@ -374,15 +388,32 @@ func _start_crown_encounter(encounter: String, rng: RandomNumberGenerator, y: fl
 		"elite":
 			_add_campaign_enemy("relay_lancer", Vector2(623, y - 12.0), 0, health_scale, damage_scale)
 			_add_campaign_enemy("relay_guard", Vector2(692, y + 44.0), 15, 1.25 * health_scale, damage_scale)
+			if third_leg:
+				_add_campaign_enemy("relay_runner", Vector2(669, y - 114.0), 40, 1.55, damage_scale)
 		"boss":
-			if boss_id == "relay_marshal" or (boss_id.is_empty() and second_leg):
-				_add_campaign_enemy("relay_marshal", Vector2(610, y - 18.0))
-				_add_campaign_enemy("relay_guard", Vector2(704, y + 21.0), 12, 2.55, 1.45)
+			if boss_id == "crown_regent" or (boss_id.is_empty() and third_leg):
+				_start_crown_regent(y)
+			elif boss_id == "relay_marshal" or (boss_id.is_empty() and extra_leg):
+				_add_campaign_enemy("relay_marshal", Vector2(610, y - 18.0), 0, 1.05 if hard else 1.0, 1.04 if hard else 1.0)
+				_add_campaign_enemy("relay_guard", Vector2(704, y + 21.0), 12, 2.65 if hard else 2.55, 1.50 if hard else 1.45)
 			else:
 				_add_campaign_enemy("relay_captain", Vector2(622, y), 0, health_scale, damage_scale)
 		_:
 			_add_campaign_enemy("relay_recruit", Vector2(522, y))
 	_refresh_relay_links(false)
+
+
+func _start_crown_regent(y: float) -> void:
+	_add_campaign_enemy("crown_regent", Vector2(580, y))
+	var regent: Dictionary = units.back()
+	for side in [-1, 1]:
+		_add_campaign_enemy("relay_guard", Vector2(530, y + side * 68.0), 14 if side < 0 else 38, 2.35, 1.55)
+		var guard: Dictionary = units.back()
+		guard.name = "Left Relay Guard" if side < 0 else "Right Relay Guard"
+		guard["crown_role"] = "relay_left" if side < 0 else "relay_right"
+		guard["crown_regent_id"] = regent.id
+		regent.crown_guard_ids.append(guard.id)
+	regent["crown_role"] = "relay_regent"
 
 
 func step() -> Array[Dictionary]:
@@ -431,6 +462,15 @@ func target_for(lane: int, tile_id: String, rule: String) -> Dictionary:
 	return _select(actor, rule, TILES[tile_id].range)
 
 
+func target_rules(tile_id: String) -> Array:
+	if not TILES.has(tile_id):
+		return []
+	var base: Array = TILES[tile_id].targets
+	if tile_id != "guard" and units.any(func(unit: Dictionary) -> bool: return unit.get("crown_role") == "relay_regent"):
+		return base + CROWN_TARGET_RULES
+	return base
+
+
 func _unit(id: String, unit_name: String, side: String, lane: int, position: Vector2, health: int, radius: float, speed: float, preferred_range: float) -> Dictionary:
 	return {
 		"id": id, "name": unit_name, "side": side, "lane": lane, "pos": position, "prev_pos": position,
@@ -460,7 +500,7 @@ func _valid_tiles(tiles: Array) -> Array:
 		for beat in range(start_beat, end_beat):
 			occupied[beat] = 1
 		var rule: String = tile.get("target", "nearest")
-		if not spec.targets.has(rule):
+		if rule not in target_rules(id):
 			rule = spec.targets[0]
 		validated.append({"id": id, "start": start_beat, "end": end_beat, "target": rule})
 	return validated
@@ -475,7 +515,7 @@ func _move_units() -> void:
 		if unit.hp <= 0:
 			next_positions.append(position)
 			continue
-		var focus := _select(unit, _attack_target_rule(unit))
+		var focus := _select(unit, _movement_target_rule(unit))
 		var drive := Vector2.ZERO
 		if unit.intent == "" and unit.get("attack", {}).get("support", false):
 			drive = _relay_support_drive(unit, focus)
@@ -523,8 +563,11 @@ func _bounded(position: Vector2, radius: float) -> Vector2:
 func _select(actor: Dictionary, rule: String, reach: float = INF) -> Dictionary:
 	var best := {}
 	var best_score := INF
+	var crown_target: bool = rule in CROWN_TARGET_RULES
 	for candidate in units:
 		if candidate.side == actor.side or candidate.hp <= 0:
+			continue
+		if crown_target and candidate.get("crown_role", "") != rule:
 			continue
 		var position: Vector2 = actor.pos
 		var distance := position.distance_squared_to(candidate.pos)
@@ -543,11 +586,24 @@ func _select(actor: Dictionary, rule: String, reach: float = INF) -> Dictionary:
 		if score < best_score:
 			best = candidate
 			best_score = score
+	# A defeated named guard should not leave that tile inert for the rest of the fight.
+	if best.is_empty() and crown_target and not units.any(func(unit: Dictionary) -> bool:
+		return unit.hp > 0 and unit.get("crown_role", "") == rule):
+		return _select(actor, "nearest", reach)
 	return best
 
 
 func _attack_target_rule(unit: Dictionary) -> String:
 	return unit.get("attack", {}).get("target", "nearest")
+
+
+func _movement_target_rule(unit: Dictionary) -> String:
+	if unit.side == "hero":
+		var lane: int = unit.lane
+		for tile: Dictionary in _lanes[lane]:
+			if tile.target == "relay_regent" and TILES[tile.id].range < 200.0:
+				return "relay_regent"
+	return _attack_target_rule(unit)
 
 
 func _refresh_relay_links(emit_events := true) -> void:
@@ -566,7 +622,11 @@ func _refresh_relay_links(emit_events := true) -> void:
 		if ally.is_empty():
 			continue
 		guard.relay_link_target = ally.id
-		ally["relay_shield_source"] = guard.id
+		if ally.has("relay_shield_sources"):
+			ally.relay_shield_sources.append(guard.id)
+			ally.crown_breakers.erase(guard.id)
+		else:
+			ally["relay_shield_source"] = guard.id
 		if ally.get("relay_charge_active", false) and ally.get("sprite") == "relay_marshal":
 			ally.relay_combo_stage = 1
 			ally.relay_breaker = ""
@@ -578,6 +638,11 @@ func _relay_ally(guard: Dictionary, reach: float = INF) -> Dictionary:
 	var best := {}
 	var best_distance := reach * reach
 	var origin: Vector2 = guard.pos
+	if guard.has("crown_regent_id"):
+		var regent := _find_unit(guard.crown_regent_id)
+		if not regent.is_empty() and regent.hp > 0 and origin.distance_squared_to(regent.pos) <= best_distance:
+			return regent
+		return {}
 	for ally in units:
 		if ally.side != guard.side or ally.hp <= 0 or ally.has("relay_link_target"):
 			continue
@@ -594,7 +659,18 @@ func _relay_ally(guard: Dictionary, reach: float = INF) -> Dictionary:
 func _break_relay_link(guard: Dictionary, breaker: Dictionary = {}) -> void:
 	var ally := _find_unit(guard.relay_link_target)
 	guard.relay_link_target = ""
-	guard["relay_relink_tick"] = tick + TICKS_PER_BEAT * 2
+	var crown_guard := guard.has("crown_regent_id")
+	guard["relay_relink_tick"] = tick + TICKS_PER_BEAT * (CROWN_LINK_RECONNECT_BEATS if crown_guard else 2)
+	if crown_guard:
+		if not ally.is_empty():
+			ally.relay_shield_sources.erase(guard.id)
+			if ally.relay_charge_active and guard.hp > 0 and not breaker.is_empty():
+				ally.crown_breakers[guard.id] = breaker.id
+				_emit("interrupt", "%s breaks the %s link." % [breaker.name, guard.name], breaker, guard, "crown_link_separated")
+			else:
+				ally.crown_breakers.erase(guard.id)
+			_emit("interrupt", "The Regent loses the %s shield." % guard.name, guard, ally, "relay_link_broken")
+		return
 	if not ally.is_empty() and ally.get("relay_shield_source", "") == guard.id:
 		ally.relay_shield_source = ""
 		_emit("interrupt", "%s loses its relay shield." % ally.name, guard, ally, "relay_link_broken")
@@ -837,6 +913,9 @@ func _run_enemies() -> void:
 			if tick > LOOP_TICKS and tick % LOOP_TICKS == 1:
 				_begin_forge_sweep(enemy)
 				continue
+		elif enemy.get("sprite") == "crown_regent" and not enemy.crown_charge_interrupted and tick % LOOP_TICKS == TICKS_PER_BEAT + 1:
+			_begin_relay_charge(enemy)
+			continue
 		elif enemy.get("sprite") in ["relay_captain", "relay_marshal"] and tick % LOOP_TICKS == TICKS_PER_BEAT + 1:
 			_begin_relay_charge(enemy)
 			continue
@@ -881,6 +960,11 @@ func _resolve_intent(enemy: Dictionary) -> void:
 		enemy.relay_charge_active = false
 		enemy.intent_tick = 0
 		var marked := _find_unit(intent)
+		if enemy.get("sprite") == "crown_regent":
+			enemy.crown_breakers.clear()
+			_emit("intent", "The Crown Regent releases Crown Charge.", enemy, marked, "crown_regent_discharge")
+			_sweep(enemy, attack, 125.0, 11)
+			return
 		if marshal:
 			enemy.relay_combo_stage = 0
 			enemy.relay_breaker = ""
@@ -944,10 +1028,16 @@ func _begin_relay_charge(enemy: Dictionary) -> void:
 	if target.is_empty():
 		return
 	var marshal: bool = enemy.get("sprite") == "relay_marshal"
-	var beats := RELAY_MARSHAL_CHARGE_BEATS if marshal else RELAY_CHARGE_BEATS
+	var crown: bool = enemy.get("sprite") == "crown_regent"
+	var beats := CROWN_CHARGE_BEATS if crown else (RELAY_MARSHAL_CHARGE_BEATS if marshal else RELAY_CHARGE_BEATS)
 	enemy.intent = target.id
 	enemy.intent_tick = tick + TICKS_PER_BEAT * beats - 1
 	enemy.relay_charge_active = true
+	if crown:
+		enemy.crown_breakers.clear()
+		_emit("intent", "Crown Charge in 8 beats. Separate each Guard with a different hero, then Bash the Regent.",
+			enemy, target, "crown_regent_charge")
+		return
 	if marshal:
 		enemy.relay_breaker = ""
 		enemy.relay_combo_stage = 3 if enemy.get("relay_shield_source", "") == "" else 1
@@ -962,7 +1052,25 @@ func _begin_relay_charge(enemy: Dictionary) -> void:
 
 func _interrupt_relay_charge(actor: Dictionary, enemy: Dictionary, kind: String) -> void:
 	var marshal: bool = enemy.get("sprite") == "relay_marshal"
-	if marshal:
+	if enemy.get("sprite") == "crown_regent":
+		if kind != "push" or not enemy.relay_shield_sources.is_empty():
+			return
+		var contributors := {}
+		var live_links := 0
+		for guard_id: String in enemy.crown_guard_ids:
+			var guard := _find_unit(guard_id)
+			if guard.is_empty() or guard.hp <= 0:
+				continue
+			live_links += 1
+			var breaker: String = enemy.crown_breakers.get(guard_id, "")
+			if breaker.is_empty() or breaker == actor.id or contributors.has(breaker):
+				return
+			contributors[breaker] = true
+		enemy.crown_charge_interrupted = true
+		enemy.crown_breakers.clear()
+		_emit("interrupt", "%s interrupts Crown Charge." % actor.name, actor, enemy,
+			"crown_regent_interrupted", int(live_links == 2))
+	elif marshal:
 		if kind != "push" or enemy.relay_combo_stage == 1 or enemy.relay_breaker == actor.id:
 			return
 		var linked_combo: bool = enemy.relay_combo_stage == 2
@@ -979,6 +1087,12 @@ func _interrupt_relay_charge(actor: Dictionary, enemy: Dictionary, kind: String)
 
 
 func _break_displaced_relay_link(target: Dictionary, endpoint: Vector2, breaker: Dictionary) -> void:
+	if target.has("relay_shield_sources"):
+		for guard_id: String in target.relay_shield_sources.duplicate():
+			var linked := _find_unit(guard_id)
+			if not linked.is_empty() and endpoint.distance_squared_to(linked.pos) > RELAY_BREAK_REACH * RELAY_BREAK_REACH:
+				_break_relay_link(linked, breaker)
+		return
 	var guard := target if target.has("relay_link_target") else _find_unit(target.get("relay_shield_source", ""))
 	if guard.is_empty() or guard.relay_link_target == "":
 		return
@@ -1114,6 +1228,12 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 				amount -= prevented
 				_emit("guard", "%s's relay shield blocks %d damage." % [target.name, prevented],
 					_find_unit(target.relay_shield_source), target, "relay_absorb", prevented)
+		if target.has("relay_shield_sources") and not target.relay_shield_sources.is_empty():
+			var prevented := mini(amount - 1, roundi(amount * 0.30 * target.relay_shield_sources.size()))
+			if prevented > 0:
+				amount -= prevented
+				_emit("guard", "The Crown shields block %d damage." % prevented,
+					_find_unit(target.relay_shield_sources[0]), target, "relay_absorb", prevented)
 	if tile_id == "enemy_attack" and target.get("class") == "bulwark" and target.get("bulwark_loop", -1) != _loop_index():
 		target["bulwark_loop"] = _loop_index()
 		amount = maxi(0, amount - 6)
@@ -1140,8 +1260,11 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 				target.relay_combo_stage = 0
 				target.relay_breaker = ""
 		var relay := target if target.has("relay_link_target") else _find_unit(target.get("relay_shield_source", ""))
-		if not relay.is_empty():
+		if not relay.is_empty() and relay.relay_link_target != "":
 			_break_relay_link(relay)
+		if target.has("relay_shield_sources"):
+			for guard_id: String in target.relay_shield_sources.duplicate():
+				_break_relay_link(_find_unit(guard_id))
 		_emit("defeat_unit", "%s falls." % target.name, actor, target, tile_id)
 		if target.get("attack", {}).get("twin", false):
 			_rally_twin(target)

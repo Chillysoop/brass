@@ -18,7 +18,8 @@ const TEAL := Color("#9ddbd1")
 const RUST := Color("#e8a28b")
 const LABELS := {
 	"nearest": "Nearest", "farthest": "Farthest", "lowest_hp": "Lowest HP",
-	"highest_hp": "Highest HP", "self": "Self"
+	"highest_hp": "Highest HP", "self": "Self",
+	"relay_left": "Left Guard", "relay_right": "Right Guard", "relay_regent": "Crown Regent"
 }
 
 var sim = ArenaSim.new()
@@ -378,13 +379,16 @@ func _update_relay_status() -> void:
 	for unit: Dictionary in sim.units:
 		if unit.hp <= 0:
 			continue
-		if unit.get("sprite") in ["relay_captain", "relay_marshal"]:
+		if unit.get("sprite") in ["relay_captain", "relay_marshal", "crown_regent"]:
 			leader = unit
 		if unit.has("relay_link_target"):
 			guard_alive = true
 		if not str(unit.get("relay_shield_source", "")).is_empty():
 			protected.append(unit.name)
 	if leader.is_empty() and not guard_alive:
+		return
+	if leader.get("sprite") == "crown_regent":
+		_update_regent_status(leader)
 		return
 	var cues := PackedStringArray()
 	var color := TEAL
@@ -412,15 +416,70 @@ func _update_relay_status() -> void:
 	relay_status.add_theme_color_override("font_color", color)
 	relay_status.show()
 
+func _update_regent_status(regent: Dictionary) -> void:
+	var active: bool = regent.get("relay_charge_active", false)
+	var sources: Array = regent.get("relay_shield_sources", [])
+	var breakers: Dictionary = regent.get("crown_breakers", {})
+	var eligible := _available_relay_heroes(_live_regent_breakers(breakers))
+	var guidance := "Use tile targeting to assign each Guard to a different hero. Save a push from your third hero for the Regent."
+	var color := TEAL
+	if regent.get("crown_charge_interrupted", false):
+		guidance = "Interrupted · The Regent won't charge again."
+	elif active:
+		var remaining := maxi(0, int(regent.get("intent_tick", 0)) - sim.tick)
+		guidance = "Displace a linked Guard" if not sources.is_empty() else "Push the Regent"
+		if not eligible.is_empty():
+			guidance += " with " + " or ".join(eligible)
+		else:
+			guidance = "No eligible hero remains to interrupt"
+		guidance += " · %.1f beats left" % (float(remaining) / ArenaSim.TICKS_PER_BEAT)
+		color = RUST if remaining <= 2 * ArenaSim.TICKS_PER_BEAT else GOLD
+	relay_status.text = "%s · %s  /  %s" % [
+		"Crown Charge", guidance, _regent_link_summary(regent, sources)]
+	relay_status.tooltip_text = relay_status.text
+	relay_status.add_theme_color_override("font_color", color)
+	relay_status.show()
+
+func _available_relay_heroes(excluded: Array) -> PackedStringArray:
+	var names := PackedStringArray()
+	for hero: Dictionary in sim.units:
+		if hero.side == "hero" and hero.hp > 0 and hero.id not in excluded:
+			names.append(hero.name)
+	return names
+
+func _live_regent_breakers(breakers: Dictionary) -> Array:
+	var actors: Array = []
+	for guard: Dictionary in sim.units:
+		if guard.hp > 0 and breakers.has(guard.id):
+			actors.append(breakers[guard.id])
+	return actors
+
+func _regent_link_summary(regent: Dictionary, sources: Array) -> String:
+	var labels := PackedStringArray()
+	for guard: Dictionary in sim.units:
+		if not guard.has("relay_link_target"):
+			continue
+		var side := str(guard.name).get_slice(" ", 0)
+		var note := "Unlinked"
+		if guard.hp <= 0:
+			note = "Defeated"
+		elif guard.id in sources:
+			note = "Linked"
+		else:
+			var delay: int = int(guard.get("relay_relink_tick", 0)) - sim.tick
+			if delay > 0:
+				note = "Relinks in %.1f beats" % (float(delay) / ArenaSim.TICKS_PER_BEAT)
+		labels.append("%s: %s" % [side, note])
+	if labels.is_empty():
+		return "%s unshielded" % regent.name
+	return "  ·  ".join(labels)
+
 func _marshal_charge_instruction(marshal: Dictionary) -> String:
 	match int(marshal.get("relay_combo_stage", 0)):
 		1:
 			return "1 of 2 · Pull or push the pair apart"
 		2:
-			var eligible := PackedStringArray()
-			for hero: Dictionary in sim.units:
-				if hero.side == "hero" and hero.hp > 0 and hero.id != marshal.get("relay_breaker", ""):
-					eligible.append(hero.name)
+			var eligible := _available_relay_heroes([marshal.get("relay_breaker", "")])
 			if not eligible.is_empty():
 				return "2 of 2 · Push the Marshal with " + " or ".join(eligible)
 			return "2 of 2 · A different hero must push the Marshal"
@@ -484,7 +543,7 @@ func _build_lane(lane_index: int) -> void:
 	var all := OptionButton.new()
 	all.add_theme_font_size_override("font_size", 12)
 	all.add_item("Set all targets")
-	for target in ["nearest", "farthest", "lowest_hp", "highest_hp"]:
+	for target: String in sim.target_rules("bash"):
 		all.add_item(LABELS[target])
 		all.set_item_metadata(all.item_count - 1, target)
 	all.tooltip_text = "Applies to compatible tiles and sets the default for newly placed tiles."
@@ -553,11 +612,17 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	targets.clip_text = true
 	targets.fit_to_longest_item = false
 	targets.add_theme_font_size_override("font_size", 11)
-	for rule: String in tile.targets:
+	var available_rules: Array = sim.target_rules(item.id)
+	var current_rule: String = item.target if item.target in available_rules else available_rules[0]
+	for rule: String in available_rules:
 		targets.add_item(LABELS[rule])
 		targets.set_item_metadata(targets.item_count - 1, rule)
-		if item.target == rule:
+		if current_rule == rule:
 			targets.select(targets.item_count - 1)
+	if "relay_regent" in available_rules:
+		targets.tooltip_text = "Left Guard, Right Guard, and Crown Regent lock onto those units by name."
+	elif item.target != current_rule:
+		targets.tooltip_text = "This fight uses %s. Your saved Crown Regent target rule is kept." % LABELS[current_rule]
 	targets.disabled = state != "setup" or targets.item_count == 1
 	targets.item_selected.connect(func(index: int):
 		item.target = targets.get_item_metadata(index)
@@ -569,7 +634,9 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	card.add_child(targets)
 
 func _tile_tooltip(lane_index: int, item: Dictionary, tile: Dictionary) -> String:
-	var preview: Dictionary = sim.target_for(lane_index, item.id, item.target)
+	var available_rules: Array = sim.target_rules(item.id)
+	var rule: String = item.target if item.target in available_rules else available_rules[0]
+	var preview: Dictionary = sim.target_for(lane_index, item.id, rule)
 	return "%s\nFires on beat %d · %s" % [
 		tile.description, item.start + tile.width, preview.get("name", "No target in range at setup")
 	]
@@ -578,7 +645,7 @@ func _set_all(lane_index: int, rule: String) -> void:
 	defaults[lane_index] = rule
 	var skipped := 0
 	for item: Dictionary in lanes[lane_index]:
-		if rule in ArenaSim.TILES[item.id].targets:
+		if rule in sim.target_rules(item.id):
 			item.target = rule
 		else:
 			skipped += 1
@@ -643,7 +710,7 @@ func _place(payload: Dictionary, lane_index: int, start: int) -> void:
 	if not _can_place(payload, lane_index, start):
 		setup_hint.text = "That tile overlaps another tile or extends beyond beat 12."
 		return
-	var valid: Array = ArenaSim.TILES[payload.id].targets
+	var valid: Array = sim.target_rules(payload.id)
 	var target: String = defaults[lane_index] if defaults[lane_index] in valid else valid[0]
 	if payload.has("lane"):
 		var original := _take_tile(payload)

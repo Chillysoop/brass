@@ -60,6 +60,12 @@ const CROWN_HIGH_RELAY_NODE_LABELS := {
 	"event": ["Signalman's Infirmary", "Lost Dispatch", "Storm Cache"],
 	"rest": ["Windbreak Station", "Upper Beacon Shelter"],
 }
+const CROWN_REGENT_NODE_LABELS := {
+	"battle": ["Oathwalk", "Windcutter Span", "Crown Bastion", "Guardspire Steps", "Bell Tower Approach"],
+	"elite": ["Regent's Honor Guard", "Crown Vanguard"],
+	"shop": ["Standard-Bearer's Supply", "Aerie Exchange"],
+	"rest": ["Lantern Eyrie", "Regent's Terrace"],
+}
 const EVENT_KINDS := {
 	"Jammed Crane": "salvage", "Loaded Beacon": "ambush", "Relay Auction": "trade",
 	"Cracked Mold": "salvage", "Smelter Relay": "ambush", "Cinder Exchange": "trade",
@@ -72,17 +78,17 @@ const BOSS_LABELS := {
 	"tollkeeper": "The Tollkeeper", "gilded_marshal": "The Gilded Marshal",
 	"iron_regent": "The Iron Regent", "crucible_twins": "The Crucible Twins", "prism_warden": "The Prism Warden",
 	"tempered_colossus": "The Tempered Colossus",
-	"relay_captain": "The Relay Captain", "relay_marshal": "The Relay Marshal",
+	"relay_captain": "The Relay Captain", "relay_marshal": "The Relay Marshal", "crown_regent": "The Crown Regent",
 }
 const BRASS_BOSSES := ["tollkeeper", "gilded_marshal", "iron_regent"]
 const GLASS_BOSSES := ["crucible_twins", "prism_warden", "tempered_colossus"]
-const CROWN_BOSSES := ["relay_captain", "relay_marshal"]
+const CROWN_BOSSES := ["relay_captain", "relay_marshal", "crown_regent"]
 const SEGMENT_COUNTS := {"easy": 1, "medium": 2, "hard": 3}
 const DEFAULT_PROFILE := {
 	"marks": 0, "medium_unlocked": false, "hard_unlocked": false, "glass_easy_unlocked": false,
 	"brass_hard_cleared": false, "glass_medium_unlocked": false, "glass_hard_unlocked": false,
 	"glass_hard_cleared": false, "crown_easy_unlocked": false, "crown_medium_unlocked": false,
-	"crown_hard_unlocked": false, "moonwreck_easy_unlocked": false, "meta": [],
+	"crown_hard_unlocked": false, "crown_hard_cleared": false, "moonwreck_easy_unlocked": false, "meta": [],
 }
 const NODES_PER_SEGMENT := 7
 const VERSION := 1
@@ -169,6 +175,7 @@ func can_start(difficulty: String, location := "brass") -> bool:
 		match difficulty:
 			"easy": return profile.crown_easy_unlocked
 			"medium": return profile.crown_medium_unlocked
+			"hard": return profile.crown_hard_unlocked
 		return false
 	if location == "glass":
 		match difficulty:
@@ -364,7 +371,12 @@ func _resolve_boss() -> void:
 		data.node_notice = "%s fell. Choose a Legendary and draft a %s hero." % [data.node.label, rank]
 		return
 	data.result = "victory"
-	if data.location == "crown" and data.difficulty == "medium":
+	if data.location == "crown" and data.difficulty == "hard":
+		var first_clear := not bool(profile.crown_hard_cleared)
+		_grant_marks(50 if first_clear else 35)
+		profile.crown_hard_cleared = true
+		data.node_notice = "Crown Relay Hard mastered." if first_clear else "Crown Relay Hard cleared."
+	elif data.location == "crown" and data.difficulty == "medium":
 		var first_clear := not bool(profile.crown_hard_unlocked)
 		_grant_marks(30 if first_clear else 20)
 		profile.crown_hard_unlocked = true
@@ -652,7 +664,7 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 		if glass:
 			gate = "Annealing Hall" if segment == 1 else "Tempering Causeway"
 		elif crown:
-			gate = "High Relay Gate"
+			gate = "High Relay Gate" if segment == 1 else "Crown Causeway"
 		layers.append([_node("battle", gate, layers.size(), 1)])
 		var leg := [
 			["battle", "event" if segment == 1 else "battle", "battle"],
@@ -672,11 +684,14 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 			else:
 				leg_labels = GLASS_TEMPERING_NODE_LABELS
 		elif crown:
-			leg = [
-				["battle", "shop", "battle"], ["elite", "battle", "event"],
-				["battle", "event", "battle"], ["shop", "battle", "elite"], ["rest", "rest", "rest"],
-			]
-			leg_labels = CROWN_HIGH_RELAY_NODE_LABELS
+			if segment == 1:
+				leg = [
+					["battle", "shop", "battle"], ["elite", "battle", "event"],
+					["battle", "event", "battle"], ["shop", "battle", "elite"], ["rest", "rest", "rest"],
+				]
+				leg_labels = CROWN_HIGH_RELAY_NODE_LABELS
+			else:
+				leg_labels = CROWN_REGENT_NODE_LABELS
 		_append_layers(layers, leg, leg_labels, rng, used_events)
 		_append_boss(layers, bosses[segment])
 	for row in range(layers.size() - 1):

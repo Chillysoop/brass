@@ -1,6 +1,6 @@
 # Brass & Aether
 
-The Windows playtest includes Easy, Medium, and Hard expeditions in Brass Frontier and Glass Foundry, Crown Relay Easy and Medium, and a separate practice arena. Open `project.godot` in Godot 4.7.2 and press F5.
+The Windows playtest includes Easy, Medium, and Hard expeditions in Brass Frontier, Glass Foundry, and Crown Relay, plus a separate practice arena. Open `project.godot` in Godot 4.7.2 and press F5.
 
 ## Playtest
 
@@ -19,6 +19,8 @@ Glass Foundry Hard adds the Tempering Causeway and a third hero after the Prism 
 Crown Relay Easy is a solo expedition through the skybridge outposts. Relay Guards shield nearby allies. Defeat the guard or pull one enemy away from the other to break the link. Time a Bash during the Relay Captain's windup to interrupt the charged strike. The first clear records the unlock for Crown Relay Medium.
 
 Crown Relay Medium starts solo. Take a Legendary tile after defeating the Relay Captain and recruit a second hero for the High Relay Gate. While the Relay Marshal charges, separate the pair with one hero, then Bash the Marshal with your other hero before the link returns. A clear earns the unlocks for Crown Relay Hard and Moonwreck Docks Easy.
+
+Crown Relay Hard adds the Crown Causeway and a third hero after the Relay Marshal. During Crown Charge, assign different heroes to break the Left and Right Guards' links. Bash the Crown Regent with your third hero while both links are down. Each link has its own reconnect timer. Defeating a guard removes its link from the fight.
 
 Brass Frontier Hard has three legs. Recruit after the Tollkeeper and the Gilded Marshal. When the Iron Regent raises its seals, land damaging hits from three different heroes within four beats to break them.
 

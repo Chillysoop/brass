@@ -10,6 +10,7 @@ const GOLD := Color("#f3cb80")
 const WHITE := Color("#fff0d2")
 const TELEPORT_COLOR := Color("#b2afd9")
 const RELAY_SHIELD_COLOR := Color("#91e2f4")
+const RIGHT_RELAY_COLOR := Color("#e7b3ff")
 const ARENA_TEXTURES := {"glass": "glass_arena", "crown": "crown_arena"}
 const SPRITE_PATHS := {
 	"arena": "res://assets/arena.webp",
@@ -27,6 +28,7 @@ const SPRITE_PATHS := {
 	"relay_guard": "res://assets/relay_guard.png",
 	"relay_captain": "res://assets/relay_captain.png",
 	"relay_marshal": "res://assets/relay_marshal.png",
+	"crown_regent": "res://assets/crown_regent.png",
 	"glass_arena": "res://assets/glass-arena.webp",
 	"crown_arena": "res://assets/crown-arena.webp",
 }
@@ -47,6 +49,8 @@ const RELAY_EFFECTS := {
 	"relay_link_broken": "relay_link_broken",
 	"relay_marshal_interrupted": "relay_interrupted",
 	"relay_marshal_separated": "relay_marshal_separated",
+	"crown_regent_interrupted": "relay_interrupted",
+	"crown_link_separated": "relay_marshal_separated",
 }
 
 var units: Array = []
@@ -84,6 +88,8 @@ func present(units_data: Array, events: Array) -> void:
 	units = units_data
 	for event in events:
 		var tile: String = event.get("tile", "")
+		if tile == "relay_link_broken" and str(event.target).begins_with("crown_regent"):
+			continue
 		var kind: String = RELAY_EFFECTS.get(tile, event.get("kind", ""))
 		if not EFFECT_LENGTHS.has(kind):
 			continue
@@ -183,7 +189,7 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		texture = _textures.get("clockwork")
 	var radius := maxf(8.0, float(unit.radius) * unit_scale)
 	var model_height := 132.0
-	if art_key == "tempered_colossus":
+	if art_key in ["tempered_colossus", "crown_regent"]:
 		model_height = 218.0
 	elif art_key in ["marshal", "regent", "glass_twin", "prism_warden", "relay_captain", "relay_marshal"]:
 		model_height = 191.0
@@ -212,6 +218,8 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		var tint := GOLD.lightened(0.35) if art_key == "marshal" and not _textures.has("marshal") else Color.WHITE
 		if unit.name == "Crucible Twin · Ember":
 			tint = Color("#ffc391")
+		elif unit.get("crown_role") == "relay_right":
+			tint = RIGHT_RELAY_COLOR.lerp(Color.WHITE, 0.32)
 		draw_texture_rect(texture, Rect2(-width * 0.5, -art_height, width, art_height), false, tint.lerp(GOLD, flash * 0.6))
 		draw_set_transform(Vector2.ZERO)
 	else:
@@ -249,10 +257,22 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		_draw_colossus_stage(unit, point, radius, bar)
 	if unit.get("relay_charge_active", false):
 		_draw_relay_charge(unit, point, radius, bar)
-	if not str(unit.get("relay_shield_source", "")).is_empty():
+	var crown_sources: Array = unit.get("relay_shield_sources", [])
+	if not str(unit.get("relay_shield_source", "")).is_empty() or not crown_sources.is_empty():
 		var position := point - Vector2(0.0, art_height * 0.38)
 		draw_arc(position, art_height * 0.40, 0.0, TAU, 28, Color(RELAY_SHIELD_COLOR, 0.78), 2.0, true)
-		_draw_shield_mark(Vector2(bar.end.x + 9.0, bar.get_center().y), RELAY_SHIELD_COLOR)
+		if crown_sources.is_empty():
+			_draw_shield_mark(Vector2(bar.end.x + 9.0, bar.get_center().y), RELAY_SHIELD_COLOR)
+		else:
+			var offset := 9.0
+			for source: Dictionary in units:
+				if source.id in crown_sources:
+					_draw_shield_mark(Vector2(bar.end.x + offset, bar.get_center().y), _relay_link_color(source))
+					offset += 12.0
+	var role: String = unit.get("crown_role", "")
+	if role in ["relay_left", "relay_right"]:
+		var caption := "LEFT GUARD" if role == "relay_left" else "RIGHT GUARD"
+		_draw_centered(caption, bar.get_center() - Vector2(0.0, 9.0), 12, _relay_link_color(unit))
 
 
 func _draw_relay_charge(unit: Dictionary, point: Vector2, radius: float, bar: Rect2) -> void:
@@ -263,6 +283,9 @@ func _draw_relay_charge(unit: Dictionary, point: Vector2, radius: float, bar: Re
 			1: caption = "LINKED CHARGE · SEPARATE"
 			2: caption = "LINKED CHARGE · FOLLOW UP"
 			_: caption = "LINKED CHARGE · INTERRUPT"
+	elif unit.get("sprite") == "crown_regent":
+		var sources: Array = unit.get("relay_shield_sources", [])
+		caption = "CROWN CHARGE · BREAK LINKS" if not sources.is_empty() else "CROWN CHARGE · INTERRUPT"
 	_draw_centered(caption, bar.get_center() - Vector2(0.0, 9.0), 14, GOLD)
 	if stage in [1, 2]:
 		draw_arc(point, radius * 1.45, 0.0, PI - 0.18, 18, HERO_COLOR if stage == 2 else GOLD, 3.0, true)
@@ -291,10 +314,14 @@ func _draw_relay_links(field: Rect2) -> void:
 			var start := _project(_positions.get(guard.id, guard.pos), field)
 			var end := _project(_positions.get(ally.id, ally.pos), field)
 			var lift := Vector2(0.0, -11.0)
+			var color := _relay_link_color(guard)
 			draw_line(start + lift, end + lift, Color(INK, 0.70), 6.0, true)
-			_draw_arrow(start + lift, end + lift, RELAY_SHIELD_COLOR)
-			draw_arc(end, 13.0, 0.0, TAU, 24, RELAY_SHIELD_COLOR, 2.0, true)
+			_draw_arrow(start + lift, end + lift, color)
 			break
+
+
+func _relay_link_color(guard: Dictionary) -> Color:
+	return RIGHT_RELAY_COLOR if guard.get("crown_role") == "relay_right" else RELAY_SHIELD_COLOR
 
 
 func _draw_colossus_stage(unit: Dictionary, point: Vector2, radius: float, bar: Rect2) -> void:

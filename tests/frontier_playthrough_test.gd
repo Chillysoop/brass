@@ -3,6 +3,7 @@ extends SceneTree
 const Arena = preload("res://arena.tscn")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
+const TilePacking = preload("res://scripts/tile_packing.gd")
 var failures: Array[String] = []
 var save_path := "user://frontier-playtest-%s.json" % str(Time.get_ticks_usec())
 
@@ -95,6 +96,8 @@ func _run() -> void:
 	_check(game.run.finish_run(), "Close the Crown Relay victory recap.")
 	var crown_medium_fights := _new_route_playthrough(game, "medium", "crown")
 	_check(game.run.finish_run(), "Close the Crown Relay Medium victory recap.")
+	var crown_hard_fights := _new_route_playthrough(game, "hard", "crown")
+	_check(game.run.finish_run(), "Close the Crown Relay Hard victory recap.")
 	var glass_hard_fights := _new_route_playthrough(game, "hard", "glass")
 	_check(game.run.finish_run(), "Close the Glass Foundry Hard victory recap.")
 	var hard_fights := _new_route_playthrough(game, "hard", "brass")
@@ -104,8 +107,8 @@ func _run() -> void:
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Playthroughs passed: Brass Easy %d fights (%d HP), Medium %d (%d HP combined), Brass Hard %d, Glass Easy %d, Glass Medium %d, Glass Hard %d, Crown Easy %d, Crown Medium %d." % [
-			battles, easy_hp, medium.fights, medium.hp, hard_fights, glass_fights, glass_medium_fights, glass_hard_fights, crown_fights, crown_medium_fights])
+		print("Playthroughs passed: Brass Easy %d fights (%d HP), Medium %d (%d HP combined), Brass Hard %d, Glass Easy %d, Glass Medium %d, Glass Hard %d, Crown Easy %d, Crown Medium %d, Crown Hard %d." % [
+			battles, easy_hp, medium.fights, medium.hp, hard_fights, glass_fights, glass_medium_fights, glass_hard_fights, crown_fights, crown_medium_fights, crown_hard_fights])
 	game.queue_free()
 	await process_frame
 	quit(0 if failures.is_empty() else 1)
@@ -239,6 +242,7 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 	var boss_party_sizes: Array[int] = []
 	var glass_hard := location == "glass" and difficulty == "hard"
 	var crown_medium := location == "crown" and difficulty == "medium"
+	var crown_hard := location == "crown" and difficulty == "hard"
 	var recruit_checkpoints := 0
 	for step in range(100):
 		match run.data.phase:
@@ -255,7 +259,7 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 				run.choose_starter("bash")
 			"recruit_starter":
 				run.choose_starter("shot")
-				if glass_hard or crown_medium:
+				if glass_hard or crown_medium or crown_hard:
 					var saved := FrontierRun.new()
 					_check(saved.load_save(save_path) and saved.data.segment == run.data.segment
 						and saved.data.heroes == run.data.heroes and saved.loadout.lanes == run.loadout.lanes,
@@ -268,8 +272,10 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 				if final and location == "crown":
 					if crown_medium:
 						_arrange_crown_combo(game)
+					elif crown_hard:
+						_arrange_crown_hard_combo(game)
 					var saved := FrontierRun.new()
-					var boss_id := "relay_marshal" if crown_medium else "relay_captain"
+					var boss_id: String = {"easy": "relay_captain", "medium": "relay_marshal", "hard": "crown_regent"}[difficulty]
 					_check(saved.load_save(save_path) and saved.encounter().get("boss_id") == boss_id
 						and saved.loadout.lanes == run.loadout.lanes, "Crown Relay must resume its saved boss setup.")
 				if run.data.node.type == "boss":
@@ -301,9 +307,11 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 						contributors[event.actor] = true
 					_check(contributors.size() == 3, "A different hero must contribute each step of the combo.")
 				if final and location == "crown":
-					var interruption := "relay_marshal_interrupted" if crown_medium else "relay_interrupted"
+					var interruption: String = {
+						"easy": "relay_interrupted", "medium": "relay_marshal_interrupted", "hard": "crown_regent_interrupted"
+					}[difficulty]
 					_check(game.sim.trace.any(func(event: Dictionary):
-						return event.tile == interruption and (not crown_medium or event.amount == 1)),
+						return event.tile == interruption and (difficulty == "easy" or event.amount == 1)),
 						"The expedition loadout should interrupt the final Crown Relay boss.")
 				game._action()
 			"reward":
@@ -312,7 +320,8 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 					if preferred in run.data.offers:
 						chosen = preferred
 						break
-				if crown_medium and run.data.node.row == 0 and "pull" in run.data.offers:
+				if "pull" in run.data.offers and (crown_medium and run.data.node.row == 0
+					or crown_hard and run.data.node.row in [0, 4]):
 					chosen = "pull"
 				if not game.run_claim_reward(chosen):
 					run.reward("skip")
@@ -362,7 +371,11 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 			else:
 				_check(run.profile.glass_hard_unlocked and run.profile.crown_easy_unlocked, "Glass Medium should unlock Glass Hard and Crown Easy.")
 		"hard":
-			if glass_hard:
+			if crown_hard:
+				var saved := FrontierRun.new()
+				_check(recruit_checkpoints == 2 and saved.load_save(save_path) and saved.profile.crown_hard_cleared
+					and saved.data.get("result") == "victory", "Crown Hard should persist both recruits and its first clear.")
+			elif glass_hard:
 				var saved := FrontierRun.new()
 				_check(recruit_checkpoints == 2 and saved.load_save(save_path) and saved.profile.glass_hard_cleared
 					and saved.data.get("result") == "victory", "Glass Hard should persist both recruits and its first clear.")
@@ -400,6 +413,54 @@ func _arrange_crown_combo(game: Control) -> void:
 		if not destination.is_empty():
 			item.start = destination.start
 			destination.items.append(item)
+	game._save_loadout()
+
+
+func _arrange_crown_hard_combo(game: Control) -> void:
+	var remaining: Array = []
+	for lane: Array in game.lanes + game.storage_rows:
+		remaining.append_array(lane)
+	var combo := [
+		{"id": "pull", "start": 0, "target": "relay_left"},
+		{"id": "pull", "start": 1, "target": "relay_right"},
+		{"id": "bash", "start": 2, "target": "relay_regent"},
+	]
+	for tile: Dictionary in combo:
+		var index := remaining.find_custom(func(item: Dictionary): return item.id == tile.id)
+		_check(index >= 0, "Crown Hard must earn both Pull tiles and Bash before the Regent.")
+		if index < 0:
+			return
+		remaining.remove_at(index)
+	for index in range(combo.size()):
+		game.lanes[index].assign([combo[index]])
+	for row: Array in game.storage_rows:
+		row.clear()
+	remaining.sort_custom(func(left: Dictionary, right: Dictionary):
+		return ArenaSim.TILES[left.id].damage > ArenaSim.TILES[right.id].damage)
+	for tile: Dictionary in remaining:
+		var equipped := false
+		for lane_index in range(game.lanes.size()):
+			var lane: Array = game.lanes[lane_index]
+			for beat in range(4, ArenaSim.BEATS):
+				if game._can_place(tile, lane_index, beat):
+					tile.start = beat
+					lane.append(tile)
+					equipped = true
+					break
+			if equipped:
+				break
+		if equipped:
+			continue
+		for row: Array in game.storage_rows:
+			for beat in range(TilePacking.STORAGE_COLUMNS):
+				if TilePacking.can_place(row, tile.id, beat, TilePacking.STORAGE_COLUMNS):
+					tile.start = beat
+					row.append(tile)
+					equipped = true
+					break
+			if equipped:
+				break
+		_check(equipped, "The Crown Hard test should retain all earned tiles.")
 	game._save_loadout()
 
 

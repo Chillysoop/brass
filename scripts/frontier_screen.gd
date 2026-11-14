@@ -48,6 +48,10 @@ const BOSS_BRIEFS := {
 	"relay_marshal": {
 		"portrait": "relay_marshal",
 		"hint": "When Linked Charge starts, use Pull to separate the Marshal from its Guard. Then land Bash with your other hero before the charge finishes. Pushes can also separate the pair, and if the Guard falls, any hero can interrupt with a push."
+	},
+	"crown_regent": {
+		"portrait": "crown_regent",
+		"hint": "Crown Charge starts on beat 2 and strikes at the end of beat 9. Use a different hero to displace each Guard, then push the Regent with your third hero before the links return. Use Left Guard, Right Guard, and Crown Regent in the tile targeting menu."
 	}
 }
 const MAP_ART := {

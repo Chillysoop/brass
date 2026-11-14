@@ -81,9 +81,13 @@ func _show_page(page: String, location: String = "brass") -> void:
 		"regions": _regions()
 		"difficulty": _difficulty()
 		_: _title()
-	if _focus_target != null:
-		_focus_target.grab_focus.call_deferred()
+	_focus_current_page.call_deferred()
 	page_changed.emit(_page, _location)
+
+
+func _focus_current_page() -> void:
+	if is_instance_valid(_focus_target) and _focus_target.is_visible_in_tree():
+		_focus_target.grab_focus()
 
 
 func _unhandled_key_input(event: InputEvent) -> void:
@@ -290,8 +294,6 @@ func _region_hint(id: String) -> String:
 
 func _difficulty_status(difficulty: String, available: bool) -> String:
 	if not available:
-		if _location == "crown" and difficulty == "hard":
-			return "Coming soon"
 		return "Locked"
 	var profile_key := ""
 	match _location:
@@ -300,17 +302,15 @@ func _difficulty_status(difficulty: String, available: bool) -> String:
 		"glass":
 			profile_key = {"easy": "glass_medium_unlocked", "medium": "glass_hard_unlocked", "hard": "glass_hard_cleared"}[difficulty]
 		"crown":
-			profile_key = {"easy": "crown_medium_unlocked", "medium": "crown_hard_unlocked"}.get(difficulty, "")
+			profile_key = {"easy": "crown_medium_unlocked", "medium": "crown_hard_unlocked", "hard": "crown_hard_cleared"}[difficulty]
 	if _run.profile.get(profile_key, false):
-		return "Mastered" if _location == "glass" and difficulty == "hard" else "Cleared"
+		return "Mastered" if _location in ["glass", "crown"] and difficulty == "hard" else "Cleared"
 	return "Available"
 
 
 func _difficulty_hint(difficulty: String) -> String:
 	if difficulty == "easy":
 		return "Begin a solo expedition."
-	if _location == "crown" and difficulty == "hard" and _run.profile.get("crown_hard_unlocked", false):
-		return "Unlock earned by defeating the Relay Marshal. Available in a future build."
 	if difficulty == "medium":
 		return "Clear %s Easy to unlock." % REGIONS[_location].name
 	return "Clear %s Medium to unlock." % REGIONS[_location].name
