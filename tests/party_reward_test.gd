@@ -4,6 +4,12 @@ const Arena := preload("res://arena.tscn")
 const ArenaSim := preload("res://scripts/arena_sim.gd")
 const FrontierRun := preload("res://scripts/frontier_run.gd")
 const ClassDecks := preload("res://scripts/class_decks.gd")
+const ClassExpansionTiles := preload("res://scripts/class_expansion_tiles.gd")
+const ORIGINAL_STARTERS := {
+	"warden": "shield_tap", "bulwark": "pike_thrust", "breaker": "breaker_maul", "hexwright": "grapple",
+	"wayfarer": "blink", "lancer": "retreat_shot", "cantor": "signal_flare", "apothecary": "snap_shot",
+	"rune_smith": "slam", "starshot": "rivet_bolt", "cinder_mage": "shrapnel", "duelist": "jab",
+}
 
 var failures: Array[String] = []
 var save_path := "user://party-reward-test-%d.json" % Time.get_ticks_usec()
@@ -37,35 +43,61 @@ func _check_class_decks() -> void:
 	var run := FrontierRun.new()
 	run.load_save(save_path)
 	var distinct_pools := {}
-	var seen_by_class := {}
+	var signature_owners := {}
 	for class_id: String in FrontierRun.HEROES:
-		var common: Array = ClassDecks.common(class_id).duplicate()
+		var signature := ClassDecks.signature(class_id)
+		_check(not signature.is_empty() and not signature_owners.has(signature),
+			"%s needs its own signature tile." % class_id)
+		signature_owners[signature] = class_id
+	for class_id: String in FrontierRun.HEROES:
+		var common: Array = ClassDecks.common(class_id)
 		var uncommon: Array = ClassDecks.uncommon(class_id)
+		var signature := ClassDecks.signature(class_id)
+		_check(common.size() == 18 and common.all(func(id: String):
+			return common.count(id) == 1 and ArenaSim.TILES.has(id) \
+				and ArenaSim.TILES[id].get("rarity", "common") == "common"), "%s should have 18 distinct Commons." % class_id)
+		_check(uncommon.size() == 8 and uncommon.all(func(id: String):
+			return uncommon.count(id) == 1 and ArenaSim.TILES.get(id, {}).get("rarity") == "uncommon"),
+			"%s should have 8 distinct Uncommons." % class_id)
+		var new_commons := common.filter(func(id: String): return id in ClassExpansionTiles.COMMON_IDS)
+		var new_uncommons := uncommon.filter(func(id: String): return id in ClassExpansionTiles.UNCOMMON_IDS)
+		_check(new_commons.size() == 8 and new_uncommons.size() == 4,
+			"%s should gain eight new Commons and four new Uncommons." % class_id)
+		_check(uncommon.filter(func(id: String): return signature_owners.has(id)) == [signature],
+			"%s should list only its own signature." % class_id)
 		common.sort()
 		var key := str(common)
 		_check(not distinct_pools.has(key), "%s needs its own Common deck." % class_id)
 		distinct_pools[key] = true
+		run.start_run(1)
+		run.data.offers = [class_id]
+		var starter := ClassDecks.starter(class_id)
+		var started := run.choose_hero(class_id) and run.choose_relic("pocket_bell")
+		started = started and run.data.offers.size() == 3 and starter in run.data.offers and run.choose_starter(starter)
+		_check(started and starter == ORIGINAL_STARTERS[class_id], "%s should still be able to pick its original starter." % class_id)
+		if not started:
+			run.abandon_run()
+			continue
+		var class_pool := common + uncommon
 		var seen := {}
-		for seed_value in range(1, 17):
-			if not run.data.is_empty():
-				run.abandon_run()
-			run.start_run(seed_value)
-			run.data.offers = [class_id]
-			run.choose_hero(class_id)
-			run.choose_relic("pocket_bell")
-			run.choose_starter("bash")
-			run.finish_combat(true, 95)
+		for seed_value in range(1, 385):
+			run.data.seed = seed_value
+			run.data.phase = "combat"
+			_check(run.finish_combat(true, 95), "%s must be able to draft a regular victory reward." % class_id)
 			var offers: Array = run.data.offers
-			var outside := offers.filter(func(id: String):
-				return ArenaSim.TILES[id].get("rarity", "common") == "common" and id != "bash" and id not in common)
-			_check(outside.is_empty(), "%s drew a Common outside their deck." % class_id)
+			_check(offers.size() == 3 and offers.all(func(id: String): return offers.count(id) == 1),
+				"%s should draft three distinct tiles per reward." % class_id)
 			for id: String in offers:
-				if id in common or id in uncommon:
+				if ArenaSim.TILES[id].get("rarity", "common") == "common":
+					_check(id in common, "%s drew a Common outside its deck: %s." % [class_id, id])
+				if signature_owners.has(id):
+					_check(signature_owners[id] == class_id, "%s drew another class's signature: %s." % [class_id, id])
+				if id in class_pool:
 					seen[id] = true
-		seen_by_class[class_id] = seen
-	_check(seen_by_class.size() == 12 and seen_by_class.values().all(func(tiles: Dictionary): return tiles.size() >= 4),
-		"All twelve class decks surface several distinct tiles across seeded fights.")
-	run.abandon_run()
+			if seen.size() == class_pool.size():
+				break
+		_check(seen.size() == class_pool.size(), "%s must be able to draw every class tile across seeded victories." % class_id)
+		run.abandon_run()
 
 
 func _check_medium_rewards(game: Control) -> void:
@@ -87,9 +119,10 @@ func _check_medium_rewards(game: Control) -> void:
 		"The class draft's deck button should open the selected class deck.")
 	if dialog != null:
 		var names := _descendant_buttons(dialog)
-		_check(ClassDecks.common(offered_class).all(func(id: String): return names.any(func(label: String):
+		var deck := ClassDecks.common(offered_class) + ClassDecks.uncommon(offered_class)
+		_check(deck.all(func(id: String): return names.any(func(label: String):
 			return label.begins_with(ArenaSim.TILES[id].label + " "))),
-			"The deck inspector displays the Common tiles used for that class's rewards.")
+			"The deck inspector displays the class's Commons, Uncommons, and signature.")
 		dialog.confirmed.emit()
 		await process_frame
 	started = started and run.choose_hero(run.data.offers[0]) and run.choose_relic("pocket_bell")
@@ -108,18 +141,26 @@ func _check_medium_rewards(game: Control) -> void:
 		and run.data.phase == "recruit", "The original hero earns the first boss tile before recruitment.")
 	var lead_tiles: Array = run.loadout.lanes[0].duplicate(true)
 	var recruit: String = run.data.offers[0]
-	_check(run.choose_recruit(recruit) and run.choose_recruit_starter(run.data.offers[0]), "The second hero joins with one starter tile.")
+	var recruit_starter := ClassDecks.starter(recruit)
+	_check(run.choose_recruit(recruit) and recruit_starter in run.data.offers and run.choose_recruit_starter(recruit_starter),
+		"The second hero can join with their own starter tile.")
 	_check(run.loadout.lanes[0] == lead_tiles and run.loadout.lanes[0].size() > run.loadout.lanes[1].size()
 		and run.loadout.lanes[1].size() == 1, "Recruiting preserves the first hero's head start.")
 
 	var battle := {"id": "party-reward-battle", "row": FrontierRun.NODES_PER_SEGMENT, "column": 0,
 		"type": "battle", "label": "Practice Patrol", "next": []}
+	# Signatures can move between heroes without entering the recipient's reward pool.
+	var lead_signature := ClassDecks.signature(lead)
+	var recruit_signature := ClassDecks.signature(recruit)
+	run.loadout.lanes[0].assign([{"id": recruit_signature, "start": 0, "target": ArenaSim.TILES[recruit_signature].targets[0]}])
+	run.loadout.lanes[1].assign([{"id": lead_signature, "start": 0, "target": ArenaSim.TILES[lead_signature].targets[0]}])
 	run.data.node = battle
 	run.data.phase = "combat"
 	_check(run.finish_combat(true, [100, 100]) and run.reward_count() == 2
 		and run.reward_lane() == 0 and run.reward_position() == 0, "The next victory must offer one reward per hero.")
 	var first_offers: Array = run.data.offers.duplicate()
-	_check(first_offers.size() == 3, "The original hero sees three choices.")
+	_check(first_offers.size() == 3 and recruit_signature not in first_offers,
+		"The original hero sees three choices without copying the recruit's signature.")
 	# Free both timelines to verify where the real reward buttons place each chosen tile.
 	run.loadout.lanes[0].clear()
 	run.loadout.lanes[1].clear()
@@ -134,7 +175,8 @@ func _check_medium_rewards(game: Control) -> void:
 		and run.loadout.lanes[0].size() == 1 and run.loadout.lanes[0][0].id == first_tile
 		and run.loadout.lanes[1].is_empty(), "Claiming the lead's tile equips it in their own lane and advances to the recruit.")
 	var second_offers: Array = run.data.offers.duplicate()
-	_check(second_offers.size() == 3 and first_offers != second_offers, "The recruit should see a separate set of three class offers.")
+	_check(second_offers.size() == 3 and first_offers != second_offers and lead_signature not in second_offers,
+		"The recruit sees three separate choices without copying the lead's signature.")
 
 	# Reload from disk between the two button presses.
 	_check(run.load_save(save_path) and run.reward_count() == 2 and run.reward_position() == 1
@@ -150,6 +192,7 @@ func _check_medium_rewards(game: Control) -> void:
 	_check(run.data.phase == "map" and run.reward_lane() == -1 and run.loadout.lanes[1].size() == 1
 		and run.loadout.lanes[1][0].id == second_tile and not game.run_claim_reward(second_tile),
 		"Claiming the recruit's tile equips it only once and opens the route.")
+	_check_first_elite_signatures(run, lead_signature, recruit_signature)
 
 	run.data.node = battle
 	run.data.phase = "combat"
@@ -186,6 +229,33 @@ func _check_medium_rewards(game: Control) -> void:
 			"Each hero receives a Legendary trophy recorded under their own class.")
 	_check(run.data.phase == "result" and run.data.trophy == run.data.trophies.get(lead)
 		and run.profile.hard_unlocked, "The final pick opens the recap and retains the lead trophy and victory unlock.")
+
+
+func _check_first_elite_signatures(run: FrontierRun, lead_signature: String, recruit_signature: String) -> void:
+	var elite_row := FrontierRun.NODES_PER_SEGMENT + 3
+	var elite: Dictionary = run.data.layers[elite_row].filter(func(node: Dictionary): return node.type == "elite")[0]
+	run.data.node = run.data.layers[elite_row - 1][elite.column]
+	var preview := run.elite_preview(elite)
+	# Ensure the draft has a relic that can bring a companion tile into the lead's offers.
+	for lane: Array in run.loadout.lanes:
+		lane.clear()
+	var won := run.choose_node(elite.id) and run.finish_combat(true, [100, 100])
+	_check(won and run.reward_count() == 2 and preview.get("tile") == lead_signature and lead_signature in run.data.offers,
+		"The first elite should advertise and award the lead's signature as a choice.")
+	if not won:
+		return
+	var relics := run.elite_relic_offers().filter(func(offer: Dictionary):
+		return not offer.companion.is_empty() and offer.companion not in run.data.offers)
+	_check(not relics.is_empty(), "The first-elite test needs a new relic companion tile.")
+	if relics.is_empty():
+		return
+	var relic: Dictionary = relics[0]
+	_check(run.load_save(save_path) and run.choose_elite_relic(relic.id) and run.data.offers.size() == 3
+		and lead_signature in run.data.offers and relic.companion in run.data.offers,
+		"The saved first elite draft must preserve the signature while adding the relic companion.")
+	_check(run.reward("skip") and run.reward_lane() == 1 and run.data.offers.size() == 3
+		and recruit_signature in run.data.offers and lead_signature not in run.data.offers and run.reward("skip"),
+		"The first elite also offers the recruit's signature in their own draft.")
 
 
 func _enter_boss(run: FrontierRun, final: bool) -> void:

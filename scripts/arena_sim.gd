@@ -1,6 +1,7 @@
 extends RefCounted
 
 const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
+const ClassExpansionTiles = preload("res://scripts/class_expansion_tiles.gd")
 
 const BEATS := 12
 const TICKS_PER_BEAT := 21
@@ -29,6 +30,7 @@ const ADMIRAL_SWEEP_BEATS := 6
 const ADMIRAL_SWEEP_RADIUS := 330.0
 const PRECISION_BONUS_RANGE := 210.0
 const PRECISION_SPACING := 245.0
+const DISPLACEMENT_BONUS_WINDOW := 3 * TICKS_PER_BEAT
 const BARRAGE_GUARD_BREAK := 8
 const SIEGE_PULL_REACH := 185.0
 const SIEGE_PULL_DISTANCE := 82.0
@@ -422,7 +424,8 @@ const CORE_TILES := {
 	}
 }
 
-static var TILES: Dictionary = CORE_TILES.merged(ArsenalTiles.SPECS)
+static var _arsenal_tiles: Dictionary = ArsenalTiles.SPECS.merged(ClassExpansionTiles.SPECS)
+static var TILES: Dictionary = CORE_TILES.merged(_arsenal_tiles)
 
 var units: Array[Dictionary] = []
 var trace: Array[Dictionary] = []
@@ -444,11 +447,18 @@ var _healed_tiles: Dictionary = {}
 
 
 static func _static_init() -> void:
+	_arsenal_tiles.make_read_only()
 	TILES.make_read_only()
 
 
 static func is_ranged_tile(tile_id: String) -> bool:
 	return tile_id in RANGED_TILES or TILES.get(tile_id, {}).get("ranged", false)
+
+
+static func can_trigger_afterimage(tile_id: String) -> bool:
+	var tile: Dictionary = TILES[tile_id]
+	return tile.damage > 0 and tile.get("family") != "blink" and tile_id != "bulwark_charge" \
+		and not tile.has("retreat") and not tile.get("charge", false)
 
 
 static func default_lanes(fixture: String = "duo") -> Array:
@@ -825,7 +835,7 @@ func target_for(lane: int, tile_id: String, rule: String) -> Dictionary:
 		return {}
 	var tile: Dictionary = TILES[tile_id]
 	if tile.targets == ["self"]:
-		if ArsenalTiles.SPECS.has(tile_id):
+		if _arsenal_tiles.has(tile_id):
 			return _arsenal_support_target(actor, tile)
 		return _guard_recipient(actor, tile)
 	var target := _select(actor, rule, tile.range)
@@ -1093,7 +1103,7 @@ func _activate_lanes() -> void:
 
 func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 	var tile: Dictionary = TILES[tile_id]
-	var arsenal := ArsenalTiles.SPECS.has(tile_id)
+	var arsenal := _arsenal_tiles.has(tile_id)
 	if arsenal and tile.damage == 0:
 		var recipient := _arsenal_support_target(actor, tile)
 		_review_activation_target(recipient)
@@ -1172,9 +1182,7 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 
 func _select_attack_target(actor: Dictionary, tile_id: String, rule: String) -> Dictionary:
 	var tile: Dictionary = TILES[tile_id]
-	var moves_actor: bool = tile.get("family") == "blink" or tile_id == "bulwark_charge" \
-		or tile.has("retreat") or tile.get("charge", false)
-	if actor.has("afterimage") and tile.damage > 0 and not moves_actor:
+	if actor.has("afterimage") and can_trigger_afterimage(tile_id):
 		var echo: Dictionary = actor.afterimage
 		actor.erase("afterimage")
 		var target := _select(actor, rule, tile.range, echo.position)
@@ -1205,6 +1213,7 @@ func _prepare_siege_fuse(actor: Dictionary, target: Dictionary, tile_id: String)
 			continue
 		enemy.pos = destination
 		enemy.prev_pos = destination
+		enemy["displaced_until"] = tick + DISPLACEMENT_BONUS_WINDOW
 		_emit("pull", "Siege Fuse draws %s toward %s." % [enemy.name, target.name], actor, enemy, "siege_fuse",
 			roundi(start.distance_to(destination)), start, destination)
 		_break_displaced_relay_link(enemy, destination, actor)
@@ -1298,11 +1307,15 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 		_emit("miss", "%s: %s has no clear path." % [actor.name, tile.label], actor, target, tile_id)
 		return
 	_prepare_siege_fuse(actor, target, tile_id)
-	var damage: int = tile.damage
+	var damage: int = tile.damage + _distance_bonus(actor, target, tile)
 	if target.hp * 2 < target.max_hp:
 		damage += int(tile.get("low_hp_bonus", 0))
 	if not str(target.intent).is_empty() and target.intent_tick >= tick:
 		damage += int(tile.get("windup_bonus", 0))
+	if actor.guard > 0:
+		damage += int(tile.get("guard_bonus", 0))
+	if tick <= target.get("displaced_until", -1):
+		damage += int(tile.get("displaced_bonus", 0))
 	_strip_guard(actor, target, tile_id, int(tile.get("guard_break", 0)))
 	_damage(actor, target, damage, tile_id)
 	_apply_splash(actor, target, tile_id, tile)
@@ -1341,12 +1354,16 @@ func _retreat_from(actor: Dictionary, target: Dictionary, tile_id: String, dista
 
 
 func _cast_shot(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
-	var origin := _attack_origin(actor)
-	var damage: int = tile.damage
-	if origin.distance_squared_to(target.pos) > PRECISION_BONUS_RANGE * PRECISION_BONUS_RANGE:
-		damage += int(tile.get("distance_bonus", 0))
+	var damage: int = tile.damage + _distance_bonus(actor, target, tile)
 	_damage(actor, target, damage, tile_id)
 	_apply_splash(actor, target, tile_id, tile)
+
+
+func _distance_bonus(actor: Dictionary, target: Dictionary, tile: Dictionary) -> int:
+	var bonus: int = tile.get("distance_bonus", 0)
+	if bonus > 0 and _attack_origin(actor).distance_squared_to(target.pos) > PRECISION_BONUS_RANGE * PRECISION_BONUS_RANGE:
+		return bonus
+	return 0
 
 
 func _apply_splash(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
@@ -1523,6 +1540,8 @@ func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: Str
 	target.impulse = impulse.limit_length(IMPULSE_CAP)
 	var launch: Vector2 = target.impulse
 	var endpoint := _bounded(start_position + launch.normalized() * (launch.length_squared() / (2.0 * IMPULSE_DECAY)), target.radius)
+	if force > 0.0 and not start_position.is_equal_approx(endpoint):
+		target["displaced_until"] = tick + DISPLACEMENT_BONUS_WINDOW
 	var action := "pulls" if kind == "pull" else "knocks back"
 	_emit(kind, "%s %s %s." % [actor.name, action, target.name], actor, target, tile_id, roundi(force), start_position, endpoint)
 	if not _activation.is_empty() and actor.side == "hero" and target.side == "enemy" and target.hp > 0 \

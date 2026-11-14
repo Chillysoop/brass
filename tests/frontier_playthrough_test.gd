@@ -341,7 +341,7 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String)
 					}[difficulty]
 					_check(game.sim.trace.any(func(event: Dictionary):
 						return event.tile == interruption and (difficulty == "easy" or event.amount == 1)),
-						"The expedition loadout should interrupt the final Crown Relay boss.")
+						"The expedition loadout should interrupt the final Crown Relay %s boss." % difficulty)
 				if location == "moonwreck" and run.data.node.get("boss_id") == "wreckmaster":
 					var opening: Array = game.sim.trace.filter(func(event: Dictionary):
 						return event.tick <= 6 * ArenaSim.TICKS_PER_BEAT)
@@ -516,7 +516,8 @@ func _arrange_crown_hard_combo(game: Control) -> void:
 		return
 	var first := "hook_bash" if "hook_bash" in pulls else pulls[0]
 	pulls.erase(first)
-	var second := "grapple" if "grapple" in pulls else pulls[0]
+	# The center lane needs the stronger pull to break the right guard's link.
+	var second := "hook_bash" if "hook_bash" in pulls else pulls[0]
 	_arrange_hard_combo(game, [
 		{"id": first, "start": 3 - ArenaSim.TILES[first].width, "target": "relay_left"},
 		{"id": second, "start": 4 - ArenaSim.TILES[second].width, "target": "relay_right"},

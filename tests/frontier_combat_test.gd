@@ -468,6 +468,8 @@ func _check_moonwreck_combat() -> void:
 	_check(operator.get("sprite") == "dock_winch" and bruiser.get("sprite") == "dock_bruiser"
 		and impulse.dot(toward_hero) > 0.0 and _has_event(sim, "intent", "dock_winch_pull"),
 		"Winch Pull applies a real impulse to the allied Bruiser toward the hero")
+	_check(bruiser.get("displaced_until", 0) > sim.tick,
+		"Winch Pull makes the Bruiser eligible for displacement bonuses")
 	sim.start([[{"id": "bash", "start": 2}]], "solo", options)
 	for frame in range(94):
 		sim.step()

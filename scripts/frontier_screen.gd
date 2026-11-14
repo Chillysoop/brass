@@ -292,23 +292,36 @@ func _show_class_deck(hero_id: String) -> void:
 	dialog.add_child(deck)
 	var common: Array = ClassDecks.common(hero_id)
 	var uncommon: Array = ClassDecks.uncommon(hero_id)
+	var signature: String = ClassDecks.signature(hero_id)
+	var details := _label("", 15, CREAM)
+	details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	details.custom_minimum_size = Vector2(640, 42)
 	for pool in [{"title": "Common", "ids": common}, {"title": "Uncommon", "ids": uncommon}]:
-		deck.add_child(_label(pool.title, 16, GOLD))
+		deck.add_child(_label("%s  ·  %d" % [pool.title, pool.ids.size()], 16, GOLD))
 		var grid := GridContainer.new()
-		grid.columns = 2
+		grid.columns = 3
 		grid.add_theme_constant_override("h_separation", 9)
 		grid.add_theme_constant_override("v_separation", 4)
 		deck.add_child(grid)
 		for tile_id: String in pool.ids:
 			var spec: Dictionary = ArenaSim.TILES[tile_id]
 			var tile := Button.new()
-			tile.text = "%s  ·  %s" % [spec.label, GameIcons.tile_stats(spec)]
-			tile.focus_mode = FOCUS_NONE
+			tile.text = "%s  ·  %s" % [spec.label, GameIcons.tile_stats(spec).replace("damage", "dmg")]
+			tile.custom_minimum_size.y = 30
+			tile.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 			tile.size_flags_horizontal = SIZE_EXPAND_FILL
 			tile.tooltip_text = spec.description
-			tile.mouse_default_cursor_shape = CURSOR_HELP
+			tile.mouse_default_cursor_shape = CURSOR_POINTING_HAND
 			GameIcons.decorate(tile, GameIcons.tile(tile_id, spec), 18)
+			var detail_copy := "%s · %s" % [spec.label, spec.description]
+			if tile_id == signature:
+				tile.add_theme_stylebox_override("normal", _box(Color("#30473e"), TEAL, 6, 8))
+				detail_copy = "%s signature · %s" % [_hero_name(hero_id), detail_copy]
+				details.text = detail_copy
+			tile.pressed.connect(func(): details.text = detail_copy)
+			tile.focus_entered.connect(func(): details.text = detail_copy)
 			grid.add_child(tile)
+	deck.add_child(details)
 	var forge_names := PackedStringArray()
 	for family: String in ClassDecks.forge_families(hero_id):
 		if _run.forge_family_available(family):
@@ -316,7 +329,7 @@ func _show_class_deck(hero_id: String) -> void:
 		else:
 			forge_names.append("%s (Aether Chart)" % family.capitalize())
 	deck.add_child(_label("Forge families  ·  " + ", ".join(forge_names), 15, MUTED))
-	dialog.popup_centered(Vector2i(800, 365))
+	dialog.popup_centered(Vector2i(1030, 530))
 
 
 func _pick_draft(phase: String, id: String) -> void:
@@ -536,6 +549,9 @@ func _reward() -> void:
 	for id: String in _run.data.get("offers", []):
 		var tile: Dictionary = ArenaSim.TILES[id]
 		var hint: String = _run.reward_hint(id)
+		if lane >= 0 and lane < party.size() and id == ClassDecks.signature(party[lane].id):
+			var signature := "%s signature" % _hero_name(party[lane].id)
+			hint = signature if hint.is_empty() else "%s · %s" % [signature, hint]
 		var card := _choice(cards, tile.label, _tile_info(tile) + ("\n\n" + hint if not hint.is_empty() else ""), "Select", func():
 			selected.id = id
 			advance.disabled = false

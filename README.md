@@ -6,7 +6,7 @@ The Windows playtest includes Easy, Medium, and Hard expeditions in Brass Fronti
 
 From the title screen, choose **New Expedition**, select **Brass Frontier**, and start on **Easy** to draft a hero, relic, and starting tile. You can enter an optional seed on the difficulty screen. Win the opening fight, pick rewards, then travel a seeded route through battles, elites, shops, events, and a rest site. Health, relics, gold, and tile layouts carry between stops. The game saves between fights and after loadout changes. **Continue** picks up from the saved checkpoint.
 
-Each class has its own combat reward deck. Use **View class deck** on a hero or recruit card to see its Common and Uncommon tiles. After combat, choose or skip a tile for each hero in party order. Tiles go to that hero's timeline when space allows, then to shared storage. The expedition saves after each pick. Recruits enter with one starter tile after the current party takes its boss rewards.
+Each class has 18 Commons and eight Uncommons in its combat reward deck. Use **View class deck** on a hero or recruit card to inspect each tile and the class's signature Uncommon. After combat, choose or skip a tile for each hero in party order. Tiles go to that hero's timeline when space allows, then to shared storage. The expedition saves after each pick. Recruits enter with one starter tile after the current party takes its boss rewards.
 
 Enemies fill a charge gauge above their heads before an attack. Tiles show damage and fire on their right edge. Each hero's timeline shows a portrait, live health, and targeting buttons. The left and right arrows select nearest and farthest. The solid and hollow hearts select highest and lowest HP. The **All** buttons apply the same rule to compatible tiles on the lane.
 
@@ -20,9 +20,9 @@ In the **Artifice** branch, unlock **Gravity Hook**, then **Blink Artifice** to 
 
 The starter relic draft rotates build options. **Towline Knot** rewards following displacement with a hit on the same enemy, **Bridgeplate** turns absorbed damage into a counter, and **Brass Metronome** rewards leaving a beat of space before a damaging tile. Their icons flash when they trigger. Battle rewards reserve a slot for an owned tile when possible. Hover or focus a reachable elite to preview its formation and a guaranteed reward choice.
 
-Fresh expeditions can draft 16 additional Common tiles and eight Uncommons. Tiles include one-beat strikes, shots that create distance, and marks that any hero can spend on the next hit. Shops carry Uncommon tiles from this pool. These tiles can be equipped or stored alongside Forge families. The **Combat tiles** picker in Arena Practice makes all 24 available to test.
+Fresh expeditions can draft moves such as one-beat strikes, shots that create distance, and marks that any hero can spend on the next hit. The **Combat tiles** picker in Arena Practice includes the class expansion and all 24 Arsenal tiles.
 
-Your first elite victory offers a relic draft before the usual tile reward. The draft shows a fit for your loadout, a pivot, and a wildcard. Picking a relic can add a compatible tile to that reward. **Afterimage** lets an attack reach from the spot you blinked away from. **Barrage Rack** strips Guard on a quick follow-up against the same enemy. **Siege Fuse** pulls enemies together before a heavy attack. Battle Review records the tile and beat that triggered each effect.
+Your first elite victory offers a relic draft before the tile rewards, which include each hero's signature Uncommon. Picking a relic can add a compatible tile to that reward. **Afterimage** lets an attack reach from the spot you blinked away from. **Barrage Rack** strips Guard on a quick follow-up against the same enemy. **Siege Fuse** pulls enemies together before a heavy attack. Battle Review records the tile and beat that triggered each effect.
 
 Seeded battle and elite formations can include a Rivet Bombardier, Kiln Duelist, Relay Mender, or Dock Corsair. The encounter preview shows who you will face.
 

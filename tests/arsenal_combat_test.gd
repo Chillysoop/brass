@@ -11,10 +11,13 @@ func _initialize() -> void:
 	_check_retreat()
 	_check_support()
 	_check_windup()
+	_check_class_attack_bonuses()
+	_check_class_support()
+	_check_displacement_window()
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Combat tile timing, cross-hero marks, retreat, and support checks passed.")
+		print("Combat tile timing, marks, retreat, support, and class damage bonus checks passed.")
 	quit(0 if failures.is_empty() else 1)
 
 
@@ -78,6 +81,63 @@ func _check_windup() -> void:
 	_advance(idle, 2 * BEAT)
 	_check(idle.activations[-1].damage == ArenaSim.TILES.rivet_bolt.damage,
 		"Rivet Bolt's bonus should require an active windup.")
+
+
+func _check_class_attack_bonuses() -> void:
+	var counter: Dictionary = ArenaSim.TILES.iron_arc
+	var edge: int = counter.width * BEAT
+	var protected := _sim([[_tile("iron_arc", 0)]])
+	_advance(protected, edge - 1)
+	_check(protected.activations.is_empty(), "Iron Arc must wait until the tile's right edge.")
+	protected.units[0].guard = 1
+	protected.step()
+	var exposed := _sim([[_tile("iron_arc", 0)]])
+	_advance(exposed, edge)
+	_check(protected.activations[-1].damage == counter.damage + counter.guard_bonus
+		and exposed.activations[-1].damage == counter.damage,
+		"Iron Arc checks the caster's Guard when it lands.")
+	var shot: Dictionary = ArenaSim.TILES.horizon_round
+	for distance in [210.0, 211.0]:
+		var sim := _sim([[_tile("horizon_round", 0)]])
+		sim.units[1].pos = sim.units[0].pos + Vector2(distance, 0)
+		_advance(sim, shot.width * BEAT)
+		var expected: int = shot.damage + (shot.distance_bonus if distance > 210.0 else 0)
+		_check(sim.activations[-1].damage == expected, "Horizon Round gains distance damage strictly beyond 210 px.")
+
+
+func _check_class_support() -> void:
+	var triage: Dictionary = ArenaSim.TILES.triage_kit
+	var lantern: Dictionary = ArenaSim.TILES.ward_lantern
+	var sim := _sim([[_tile("triage_kit", 0, "self")], [_tile("ward_lantern", 0, "self")]])
+	var second: Dictionary = sim.units[1]
+	second.hp = 45
+	_check(sim.target_for(0, "triage_kit", "self").get("id") == second.id,
+		"Triage Kit previews the weakest ally as its target.")
+	var edge := maxi(triage.width, lantern.width) * BEAT
+	_advance(sim, edge)
+	var expected_hp: int = 45 + triage.heal + lantern.heal
+	_check(second.hp == expected_hp and second.guard == mini(28, triage.guard + lantern.guard)
+		and sim.units[0].guard == lantern.guard,
+		"Triage Kit heals and shields the weakest ally while Ward Lantern shields both heroes and heals its caster.")
+	_advance(sim, ArenaSim.LOOP_TICKS + edge)
+	_check(second.hp == expected_hp, "Triage Kit and Ward Lantern each heal only once per fight.")
+
+
+func _check_displacement_window() -> void:
+	var rake: Dictionary = ArenaSim.TILES.rake
+	var push_beat: int = ArenaSim.TILES.bash.width
+	for gap in [0, 3, 4]:
+		var rake_beat: int = push_beat + gap
+		var sim := _sim([[_tile("bash", 0)], [_tile("rake", rake_beat - rake.width)]])
+		_advance(sim, push_beat * BEAT)
+		var foe: Dictionary = sim.units[2]
+		_check(foe.get("displaced_until", -1) == (push_beat + 3) * BEAT,
+			"A hostile push starts a three-beat displacement window.")
+		foe.impulse = Vector2.ZERO
+		_advance(sim, rake_beat * BEAT)
+		var expected: int = rake.damage + (rake.displaced_bonus if gap <= 3 else 0)
+		_check(sim.activations[-1].damage == expected,
+			"Rake gets its displacement bonus through the third beat, then it expires.")
 
 
 func _sim(lanes: Array) -> ArenaSim:

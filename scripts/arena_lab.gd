@@ -10,6 +10,7 @@ const TilePacking = preload("res://scripts/tile_packing.gd")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const FrontierScreen = preload("res://scripts/frontier_screen.gd")
 const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
+const ClassExpansionTiles = preload("res://scripts/class_expansion_tiles.gd")
 const PRACTICE_TILES := ["pull", "bash", "guard", "shot", "blink", "slam"]
 const INK := Color("#101820")
 const PANEL := Color("#192732")
@@ -239,7 +240,7 @@ func _build() -> void:
 	arsenal_button = _button("Combat tiles", _toggle_practice_arsenal)
 	arsenal_button.name = "PracticeArsenal"
 	GameIcons.decorate(arsenal_button, "battle", 15)
-	arsenal_button.tooltip_text = "Browse and equip all 24 new tiles in Arena Practice."
+	arsenal_button.tooltip_text = "Browse and equip combat tiles in Arena Practice."
 	tray.add_child(arsenal_button)
 	tray.add_child(fixture_picker)
 	tray.add_child(speed_picker)
@@ -798,15 +799,37 @@ func _build_practice_arsenal() -> void:
 	var heading := _label("Combat tiles", 21, GOLD)
 	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(heading)
+	var collection := OptionButton.new()
+	collection.name = "PracticeTileCollection"
+	collection.add_item("Arsenal")
+	collection.add_item("Class expansion")
+	header.add_child(collection)
 	header.add_child(_button("Close", arsenal_panel.hide))
-	for ids: Array in [ArsenalTiles.COMMON_IDS, ArsenalTiles.UNCOMMON_IDS]:
-		if ids == ArsenalTiles.UNCOMMON_IDS:
-			layout.add_child(HSeparator.new())
+	var pages: Array[VBoxContainer] = []
+	for pools: Array in [[ArsenalTiles.COMMON_IDS, ArsenalTiles.UNCOMMON_IDS],
+			[ClassExpansionTiles.COMMON_IDS, ClassExpansionTiles.UNCOMMON_IDS]]:
+		var page := VBoxContainer.new()
+		page.add_theme_constant_override("separation", 5)
+		page.visible = pages.is_empty()
+		pages.append(page)
+		layout.add_child(page)
+		_add_practice_tiles(page, pools)
+	collection.item_selected.connect(func(index: int):
+		for page_index in range(pages.size()):
+			pages[page_index].visible = page_index == index
+	)
+	arsenal_panel.hide()
+
+
+func _add_practice_tiles(page: VBoxContainer, pools: Array) -> void:
+	for ids: Array in pools:
+		if ids != pools.front():
+			page.add_child(HSeparator.new())
 		var grid := GridContainer.new()
 		grid.columns = 4
 		grid.add_theme_constant_override("h_separation", 5)
 		grid.add_theme_constant_override("v_separation", 4)
-		layout.add_child(grid)
+		page.add_child(grid)
 		for id: String in ids:
 			var tile: Dictionary = ArenaSim.TILES[id]
 			var payload := {"id": id}
@@ -825,7 +848,6 @@ func _build_practice_arsenal() -> void:
 			button.tooltip_text = "%s · %s\n%s" % [str(tile.rarity).capitalize(), GameIcons.tile_stats(tile), tile.description]
 			_drag_source(button, payload)
 			grid.add_child(button)
-	arsenal_panel.hide()
 
 
 func _toggle_practice_arsenal() -> void:
@@ -835,8 +857,8 @@ func _toggle_practice_arsenal() -> void:
 		if storage_screen.visible:
 			storage_close()
 		arsenal_panel.show()
-		var first: Button = arsenal_panel.find_child("PracticeTile_" + ArsenalTiles.COMMON_IDS.front(), true, false)
-		first.grab_focus()
+		var collection := arsenal_panel.find_child("PracticeTileCollection", true, false) as OptionButton
+		collection.grab_focus()
 
 
 func _rebuild_relic_strip() -> void:

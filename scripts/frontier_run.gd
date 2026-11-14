@@ -444,8 +444,14 @@ func elite_preview(node: Dictionary) -> Dictionary:
 
 
 func _elite_preview_tile(node: Dictionary) -> String:
+	if not _has_earned_elite_relic():
+		return ClassDecks.signature(data.hero)
+	return _class_elite_preview_tile(node)
+
+
+func _class_elite_preview_tile(node: Dictionary) -> String:
 	# The advertised offer is stable even if the player edits their inventory before the fight.
-	var baseline: Array = ClassDecks.uncommon(data.hero)
+	var baseline: Array = ClassDecks.core_uncommon(data.hero)
 	for tier in range(1, 4):
 		baseline.append_array(_class_forge_tier(ClassDecks.forge_families(data.hero), tier))
 	return _sample(baseline, 1, int(data.seed), _node_salt(81, node))[0]
@@ -487,15 +493,16 @@ func choose_elite_relic(id: String) -> bool:
 	for offer: Dictionary in elite_relic_offers():
 		if offer.id != id or id in data.relics:
 			continue
+		var guaranteed: String = data.get("elite_guaranteed_tile", "")
+		if guaranteed.is_empty() and data.node.type == "elite":
+			guaranteed = _class_elite_preview_tile(data.node) if reward_lane() >= 0 else _legacy_elite_preview_tile()
 		data.relics.append(id)
 		data.elite_relic_drafted = true
 		data.erase("elite_relic_offers")
+		data.erase("elite_guaranteed_tile")
 		var tile: String = offer.companion
 		if not tile.is_empty():
 			if tile not in data.offers:
-				var guaranteed := ""
-				if data.node.type == "elite":
-					guaranteed = _elite_preview_tile(data.node) if reward_lane() >= 0 else _legacy_elite_preview_tile()
 				for index in range(data.offers.size() - 1, -1, -1):
 					var replaced: String = data.offers[index]
 					if replaced == guaranteed or not reward_hint(replaced).is_empty():
@@ -558,8 +565,7 @@ func _elite_relic_offer(id: String, equipped := []) -> Dictionary:
 	match id:
 		"afterimage":
 			var blink := func(tile: String): return ArenaSim.TILES[tile].get("family", "") == "blink"
-			var follow_up := func(tile: String):
-				return ArenaSim.TILES[tile].damage > 0 and not blink.call(tile) and tile != "bulwark_charge"
+			var follow_up := func(tile: String): return ArenaSim.can_trigger_afterimage(tile)
 			var has_blink := _count_matching_tiles(owned, blink) > 0
 			var has_follow_up := _count_matching_tiles(owned, follow_up) > 0
 			if has_blink and has_follow_up:
@@ -631,6 +637,7 @@ func finish_combat(victory: bool, hp: Variant) -> bool:
 			_grant_marks(2)
 			if draft_relic:
 				data.elite_relic_offers = _build_elite_relic_offers()
+				data.elite_guaranteed_tile = ClassDecks.signature(data.hero)
 			else:
 				var relic_pool := _available_relics()
 				if not relic_pool.is_empty():
@@ -1179,8 +1186,10 @@ func _combat_reward_draft(kind: String, lane: int) -> Dictionary:
 	if kind == "elite":
 		var pool := _class_reward_pool(hero_id, 1, rows) + _class_reward_pool(hero_id, 2, rows) + _class_reward_pool(hero_id, 3, rows)
 		var fixed: Array = []
-		if lane == 0 and data.node.type == "elite":
-			fixed.append(_elite_preview_tile(data.node))
+		if not elite_relic_offers().is_empty():
+			fixed.append(ClassDecks.signature(hero_id))
+		elif lane == 0 and data.node.type == "elite":
+			fixed.append(_class_elite_preview_tile(data.node))
 		var owned := _owned_reward(pool, 181 + salt, false, rows)
 		var hints := {}
 		if not owned.is_empty():
@@ -1255,6 +1264,8 @@ func _normal_reward_draft(lane: int, rows: Array) -> Dictionary:
 	for items: Array in rows:
 		for tile: Dictionary in items:
 			var rarity: String = ArenaSim.TILES[tile.id].get("rarity", "common")
+			if ClassDecks.is_signature(tile.id) and tile.id != ClassDecks.signature(hero_id):
+				continue
 			if rarity in ["common", "uncommon", "rare"] and tile.id not in repeat_pool:
 				repeat_pool.append(tile.id)
 	var owned := _owned_reward(repeat_pool, 83 + salt, false, rows)
