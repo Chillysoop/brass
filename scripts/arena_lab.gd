@@ -75,6 +75,7 @@ var reviewed_event: Dictionary = {}
 var battle_name := ""
 var battle_snapshot: Dictionary = {}
 var retry_options: Dictionary = {}
+var combat_save_pending := false
 var status: Label
 var timeline_intro: Label
 var victory_badge: PanelContainer
@@ -349,6 +350,7 @@ func _reset_fight() -> void:
 	_close_review()
 	arsenal_panel.hide()
 	state = "setup"
+	combat_save_pending = false
 	edge_tick = 0
 	edge_tiles.clear()
 	selected.clear()
@@ -389,7 +391,11 @@ func _action() -> void:
 		"paused": state = "running"
 		"finished":
 			if campaign:
-				run_return()
+				if combat_save_pending:
+					_save_finished_battle()
+					_update_controls()
+				else:
+					run_return()
 				return
 			_reset_fight()
 	_update_controls()
@@ -412,12 +418,7 @@ func _physics_process(_delta: float) -> void:
 		if not sim.outcome.is_empty():
 			state = "finished"
 			if campaign:
-				var remaining_hp: Array[int] = []
-				for index in range(lanes.size()):
-					remaining_hp.append(sim.units[index].hp)
-				run.finish_combat(sim.outcome == "victory", remaining_hp)
-				if sim.outcome == "defeat":
-					_open_review()
+				_save_finished_battle()
 			break
 	for index in range(first_activation, sim.activations.size()):
 		var activation: Dictionary = sim.activations[index]
@@ -425,10 +426,22 @@ func _physics_process(_delta: float) -> void:
 			edge_tiles[Vector2i(activation.lane, activation.start)] = true
 	_update_controls()
 
+func _save_finished_battle() -> void:
+	var remaining_hp: Array[int] = []
+	for index in range(lanes.size()):
+		remaining_hp.append(sim.units[index].hp)
+	combat_save_pending = not run.finish_combat(sim.outcome == "victory", remaining_hp)
+	if not combat_save_pending and sim.outcome == "defeat":
+		_open_review()
+
 func _update_controls() -> void:
+	arena.playback_paused = state == "paused"
 	action.text = {"setup": "Start battle", "running": "Pause", "paused": "Resume", "finished": "Edit loadout"}[state]
 	if campaign and (state == "finished" or not encounter_setup):
-		action.text = "Back to smith" if _traveling_smith_forge() else "Continue"
+		if combat_save_pending:
+			action.text = "Retry save"
+		else:
+			action.text = "Back to smith" if _traveling_smith_forge() else "Continue"
 	action.visible = true
 	reset_button.visible = not campaign
 	fixture_picker.visible = not campaign and retry_options.is_empty()
@@ -445,7 +458,7 @@ func _update_controls() -> void:
 		GameIcons.decorate(enchantment_button, enchantment.icon, 18)
 	var reviewing := battle_review.visible
 	speed_picker.visible = not reviewing and (not campaign or (encounter_setup and state != "finished"))
-	review_button.visible = state == "finished" and not reviewing
+	review_button.visible = state == "finished" and not reviewing and not combat_save_pending
 	palette.visible = state == "setup" and not campaign and retry_options.is_empty()
 	arsenal_button.visible = palette.visible
 	palette.get_parent().visible = not campaign or camp_forge or review_button.visible or speed_picker.visible
@@ -454,7 +467,7 @@ func _update_controls() -> void:
 	var elapsed: int = sim.tick
 	var teaching := _teaching_timeline()
 	timeline_intro.visible = teaching and not reviewing and elapsed <= cycle
-	var show_victory: bool = state == "finished" and sim.outcome == "victory"
+	var show_victory: bool = state == "finished" and sim.outcome == "victory" and not combat_save_pending
 	if victory_badge.visible != show_victory:
 		victory_badge.visible = show_victory
 		if show_victory:
@@ -474,7 +487,9 @@ func _update_controls() -> void:
 				status.text = "PRACTICE · " + battle_name
 		"finished":
 			status.text = "" if sim.outcome == "victory" else "Defeat"
-			if campaign and sim.outcome == "victory" and run.data.node.type == "boss":
+			if combat_save_pending:
+				status.text = "%s Retry to save this battle result." % run.save_error
+			elif campaign and sim.outcome == "victory" and run.data.node.type == "boss":
 				var leg := int(run.data.get("segment", 1))
 				status.text = run.data.node_notice if run.is_final_boss() else "Leg %d cleared" % leg
 		_:
@@ -484,10 +499,11 @@ func _update_controls() -> void:
 		var hero: Dictionary = sim.units[lane_index]
 		lane_health[lane_index].value = hero.hp
 		lane_health[lane_index].tooltip_text = "%s · %d / %d HP" % [hero.name, hero.hp, hero.max_hp]
-	_update_colossus_status()
-	_update_relay_status()
-	_update_dock_status()
-	if reviewing:
+	if not reviewing and ((campaign and encounter_setup) or not retry_options.is_empty()):
+		_update_colossus_status()
+		_update_relay_status()
+		_update_dock_status()
+	else:
 		colossus_status.hide()
 		relay_status.hide()
 		dock_status.hide()
@@ -515,7 +531,7 @@ func _toggle_review() -> void:
 		_open_review()
 
 func _open_review() -> void:
-	if state != "finished":
+	if state != "finished" or combat_save_pending:
 		return
 	arena.hide()
 	battle_review.open(sim.activations, sim.boss_events, sim.outcome, battle_name, campaign and not battle_snapshot.is_empty())
@@ -556,7 +572,7 @@ func _retry_in_practice() -> void:
 
 func _update_colossus_status() -> void:
 	colossus_status.hide()
-	if not campaign or not encounter_setup or run.data.get("node", {}).get("boss_id") != "tempered_colossus":
+	if arena.location != "glass":
 		return
 	for unit: Dictionary in sim.units:
 		if unit.get("sprite") != "tempered_colossus":
@@ -592,7 +608,7 @@ func _update_colossus_status() -> void:
 
 func _update_relay_status() -> void:
 	relay_status.hide()
-	if not campaign or not encounter_setup or run.data.get("location") != "crown":
+	if arena.location != "crown":
 		return
 	var leader: Dictionary = {}
 	var guard_alive := false
@@ -708,7 +724,7 @@ func _marshal_charge_instruction(marshal: Dictionary) -> String:
 
 func _update_dock_status() -> void:
 	dock_status.hide()
-	if not campaign or not encounter_setup or run.data.get("location") != "moonwreck":
+	if arena.location != "moonwreck":
 		return
 	for unit: Dictionary in sim.units:
 		if unit.hp <= 0:
@@ -838,6 +854,8 @@ func _rebuild_loadout() -> void:
 	if camp_forge:
 		setup_hint.text = "Select a tile to upgrade for free, then choose Forge selected." if _traveling_smith_forge() \
 			else "Select an upgradeable tile, then choose Forge selected."
+	elif campaign and not run.recovered_starter.is_empty():
+		setup_hint.text = "%s was restored to your timeline so you can continue." % ArenaSim.TILES[run.recovered_starter].label
 	elif state == "setup" and _teaching_timeline() and not lanes[0].is_empty():
 		var starter: Dictionary = lanes[0][0]
 		var tile: Dictionary = ArenaSim.TILES[starter.id]
@@ -1149,8 +1167,10 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	var available_rules: Array = sim.target_rules(item.id)
 	var current_rule: String = item.target if item.target in available_rules else available_rules[0]
 	var choose := func(rule: String):
+		var before := _inventory_checkpoint()
 		item.target = rule
-		_save_loadout()
+		if not _persist_inventory(before):
+			return
 		var new_preview: Dictionary = sim.target_for(lane_index, item.id, item.target, item.get("enchantment", ""))
 		name_button.tooltip_text = _tile_tooltip(lane_index, item, tile)
 		setup_hint.text = "%s · %s" % [tile.label, new_preview.get("name", "No eligible target")]
@@ -1275,6 +1295,7 @@ func _lane_hero_class(lane: int) -> String:
 	return hero.get("class", GameIcons.hero_class_for_label(hero.name))
 
 func _set_all(lane_index: int, rule: String) -> void:
+	var before := _inventory_checkpoint()
 	defaults[lane_index] = rule
 	var skipped := 0
 	for item: Dictionary in lanes[lane_index]:
@@ -1282,8 +1303,9 @@ func _set_all(lane_index: int, rule: String) -> void:
 			item.target = rule
 		else:
 			skipped += 1
+	if not _persist_inventory(before):
+		return
 	_rebuild_loadout()
-	_save_loadout()
 	setup_hint.text = "Set compatible tiles to %s%s." % [
 		LABELS[rule], " · %d unchanged" % skipped if skipped else ""
 	]
@@ -1443,6 +1465,7 @@ func _place(payload: Dictionary, lane_index: int, start: int, nudge := false) ->
 	if (nudge and plan.is_empty()) or (not nudge and not _can_place(payload, lane_index, start)):
 		setup_hint.text = "That tile overlaps another tile or extends beyond beat 12."
 		return
+	var before := _inventory_checkpoint()
 	var valid: Array = sim.target_rules(payload.id)
 	var target: String = defaults[lane_index] if defaults[lane_index] in valid else valid[0]
 	var entry := _entry(payload.id, start, target)
@@ -1456,9 +1479,10 @@ func _place(payload: Dictionary, lane_index: int, start: int, nudge := false) ->
 	_apply_nudge(lanes[lane_index], plan)
 	lanes[lane_index].append(entry)
 	lanes[lane_index].sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
+	if not _persist_inventory(before):
+		return
 	selected.clear()
 	_rebuild_loadout()
-	_save_loadout()
 
 func _apply_nudge(items: Array, plan: Dictionary) -> void:
 	var moves: Dictionary = plan.get("moves", {})
@@ -1473,18 +1497,35 @@ func _take_tile(payload: Dictionary) -> Dictionary:
 	return {}
 
 func _confirm_discard() -> void:
+	if not _can_discard_selected():
+		return
 	if campaign:
 		discard_dialog.dialog_text = "Discard %s for this run?" % ArenaSim.TILES[selected.id].label
 		discard_dialog.popup_centered()
 		return
 	_discard_selected()
 
+func _can_discard_selected() -> bool:
+	if state != "setup" or _selected_tile().is_empty():
+		return false
+	if not campaign and retry_options.is_empty():
+		return true
+	var count := 0
+	for items: Array in lanes + storage_rows:
+		count += items.size()
+	if count > 1:
+		return true
+	_show_inventory_message("Keep at least one tile so you can start the next battle.")
+	return false
+
 func _discard_selected() -> void:
-	if state != "setup" or not selected.has("lane") or _take_tile(selected).is_empty():
+	if not _can_discard_selected():
+		return
+	var before := _inventory_checkpoint()
+	if _take_tile(selected).is_empty() or not _persist_inventory(before):
 		return
 	selected.clear()
 	_rebuild_loadout()
-	_save_loadout()
 
 func tile_spec(id: String) -> Dictionary:
 	return ArenaSim.TILES.get(id, {})
@@ -1513,7 +1554,7 @@ func _render_storage() -> void:
 		for offer in _combine_offers(storage_rows[row]):
 			offer.row = row
 			all_offers.append(offer)
-	storage_screen.render(storage_rows, selected, all_offers, camp_forge, not _selected_combine_copies().is_empty(),
+	storage_screen.render(storage_rows, selected, all_offers, camp_forge, _selected_combine_copies().size() >= 3,
 		_enchantment_controls())
 
 func _active_enchantment() -> String:
@@ -1554,15 +1595,12 @@ func storage_enchant_selected() -> void:
 	var item := _selected_tile()
 	if not TileEnchantments.is_eligible(id, tile_spec(item.get("id", "")), item.get("id", "")):
 		return
+	var before := _inventory_checkpoint()
 	var previous := _enchantment_host()
 	previous.erase("enchantment")
 	if not is_same(previous, item):
 		item.enchantment = id
-	if not _save_loadout():
-		item.erase("enchantment")
-		if not previous.is_empty():
-			previous.enchantment = id
-		storage_screen.show_message(run.save_error)
+	if not _persist_inventory(before):
 		return
 	_rebuild_loadout()
 
@@ -1586,6 +1624,7 @@ func storage_place(row: int, start: int, payload: Dictionary, nudge := false) ->
 	if (nudge and plan.is_empty()) or (not nudge and not storage_can_place(row, start, payload)):
 		storage_screen.show_message("That tile needs a clear span in one row.")
 		return
+	var before := _inventory_checkpoint()
 	var valid: Array = ArenaSim.TILES[payload.id].targets
 	var entry := _entry(payload.id, start, valid[0])
 	if payload.has("lane"):
@@ -1598,9 +1637,10 @@ func storage_place(row: int, start: int, payload: Dictionary, nudge := false) ->
 	_apply_nudge(storage_rows[row], plan)
 	storage_rows[row].append(entry)
 	storage_rows[row].sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
+	if not _persist_inventory(before):
+		return
 	selected.clear()
 	_rebuild_loadout()
-	_save_loadout()
 
 func storage_send_to_timeline() -> void:
 	if selected.has("row"):
@@ -1622,13 +1662,13 @@ func storage_combine(row: int, start: int, accept: bool) -> void:
 func _selected_combine_copies() -> Array:
 	if not selected.has("lane") or suppressed_combines.has(selected.id):
 		return []
-	return TilePacking.find_copies(lanes, storage_rows, selected.id, 3, range(lanes.size()), selected)
+	return TilePacking.find_copies(lanes, storage_rows, selected.id, range(lanes.size()), selected)
 
 func storage_combine_selected() -> void:
 	if state != "setup" or not storage_screen.visible:
 		return
 	var copies := _selected_combine_copies()
-	if copies.is_empty():
+	if copies.size() < 3:
 		return
 	pending_forge = {"inventory_copies": copies, "storage_open": true}
 	arena_screen.hide()
@@ -1636,17 +1676,22 @@ func storage_combine_selected() -> void:
 	forge_screen.open(selected.id)
 
 func _commit_inventory_combine(id: String) -> void:
-	var copies: Array = pending_forge.inventory_copies
-	var destination := TilePacking.combine_destination(lanes, storage_rows, copies, id, range(lanes.size()))
-	if destination.is_empty():
+	var plan := _inventory_upgrade_plan(id)
+	if plan.is_empty():
 		return
-	var target := _combine_target(lanes, storage_rows, copies, destination, id)
-	if not TilePacking.apply_combination(lanes, storage_rows, copies, destination, id, target):
+	var before := _inventory_checkpoint()
+	var target := _combine_target(lanes, storage_rows, plan.copies, plan.destination, id)
+	if not TilePacking.apply_combination(lanes, storage_rows, plan.copies, plan.destination, id, target):
 		return
 	suppressed_combines.erase(id)
+	if not _persist_inventory(before):
+		forge_screen.show_error(run.save_error)
+		return
 	selected.clear()
-	_save_loadout()
 	forge_close()
+
+func _inventory_upgrade_plan(id: String) -> Dictionary:
+	return TilePacking.combine_plan(lanes, storage_rows, pending_forge.inventory_copies, 3, id, range(lanes.size()), true)
 
 func _combine_prompt(row: int, lane: int, offer: Dictionary) -> Control:
 	var panel := PanelContainer.new()
@@ -1696,8 +1741,11 @@ func _cancel_decline() -> void:
 func _decline_combine() -> void:
 	if decline_dialog.canceled.is_connected(_cancel_decline):
 		decline_dialog.canceled.disconnect(_cancel_decline)
+	var before := _inventory_checkpoint()
 	suppressed_combines[pending_forge.offer.id] = true
-	_save_loadout()
+	if not _persist_inventory(before):
+		pending_forge.clear()
+		return
 	forge_close()
 
 func forge_choose(id: String) -> void:
@@ -1729,19 +1777,22 @@ func forge_choose(id: String) -> void:
 		if pending_forge.row >= 0:
 			copy.row = pending_forge.row
 		copies.append(copy)
+	var before := _inventory_checkpoint()
 	var target := _combine_target(lanes, storage_rows, copies, copies[0], id)
 	if not TilePacking.apply_combination(lanes, storage_rows, copies, copies[0], id, target):
 		return
 	suppressed_combines.erase(id)
+	if not _persist_inventory(before):
+		forge_screen.show_error(run.save_error)
+		return
 	selected.clear()
-	_save_loadout()
 	forge_close()
 
 func forge_can_fit(id: String) -> bool:
 	if pending_forge.has("reward"):
-		return not _reward_upgrade_destination(pending_forge.copies, id).is_empty()
+		return not _reward_upgrade_plan(pending_forge.copies, id).is_empty()
 	if pending_forge.has("inventory_copies"):
-		return not TilePacking.combine_destination(lanes, storage_rows, pending_forge.inventory_copies, id, range(lanes.size())).is_empty()
+		return not _inventory_upgrade_plan(id).is_empty()
 	if pending_forge.has("camp"):
 		var source: Dictionary = pending_forge.camp
 		var stored := source.has("row")
@@ -1765,10 +1816,10 @@ func forge_owner() -> String:
 
 func forge_firing_beat(id: String) -> int:
 	if pending_forge.has("reward"):
-		var destination := _reward_upgrade_destination(pending_forge.copies, id)
+		var destination: Dictionary = _reward_upgrade_plan(pending_forge.copies, id).get("destination", {})
 		return 0 if destination.is_empty() or destination.has("row") else int(destination.start) + int(ArenaSim.TILES[id].width)
 	if pending_forge.has("inventory_copies"):
-		var destination := TilePacking.combine_destination(lanes, storage_rows, pending_forge.inventory_copies, id, range(lanes.size()))
+		var destination: Dictionary = _inventory_upgrade_plan(id).get("destination", {})
 		return 0 if destination.is_empty() or destination.has("row") else int(destination.start) + int(ArenaSim.TILES[id].width)
 	if pending_forge.has("camp"):
 		var source: Dictionary = pending_forge.camp
@@ -1818,9 +1869,31 @@ func _save_loadout() -> bool:
 		return run.save()
 	return true
 
+func _inventory_checkpoint() -> Dictionary:
+	return run.loadout.duplicate(true) if campaign else {}
+
+func _read_run_loadout() -> void:
+	lanes = run.loadout.lanes
+	storage_rows = run.loadout.storage
+	defaults.assign(run.loadout.defaults)
+	suppressed_combines = run.loadout.suppressed
+
+func _restore_inventory(before: Dictionary) -> void:
+	run.loadout = before
+	_read_run_loadout()
+	_rebuild_loadout()
+
+func _persist_inventory(before: Dictionary) -> bool:
+	if _save_loadout():
+		return true
+	_restore_inventory(before)
+	_show_inventory_message(run.save_error)
+	return false
+
 func _show_frontier(page := "") -> void:
 	_close_review()
 	state = "setup"
+	combat_save_pending = false
 	campaign = false
 	camp_forge = false
 	battle_snapshot.clear()
@@ -1837,8 +1910,10 @@ func _show_frontier(page := "") -> void:
 
 func _leave_arena() -> void:
 	if campaign:
-		_save_loadout()
-		run_return()
+		if _save_loadout():
+			run_return()
+		else:
+			_show_inventory_message(run.save_error)
 	elif not retry_options.is_empty():
 		run_return()
 	else:
@@ -1846,6 +1921,12 @@ func _leave_arena() -> void:
 
 func run_menu() -> void:
 	_show_frontier("menu")
+
+func run_save_title() -> void:
+	if run.save():
+		run_menu()
+	else:
+		run_return()
 
 func run_show_chart() -> void:
 	_show_frontier("chart")
@@ -1873,10 +1954,7 @@ func run_practice() -> void:
 func run_show_arena() -> void:
 	campaign = true
 	encounter_setup = run.data.phase == "combat"
-	lanes = run.loadout.lanes
-	storage_rows = run.loadout.storage
-	defaults.assign(run.loadout.defaults)
-	suppressed_combines = run.loadout.suppressed
+	_read_run_loadout()
 	frontier_screen.hide()
 	storage_screen.hide()
 	forge_screen.hide()
@@ -1948,14 +2026,16 @@ func _commit_camp_forge(id: String) -> void:
 		return
 	for item: Dictionary in items:
 		if item.start == source.start and item.id == source.id:
+			var before := _inventory_checkpoint()
 			item.id = id
 			item.target = _forge_target(id, item.target)
 			TileEnchantments.keep_if_eligible(item, tile_spec(id))
 			suppressed_combines.erase(id)
-			pending_forge.clear()
-			run.rest("forge")
-			_save_loadout()
-			run_return()
+			if run.rest("forge"):
+				run_return()
+			else:
+				_restore_inventory(before)
+				forge_screen.show_error(run.save_error)
 			return
 
 func _forge_target(id: String, previous: String) -> String:
@@ -2039,19 +2119,19 @@ func _pending_reward_id() -> String:
 func _reward_combine_copies(id: String) -> Array:
 	if run.data.get("phase") != "reward" or run.is_final_boss() or id not in run.data.offers or not run.elite_relic_offers().is_empty():
 		return []
-	return TilePacking.find_copies(run.loadout.lanes, run.loadout.storage, id, 2, _reward_combine_lanes())
+	return TilePacking.find_copies(run.loadout.lanes, run.loadout.storage, id, _reward_combine_lanes())
 
 func _reward_combine_lanes() -> Array:
 	var lane: int = run.reward_lane()
 	return range(run.loadout.lanes.size()) if lane < 0 else [lane]
 
-func _reward_upgrade_destination(copies: Array, id: String) -> Dictionary:
-	return TilePacking.combine_destination(run.loadout.lanes, run.loadout.storage, copies, id, _reward_combine_lanes())
+func _reward_upgrade_plan(copies: Array, id: String) -> Dictionary:
+	return TilePacking.combine_plan(run.loadout.lanes, run.loadout.storage, copies, 2, id, _reward_combine_lanes())
 
 func run_can_combine_reward(id: String) -> bool:
 	var copies := _reward_combine_copies(id)
-	return copies.size() == 2 and TilePacking.next_options(id).any(
-		func(upgrade: String): return not _reward_upgrade_destination(copies, upgrade).is_empty()
+	return copies.size() >= 2 and TilePacking.next_options(id).any(
+		func(upgrade: String): return not _reward_upgrade_plan(copies, upgrade).is_empty()
 	)
 
 func _open_reward_combine() -> bool:
@@ -2060,7 +2140,6 @@ func _open_reward_combine() -> bool:
 		return false
 	if not run_can_combine_reward(id):
 		run.data.erase("reward_combine")
-		run.save()
 		return false
 	pending_forge = {"reward": id, "copies": _reward_combine_copies(id)}
 	frontier_screen.hide()
@@ -2075,20 +2154,19 @@ func run_keep_reward_tile() -> bool:
 
 func _claim_reward_upgrade(id: String) -> void:
 	var source_id := _pending_reward_id()
-	var copies: Array = pending_forge.copies
 	if id not in TilePacking.next_options(source_id):
 		return
-	var destination := _reward_upgrade_destination(copies, id)
-	if destination.is_empty():
+	var plan := _reward_upgrade_plan(pending_forge.copies, id)
+	if plan.is_empty():
 		forge_screen.show_error("Make room for the upgrade or return to the reward choices.")
 		return
-	var target := _combine_target(run.loadout.lanes, run.loadout.storage, copies, destination, id)
+	var target := _combine_target(run.loadout.lanes, run.loadout.storage, plan.copies, plan.destination, id)
 	_finish_reward_combine(func():
-		if not TilePacking.apply_combination(run.loadout.lanes, run.loadout.storage, copies, destination, id, target):
+		if not TilePacking.apply_combination(run.loadout.lanes, run.loadout.storage, plan.copies, plan.destination, id, target):
 			return false
 		run.loadout.suppressed.erase(source_id)
 		run.loadout.suppressed.erase(id)
-		return run.reward(source_id, _reward_placement(id, destination))
+		return run.reward(source_id, _reward_placement(id, plan.destination))
 	)
 
 func _finish_reward_combine(claim: Callable) -> bool:

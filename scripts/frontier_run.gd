@@ -197,17 +197,21 @@ const DEFAULT_PROFILE := {
 }
 const NODES_PER_SEGMENT := 7
 const VERSION := 1
+const SAVE_PHASES := ["hero", "relic", "starter", "recruit", "recruit_starter", "map", "combat", "reward",
+	"boss_relic", "enchantment", "shop", "event", "rest", "result"]
 
 var data: Dictionary = {}
 var loadout: Dictionary = {}
 var profile: Dictionary = DEFAULT_PROFILE.duplicate(true)
 var save_path := "user://frontier-save.json"
 var save_error := ""
+var recovered_starter := ""
 
 
 func load_save(path := "user://frontier-save.json") -> bool:
 	save_path = path
 	save_error = ""
+	recovered_starter = ""
 	data = {}
 	loadout = {}
 	profile = DEFAULT_PROFILE.duplicate(true)
@@ -219,6 +223,7 @@ func load_save(path := "user://frontier-save.json") -> bool:
 		data = parsed.run
 		loadout = parsed.loadout
 		_restore_integers()
+		_restore_empty_run_loadout()
 		_restore_brass_medium_unlocks(candidate == save_path)
 		return true
 	return false
@@ -227,12 +232,97 @@ func load_save(path := "user://frontier-save.json") -> bool:
 func _read_save(path: String) -> Dictionary:
 	if not FileAccess.file_exists(path):
 		return {}
-	var parsed: Variant = JSON.parse_string(FileAccess.get_file_as_string(path))
+	var json := JSON.new()
+	if json.parse(FileAccess.get_file_as_string(path)) != OK:
+		return {}
+	var parsed: Variant = json.get_data()
 	if not parsed is Dictionary or parsed.get("version") != VERSION:
 		return {}
 	if not parsed.get("profile") is Dictionary or not parsed.get("run") is Dictionary or not parsed.get("loadout") is Dictionary:
 		return {}
+	if not _valid_save_profile(parsed.profile) or not _valid_save_run(parsed.run, parsed.loadout):
+		return {}
 	return parsed
+
+
+func _valid_save_profile(record: Dictionary) -> bool:
+	for field: String in DEFAULT_PROFILE:
+		if field == "marks":
+			if not _save_integer(record.get(field, 0)):
+				return false
+		elif typeof(record.get(field, DEFAULT_PROFILE[field])) != typeof(DEFAULT_PROFILE[field]):
+			return false
+	return true
+
+
+func _valid_save_run(record: Dictionary, inventory: Dictionary) -> bool:
+	if record.is_empty():
+		return true
+	var phase: Variant = record.get("phase")
+	if phase not in SAVE_PHASES or not record.get("hero") is String \
+		or not record.get("midpoint_paid") is bool:
+		return false
+	match phase:
+		"recruit_starter":
+			if not HEROES.has(record.get("pending_recruit")):
+				return false
+		"shop":
+			if not record.get("shop_healed") is bool:
+				return false
+		"result":
+			if record.get("result") not in ["victory", "defeat"]:
+				return false
+	for field: String in ["seed", "hp", "max_hp", "gold", "marks_earned"]:
+		if not _save_integer(record.get(field)):
+			return false
+	for field: String in ["layers", "visited", "relics", "offers"]:
+		if not record.get(field) is Array:
+			return false
+	if record.layers.is_empty() or not _valid_save_node(record.get("node")):
+		return false
+	for layer: Variant in record.layers:
+		if not layer is Array or layer.is_empty():
+			return false
+		for node: Variant in layer:
+			if not _valid_save_node(node):
+				return false
+	var heroes: Variant = record.get("heroes", [])
+	if not heroes is Array:
+		return false
+	for hero: Variant in heroes:
+		if not hero is Dictionary or not HEROES.has(hero.get("id")) \
+			or not _save_integer(hero.get("hp")) or not _save_integer(hero.get("max_hp")):
+			return false
+	return _valid_save_inventory(inventory)
+
+
+func _valid_save_node(node: Variant) -> bool:
+	if not node is Dictionary or not node.get("id") is String or not node.get("type") is String \
+		or not node.get("label") is String or not node.get("next") is Array \
+		or not _save_integer(node.get("row")) or not _save_integer(node.get("column")):
+		return false
+	var formation: Variant = node.get("pilot_formation", [])
+	if not formation is Array:
+		return false
+	return formation.all(func(spawn: Variant) -> bool: return spawn is Dictionary and _save_integer(spawn.get("delay")))
+
+
+func _valid_save_inventory(inventory: Dictionary) -> bool:
+	if not inventory.get("lanes") is Array or inventory.lanes.is_empty() or not inventory.get("storage") is Array \
+		or not inventory.get("defaults") is Array or not inventory.get("suppressed") is Dictionary:
+		return false
+	for row: Variant in inventory.lanes + inventory.storage:
+		if not row is Array:
+			return false
+		for tile: Variant in row:
+			if not tile is Dictionary or not ArenaSim.TILES.has(tile.get("id")) or not tile.get("target") is String \
+				or not _save_integer(tile.get("start")):
+				return false
+	return true
+
+
+func _save_integer(value: Variant) -> bool:
+	return value is int or (value is float and is_finite(value) and value == floorf(value))
 
 
 func _restore_brass_medium_unlocks(from_primary: bool) -> void:
@@ -273,22 +363,27 @@ func save() -> bool:
 		return false
 	var original := ProjectSettings.globalize_path(save_path)
 	var backup := original + ".bak"
-	if FileAccess.file_exists(save_path):
+	# A broken primary must never replace the checkpoint we recovered from.
+	var rotate_primary := not _read_save(save_path).is_empty()
+	if rotate_primary:
 		if DirAccess.rename_absolute(original, backup) != OK:
 			save_error = "Could not back up the Frontier save."
 			return false
 	if DirAccess.rename_absolute(ProjectSettings.globalize_path(pending), original) != OK:
-		if FileAccess.file_exists(save_path + ".bak"):
-			DirAccess.rename_absolute(backup, original)
+		if rotate_primary:
+			DirAccess.copy_absolute(backup, original)
 		save_error = "Could not install the Frontier save."
 		return false
 	save_error = ""
+	recovered_starter = ""
 	return true
 
 
 func start_run(seed_value := 0, difficulty := "easy", location := "brass") -> bool:
 	if not data.is_empty() or not can_start(difficulty, location):
 		return false
+	var before := data
+	var before_loadout := loadout
 	# JSON preserves these 32-bit seeds exactly.
 	var run_seed := clampi(seed_value, 1, 4294967295) if seed_value != 0 else maxi(1, int(randi()))
 	var layers := _make_map(run_seed, difficulty, location)
@@ -303,8 +398,7 @@ func start_run(seed_value := 0, difficulty := "easy", location := "brass") -> bo
 		"pilot_fights": [], "encounter_roster_version": PilotFormations.CURRENT_VERSION,
 	}
 	loadout = {"lanes": [[]], "storage": [[], [], []], "defaults": ["nearest"], "suppressed": {}}
-	save()
-	return true
+	return _save_run_change(before, {}, before_loadout)
 
 
 func can_start(difficulty: String, location := "brass") -> bool:
@@ -369,7 +463,7 @@ func _choose_starting_class(id: String) -> bool:
 		combat_classics.append("wayfarers_pin")
 	var combat_draft := _sample(BUILD_RELICS, 2, int(data.seed), 22) + _sample(combat_classics, 1, int(data.seed), 23)
 	data.build_relic_offers = _sample(combat_draft, 3, int(data.seed), 24)
-	return _save_reward(before)
+	return _save_run_change(before)
 
 
 func build_relic_offers() -> Array:
@@ -400,18 +494,18 @@ func choose_mastery(id: String) -> bool:
 		data.pending_recruit_mastery = id
 	else:
 		data.heroes[0].mastery = id
-	return _save_reward(before)
+	return _save_run_change(before)
 
 
 func choose_relic(id: String) -> bool:
 	if not _is_offer("relic", id) and id not in build_relic_offers():
 		return false
+	var before := data.duplicate(true)
 	data.relics.append(id)
 	data.phase = "starter"
 	data.erase("build_relic_offers")
 	data.offers = _starter_offers(data.hero, 31, RELIC_STARTERS.get(id, "shot"))
-	save()
-	return true
+	return _save_run_change(before)
 
 
 func choose_starter(id: String) -> bool:
@@ -419,25 +513,26 @@ func choose_starter(id: String) -> bool:
 		return choose_recruit_starter(id)
 	if not _is_offer("starter", id):
 		return false
+	var before := data.duplicate(true)
+	var before_loadout := loadout.duplicate(true)
 	loadout.lanes = [_starter_lane(id)]
 	if "brass_metronome" in data.relics:
 		loadout.lanes[0][0].start = 1
 	data.phase = "combat"
 	_lock_pilot_formation()
 	data.offers = []
-	save()
-	return true
+	return _save_run_change(before, {}, before_loadout)
 
 
 func choose_recruit(id: String) -> bool:
 	if not _is_offer("recruit", id):
 		return false
+	var before := data.duplicate(true)
 	data.pending_recruit = id
 	data.phase = "recruit_starter"
 	data.recruit_loadouts = true
 	data.offers = _starter_offers(id, _node_salt(93))
-	save()
-	return true
+	return _save_run_change(before)
 
 
 func choose_recruit_starter(id: String) -> bool:
@@ -483,10 +578,7 @@ func _equip_recruit(tiles: Array) -> bool:
 	data.phase = "map"
 	data.offers = []
 	data.node_notice = "%s joins the expedition." % HEROES[recruit].label
-	if _save_reward(before):
-		return true
-	loadout = before_loadout
-	return false
+	return _save_run_change(before, {}, before_loadout)
 
 
 func _starter_lane(id: String) -> Array:
@@ -524,6 +616,8 @@ func choose_node(id: String) -> bool:
 			break
 	if selected.is_empty():
 		return false
+	var before := data.duplicate(true)
+	var before_profile := profile.duplicate(true)
 	data.node = selected
 	data.segment = 1 + floori(float(selected.row) / NODES_PER_SEGMENT)
 	data.visited.append(id)
@@ -549,8 +643,7 @@ func choose_node(id: String) -> bool:
 		_:
 			data.phase = "combat"
 			_lock_pilot_formation()
-	save()
-	return true
+	return _save_run_change(before, before_profile)
 
 
 func encounter() -> Dictionary:
@@ -722,6 +815,7 @@ func choose_elite_relic(id: String) -> bool:
 	for offer: Dictionary in elite_relic_offers():
 		if offer.id != id or id in data.relics:
 			continue
+		var before := data.duplicate(true)
 		var guaranteed: String = data.get("elite_guaranteed_tile", "")
 		if guaranteed.is_empty() and data.node.type == "elite":
 			guaranteed = _class_elite_preview_tile(data.node) if reward_lane() >= 0 else _legacy_elite_preview_tile()
@@ -742,8 +836,7 @@ func choose_elite_relic(id: String) -> bool:
 			hints[tile] = "Pairs with " + RELICS[id].label
 			data.reward_hints = hints
 		data.node_notice = "Relic acquired: " + RELICS[id].label
-		save()
-		return true
+		return _save_run_change(before)
 	return false
 
 
@@ -892,7 +985,7 @@ func choose_boss_relic(id: String) -> bool:
 	if id != "skip":
 		data.relics.append(id)
 	_start_recruitment()
-	return _save_reward(before)
+	return _save_run_change(before)
 
 
 func _start_recruitment() -> void:
@@ -914,6 +1007,8 @@ func finish_combat(victory: bool, hp: Variant) -> bool:
 	var remaining: Array = hp if hp is Array else [hp]
 	if remaining.size() != data.heroes.size():
 		return false
+	var before := data.duplicate(true)
+	var before_profile := profile.duplicate(true)
 	if should_teach_timeline():
 		profile.timeline_intro_seen = true
 	for index in range(remaining.size()):
@@ -923,8 +1018,7 @@ func finish_combat(victory: bool, hp: Variant) -> bool:
 	if not victory:
 		data.result = "defeat"
 		data.phase = "result"
-		save()
-		return true
+		return _save_run_change(before, before_profile)
 	if "trail_ration" in data.relics:
 		_heal(5, false)
 	var draft_relic := will_draft_elite_relic()
@@ -951,8 +1045,7 @@ func finish_combat(victory: bool, hp: Variant) -> bool:
 		_:
 			data.gold += 12
 	_prepare_party_rewards(kind)
-	save()
-	return true
+	return _save_run_change(before, before_profile)
 
 
 func _resolve_boss() -> void:
@@ -1104,7 +1197,7 @@ func reward(id: String, placement := {}) -> bool:
 	if lane >= 0 and not data.reward_remaining.is_empty():
 		data.reward_lane = lane + 1
 		_activate_reward_draft(data.reward_remaining.pop_front())
-		return _save_reward(before)
+		return _save_run_change(before)
 	data.erase("reward_lane")
 	data.erase("reward_remaining")
 	data.erase("reward_gold_paid")
@@ -1119,13 +1212,13 @@ func reward(id: String, placement := {}) -> bool:
 			data.node_notice = ""
 		else:
 			_start_recruitment()
-		return _save_reward(before)
+		return _save_run_change(before)
 	else:
 		var draft_enchantment: bool = data.location == "brass" and data.node.type == "opening" \
 			and "enchantments" in profile.meta and not data.has("enchantment")
 		data.phase = "enchantment" if draft_enchantment else "map"
 	data.offers = []
-	return _save_reward(before)
+	return _save_run_change(before)
 
 
 func enchantment_offers() -> Array:
@@ -1142,7 +1235,7 @@ func choose_enchantment(id: String) -> bool:
 	var before := data.duplicate(true)
 	data.enchantment = "" if id == "skip" else id
 	data.phase = "map"
-	return _save_reward(before)
+	return _save_run_change(before)
 
 
 func active_enchantment() -> String:
@@ -1150,10 +1243,14 @@ func active_enchantment() -> String:
 	return id if id in TileEnchantments.IDS else ""
 
 
-func _save_reward(before: Dictionary) -> bool:
+func _save_run_change(before: Dictionary, before_profile := {}, before_loadout: Variant = null) -> bool:
 	if save():
 		return true
 	data = before
+	if not before_profile.is_empty():
+		profile = before_profile
+	if before_loadout != null:
+		loadout = before_loadout
 	return false
 
 
@@ -1186,46 +1283,50 @@ func shop_buy(id: String, placement := {}) -> bool:
 	data.offers.erase(id)
 	if not placement.is_empty():
 		data.reward_placement = placement
-	return _save_reward(before)
+	return _save_run_change(before)
 
 
 func shop_heal() -> bool:
 	if data.get("phase") != "shop" or data.shop_healed or int(data.gold) < 12 or not party_needs_healing():
 		return false
+	var before := data.duplicate(true)
 	data.gold -= 12
 	data.shop_healed = true
 	_heal(15)
-	save()
-	return true
+	return _save_run_change(before)
 
 
 func shop_buy_relic() -> bool:
 	if data.get("phase") != "shop" or data.get("shop_relic", "").is_empty() or int(data.gold) < 30:
 		return false
+	var before := data.duplicate(true)
 	data.gold -= 30
 	data.relics.append(data.shop_relic)
 	data.shop_relic = ""
-	save()
-	return true
+	return _save_run_change(before)
 
 
 func leave_node() -> bool:
 	if data.get("phase") not in ["shop", "rest", "event"]:
 		return false
-	data.phase = "map"
-	data.offers = []
-	save()
-	return true
+	return _return_to_map(data.duplicate(true))
 
 
 func rest(action: String) -> bool:
 	if data.get("phase") != "rest" or action not in ["heal", "forge"]:
 		return false
+	var before := data.duplicate(true)
 	if action == "heal":
 		for hero: Dictionary in data.heroes:
 			hero.hp = mini(int(hero.max_hp), int(hero.hp) + ceili(float(hero.max_hp) * 0.30))
 		_sync_lead_hero()
-	return leave_node()
+	return _return_to_map(before)
+
+
+func _return_to_map(before: Dictionary) -> bool:
+	data.phase = "map"
+	data.offers = []
+	return _save_run_change(before)
 
 
 func mystery_kind() -> String:
@@ -1302,7 +1403,7 @@ func _begin_mystery_reward(offers: Array) -> bool:
 	data.reward_remaining = []
 	data.reward_gold_paid = false
 	_activate_reward_draft({"offers": offers, "hints": hints})
-	return _save_reward(before)
+	return _save_run_change(before)
 
 
 func mystery_smith_options(id: String) -> Array:
@@ -1341,7 +1442,7 @@ func choose_mystery_upgrade(source: Dictionary, upgrade: String) -> bool:
 		data.phase = "map"
 		data.offers = []
 		data.node_notice = "%s upgraded to %s." % [ArenaSim.TILES[source_id].label, ArenaSim.TILES[upgrade].label]
-		if _save_reward(before):
+		if _save_run_change(before):
 			return true
 		item.id = source_id
 		item.target = target
@@ -1427,6 +1528,7 @@ func event_choice(index: int) -> bool:
 		return false
 	if not mystery_kind().is_empty():
 		return leave_node()
+	var before := data.duplicate(true)
 	var kind: String = EVENT_KINDS.get(data.node.label, "")
 	data.phase = "map"
 	match kind:
@@ -1504,8 +1606,7 @@ func event_choice(index: int) -> bool:
 				data.node["encounter_override"] = "elite"
 	if data.phase == "combat":
 		_lock_pilot_formation()
-	save()
-	return true
+	return _save_run_change(before)
 
 
 func finish_run() -> bool:
@@ -1517,10 +1618,11 @@ func finish_run() -> bool:
 func abandon_run() -> bool:
 	if data.is_empty():
 		return false
+	var before := data
+	var before_loadout := loadout
 	data = {}
 	loadout = {}
-	save()
-	return true
+	return _save_run_change(before, {}, before_loadout)
 
 
 func buy_meta(id: String) -> bool:
@@ -2263,6 +2365,23 @@ func _restore_integers() -> void:
 	for items: Array in loadout.lanes + loadout.storage:
 		for tile: Dictionary in items:
 			tile.start = int(tile.start)
+
+
+func _restore_empty_run_loadout() -> void:
+	if data.is_empty() or data.phase in ["hero", "relic", "starter", "result"]:
+		return
+	for items: Array in loadout.lanes + loadout.storage:
+		if not items.is_empty():
+			return
+	for index in mini(data.heroes.size(), loadout.lanes.size()):
+		var hero: Dictionary = data.heroes[index]
+		if hero.hp <= 0:
+			continue
+		recovered_starter = ClassDecks.starter(hero.id)
+		loadout.lanes[index] = _starter_lane(recovered_starter)
+		if "brass_metronome" in data.relics:
+			loadout.lanes[index][0].start = 1
+		return
 
 
 func _restore_node(node: Dictionary) -> void:

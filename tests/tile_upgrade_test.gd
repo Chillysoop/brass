@@ -26,6 +26,7 @@ func _run() -> void:
 	await _check_reward_combine(game)
 	await _check_enchanted_tile_movement(game)
 	await _check_distributed_storage(game)
+	await _check_alternate_copies(game)
 	game.queue_free()
 	await process_frame
 	for suffix in ["", ".tmp", ".bak"]:
@@ -183,6 +184,12 @@ func _check_enchanted_tile_movement(game: Control) -> void:
 	_check(game.lanes[0].size() == 3 and game.lanes[0][0].get("enchantment") == "splash",
 		"Moving an enchanted tile back to the same beat keeps its attachment.")
 	game._offer_combine(-1, 0, 0, true)
+	var before := run.loadout.duplicate(true)
+	run.save_path = save_path + ".missing/save.json"
+	game.forge_choose("split_shot")
+	_check(game.forge_screen.visible and game.forge_screen._error.visible and run.loadout == before,
+		"A failed save keeps a touching triple and its enchantment intact in the open forge.")
+	run.save_path = save_path
 	game.forge_choose("split_shot")
 	_check(game.lanes[0].size() == 1 and game.lanes[0][0].id == "split_shot"
 		and not game.lanes[0][0].has("enchantment") and run.active_enchantment() == "splash",
@@ -220,6 +227,67 @@ func _check_distributed_storage(game: Control) -> void:
 		"Distributed storage combine grants one Rare, consumes the three matches, and keeps other tiles.")
 
 
+func _check_alternate_copies(game: Control) -> void:
+	var run := FrontierRun.new()
+	game.run = run
+	run.save_path = save_path
+	if not run.start_run(42):
+		_check(false, "Start the alternate-copy expedition.")
+		return
+	run.data.offers = ["warden"]
+	if not _check(run.choose_hero("warden") and run.choose_relic("pocket_bell") and run.choose_starter("bash"),
+		"Equip Warden in the alternate-copy expedition."):
+		return
+	var source := "shield_ram"
+	var choice := "bulwark_charge"
+	var lane := [_tile(source, 0), _tile("jab", 2), _tile(source, 3), _tile("jab", 5),
+		_tile(source, 6), _tile(source, 8), _tile("jab", 10), _tile("jab", 11)]
+	var storage := [[_tile("slam", 0), _tile("slam", 4)], [_tile("slam", 0), _tile("slam", 4)], [_tile("slam", 0), _tile("slam", 4)]]
+	run.loadout.lanes[0] = lane.duplicate(true)
+	run.loadout.storage = storage.duplicate(true)
+	run.data.node = {"id": "alternate-copies-test", "row": 2, "column": 0, "type": "battle",
+		"label": "Test patrol", "next": []}
+	if not _check(run.finish_combat(true, 100) and source in run.data.offers, "Victory offers the owned Shield Ram."):
+		return
+	game.run_return()
+	await _click(game.frontier_screen, "RewardTile_" + source)
+	await _click(game.frontier_screen, "Continue")
+	if not _check(game.forge_screen.visible and game.forge_screen._keep_reward.disabled,
+		"A full inventory can use a reward with two matching copies that free room for a wider upgrade."):
+		return
+	_check(game.forge_can_fit(choice) and game.forge_firing_beat(choice) == 9,
+		"The reward combine previews the beat made available by the alternate pair.")
+	game.forge_choose(choice)
+	var expected_reward := [_tile(source, 0), _tile("jab", 2), _tile(source, 3), _tile("jab", 5),
+		_tile(choice, 6), _tile("jab", 10), _tile("jab", 11)]
+	_check(run.data.phase == "map" and run.loadout.lanes[0] == expected_reward and run.loadout.storage == storage,
+		"The reward consumes the pair starting on beats 7 and 9 and preserves both earlier copies.")
+
+	run.loadout.lanes[0] = lane.duplicate(true)
+	if not _check(run.save(), "Save the full inventory before the manual combine."):
+		return
+	game.run_show_arena()
+	game._open_storage()
+	game.selected = {"id": source, "lane": 0, "start": 0}
+	game._render_storage()
+	await _click(game.storage_screen, "CombineSelected")
+	if not _check(game.forge_screen.visible and game.forge_can_fit(choice) and game.forge_firing_beat(choice) == 9,
+		"Combine 3 includes the selected copy and finds two other copies that make room."):
+		return
+	run.save_path = save_path + ".missing/save.json"
+	game.forge_choose(choice)
+	_check(game.forge_screen.visible and game.forge_screen._error.visible
+		and run.loadout.lanes[0] == lane and run.loadout.storage == storage,
+		"A failed save leaves the manual combine open and restores every tile.")
+	run.save_path = save_path
+	game.forge_choose(choice)
+	var expected_manual := expected_reward.slice(1)
+	var restored := FrontierRun.new()
+	_check(game.storage_screen.visible and restored.load_save(save_path)
+		and restored.loadout.lanes[0] == expected_manual and restored.loadout.storage == storage,
+		"Retry consumes the selected copy and the alternate pair in one saved operation.")
+
+
 func _tile(id: String, start: int, target := "nearest") -> Dictionary:
 	return {"id": id, "start": start, "target": target}
 
@@ -240,6 +308,7 @@ func _click(page: Control, node_name: String) -> void:
 	await process_frame
 
 
-func _check(condition: bool, message: String) -> void:
+func _check(condition: bool, message: String) -> bool:
 	if not condition:
 		failures.append(message)
+	return condition

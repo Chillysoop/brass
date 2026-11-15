@@ -58,7 +58,8 @@ func _check_locked_formation(location: String) -> void:
 		if _expect(run.finish_combat(true, [92, 94]), "The pilot gate should accept the fight result."):
 			_expect(run.data.pilot_fights.back().enemies == enemies, "Victory must record the actual lineup for later novelty checks.")
 		run.data.phase = "event"
-		run.data.node = {"type": "event", "row": 8, "column": 1, "id": "r8c1", "label": "Bounty Board"}
+		run.data.node = {"type": "event", "row": 8, "column": 1, "id": "r8c1", "label": "Bounty Board",
+			"next": run.data.layers[8][1].next.duplicate()}
 		if _expect(run.event_choice(1), "A late-act Bounty Board must be playable."):
 			var bounty := run.encounter()
 			_expect(bounty.kind == "elite" and bounty.has("formation"), "A late-act event override must choose from the pilot elite pool.")

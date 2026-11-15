@@ -53,6 +53,7 @@ func _run() -> void:
 	await _check_tile_identity(lab)
 	await _check_target_icons(lab)
 	_check_enemy_windup(lab)
+	_check_pause_visuals(lab)
 	lab._load_fixture("duo")
 	var original: Array = lab.lanes.duplicate(true)
 	lab._place({"id": "pull"}, 0, 11)
@@ -105,6 +106,7 @@ func _run() -> void:
 	await _check_storage_popup(lab)
 	_check_forge(lab)
 	_check_blink_forge(lab)
+	_check_retry_boss_hud(lab)
 	if failures.is_empty():
 		print("Arena controls checks passed.")
 	else:
@@ -317,6 +319,28 @@ func _check_enemy_windup(lab: Control) -> void:
 		"The Scout's windup gauge should clear on the attack tick.")
 
 
+func _check_pause_visuals(lab: Control) -> void:
+	lab._load_fixture("duo")
+	lab.lanes[0].assign([lab._entry("shot", 1, "nearest")])
+	lab.lanes[1].clear()
+	lab.speed = 1
+	lab.action.pressed.emit()
+	var release_tick := 3 * ArenaSim.TICKS_PER_BEAT
+	for step in range(release_tick):
+		lab._physics_process(1.0 / 60.0)
+	var casts: Array = lab.arena._attack_casts.duplicate(true)
+	var effects: Array = lab.arena._effects.duplicate(true)
+	_check(not casts.is_empty() and not effects.is_empty(), "Shot should have an active animation and hit feedback on its firing beat.")
+	lab.action.pressed.emit()
+	lab.arena._process(0.8)
+	_check(lab.sim.tick == release_tick and lab.arena._attack_casts == casts and lab.arena._effects == effects,
+		"Pause should keep the simulation, active attack animations, and hit feedback on the firing beat.")
+	lab.action.pressed.emit()
+	lab.arena._process(0.8)
+	_check(lab.arena._attack_casts.is_empty() and lab.arena._effects.is_empty(),
+		"After resuming, the shot animation and hit feedback should finish normally.")
+
+
 func _check_storage_popup(lab: Control) -> void:
 	lab._load_fixture("duo")
 	lab.storage_rows[0].assign([lab._entry("bash", 0, "farthest"), lab._entry("bash", 2, "nearest")])
@@ -475,6 +499,41 @@ func _check_blink_forge(lab: Control) -> void:
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(save_path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path + suffix))
+
+func _check_retry_boss_hud(lab: Control) -> void:
+	for fixture: Dictionary in [
+		{"region": "glass", "id": "tempered_colossus", "label": "colossus_status", "move": "Forge Sweep"},
+		{"region": "crown", "id": "crown_regent", "label": "relay_status", "move": "Crown Charge"},
+		{"region": "moonwreck", "id": "drowned_admiral", "label": "dock_status", "move": "Undertow Sweep"},
+	]:
+		lab.run_practice()
+		lab.campaign = true
+		lab.state = "finished"
+		lab.sim.outcome = "defeat"
+		lab.battle_snapshot = {
+			"options": {
+				"location": fixture.region, "difficulty": "hard", "encounter": "boss", "segment": 3,
+				"boss_id": fixture.id, "seed": 42,
+				"heroes": [{"hero": "warden"}, {"hero": "starshot"}, {"hero": "duelist"}],
+			},
+			"lanes": [[lab._entry("bash", 2, "nearest")], [lab._entry("shot", 3, "farthest")],
+				[lab._entry("shot", 4, "lowest_hp")]],
+			"storage": [[], [], []], "defaults": ["nearest", "farthest", "lowest_hp"], "suppressed": {},
+		}
+		lab._open_review()
+		lab.battle_review._retry.pressed.emit()
+		var cue: Label = lab.get(fixture.label)
+		_check(cue.visible and fixture.move in cue.text, "%s should show its boss guidance in Retry in Practice setup." % fixture.id)
+		lab.action.pressed.emit()
+		var countdown := false
+		for step in range(500):
+			lab._physics_process(1.0 / 60.0)
+			if cue.visible and "beats left" in cue.text:
+				countdown = true
+				break
+		_check(countdown, "%s should show a countdown during the practice replay." % fixture.id)
+		lab.run_menu()
+
 
 func _check(passed: bool, description: String) -> void:
 	if not passed:

@@ -170,6 +170,7 @@ const FLOATING_CUES := {
 
 var units: Array = []
 var combat_tick := 0
+var playback_paused := false
 var _windups: Dictionary = {}
 var _reinforcement_warning: Dictionary = {}
 var location := "brass"
@@ -290,6 +291,8 @@ func present(units_data: Array, events: Array, tick := 0, attack_cues: Array = [
 
 
 func _process(delta: float) -> void:
+	if playback_paused:
+		return
 	_animation_time += delta
 	var changed := false
 	var blend := 1.0 - exp(-delta * 29.0)

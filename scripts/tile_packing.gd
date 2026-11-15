@@ -73,9 +73,9 @@ static func next_options(id: String) -> Array:
 	return []
 
 
-static func find_copies(lanes: Array, storage: Array, id: String, count: int, eligible_lanes: Array,
+static func find_copies(lanes: Array, storage: Array, id: String, eligible_lanes: Array,
 		preferred := {}) -> Array:
-	if count < 1 or next_options(id).is_empty():
+	if next_options(id).is_empty():
 		return []
 	var copies: Array[Dictionary] = []
 	for lane: int in eligible_lanes:
@@ -86,16 +86,34 @@ static func find_copies(lanes: Array, storage: Array, id: String, count: int, el
 		for item: Dictionary in storage[row]:
 			if item.id == id:
 				copies.append({"lane": -1, "row": row, "start": item.start, "id": id})
-	if copies.size() < count:
-		return []
 	var index := copies.find(preferred)
 	if index > 0:
 		copies.push_front(copies.pop_at(index))
-	return copies.slice(0, count)
+	return copies
 
 
-static func combine_destination(lanes: Array, storage: Array, copies: Array, upgrade: String,
-		eligible_lanes := []) -> Dictionary:
+static func combine_plan(lanes: Array, storage: Array, matches: Array, count: int, upgrade: String,
+		eligible_lanes: Array, keep_first := false) -> Dictionary:
+	if matches.size() < count:
+		return {}
+	var preferred := matches.slice(0, count)
+	var width: int = ArenaSim.TILES[upgrade].width
+	var positions := _combine_positions(preferred, eligible_lanes, storage.size(), width)
+	for position: Dictionary in positions:
+		if _combine_fits(lanes, storage, preferred, position, upgrade):
+			return {"copies": preferred, "destination": position}
+	if matches.size() == count:
+		return {}
+	# Try other destinations by finding which matching copies block each span.
+	for position: Dictionary in _combine_positions(matches, eligible_lanes, storage.size(), width):
+		var items := _combine_row(lanes, storage, position)
+		var copies := _copies_to_clear_span(items, matches, count, position, width, keep_first)
+		if not copies.is_empty():
+			return {"copies": copies, "destination": position}
+	return {}
+
+
+static func _combine_positions(copies: Array, eligible_lanes: Array, storage_count: int, width: int) -> Array:
 	var groups := []
 	for copy: Dictionary in copies:
 		var group := {"lane": copy.lane} if not copy.has("row") else {"lane": -1, "row": copy.row}
@@ -105,22 +123,44 @@ static func combine_destination(lanes: Array, storage: Array, copies: Array, upg
 		var group := {"lane": lane}
 		if group not in groups:
 			groups.append(group)
-	for row in range(storage.size()):
+	for row in range(storage_count):
 		var group := {"lane": -1, "row": row}
 		if group not in groups:
 			groups.append(group)
 
 	# Preserve a source slot if it fits before considering other spots.
-	for copy: Dictionary in copies:
-		if _combine_fits(lanes, storage, copies, copy, upgrade):
-			return copy
+	var positions := copies.duplicate()
 	for group: Dictionary in groups:
 		var capacity := STORAGE_COLUMNS if group.has("row") else ArenaSim.BEATS
-		for start in range(capacity - int(ArenaSim.TILES[upgrade].width) + 1):
-			var destination: Dictionary = group.merged({"start": start})
-			if _combine_fits(lanes, storage, copies, destination, upgrade):
-				return destination
-	return {}
+		for start in range(capacity - width + 1):
+			positions.append(group.merged({"start": start}))
+	return positions
+
+
+static func _copies_to_clear_span(items: Array, matches: Array, count: int, position: Dictionary,
+		width: int, keep_first: bool) -> Array:
+	var start: int = position.start
+	var end := start + width
+	var capacity := STORAGE_COLUMNS if position.has("row") else ArenaSim.BEATS
+	if end > capacity:
+		return []
+	var copies := [matches[0]] if keep_first else []
+	for item: Dictionary in items:
+		if item.start >= end or item.start + ArenaSim.TILES[item.id].width <= start:
+			continue
+		var copy := position.merged({"id": item.id, "start": item.start}, true)
+		if copy not in matches:
+			return []
+		if copy not in copies:
+			copies.append(copy)
+	if copies.size() > count:
+		return []
+	for copy: Dictionary in matches:
+		if copies.size() == count:
+			break
+		if copy not in copies:
+			copies.append(copy)
+	return copies
 
 
 static func apply_combination(lanes: Array, storage: Array, copies: Array, destination: Dictionary,

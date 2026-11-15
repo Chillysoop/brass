@@ -176,7 +176,8 @@ func render(model, page_override: String = "") -> void:
 		"result": _result()
 	if phase != "result":
 		var footer := _footer_actions()
-		var save_title := _button("Save & title", func(): _host.run_menu())
+		var save_title := _button("Save & title", _host.run_save_title)
+		save_title.name = "SaveTitle"
 		footer.add_child(save_title)
 		footer.move_child(save_title, 0)
 		if phase == "map":
@@ -261,16 +262,20 @@ func _start_new_run(seed_value: int, difficulty: String, location: String) -> vo
 		_host.run_start(seed_value, difficulty, location)
 		return
 	if _run.data.get("phase") == "result":
-		_run.finish_run()
-		_host.run_start(seed_value, difficulty, location)
+		if _run.finish_run():
+			_host.run_start(seed_value, difficulty, location)
+		else:
+			_host.run_menu()
 		return
 	var dialog := ConfirmationDialog.new()
 	dialog.title = "Start a new run?"
 	dialog.dialog_text = "Starting a new run replaces your current expedition."
 	dialog.ok_button_text = "Start new run"
 	dialog.confirmed.connect(func():
-		_run.abandon_run()
-		_host.run_start(seed_value, difficulty, location)
+		if _run.abandon_run():
+			_host.run_start(seed_value, difficulty, location)
+		else:
+			_host.run_menu()
 	)
 	dialog.canceled.connect(dialog.queue_free)
 	add_child(dialog)
@@ -671,7 +676,11 @@ func _draw_route_field(canvas: Control, image_path: String) -> void:
 
 
 func _choose_node(id: String) -> void:
-	if _run.choose_node(id):
+	_refresh_after_choice(_run.choose_node(id))
+
+
+func _refresh_after_choice(advanced: bool) -> void:
+	if advanced or not _run.save_error.is_empty():
 		_host.run_return()
 
 
@@ -851,8 +860,7 @@ func _elite_relic_draft(offers: Array) -> void:
 	var cards := _cards_row()
 	var selected := {"id": ""}
 	var advance := _continue(func():
-		if _run.choose_elite_relic(selected.id):
-			_host.run_return()
+		_refresh_after_choice(_run.choose_elite_relic(selected.id))
 	)
 	advance.disabled = true
 	var group := ButtonGroup.new()
@@ -925,8 +933,7 @@ func _relic_draft_card(cards: HBoxContainer, id: String, button_prefix: String, 
 
 
 func _claim_boss_relic(id: String) -> void:
-	if _run.choose_boss_relic(id) or not _run.save_error.is_empty():
-		_host.run_return()
+	_refresh_after_choice(_run.choose_boss_relic(id))
 
 
 func _enchantment_draft() -> void:
@@ -1031,8 +1038,7 @@ func _shop() -> void:
 	actions.add_child(_button("Manage tiles", func(): _host.run_show_arena()))
 	var heal_label := "Heal 15 HP each · 12 gold" if _party().size() > 1 else "Heal 15 HP · 12 gold"
 	var healing := _button(heal_label, func():
-		if _run.shop_heal():
-			_host.run_return()
+		_refresh_after_choice(_run.shop_heal())
 	)
 	healing.disabled = int(_run.data.get("gold", 0)) < 12 or _run.data.get("shop_healed", false) or not _party_needs_healing()
 	actions.add_child(healing)
@@ -1040,8 +1046,7 @@ func _shop() -> void:
 	if FrontierRun.RELICS.has(relic_id):
 		var relic: Dictionary = FrontierRun.RELICS[relic_id]
 		var buy_relic := _button("%s · 30 gold" % relic.label, func():
-			if _run.shop_buy_relic():
-				_host.run_return()
+			_refresh_after_choice(_run.shop_buy_relic())
 		)
 		buy_relic.disabled = int(_run.data.get("gold", 0)) < 30
 		buy_relic.tooltip_text = relic.description
@@ -1179,6 +1184,8 @@ func _finish(show_chart: bool) -> void:
 			_host.run_show_chart()
 		else:
 			_host.run_menu()
+	elif not _run.save_error.is_empty():
+		_host.run_return()
 
 
 func _difficulty_name() -> String:
@@ -1280,8 +1287,8 @@ func _buy_roster_class(id: String) -> void:
 
 
 func _pick_starter_class(id: String) -> void:
-	if _choosing_starter and _run.choose_preferred_hero(id):
-		_host.run_return()
+	if _choosing_starter:
+		_refresh_after_choice(_run.choose_preferred_hero(id))
 
 
 func _close_class_roster() -> void:
