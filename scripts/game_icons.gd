@@ -69,6 +69,12 @@ const EARLY_VARIETY_ART := {
 	"dock_hull_harrier": Rect2i(1380, 498, 383, 351),
 }
 const ENEMY_SHEETS := {
+	"res://assets/brass-gate-guardians.png": {
+		"brass_recruit": Rect2i(193, 179, 223, 261),
+		"brass_bruiser": Rect2i(767, 179, 338, 266),
+		"brass_captain": Rect2i(155, 773, 273, 307),
+		"brass_tollkeeper": Rect2i(739, 772, 368, 306),
+	},
 	"res://assets/glass-pilot-enemies.png": GLASS_PILOT_ART,
 	"res://assets/moon-pilot-enemies.png": MOON_PILOT_ART,
 	"res://assets/brass-variety-enemies.png": BRASS_VARIETY_ART,

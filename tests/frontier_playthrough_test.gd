@@ -28,13 +28,27 @@ func _run() -> void:
 		match run.data.phase:
 			"combat":
 				game.run_show_arena()
+				_check(game.timeline_intro.visible == (battles == 0), "Teach the timeline in the first opening battle only.")
+				_check(not game.victory_badge.visible, "The victory cue stays hidden during setup.")
+				if battles == 0:
+					game._place({"id": "bash", "lane": 0, "start": 0}, 0, 1)
+					_check(game.lanes[0][0].start == 1 and "beat 3" in game.setup_hint.text,
+						"Moving the starter should update the lesson to the tile's actual firing beat.")
+					game._place({"id": "bash", "lane": 0, "start": 1}, 0, 0)
 				game._action()
+				_check(game.state == "running", "The battle starts without requiring a timeline edit.")
 				game.speed = 2
 				for tick in range(3000):
 					game._physics_process(1.0 / 60)
 					if game.state == "finished":
 						break
 				_check(game.sim.outcome == "victory", "Win %s (%d HP)" % [run.data.node.label, run.data.hp])
+				_check(game.victory_badge.visible and not game.timeline_intro.visible,
+					"A win shows the victory cue and retires the opening lesson.")
+				if battles == 0:
+					var resumed := FrontierRun.new()
+					_check(resumed.load_save(save_path) and resumed.profile.timeline_intro_seen,
+						"The opening lesson completion survives a reload before the first reward.")
 				battles += 1
 				if game.sim.outcome != "victory":
 					break

@@ -111,6 +111,7 @@ const EFFECT_LENGTHS := {
 	"arc": 0.40,
 	"ranged_warning": 0.33,
 	"bell_ring": 0.49,
+	"spring_jam": 0.65,
 	"reinforcement": 0.65,
 	"tar_slow": 0.45,
 	"fuse_disarmed": 0.55,
@@ -118,11 +119,13 @@ const EFFECT_LENGTHS := {
 }
 const MARK_COLOR := Color("#e4adff")
 const SIGNATURE_WINDUP_LABELS := {
+	"recruit": "SPRING WINDUP", "bruiser": "SHOVE", "veteran": "SABER SWING", "boss": "TOLL STRIKE",
 	"crown_page_advance": "ADVANCE", "relay_recruit": "BRACED", "relay_runner_press": "HEAVY WINDUP",
 	"dockhand_parry": "PARRY", "chain_warden": "CHAIN REEL", "glass_skirmisher_feint": "FEINT",
 }
 const RELIC_EFFECTS := ["afterimage", "barrage_rack", "siege_fuse", "stepped_gear", "twin_bell", "switchback_lens", "longshot_prism"]
 const ENCOUNTER_EFFECTS := {
+	"recruit_jammed": "spring_jam",
 	"tollkeeper_repair_interrupted": "repair_interrupted",
 	"tollkeeper_repair_separated": "repair_separated",
 	"relay_interrupted": "relay_interrupted",
@@ -149,6 +152,7 @@ const ENCOUNTER_EFFECTS := {
 	"brass_pressure_vented": "relay_interrupted",
 }
 const FLOATING_CUES := {
+	"spring_jam": "SPRING JAMMED",
 	"repair_interrupted": "REPAIR INTERRUPTED",
 	"repair_separated": "OUT OF REPAIR RANGE",
 	"relay_interrupted": "INTERRUPTED",
@@ -395,8 +399,12 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	var model_height := 132.0
 	if art_key in ["tempered_colossus", "crown_regent", "wreckmaster", "tidekeeper", "drowned_admiral"]:
 		model_height = 218.0
-	elif art_key in ["marshal", "regent", "glass_twin", "prism_warden", "relay_captain", "relay_marshal", "brass_bellmaker", "glass_refraction_engine"]:
+	elif art_key in ["marshal", "regent", "glass_twin", "prism_warden", "relay_captain", "relay_marshal", "brass_bellmaker", "brass_tollkeeper", "glass_refraction_engine"]:
 		model_height = 191.0
+	elif art_key == "brass_captain":
+		model_height = 161.0
+	elif art_key == "brass_bruiser":
+		model_height = 145.0
 	elif art_key == "clockwork":
 		model_height = 154.0
 	elif art_key == "tollkeeper_drone":
@@ -490,8 +498,14 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		if repairing:
 			_draw_centered("REPAIRING", bar.get_center() - Vector2(0.0, 9.0), 13, REPAIR_COLOR)
 		var special: String = unit.get("special_intent", "")
-		if SIGNATURE_WINDUP_LABELS.has(special):
-			_draw_centered(SIGNATURE_WINDUP_LABELS[special], bar.get_center() - Vector2(0.0, 9.0), 12, WHITE)
+		var attack_id: String = unit.get("intent_attack_id", "")
+		var windup_label: String = SIGNATURE_WINDUP_LABELS.get(attack_id, "")
+		if attack_id == "veteran" and not str(unit.get("captain_rally", "")).is_empty():
+			windup_label = "FALL BACK"
+		elif attack_id == "boss" and unit.get("enraged", false):
+			windup_label = "RALLY STRIKE"
+		if not windup_label.is_empty():
+			_draw_centered(windup_label, bar.get_center() - Vector2(0.0, 9.0), 12, WHITE)
 		if special in ["powder_runner", "brass_pressure_sentinel"]:
 			var progress_count: int = unit.get("powder_hits", unit.get("pressure_vents", 0))
 			for index in range(2):
@@ -1017,7 +1031,7 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			draw_arc(to_point, 8.0 + progress * 21.0, 0.0, TAU, 24, Color(REPAIR_COLOR, opacity), 2.0, true)
 		"repair_interrupted", "repair_separated":
 			draw_arc(from_point, 8.0 + progress * 21.0, 0.0, TAU, 24, Color(REPAIR_COLOR, opacity), 2.0, true)
-		"guard", "heal", "defeat_unit", "relay_interrupted", "relay_link_broken", "relay_marshal_separated", "tidekeeper_unanchored", "admiral_reversed":
+		"guard", "heal", "defeat_unit", "relay_interrupted", "relay_link_broken", "relay_marshal_separated", "tidekeeper_unanchored", "admiral_reversed", "spring_jam":
 			var color := GOLD if kind == "guard" else ENEMY_COLOR
 			if kind == "heal":
 				color = HERO_COLOR

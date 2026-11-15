@@ -251,7 +251,7 @@ static func on_tile_hit(sim, attacker: Dictionary, enemy: Dictionary, amount: in
 			enemy.intent_tick = 0
 			enemy.erase("special_intent")
 			enemy.next_attack = sim.tick + int(enemy.attack.cooldown)
-			sim._emit("interrupt", "The hit jams the Recruit's spring and stops its swing.", attacker, enemy, "recruit")
+			sim._emit("interrupt", "The hit jams the Recruit's spring and stops its swing.", attacker, enemy, "recruit_jammed")
 		"brass_flywheel":
 			if amount < int(enemy.attack.interrupt_damage):
 				return

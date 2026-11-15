@@ -187,6 +187,7 @@ const CROWN_BOSSES := ["relay_captain", "relay_marshal", "crown_regent"]
 const MOONWRECK_BOSSES := ["wreckmaster", "tidekeeper", "drowned_admiral"]
 const SEGMENT_COUNTS := {"easy": 1, "medium": 2, "hard": 3}
 const DEFAULT_PROFILE := {
+	"timeline_intro_seen": false,
 	"marks": 0, "medium_unlocked": false, "hard_unlocked": false, "glass_easy_unlocked": false,
 	"brass_hard_cleared": false, "glass_medium_unlocked": false, "glass_hard_unlocked": false,
 	"glass_hard_cleared": false, "crown_easy_unlocked": false, "crown_medium_unlocked": false,
@@ -527,6 +528,7 @@ func choose_node(id: String) -> bool:
 	data.segment = 1 + floori(float(selected.row) / NODES_PER_SEGMENT)
 	data.visited.append(id)
 	data.node_notice = ""
+	data.erase("reward_placement")
 	data.erase("reward_hints")
 	data.erase("shop_class_offers")
 	var midpoint := floori(float(data.layers.size() - 1) / 2.0)
@@ -901,12 +903,19 @@ func _start_recruitment() -> void:
 	data.offers = _sample(classes, 3, int(data.seed), _node_salt(94))
 
 
+func should_teach_timeline() -> bool:
+	return data.get("phase") == "combat" and data.get("location") == "brass" and data.get("difficulty") == "easy" \
+		and data.get("node", {}).get("type") == "opening" and not profile.get("timeline_intro_seen", false) and not profile.medium_unlocked
+
+
 func finish_combat(victory: bool, hp: Variant) -> bool:
 	if data.get("phase") != "combat":
 		return false
 	var remaining: Array = hp if hp is Array else [hp]
 	if remaining.size() != data.heroes.size():
 		return false
+	if should_teach_timeline():
+		profile.timeline_intro_seen = true
 	for index in range(remaining.size()):
 		var hero: Dictionary = data.heroes[index]
 		hero.hp = clampi(int(remaining[index]), 0, int(hero.max_hp))
@@ -1053,7 +1062,22 @@ func reward_skip_gold() -> int:
 	return 6 + (3 if "quartermasters_coin" in data.relics else 0)
 
 
-func reward(id: String) -> bool:
+func current_reward_placement() -> Dictionary:
+	var placement: Dictionary = data.get("reward_placement", {})
+	if placement.is_empty():
+		return {}
+	var stored := placement.has("row")
+	var rows: Array = loadout.get("storage" if stored else "lanes", [])
+	var row := int(placement.get("row" if stored else "lane", -1))
+	if row < 0 or row >= rows.size():
+		return {}
+	for tile: Dictionary in rows[row]:
+		if tile.id == placement.id and int(tile.start) == int(placement.start):
+			return placement
+	return {}
+
+
+func reward(id: String, placement := {}) -> bool:
 	if data.get("phase") != "reward" or (id != "skip" and id not in data.offers):
 		return false
 	if not elite_relic_offers().is_empty() or data.has("reward_combine"):
@@ -1061,6 +1085,7 @@ func reward(id: String) -> bool:
 	var before := data.duplicate(true)
 	var lane := reward_lane()
 	if is_final_boss():
+		data.erase("reward_placement")
 		var trophy := "" if id == "skip" else id
 		var owner: String = data.heroes[maxi(lane, 0)].id
 		var trophies: Dictionary = data.get("trophies", {})
@@ -1074,6 +1099,8 @@ func reward(id: String) -> bool:
 		if gold > 0:
 			data.gold += gold
 			data.reward_gold_paid = true
+	elif not placement.is_empty():
+		data.reward_placement = placement
 	if lane >= 0 and not data.reward_remaining.is_empty():
 		data.reward_lane = lane + 1
 		_activate_reward_draft(data.reward_remaining.pop_front())

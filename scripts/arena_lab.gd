@@ -76,6 +76,8 @@ var battle_name := ""
 var battle_snapshot: Dictionary = {}
 var retry_options: Dictionary = {}
 var status: Label
+var timeline_intro: Label
+var victory_badge: PanelContainer
 var lane_health: Array[ProgressBar] = []
 var colossus_status: Label
 var relay_status: Label
@@ -192,6 +194,7 @@ func _build() -> void:
 	arena.custom_minimum_size.y = 290
 	arena.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	stack.add_child(arena)
+	_build_victory_badge()
 	battle_review = BattleReview.new()
 	battle_review.name = "BattleReview"
 	battle_review.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -206,6 +209,12 @@ func _build() -> void:
 	status = _label("", 15, GOLD)
 	status.custom_minimum_size.x = 150
 	readout.add_child(status)
+	timeline_intro = _label("Each tile fires once per 12-beat loop, when the gold line reaches its right edge.", 18, TEAL)
+	timeline_intro.name = "TimelineIntro"
+	timeline_intro.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	timeline_intro.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	timeline_intro.hide()
+	readout.add_child(timeline_intro)
 	colossus_status = _label("", 15, GOLD)
 	colossus_status.name = "ColossusStatus"
 	colossus_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -284,6 +293,32 @@ func _build() -> void:
 	add_child(frontier_screen)
 	frontier_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	frontier_screen.configure(self)
+
+func _build_victory_badge() -> void:
+	var positioner := CenterContainer.new()
+	positioner.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	arena.add_child(positioner)
+	positioner.set_anchors_and_offsets_preset(Control.PRESET_TOP_WIDE)
+	positioner.offset_top = 24
+	positioner.offset_bottom = 78
+	victory_badge = PanelContainer.new()
+	victory_badge.name = "VictoryBadge"
+	victory_badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	victory_badge.custom_minimum_size = Vector2(192, 48)
+	var frame := _box(Color("#202a29"), GOLD, 8)
+	frame.set_border_width_all(2)
+	frame.shadow_color = Color(0.04, 0.05, 0.04, 0.6)
+	frame.shadow_size = 4
+	victory_badge.add_theme_stylebox_override("panel", frame)
+	positioner.add_child(victory_badge)
+	var text := _label("VICTORY", 24, GOLD)
+	text.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	text.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+	victory_badge.add_child(text)
+	victory_badge.hide()
+
+func _teaching_timeline() -> bool:
+	return campaign and encounter_setup and run.should_teach_timeline()
 
 func _load_fixture(next_fixture: String) -> void:
 	fixture = "solo" if next_fixture == "solo" else "duo"
@@ -417,12 +452,22 @@ func _update_controls() -> void:
 	setup_hint.visible = state == "setup"
 	var cycle := ArenaSim.LOOP_TICKS
 	var elapsed: int = sim.tick
+	var teaching := _teaching_timeline()
+	timeline_intro.visible = teaching and not reviewing and elapsed <= cycle
+	var show_victory: bool = state == "finished" and sim.outcome == "victory"
+	if victory_badge.visible != show_victory:
+		victory_badge.visible = show_victory
+		if show_victory:
+			victory_badge.modulate.a = 0.65
+			create_tween().tween_property(victory_badge, "modulate:a", 1.0, 0.2)
 	var display_tick := int(reviewed_event.get("tick", 0)) if reviewing else (edge_tick if edge_tick > 0 else elapsed)
 	var progress := 0 if display_tick == 0 else 1 + (display_tick - 1) % cycle
 	var beat := ceili(float(progress) / ArenaSim.TICKS_PER_BEAT)
 	match state:
 		"setup":
 			status.text = "PRE-FIGHT SETUP" if not campaign or encounter_setup else "MANAGE TILES"
+			if teaching:
+				status.text = "FIRST BATTLE"
 			if _traveling_smith_forge():
 				status.text = "TRAVELING SMITH"
 			if not retry_options.is_empty():
@@ -460,7 +505,8 @@ func _update_controls() -> void:
 			var tile: Dictionary = card.get_meta("tile")
 			marker.visible = (reviewing and reviewed_event.get("lane", -1) == lane_index
 				and reviewed_event.get("start", -1) == start and reviewed_event.get("tile", "") == tile.id) \
-				or (not reviewing and edge_tiles.has(Vector2i(lane_index, start)))
+				or (not reviewing and edge_tiles.has(Vector2i(lane_index, start))) \
+				or (teaching and state == "setup" and lane_index == 0 and start == int(lanes[0][0].start))
 
 func _toggle_review() -> void:
 	if battle_review.visible:
@@ -792,6 +838,10 @@ func _rebuild_loadout() -> void:
 	if camp_forge:
 		setup_hint.text = "Select a tile to upgrade for free, then choose Forge selected." if _traveling_smith_forge() \
 			else "Select an upgradeable tile, then choose Forge selected."
+	elif state == "setup" and _teaching_timeline() and not lanes[0].is_empty():
+		var starter: Dictionary = lanes[0][0]
+		var tile: Dictionary = ArenaSim.TILES[starter.id]
+		setup_hint.text = "Drag %s to change its timing. It fires on beat %d here." % [tile.label, starter.start + tile.width]
 	else:
 		setup_hint.text = "Drag tiles to slide neighbors aside. Tiles fire at their right edge."
 	if storage_screen.visible:
@@ -1841,6 +1891,17 @@ func run_open_enchantment_loadout() -> void:
 	run_show_arena()
 	_open_storage()
 
+func run_open_reward_storage() -> void:
+	var placement: Dictionary = run.current_reward_placement()
+	run_show_arena()
+	var row := int(placement.get("row", -1))
+	if row >= 0 and row < storage_rows.size():
+		for item: Dictionary in storage_rows[row]:
+			if item.id == placement.id and int(item.start) == int(placement.start):
+				selected = {"lane": -1, "row": row, "start": item.start, "id": item.id}
+				break
+	_open_storage()
+
 func run_mystery_forge() -> void:
 	if run.data.get("phase") == "event" and run.mystery_kind() == "traveling_smith":
 		run_rest_forge()
@@ -1926,12 +1987,20 @@ func _loot_destination(id: String, reward_lane := -1) -> Dictionary:
 			continue
 		for beat in range(ArenaSim.BEATS):
 			if TilePacking.can_place(owned.lanes[lane], id, beat, ArenaSim.BEATS):
-				return {"items": owned.lanes[lane], "start": beat}
-	for row: Array in owned.storage:
+				return {"items": owned.lanes[lane], "start": beat, "lane": lane}
+	for row in range(owned.storage.size()):
 		for column in range(TilePacking.STORAGE_COLUMNS):
-			if TilePacking.can_place(row, id, column, TilePacking.STORAGE_COLUMNS):
-				return {"items": row, "start": column}
+			if TilePacking.can_place(owned.storage[row], id, column, TilePacking.STORAGE_COLUMNS):
+				return {"items": owned.storage[row], "start": column, "row": row}
 	return {}
+
+func _reward_placement(id: String, destination: Dictionary) -> Dictionary:
+	var placement := {"id": id, "start": int(destination.start)}
+	if destination.has("row"):
+		placement.row = int(destination.row)
+	else:
+		placement.lane = int(destination.lane)
+	return placement
 
 func _claim_loot(id: String, commit: Callable, reward_lane := -1) -> bool:
 	if not ArenaSim.TILES.has(id):
@@ -1944,7 +2013,7 @@ func _claim_loot(id: String, commit: Callable, reward_lane := -1) -> bool:
 	items.append(entry)
 	items.sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
 	var was_suppressed: bool = run.loadout.suppressed.erase(id)
-	if commit.call(id):
+	if commit.call(id, _reward_placement(id, destination)):
 		return true
 	items.erase(entry)
 	if was_suppressed:
@@ -2019,7 +2088,7 @@ func _claim_reward_upgrade(id: String) -> void:
 			return false
 		run.loadout.suppressed.erase(source_id)
 		run.loadout.suppressed.erase(id)
-		return run.reward(source_id)
+		return run.reward(source_id, _reward_placement(id, destination))
 	)
 
 func _finish_reward_combine(claim: Callable) -> bool:
@@ -2037,4 +2106,4 @@ func _finish_reward_combine(claim: Callable) -> bool:
 func run_buy_shop(id: String) -> bool:
 	if not ArenaSim.TILES.has(id):
 		return run.shop_buy(id)
-	return _claim_loot(id, run.shop_buy, run.shop_class_offer_lane(id))
+	return _claim_loot(id, run.shop_buy.unbind(1), run.shop_class_offer_lane(id))

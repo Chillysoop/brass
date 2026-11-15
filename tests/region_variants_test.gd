@@ -27,16 +27,17 @@ func _run() -> void:
 		if _check(_draft_opening(run), "Finish the opening fight and reach the route map."):
 			if await _check_reinforcement_fight(game, run):
 				await _check_boss(game, run)
+	await _check_compact_map(game, run)
 	game.queue_free()
 	await process_frame
-	for profile: String in [save_path, save_path + ".repeat"]:
+	for profile: String in [save_path, save_path + ".repeat", save_path + ".map"]:
 		for suffix: String in ["", ".tmp", ".bak"]:
 			if FileAccess.file_exists(profile + suffix):
 				DirAccess.remove_absolute(ProjectSettings.globalize_path(profile + suffix))
 	for failure: String in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Glass boss and reinforcement choices passed seed, save, UI, and arena checks.")
+		print("Glass boss and reinforcement choices and compact route layout passed.")
 	quit(0 if failures.is_empty() else 1)
 
 
@@ -136,6 +137,73 @@ func _check_boss(game: Control, run: FrontierRun) -> void:
 	var before := int(run.profile.marks)
 	_check(run.finish_combat(true, 65) and run.profile.glass_medium_unlocked and int(run.profile.marks) == before + 19
 		and run.reward("skip") and run.data.result == "victory", "The alternate boss pays the normal Glass Easy clear reward and opens Medium.")
+
+
+func _check_compact_map(game: Control, run: FrontierRun) -> void:
+	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
+	root.size = Vector2i(856, 535)
+	run.load_save(save_path + ".map")
+	if not _check(run.start_run(66381030, "easy", "brass") and _draft_opening(run), "Enter the playtest route on a fresh profile."):
+		return
+	var destination: Dictionary
+	for layer: Array in run.data.layers:
+		for node: Dictionary in layer:
+			if node.type == "elite":
+				destination = node
+				break
+		if not destination.is_empty():
+			break
+	if not _check(not destination.is_empty(), "The playtest route contains an elite.") or not _reach_adjacent(run, destination):
+		return
+	game.run_return()
+	await process_frame
+	await process_frame
+	var board := game.frontier_screen.find_child("ExpeditionMapBoard", true, false) as Control
+	var elite := _reachable_button(board, destination.label)
+	if not _check(elite != null, "The reachable elite is a usable button at the compact size."):
+		return
+	var before := elite.get_global_rect()
+	var board_before := board.get_global_rect()
+	elite.mouse_entered.emit()
+	elite.grab_focus()
+	await process_frame
+	_check(elite.get_global_rect() == before and board.get_global_rect() == board_before,
+		"Mouse and keyboard focus keep the elite and map under the player’s pointer.")
+	run.data.relics = FrontierRun.RELICS.keys()
+	run.data.node_notice = "Relic acquired. ".repeat(24)
+	run.loadout.storage[1] = [{"id": "triage_kit", "start": 0, "target": "ally_lowest"}]
+	run.data.reward_placement = {"id": "triage_kit", "row": 1, "start": 0}
+	game.run_return()
+	await process_frame
+	await process_frame
+	board = game.frontier_screen.find_child("ExpeditionMapBoard", true, false) as Control
+	var footer := game.frontier_screen.find_child("ExpeditionMapFooter", true, false) as Control
+	var key := game.frontier_screen.find_child("RouteKey", true, false) as Control
+	var status := game.frontier_screen.find_child("RouteDetails", true, false) as ScrollContainer
+	var storage := footer.find_child("OpenRewardStorage", true, false) as Button
+	var viewport := game.get_viewport_rect()
+	_check(board.get_global_rect() == board_before, "Relic history and a reward receipt keep the route board at the same size.")
+	_check(storage != null and viewport.encloses(storage.get_global_rect()) and viewport.encloses(footer.get_global_rect())
+		and viewport.encloses(key.get_global_rect()), "The route key, reward receipt, and footer actions fit in the compact viewport.")
+	_check(status.get_v_scroll_bar().visible, "Overflowing route details can scroll independently.")
+	var occupied: Array[Rect2] = []
+	for child: Node in board.get_children():
+		if child is Button:
+			var rect: Rect2 = child.get_global_rect()
+			_check(board.get_global_rect().encloses(rect), "All route buttons fit within the map board.")
+			_check(not occupied.any(func(other: Rect2): return rect.intersects(other)), "Route buttons do not overlap at the compact size.")
+			occupied.append(rect)
+	elite = _reachable_button(board, destination.label)
+	if _check(elite != null and elite.get_global_rect() == before, "The elite remains reachable at the same position after long notices."):
+		elite.pressed.emit()
+		_check(run.data.phase == "combat" and run.data.node.id == destination.id, "The elite opens on the first press.")
+
+
+func _reachable_button(board: Control, label: String) -> Button:
+	for child: Node in board.get_children():
+		if child is Button and not child.disabled and child.text == label:
+			return child
+	return null
 
 
 func _draft_opening(run: FrontierRun) -> bool:

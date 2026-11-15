@@ -178,6 +178,8 @@ func render(model, page_override: String = "") -> void:
 		var save_title := _button("Save & title", func(): _host.run_menu())
 		footer.add_child(save_title)
 		footer.move_child(save_title, 0)
+		if phase == "map":
+			_reward_placement_banner(footer)
 	_layout.modulate.a = 0.70
 	create_tween().tween_property(_layout, "modulate:a", 1.0, 0.16)
 
@@ -216,8 +218,39 @@ func _shell(phase: String) -> void:
 	_top_actions = HBoxContainer.new()
 	_top_actions.add_theme_constant_override("separation", 8)
 	bar.add_child(_top_actions)
+	if phase != "map":
+		_reward_placement_banner(_layout)
 	if not _run.save_error.is_empty():
 		_layout.add_child(_label(_run.save_error, 15, RUST))
+
+
+func _reward_placement_banner(parent: BoxContainer) -> void:
+	var placement: Dictionary = _run.current_reward_placement()
+	var tile: Dictionary = ArenaSim.TILES.get(placement.get("id", ""), {})
+	if tile.is_empty():
+		return
+	var stored := placement.has("row")
+	var text := "%s sent to storage" % tile.label
+	if not stored:
+		var party := _party()
+		var lane := int(placement.get("lane", -1))
+		var owner := _hero_name(party[lane].id) if lane >= 0 and lane < party.size() else ""
+		text = "%s added to timeline" % tile.label if owner.is_empty() else "%s added to %s’s timeline" % [tile.label, owner]
+	var row := HBoxContainer.new()
+	row.size_flags_horizontal = SIZE_EXPAND_FILL
+	parent.add_child(row)
+	if parent == _bottom_actions:
+		parent.move_child(row, 0)
+	var notice := _label(text, 17, TEAL)
+	notice.name = "RewardPlacement"
+	notice.size_flags_horizontal = SIZE_EXPAND_FILL
+	notice.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	notice.tooltip_text = text
+	row.add_child(notice)
+	if stored:
+		var open := _button("Open storage", _host.run_open_reward_storage)
+		open.name = "OpenRewardStorage"
+		row.add_child(open)
 
 
 func _start_new_run(seed_value: int, difficulty: String, location: String) -> void:
@@ -460,36 +493,47 @@ func _map() -> void:
 	region.add_theme_constant_override("separation", 15)
 	region.size_flags_vertical = SIZE_EXPAND_FILL
 	_layout.add_child(region)
-	var elite_detail := _label("", 15, CREAM)
-	elite_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	elite_detail.hide()
 	var first_boss: Dictionary = _run.first_boss_preview()
-	var map := _map_board(elite_detail, first_boss)
-	region.add_child(map)
+	region.add_child(_map_board(first_boss))
 	var sidebar := _panel_stack(region, Vector2(270, 0))
+	var scroll := ScrollContainer.new()
+	scroll.name = "RouteDetails"
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.size_flags_vertical = SIZE_EXPAND_FILL
+	sidebar.add_child(scroll)
+	var details := VBoxContainer.new()
+	details.size_flags_horizontal = SIZE_EXPAND_FILL
+	details.add_theme_constant_override("separation", 13)
+	scroll.add_child(details)
 	if not first_boss.is_empty():
-		_add_boss_scout(sidebar, first_boss)
+		_add_boss_scout(details, first_boss)
 	var relic_names := PackedStringArray()
 	for id: String in _run.data.get("relics", []):
 		relic_names.append(FrontierRun.RELICS.get(id, {}).get("label", id.capitalize()))
 	var relics := _label("Relics  ·  " + ", ".join(relic_names), 15, MUTED)
 	relics.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	sidebar.add_child(relics)
-	sidebar.add_child(elite_detail)
+	details.add_child(relics)
 	if not str(_run.data.get("node_notice", "")).is_empty():
-		sidebar.add_child(_notice())
+		details.add_child(_notice())
 	sidebar.add_child(HSeparator.new())
-	var keys := _label("Route key", 17, GOLD)
+	sidebar.add_child(_label("Route key", 17, GOLD))
+	var keys := GridContainer.new()
+	keys.name = "RouteKey"
+	keys.columns = 2
+	keys.add_theme_constant_override("h_separation", 14)
+	keys.add_theme_constant_override("v_separation", 8)
 	sidebar.add_child(keys)
 	for type in ["battle", "elite", "shop", "event", "rest", "boss"]:
 		var key := HBoxContainer.new()
 		key.add_theme_constant_override("separation", 9)
-		sidebar.add_child(key)
+		keys.add_child(key)
 		var texture := GameIcons.icon(type)
 		if texture != null:
 			key.add_child(_icon_view(texture, 22))
 		key.add_child(_label(TYPE_NAMES[type] if texture else "%s   %s" % [TYPE_GLYPHS[type], TYPE_NAMES[type]], 15, MUTED))
-	_footer_actions().add_child(_button("Manage tiles", func(): _host.run_show_arena()))
+	var footer := _footer_actions()
+	footer.name = "ExpeditionMapFooter"
+	footer.add_child(_button("Manage tiles", func(): _host.run_show_arena()))
 
 
 func _add_boss_scout(sidebar: VBoxContainer, brief: Dictionary) -> void:
@@ -517,9 +561,10 @@ func _add_boss_scout(sidebar: VBoxContainer, brief: Dictionary) -> void:
 	content.add_child(hint)
 
 
-func _map_board(elite_detail: Label, first_boss: Dictionary) -> Control:
+func _map_board(first_boss: Dictionary) -> Control:
 	var map_art: String = MAP_ART.get(_run.data.get("location", "brass"), MAP_ART.brass)
-	var board := _board(Vector2(655, 500), map_art)
+	var board := _board(Vector2.ZERO, map_art)
+	board.name = "ExpeditionMapBoard"
 	var layers: Array = _run.data.get("layers", [])
 	var leg_start := (_leg_number() - 1) * FrontierRun.NODES_PER_SEGMENT
 	if layers.size() > FrontierRun.NODES_PER_SEGMENT:
@@ -550,6 +595,7 @@ func _map_board(elite_detail: Label, first_boss: Dictionary) -> Control:
 					var tone := TEAL if current_edge else (Color("#9b865e") if traversed else Color("#3f5661"))
 					lines.draw_dashed_line(points[id] * lines.size, points[destination] * lines.size, tone, 2.0, 6.0, true, true)
 	)
+	var buttons: Array[Button] = []
 	for id: String in nodes:
 		var node: Dictionary = nodes[id]
 		var type: String = node.type
@@ -557,6 +603,12 @@ func _map_board(elite_detail: Label, first_boss: Dictionary) -> Control:
 		var past: bool = id in visited
 		var label: String = node.get("label", TYPE_NAMES.get(type, type.capitalize()))
 		var button := _button(label, func(): _choose_node(id), reachable)
+		button.custom_minimum_size.y = 0.0
+		for state in ["normal", "hover", "pressed"]:
+			var frame := button.get_theme_stylebox(state).duplicate() as StyleBox
+			frame.content_margin_top = 4.0
+			frame.content_margin_bottom = 4.0
+			button.add_theme_stylebox_override(state, frame)
 		GameIcons.decorate(button, "battle" if type == "opening" else type, 21)
 		if button.icon == null:
 			button.text = "%s  %s" % [TYPE_GLYPHS.get(type, "·"), label]
@@ -572,45 +624,29 @@ func _map_board(elite_detail: Label, first_boss: Dictionary) -> Control:
 			button.name = "ReinforcementNode"
 			button.text = "Wave %d · %s" % [int(node.reinforcement_beat), button.text]
 			button.tooltip_text += "\nReinforcements arrive on beat %d." % int(node.reinforcement_beat)
-		if reachable and type == "elite":
-			var preview := _elite_preview_copy(node)
-			if not preview.is_empty():
-				button.tooltip_text = preview
-				var show_preview := func():
-					elite_detail.text = preview
-					elite_detail.show()
-				button.mouse_entered.connect(show_preview)
-				button.focus_entered.connect(show_preview)
-		button.add_theme_stylebox_override("disabled", _box(PANEL_DARK, GOLD.darkened(0.35) if past else EDGE.darkened(0.15), 6, 6))
+		button.add_theme_stylebox_override("disabled", _box(PANEL_DARK, GOLD.darkened(0.35) if past else EDGE.darkened(0.15), 6, 4))
 		button.add_theme_color_override("font_disabled_color", GOLD if past else MUTED.darkened(0.11))
-		_at(board, button, points[id], Vector2(181, 39))
+		board.add_child(button)
+		var point: Vector2 = points[id]
+		button.anchor_left = point.x
+		button.anchor_right = point.x
+		button.anchor_top = point.y
+		button.anchor_bottom = point.y
+		buttons.append(button)
+	var row_spacing := 0.81 / maxf(1.0, layers.size() - 1)
+	board.resized.connect(func(): _fit_route_nodes(board, buttons, row_spacing))
+	_fit_route_nodes(board, buttons, row_spacing)
 	return board
 
 
-func _elite_preview_copy(node: Dictionary) -> String:
-	var info: Dictionary = _run.elite_preview(node)
-	if info.is_empty():
-		return ""
-	var preview := ArenaSim.new()
-	preview.start(_run.loadout.lanes, "solo", info.encounter)
-	var enemies := PackedStringArray()
-	var threat := ""
-	for unit: Dictionary in preview.units:
-		if unit.side != "enemy" or unit.name in enemies:
-			continue
-		enemies.append(unit.name)
-		if threat.is_empty():
-			threat = _enemy_hint(unit)
-	var tile: Dictionary = ArenaSim.TILES[info.tile]
-	var formation := ", ".join(enemies)
-	if not threat.is_empty():
-		formation += "\n" + threat
-	var reward := "%s (%s)" % [tile.label, str(tile.rarity).capitalize()]
-	if _party().size() > 1:
-		reward += " · " + _hero_name(_party()[0].id)
-	if info.get("relic_draft", false):
-		reward += "\nChoose a relic after victory"
-	return "%s\n%s\n\nReward choice · %s" % [node.label, formation, reward]
+func _fit_route_nodes(board: Control, buttons: Array[Button], row_spacing: float) -> void:
+	var width := minf(181.0, board.size.x * 0.265)
+	var height := clampf(board.size.y * row_spacing - 4.0, 0.0, 41.0)
+	for button in buttons:
+		button.offset_left = -width / 2.0
+		button.offset_right = width / 2.0
+		button.offset_top = -height / 2.0
+		button.offset_bottom = height / 2.0
 
 
 func _draw_route_field(canvas: Control, image_path: String) -> void:
@@ -1446,18 +1482,6 @@ func _ink_layer(board: Control) -> Control:
 	drawing.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
 	drawing.resized.connect(drawing.queue_redraw)
 	return drawing
-
-
-func _at(board: Control, child: Control, location: Vector2, extent: Vector2) -> void:
-	board.add_child(child)
-	child.anchor_left = location.x
-	child.anchor_right = location.x
-	child.anchor_top = location.y
-	child.anchor_bottom = location.y
-	child.offset_left = -extent.x / 2.0
-	child.offset_right = extent.x / 2.0
-	child.offset_top = -extent.y / 2.0
-	child.offset_bottom = extent.y / 2.0
 
 
 func _label(value: String, points: int, color: Color, display := false) -> Label:

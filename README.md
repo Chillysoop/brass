@@ -36,7 +36,7 @@ A camp can advance one eligible tile instead of healing the party. The **Aether 
 
 **Marksman's Arsenal** unlocks precision fire and shots that hit clustered enemies. Precision tiles let heroes keep their distance when the lane has no melee attacks. **Bastion Workshop** unlocks counters fueled by Guard and tiles that shield vulnerable allies. Shops offer one specialist upgrade from the unlocked families, from Uncommon on the first leg to Rare on the second and Epic on the third. **Pathfinder's Chart** adds seeded mystery encounters with gold wagers, relic brokers, and optional elite bounties.
 
-The starter relic draft rotates build options. **Overflow Chalice** converts excess Guard into a little healing, **Stepped Gear** rewards a quick hit directly after a wide tile, and **Mercy Seal** grants Guard when you hit a weakened enemy. **Towline Knot**, **Bridgeplate**, and **Brass Metronome** also appear. Relic icons flash when they trigger. Battle rewards reserve a slot for an owned tile when possible. Hover or focus a reachable elite to preview its formation and a guaranteed reward choice.
+The starter relic draft rotates build options. **Overflow Chalice** converts excess Guard into a little healing, **Stepped Gear** rewards a quick hit directly after a wide tile, and **Mercy Seal** grants Guard when you hit a weakened enemy. **Towline Knot**, **Bridgeplate**, and **Brass Metronome** also appear. Relic icons flash when they trigger. Battle rewards reserve a slot for an owned tile when possible.
 
 Fresh expeditions can draft moves such as one-beat strikes, shots that create distance, and marks that any hero can spend on the next hit. The **Combat tiles** picker in Arena Practice includes the class expansion and all 24 Arsenal tiles.
 

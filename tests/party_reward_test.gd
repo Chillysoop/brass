@@ -290,6 +290,9 @@ func _check_medium_rewards(game: Control) -> void:
 	_check(run.data.phase == "reward" and run.reward_position() == 1 and run.reward_lane() == 1
 		and run.loadout.lanes[0].size() == 1 and run.loadout.lanes[0][0].id == first_tile
 		and run.loadout.lanes[1].is_empty(), "Claiming the lead's tile equips it in their own lane and advances to the recruit.")
+	_check(_reward_header_has(game.frontier_screen, "RewardPlacement",
+		"%s added to %s’s timeline" % [ArenaSim.TILES[first_tile].label, FrontierRun.HEROES[lead].label]),
+		"The next pick confirms which timeline received the lead's tile.")
 	var second_offers: Array = run.data.offers.duplicate()
 	_check(second_offers.size() == 3 and first_offers != second_offers and lead_signature not in second_offers,
 		"The recruit sees three separate choices without copying the lead's signature.")
@@ -333,9 +336,23 @@ func _check_medium_rewards(game: Control) -> void:
 	_check(run.finish_combat(true, [100, 100]) and game.run_claim_reward("skip") and run.reward_lane() == 1,
 		"The test must reach the recruit's reward with their timeline full.")
 	var stowed: String = run.data.offers[0]
-	_check(game.run_claim_reward(stowed) and run.loadout.lanes[0].is_empty()
+	game.run_return()
+	await _claim_from_screen(game.frontier_screen, stowed)
+	_check(run.data.phase == "map" and run.loadout.lanes[0].is_empty()
 		and run.loadout.storage[0].size() == 1 and run.loadout.storage[0][0].id == stowed,
 		"When its own timeline is full, a tile reward goes to storage and leaves the other hero's lane alone.")
+	_check(_reward_header_has(game.frontier_screen, "RewardPlacement", "%s sent to storage" % ArenaSim.TILES[stowed].label),
+		"The route map tells the player which reward was sent to storage.")
+	_check(run.load_save(save_path), "Resume the map after a reward goes to storage.")
+	game.run_return()
+	await _click(game.frontier_screen, "OpenRewardStorage")
+	_check(game.storage_screen.visible and game.selected.get("id") == stowed and game.selected.get("row") == 0,
+		"The saved receipt opens storage and selects the newly stowed reward.")
+	game._place_selected(0, 0)
+	game._leave_arena()
+	_check(run.loadout.storage[0].is_empty() and run.loadout.lanes[0][0].id == stowed
+		and game.frontier_screen.find_child("OpenRewardStorage", true, false) == null,
+		"Moving the reward out of storage removes the old receipt and shortcut.")
 
 	_enter_boss(run, true)
 	_check(run.finish_combat(true, [100, 100]) and run.reward_count() == 2, "The final boss offers a trophy to both heroes.")

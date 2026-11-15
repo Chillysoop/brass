@@ -143,18 +143,18 @@ const HERO_CLASSES := {
 	"duelist": {"label": "Duelist", "description": "Repeated hits on one target build up to 6 bonus damage. Resets when you switch."}
 }
 const CAMPAIGN_ENEMIES := {
-	"recruit": {"name": "Clockwork Recruit", "art": "clockwork", "hp": 30, "radius": 24.0, "speed": 87.0,
+	"recruit": {"name": "Clockwork Recruit", "art": "brass_recruit", "hp": 30, "radius": 24.0, "speed": 87.0,
 		"spacing": 85.0, "reach": 128.0, "damage": 3, "first": 116, "cooldown": 170, "windup": 27},
-	"bruiser": {"name": "Rivet Bruiser", "art": "clockwork", "hp": 134, "radius": 29.0, "speed": 80.0,
+	"bruiser": {"name": "Rivet Bruiser", "art": "brass_bruiser", "hp": 134, "radius": 29.0, "speed": 80.0,
 		"spacing": 93.0, "reach": 155.0, "damage": 11, "first": 115, "cooldown": 139, "windup": 27, "push": 235.0},
 	"scout": {"name": "Clockwork Scout", "art": "scout", "hp": 53, "radius": 17.0, "speed": 68.0,
 		"spacing": 145.0, "reach": 224.0, "damage": 7, "first": 157, "cooldown": 143, "windup": 25},
-	"veteran": {"name": "Rivet Captain", "art": "clockwork", "hp": 168, "radius": 33.0, "speed": 83.0,
+	"veteran": {"name": "Rivet Captain", "art": "brass_captain", "hp": 168, "radius": 33.0, "speed": 83.0,
 		"spacing": 95.0, "reach": 171.0, "damage": 14, "first": 116, "cooldown": 129, "windup": 31, "push": 310.0},
 	"brass_sapper": {"name": "Rivet Bombardier", "art": "brass_sapper", "hp": 65, "radius": 22.0, "speed": 74.0,
 		"spacing": 252.0, "reach": 405.0, "damage": 9, "first": 119, "cooldown": 143, "windup": 42,
 		"special": "bombard", "blast_radius": 89.0},
-	"boss": {"name": "The Tollkeeper", "art": "clockwork", "hp": 330, "radius": 40.0, "speed": 86.0,
+	"boss": {"name": "The Tollkeeper", "art": "brass_tollkeeper", "hp": 330, "radius": 40.0, "speed": 86.0,
 		"spacing": 107.0, "reach": 204.0, "damage": 16, "first": 125, "cooldown": 123, "windup": 39, "push": 345.0, "displacement": 0.55},
 	"tollkeeper_drone": {"name": "Repair Drone", "art": "tollkeeper_drone", "hp": 36, "radius": 19.0, "speed": 75.0,
 		"spacing": 77.0, "reach": 132.0, "damage": 4, "first": 133, "cooldown": 172, "windup": 49,
