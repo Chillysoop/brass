@@ -80,6 +80,7 @@ const RELIC_ICONS := {
 	"afterimage": "teleport", "barrage_rack": "shot", "siege_fuse": "area",
 	"overflow_chalice": "rest", "stepped_gear": "forge", "mercy_seal": "guard",
 	"twin_bell": "relic", "switchback_lens": "route", "longshot_prism": "shot",
+	"tollkeeper_signet": "boss", "bastion_medal": "guard", "guild_ledger": "shop",
 }
 const TILE_ICONS := {"pull": "pull", "gravity_hook": "pull", "slam": "area", "meteor_seal": "area",
 	"hook_bash": "pull", "graviton": "pull", "event_horizon": "pull",

@@ -142,6 +142,8 @@ func _medium_playthrough(game: Control) -> Dictionary:
 				_check(not run.profile.hard_unlocked, "The first boss must not unlock Hard.")
 				hp_at_recruit = int(run.data.hp)
 				_check(run.choose_hero(run.data.offers[0]), "Recruit a second hero.")
+			"boss_relic":
+				_check(run.choose_boss_relic("tollkeeper_signet"), "Claim the Tollkeeper relic before recruiting on Medium.")
 			"relic":
 				run.choose_relic("pocket_bell")
 			"starter":
@@ -193,7 +195,7 @@ func _medium_playthrough(game: Control) -> Dictionary:
 					var id: String = _preferred_offer(run.data.offers,
 						["dawn_bastion", "shield_ram", "hook_bash", "bash", "shot", "slam"])
 					if _claim_tile_for_build(game, id):
-						if run.data.phase == "recruit":
+						if run.data.phase == "boss_relic":
 							middle_reward = id
 					elif not _skip_reward(game):
 						break
@@ -253,6 +255,7 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String,
 	var moonwreck_medium := location == "moonwreck" and difficulty == "medium"
 	var moonwreck_hard := location == "moonwreck" and difficulty == "hard"
 	var recruit_checkpoints := 0
+	var boss_drafts := 0
 	for step in range(100):
 		match run.data.phase:
 			"hero", "recruit":
@@ -266,6 +269,9 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String,
 				run.choose_relic("pocket_bell")
 			"starter":
 				run.choose_starter("bash")
+			"boss_relic":
+				boss_drafts += 1
+				_check(run.choose_boss_relic("bastion_medal"), "Claim the Bastion Medal before recruiting on Hard.")
 			"recruit_starter":
 				var recruit_tile := "bash" if moonwreck_hard and run.data.heroes.size() == 3 else "shot"
 				_check(run.choose_starter(recruit_tile), "Equip the recruited hero.")
@@ -407,6 +413,7 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String,
 				_check(false, "Unexpected phase: " + str(run.data.phase))
 				break
 	_check(run.data.get("result") == "victory", "%s %s must clear the final boss." % [location, difficulty])
+	_check(boss_drafts == (1 if brass_hard else 0), "Only the first Brass Hard boss should offer this relic draft.")
 	var expected_sizes := {"easy": [1], "medium": [1, 2], "hard": [1, 2, 3]}
 	_check(boss_party_sizes == expected_sizes[difficulty], "Each boss must have the expected party size.")
 	match difficulty:

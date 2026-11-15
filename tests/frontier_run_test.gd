@@ -276,6 +276,7 @@ func _check_medium(path: String) -> void:
 	check(run.finish_combat(true, [68]), "Medium boss must read per-hero HP.")
 	check(run.profile.marks == marks + 4 and not run.profile.hard_unlocked, "First boss must bank only its boss payout.")
 	check(_finish_rewards(run, run.data.offers[0]), "Intermediate Legendary choice must succeed.")
+	check(run.data.phase == "boss_relic" and run.choose_boss_relic("guild_ledger"), "The first Brass boss offers the Ledger before recruitment.")
 	check(run.data.phase == "recruit" and run.data.offers.size() == 3 and hero not in run.data.offers,
 		"Second draft must offer three different choices from the lead hero.")
 	check(run.choose_recruit(run.data.offers[0]), "Choose a recruit.")
@@ -382,6 +383,8 @@ func _check_hard_and_glass(path: String) -> void:
 		marks = run.profile.marks
 		run.finish_combat(true, remaining)
 		_finish_rewards(run, "skip")
+		if boss_id == "tollkeeper":
+			check(run.data.phase == "boss_relic" and run.choose_boss_relic("skip"), "Brass Hard recruitment can proceed after skipping the boss relic.")
 		if boss_id == "iron_regent":
 			check(run.data.phase == "result" and run.profile.brass_hard_cleared and run.profile.marks == marks + 54,
 				"The Iron Regent must complete Hard and bank the first-clear payout.")

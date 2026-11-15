@@ -82,9 +82,10 @@ const ENEMY_HINTS := {
 	"dock_winch": "Pulls a bruiser into striking range.",
 	"relay_guard": "Shields a nearby ally.",
 }
-const ELITE_RELIC_TONES := {
+const RELIC_DRAFT_TONES := {
 	"afterimage": Color("#c8b7ec"), "barrage_rack": Color("#efbe8a"), "siege_fuse": Color("#9ddbd1"),
 	"twin_bell": Color("#f1cc79"), "switchback_lens": Color("#9dcce7"), "longshot_prism": Color("#d7bcee"),
+	"tollkeeper_signet": Color("#f2c185"), "bastion_medal": Color("#9ddbd1"), "guild_ledger": Color("#d3bded"),
 }
 
 var _host
@@ -142,6 +143,7 @@ func render(model, page_override: String = "") -> void:
 		"map": _map()
 		"combat": _combat()
 		"reward": _reward()
+		"boss_relic": _boss_relic_draft()
 		"shop": _shop()
 		"event": _event()
 		"rest": _rest()
@@ -543,7 +545,7 @@ func _reward() -> void:
 	var title := "Choose a trophy" if final_boss else ("Legendary reward" if boss else "Choose a reward")
 	var milestone := ""
 	if boss:
-		milestone = str(_run.data.get("node_notice", "")) if final_boss else "Leg %d cleared · Recruit for Leg %d next" % [_leg_number(), _leg_number() + 1]
+		milestone = str(_run.data.get("node_notice", "")) if final_boss else "Leg %d cleared" % _leg_number()
 	var lane: int = _run.reward_lane()
 	var party := _party()
 	var owner := _reward_owner(lane, party)
@@ -634,25 +636,12 @@ func _elite_relic_draft(offers: Array) -> void:
 	var group := ButtonGroup.new()
 	for offer: Dictionary in offers:
 		var id: String = offer.id
-		var spec: Dictionary = FrontierRun.RELICS[id]
-		var tone: Color = ELITE_RELIC_TONES.get(id, GOLD)
-		var card := _choice(cards, spec.label, spec.description, "Select", func():
+		var tone: Color = RELIC_DRAFT_TONES.get(id, GOLD)
+		var card := _relic_draft_card(cards, id, "EliteRelic_", group, func():
 			selected.id = id
 			advance.disabled = false
 		)
-		var panel := card.get_parent() as PanelContainer
-		panel.size_flags_vertical = SIZE_SHRINK_CENTER
-		panel.custom_minimum_size.y = 426
-		panel.add_theme_stylebox_override("panel", _box(PANEL, tone.darkened(0.50), 9, 18))
 		var select_relic: Button = card.get_child(card.get_child_count() - 1)
-		select_relic.name = "EliteRelic_" + id
-		select_relic.toggle_mode = true
-		select_relic.button_group = group
-		select_relic.toggled.connect(func(pressed: bool):
-			panel.add_theme_stylebox_override("panel", _box(PANEL, tone if pressed else tone.darkened(0.50), 9, 18))
-		)
-		if panel.get_index() == 0:
-			select_relic.grab_focus()
 		var role := _label(offer.role, 15, tone)
 		card.add_child(role)
 		card.move_child(role, 0)
@@ -674,6 +663,50 @@ func _elite_relic_draft(offers: Array) -> void:
 		_add_card_icon(card, GameIcons.relic(id), tone)
 
 
+func _boss_relic_draft() -> void:
+	_page_title("Choose a boss relic", "Applies to the whole crew, including recruits.")
+	var cards := _cards_row()
+	var selected := {"id": ""}
+	var advance := _continue(func(): _claim_boss_relic(selected.id))
+	advance.disabled = true
+	var group := ButtonGroup.new()
+	for offer: Dictionary in _run.boss_relic_offers():
+		var id: String = offer.id
+		var card := _relic_draft_card(cards, id, "BossRelic_", group, func():
+			selected.id = id
+			advance.disabled = false
+		)
+		_add_card_icon(card, GameIcons.relic(id), RELIC_DRAFT_TONES.get(id, GOLD))
+	var skip := _button("Skip relic", func(): _claim_boss_relic("skip"))
+	skip.name = "SkipBossRelic"
+	_footer_actions().add_child(skip)
+
+
+func _relic_draft_card(cards: HBoxContainer, id: String, button_prefix: String, group: ButtonGroup, select: Callable) -> VBoxContainer:
+	var spec: Dictionary = FrontierRun.RELICS[id]
+	var tone: Color = RELIC_DRAFT_TONES.get(id, GOLD)
+	var card := _choice(cards, spec.label, spec.description, "Select", select)
+	var panel := card.get_parent() as PanelContainer
+	panel.size_flags_vertical = SIZE_SHRINK_CENTER
+	panel.custom_minimum_size.y = 426
+	panel.add_theme_stylebox_override("panel", _box(PANEL, tone.darkened(0.50), 9, 18))
+	var button: Button = card.get_child(card.get_child_count() - 1)
+	button.name = button_prefix + id
+	button.toggle_mode = true
+	button.button_group = group
+	button.toggled.connect(func(pressed: bool):
+		panel.add_theme_stylebox_override("panel", _box(PANEL, tone if pressed else tone.darkened(0.50), 9, 18))
+	)
+	if panel.get_index() == 0:
+		button.grab_focus()
+	return card
+
+
+func _claim_boss_relic(id: String) -> void:
+	if _run.choose_boss_relic(id) or not _run.save_error.is_empty():
+		_host.run_return()
+
+
 func _claim_reward(id: String, notice: Label) -> void:
 	if _host.run_claim_reward(id):
 		_host.run_return()
@@ -683,14 +716,49 @@ func _claim_reward(id: String, notice: Label) -> void:
 
 func _shop() -> void:
 	_page_title(_run.data.get("node", {}).get("label", "Relay Market"), "")
-	var cards := _cards_row()
 	var notice := _notice()
-	for id: String in _run.data.get("offers", []):
+	var offers: Array = _run.data.get("offers", [])
+	var ledger_owners := {}
+	for id: String in offers:
+		var owner: String = _run.shop_class_offer_owner(id)
+		if not owner.is_empty():
+			ledger_owners[id] = owner
+	var cards: HBoxContainer
+	var ledger_cards: HBoxContainer
+	if ledger_owners.is_empty():
+		cards = _cards_row()
+	else:
+		var scroll := ScrollContainer.new()
+		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		scroll.follow_focus = true
+		scroll.size_flags_vertical = SIZE_EXPAND_FILL
+		_layout.add_child(scroll)
+		var stock := VBoxContainer.new()
+		stock.size_flags_horizontal = SIZE_EXPAND_FILL
+		stock.add_theme_constant_override("separation", 10)
+		scroll.add_child(stock)
+		cards = _cards_row(stock)
+		stock.add_child(_label("Guild Ledger", 19, GOLD, true))
+		ledger_cards = _cards_row(stock)
+		ledger_cards.name = "GuildLedgerStock"
+	for id: String in offers:
 		var tile: Dictionary = ArenaSim.TILES[id]
 		var price: int = _run.shop_price(id)
-		var card := _choice(cards, tile.label, _tile_info(tile), "Buy · %d gold" % price, func(): _buy_tile(id, notice), int(_run.data.get("gold", 0)) < price)
-		_add_tile_header(card, id, tile)
-	if _run.data.get("offers", []).is_empty():
+		var owner: String = ledger_owners.get(id, "")
+		var row := cards if owner.is_empty() else ledger_cards
+		var card := _choice(row, tile.label, _tile_info(tile), "Buy · %d gold" % price, func(): _buy_tile(id, notice), int(_run.data.get("gold", 0)) < price)
+		var purchase: Button = card.get_child(card.get_child_count() - 1)
+		purchase.name = "ShopTile_" + id
+		if ledger_cards != null:
+			var panel := card.get_parent() as PanelContainer
+			panel.custom_minimum_size.y = 0
+			card.add_theme_constant_override("separation", 8)
+			card.get_child(0).add_theme_font_size_override("font_size", 22)
+			card.get_child(1).add_theme_font_size_override("font_size", 15)
+			_add_tile_header(card, id, tile, owner, true)
+		else:
+			_add_tile_header(card, id, tile)
+	if offers.is_empty():
 		cards.add_child(_label("No tiles left.", 20, MUTED))
 	_layout.add_child(notice)
 	_continue(_leave)
@@ -879,11 +947,13 @@ func _notice() -> Label:
 	return note
 
 
-func _cards_row() -> HBoxContainer:
+func _cards_row(parent: Control = null) -> HBoxContainer:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 15)
 	row.size_flags_vertical = SIZE_EXPAND_FILL
-	_layout.add_child(row)
+	if parent == null:
+		parent = _layout
+	parent.add_child(row)
 	return row
 
 
@@ -926,13 +996,19 @@ func _tile_info(tile: Dictionary) -> String:
 	return "%s\n%s" % [GameIcons.tile_stats(tile), tile.description]
 
 
-func _add_tile_header(card: VBoxContainer, id: String, spec: Dictionary, owner := "") -> void:
+func _add_tile_header(card: VBoxContainer, id: String, spec: Dictionary, owner := "", compact := false) -> void:
 	var panel := card.get_parent() as PanelContainer
-	panel.add_theme_stylebox_override("panel", _tile_card_frame(spec))
 	var color := GameIcons.rarity(spec)
-	_add_card_icon(card, GameIcons.tile(id, spec), color)
+	panel.add_theme_stylebox_override("panel", _tile_card_frame(spec, false, 12 if compact else 18))
+	var icon_key := GameIcons.tile(id, spec)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
+	if compact:
+		var texture := GameIcons.icon(icon_key)
+		if texture != null:
+			row.add_child(_icon_view(texture, 34))
+	else:
+		_add_card_icon(card, icon_key, color)
 	var rarity := GameIcons.rarity_badge(spec)
 	rarity.text += "  " + GameIcons.rarity_pips(spec)
 	rarity.size_flags_horizontal = SIZE_EXPAND_FILL
@@ -948,9 +1024,9 @@ func _add_tile_header(card: VBoxContainer, id: String, spec: Dictionary, owner :
 	card.move_child(row, 0)
 
 
-func _tile_card_frame(spec: Dictionary, selected := false) -> StyleBoxFlat:
+func _tile_card_frame(spec: Dictionary, selected := false, margin := 18) -> StyleBoxFlat:
 	var color := GameIcons.rarity(spec)
-	var frame := _rarity_frame(spec, PANEL.lerp(color, 0.13 if selected else 0.04), 9, 18)
+	var frame := _rarity_frame(spec, PANEL.lerp(color, 0.13 if selected else 0.04), 9, margin)
 	if selected:
 		frame.set_border_width_all(2)
 		frame.border_width_left = 5

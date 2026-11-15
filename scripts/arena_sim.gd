@@ -48,6 +48,9 @@ const SIEGE_PULL_DISTANCE := 82.0
 const MAX_GUARD := 28
 const OVERFLOW_HEAL_CAP := 6
 const LONGSHOT_PRISM_RANGE := 180.0
+const TOLLKEEPER_SIGNET_DAMAGE := 3
+const TOLLKEEPER_SIGNET_LAST_BEAT := 4
+const BASTION_MEDAL_GUARD := 3
 const BOSS_REVIEW_STAGES := {
 	"marshal_plate": "start", "marshal_exposed": "progress", "marshal_shattered": "success",
 	"regent_seals": "start", "regent_seal_struck": "progress", "regent_shattered": "success",
@@ -1180,13 +1183,13 @@ func _activate_lanes() -> void:
 				var origin: Vector2 = actor.pos
 				var first_event := _events.size()
 				_cast(actor, tile.id, tile.target)
+				_apply_bastion_medal(actor, tile.id)
 				_add_tile_visual_cue(actor, tile.id, origin, first_event)
 				if actor.get("class") == "rune_smith" and TILES[tile.id].width >= 3:
 					actor["rune_charged"] = true
 				if _activation.status == "landed":
 					_prime_rune_charge(actor, tile.id)
-				if _activation.status == "landed" and _activation.reason.is_empty():
-					_activation.reason = _activation_result(_activation)
+					_activation.reason = (_activation_result(_activation) + " " + str(_activation.reason)).strip_edges()
 			_activation = {}
 
 
@@ -1257,14 +1260,14 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 			_strike_and_push(actor, target, tile_id, tile.damage, 600.0)
 		"shield_ram":
 			_strike_and_push(actor, target, tile_id, tile.damage, 635.0)
-			_guard(actor, 8, tile_id)
+			_guard_from_tile(actor, actor, 8, tile_id)
 		"hook_bash":
 			_damage(actor, target, tile.damage, tile_id)
 			_pull_toward(actor, target, tile_id, _attack_origin(actor), 780.0)
 		"bulwark_charge":
 			if _charge(actor, target, tile_id):
 				_strike_and_push(actor, target, tile_id, tile.damage, 810.0)
-				_guard(actor, 12, tile_id)
+				_guard_from_tile(actor, actor, 12, tile_id)
 			else:
 				_emit("miss", "%s: Bulwark Charge has no clear path." % actor.name, actor, target, tile_id)
 				return
@@ -1274,12 +1277,12 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 			_strike_and_push(actor, target, tile_id, tile.damage + bonus, 710.0)
 		"sunwall":
 			_area_push(actor, target, tile_id, tile.damage, 155.0, 650.0)
-			_guard_allies(actor, tile_id, 14, 235.0)
+			_guard_allies(actor, tile_id, 14, 235.0, true)
 		"graviton":
 			_gravity_strike(actor, target, tile_id, 170.0, false)
 		"dawn_bastion":
 			_area_push(actor, target, tile_id, tile.damage, 205.0, 875.0)
-			_guard_allies(actor, tile_id, 22)
+			_guard_allies(actor, tile_id, 22, INF, true)
 		"event_horizon":
 			_gravity_strike(actor, target, tile_id, 245.0, true)
 		"meteor_seal":
@@ -1401,9 +1404,9 @@ func _apply_arsenal_support(actor: Dictionary, recipient: Dictionary, tile_id: S
 	var guard: int = tile.get("guard", 0)
 	if guard > 0:
 		if tile.get("support") == "party":
-			_guard_allies(actor, tile_id, guard)
+			_guard_allies(actor, tile_id, guard, INF, true)
 		else:
-			_guard(recipient, guard, tile_id, actor)
+			_guard_from_tile(actor, recipient, guard, tile_id)
 	var healing: int = tile.get("heal", 0)
 	if healing <= 0 or _activation.is_empty():
 		return
@@ -1478,7 +1481,7 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 	if tile.has("guard"):
 		_apply_arsenal_support(actor, _arsenal_support_target(actor, tile), tile_id, tile)
 	if tile.has("ally_guard"):
-		_guard(_weakest_other_ally(actor), tile.ally_guard, tile_id, actor)
+		_guard_from_tile(actor, _weakest_other_ally(actor), tile.ally_guard, tile_id)
 	if tile.has("bastion_party_guard"):
 		_prime_bastion_ward(actor, tile_id, tile)
 
@@ -1626,20 +1629,20 @@ func _cast_guard(actor: Dictionary, tile_id: String, tile: Dictionary, rule: Str
 				_strike_and_push(actor, target, tile_id, damage, tile.push)
 			else:
 				_damage(actor, target, damage, tile_id)
-		_guard(actor, tile.guard, tile_id)
+		_guard_from_tile(actor, actor, tile.guard, tile_id)
 		if target.is_empty() and not _activation.is_empty():
-			_activation.reason = "%s No enemy was in reach for the strike." % _activation_result(_activation)
+			_activation.reason = "No enemy was in reach for the strike."
 		return
 	var recipient := _guard_recipient(actor, tile)
 	_review_activation_target(recipient)
 	if tile.get("support") == "party":
-		_guard_allies(actor, tile_id, tile.guard)
+		_guard_allies(actor, tile_id, tile.guard, INF, true)
 		if tile.has("weakest_bonus"):
-			_guard(recipient, tile.weakest_bonus, tile_id, actor)
+			_guard_from_tile(actor, recipient, tile.weakest_bonus, tile_id)
 	else:
-		_guard(actor, tile.guard, tile_id)
+		_guard_from_tile(actor, actor, tile.guard, tile_id)
 		if recipient.id != actor.id:
-			_guard(recipient, tile.guard, tile_id, actor)
+			_guard_from_tile(actor, recipient, tile.guard, tile_id)
 
 
 func _guard_recipient(actor: Dictionary, tile: Dictionary) -> Dictionary:
@@ -1665,7 +1668,7 @@ func _cast_blink(actor: Dictionary, target: Dictionary, tile_id: String, tile: D
 		else:
 			_damage(actor, enemy, tile.damage, tile_id)
 	if tile.has("guard"):
-		_guard_allies(actor, tile_id, tile.guard, tile.get("guard_radius", 0.0))
+		_guard_allies(actor, tile_id, tile.guard, tile.get("guard_radius", 0.0), true)
 
 
 func _blink_to_target(actor: Dictionary, target: Dictionary, tile_id: String, retreat: float) -> bool:
@@ -1714,11 +1717,36 @@ func _enemies_in_area(actor: Dictionary, center: Vector2, radius: float) -> Arra
 	return affected
 
 
-func _guard_allies(actor: Dictionary, tile_id: String, amount: int, radius: float = INF) -> void:
+func _guard_allies(actor: Dictionary, tile_id: String, amount: int, radius: float = INF, direct_grant := false) -> void:
 	var position: Vector2 = actor.pos
 	for ally in units:
 		if ally.side == actor.side and ally.hp > 0 and position.distance_to(ally.pos) <= radius:
-			_guard(ally, amount, tile_id, actor)
+			if direct_grant:
+				_guard_from_tile(actor, ally, amount, tile_id)
+			else:
+				_guard(ally, amount, tile_id, actor)
+
+
+func _guard_from_tile(actor: Dictionary, recipient: Dictionary, amount: int, tile_id: String) -> void:
+	_guard(recipient, amount, tile_id, actor)
+	if amount > 0 and not _activation.is_empty() and _has_relic(actor, "bastion_medal"):
+		_activation.get_or_add("bastion_recipients", {})[recipient.id] = recipient
+
+
+func _apply_bastion_medal(actor: Dictionary, tile_id: String) -> void:
+	if not _activation.has("bastion_recipients"):
+		return
+	var recipients: Dictionary = _activation.bastion_recipients
+	_activation.erase("bastion_recipients")
+	# Add the bonus after the tile's own grants, which may trigger passives or Overflow Chalice.
+	for recipient: Dictionary in recipients.values():
+		var bonus := mini(BASTION_MEDAL_GUARD, MAX_GUARD - int(recipient.guard))
+		if recipient.hp <= 0 or bonus <= 0:
+			continue
+		recipient.guard += bonus
+		_activation.guard += bonus
+		_relic_proc("bastion_medal", "Bastion Medal", bonus, actor, recipient, TILES[tile_id].label,
+			_activation.beat, "Granted %d extra Guard" % bonus)
 
 
 func _gravity_strike(actor: Dictionary, target: Dictionary, tile_id: String, radius: float, collapse: bool) -> void:
@@ -2979,6 +3007,9 @@ func _relic_attack_bonus(actor: Dictionary, target: Dictionary) -> int:
 
 func _timeline_relic_bonus(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
 	var bonus := _twin_bell_bonus(actor, target, tile_id)
+	if _activation.beat <= TOLLKEEPER_SIGNET_LAST_BEAT and _has_relic(actor, "tollkeeper_signet"):
+		bonus += _relic_proc("tollkeeper_signet", "Tollkeeper's Signet", TOLLKEEPER_SIGNET_DAMAGE,
+			actor, target, TILES[tile_id].label, _activation.beat, "", _attack_origin(actor))
 	if target.id != _activation.target:
 		return bonus
 	bonus += _stepped_gear_bonus(actor, target, tile_id)

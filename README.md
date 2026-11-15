@@ -36,6 +36,8 @@ Enemy encounters rotate from the opening fight onward in new expeditions. Each a
 
 Medium starts solo. After the Tollkeeper, take a Legendary tile into your build and recruit a second hero with a starter tile. Both lanes fire on the same beat clock. Push or pull the Gilded Marshal to expose its armor, then land a hit with the other hero before it closes. Defeating the Marshal unlocks Brass Frontier Hard and Glass Foundry Easy. Each hero can take a Legendary trophy after the final boss.
 
+In Brass Frontier Medium and Hard, the Tollkeeper offers an optional boss relic after the Legendary pick. **Tollkeeper's Signet** adds 3 damage to tile hits that finish on beats 1–4. **Bastion Medal** adds 3 Guard when a tile grants it. **Guild Ledger** adds one tile from each hero's class deck to every shop.
+
 Glass Foundry Easy is a solo route that ends at the Crucible Twins. Hunters prioritize the hero with the most ranged tile damage. Skirmishers prioritize the hero with the lowest current HP. The clear awards Aether Marks and records the unlock for Glass Foundry Medium.
 
 Glass Foundry Medium starts solo. After the Crucible Twins, take a Legendary tile and recruit a second hero for the next leg. The Prism Warden pressures the hero with the most ranged damage and the hero with the lowest current HP. Push or pull to open its ward, then hit it with the other hero within three beats. A clear records the unlocks for Glass Foundry Hard and Crown Relay Easy.

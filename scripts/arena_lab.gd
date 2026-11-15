@@ -417,7 +417,7 @@ func _update_controls() -> void:
 			status.text = "" if sim.outcome == "victory" else "Defeat"
 			if campaign and sim.outcome == "victory" and run.data.node.type == "boss":
 				var leg := int(run.data.get("segment", 1))
-				status.text = run.data.node_notice if run.is_final_boss() else "Leg %d cleared · Recruit for Leg %d next" % [leg, leg + 1]
+				status.text = run.data.node_notice if run.is_final_boss() else "Leg %d cleared" % leg
 		_:
 			status.text = "%s %02d / 12 · %.1fs" % ["Paused" if state == "paused" else "Beat", beat, elapsed / 60.0]
 	status.get_parent().visible = not reviewing and not status.text.is_empty()
@@ -1927,4 +1927,4 @@ func _finish_reward_combine(claim: Callable) -> bool:
 func run_buy_shop(id: String) -> bool:
 	if not ArenaSim.TILES.has(id):
 		return run.shop_buy(id)
-	return _claim_loot(id, run.shop_buy)
+	return _claim_loot(id, run.shop_buy, run.shop_class_offer_lane(id))

@@ -121,6 +121,7 @@ func _check_signature_elite_pair(lead: String, recruit: String) -> void:
 		and run.choose_starter(ClassDecks.starter(lead)) and run.finish_combat(true, 100) and run.reward("skip")
 	_enter_boss(run, false)
 	started = started and run.finish_combat(true, 100) and run.reward("skip")
+	started = started and run.choose_boss_relic("skip")
 	run.data.offers = [recruit]
 	started = started and run.choose_recruit(recruit) and run.choose_recruit_starter(ClassDecks.starter(recruit))
 	_check(started, "Expected a two-hero party for signature upgrade rewards.")
@@ -183,6 +184,8 @@ func _check_signature_milestones() -> void:
 			_check(run.finish_combat(true, hp), "Expected a victory before recruiting.")
 			for hero_index in range(leg):
 				run.reward("skip")
+			if leg == 1:
+				_check(run.choose_boss_relic("skip"), "Skip the Tollkeeper relic in the signature pacing test.")
 			run.data.offers = [recruit]
 			_check(run.choose_recruit(recruit) and run.choose_recruit_starter(ClassDecks.starter(recruit)),
 				"Expected the recruit to have a normal starter.")
@@ -243,7 +246,12 @@ func _check_medium_rewards(game: Control) -> void:
 	_check(run.finish_combat(true, 100) and run.reward_count() == 1, "The Tollkeeper reward must come before the recruit joins.")
 	var first_legendary: String = run.data.offers[0]
 	_check(ArenaSim.TILES[first_legendary].rarity == "legendary" and game.run_claim_reward(first_legendary)
-		and run.data.phase == "recruit", "The original hero earns the first boss tile before recruitment.")
+		and run.data.phase == "boss_relic", "The original hero earns the first boss tile before the relic draft.")
+	game.run_return()
+	await _click(game.frontier_screen, "SkipBossRelic")
+	if run.data.phase != "recruit":
+		_check(false, "The boss relic screen's skip button should open recruitment.")
+		return
 	var lead_tiles: Array = run.loadout.lanes[0].duplicate(true)
 	var recruit: String = run.data.offers[0]
 	var recruit_starter := ClassDecks.starter(recruit)

@@ -11,6 +11,7 @@ const BASE_TILES := ["bash", "shot", "slam", "pull", "guard", "blink"]
 const STARTER_RELICS := ["pocket_bell", "copper_compass", "quartermasters_coin"]
 const BUILD_RELICS := ["towline_knot", "bridgeplate", "brass_metronome", "overflow_chalice", "stepped_gear", "mercy_seal"]
 const ELITE_RELICS := ["afterimage", "barrage_rack", "siege_fuse", "switchback_lens", "longshot_prism", "twin_bell"]
+const BOSS_RELICS := ["tollkeeper_signet", "bastion_medal", "guild_ledger"]
 const RELIC_STARTERS := {"towline_knot": "pull", "bridgeplate": "shield_ram"}
 const FORGE_UNLOCKS := {"blink": "blink_artifice", "shot": "shot_artifice", "guard": "guard_artifice"}
 const RELICS := {
@@ -31,6 +32,9 @@ const RELICS := {
 	"switchback_lens": {"label": "Switchback Lens", "description": "Hit a different main target with your next landed attack tile for +10 damage. Once per hero per loop."},
 	"longshot_prism": {"label": "Longshot Prism", "description": "The first direct tile hit from 180 units away or farther deals +11 damage each loop."},
 	"twin_bell": {"label": "Twin Bell", "description": "Two heroes hit the same foe on the same beat. The second hit deals +12 damage once per loop."},
+	"tollkeeper_signet": {"label": "Tollkeeper's Signet", "description": "Damage tiles that finish on beats 1–4 deal +3 damage."},
+	"bastion_medal": {"label": "Bastion Medal", "description": "When a tile fires and grants Guard, it grants 3 extra Guard to each recipient."},
+	"guild_ledger": {"label": "Guild Ledger", "description": "Shops stock one extra tile from each hero's class deck."},
 }
 const META_NODES := {
 	"stout_start": {"label": "Stout Start", "description": "Begin each run with 8% more maximum HP.", "cost": 5, "requires": []},
@@ -403,6 +407,7 @@ func choose_node(id: String) -> bool:
 	data.visited.append(id)
 	data.node_notice = ""
 	data.erase("reward_hints")
+	data.erase("shop_class_offers")
 	var midpoint := floori(float(data.layers.size() - 1) / 2.0)
 	if not data.midpoint_paid and int(selected.row) >= midpoint:
 		data.midpoint_paid = true
@@ -411,6 +416,8 @@ func choose_node(id: String) -> bool:
 		"shop":
 			data.phase = "shop"
 			data.offers = _shop_tiles()
+			if "guild_ledger" in data.relics:
+				_add_class_shop_offers()
 			data.shop_healed = false
 			var available := _available_relics()
 			data.shop_relic = "" if available.is_empty() else _sample(available, 1, int(data.seed), _node_salt(52))[0]
@@ -697,6 +704,32 @@ func is_final_boss() -> bool:
 	return data.get("node", {}).get("type") == "boss" and int(data.node.row) == data.layers.size() - 1
 
 
+func boss_relic_offers() -> Array:
+	var offers: Array = []
+	if data.get("phase") == "boss_relic":
+		for id: String in data.offers:
+			offers.append({"id": id, "label": RELICS[id].label, "description": RELICS[id].description})
+	return offers
+
+
+func choose_boss_relic(id: String) -> bool:
+	if data.get("phase") != "boss_relic" or (id != "skip" and (id not in data.offers or id in data.relics)):
+		return false
+	var before := data.duplicate(true)
+	if id != "skip":
+		data.relics.append(id)
+	_start_recruitment()
+	return _save_reward(before)
+
+
+func _start_recruitment() -> void:
+	var classes := HEROES.keys()
+	for hero: Dictionary in data.heroes:
+		classes.erase(hero.id)
+	data.phase = "recruit"
+	data.offers = _sample(classes, 3, int(data.seed), _node_salt(94))
+
+
 func finish_combat(victory: bool, hp: Variant) -> bool:
 	if data.get("phase") != "combat":
 		return false
@@ -745,6 +778,9 @@ func finish_combat(victory: bool, hp: Variant) -> bool:
 func _resolve_boss() -> void:
 	_grant_marks(4)
 	if not is_final_boss():
+		if _has_boss_relic_draft():
+			data.node_notice = "%s fell. Choose a Legendary, then claim a boss relic and recruit a second hero." % data.node.label
+			return
 		var rank := "second" if data.heroes.size() == 1 else "third"
 		var reward_copy := "a Legendary" if data.heroes.size() == 1 else "your Legendaries"
 		data.node_notice = "%s fell. Choose %s and draft a %s hero." % [data.node.label, reward_copy, rank]
@@ -815,6 +851,11 @@ func _resolve_boss() -> void:
 		data.node_notice = "Brass Frontier cleared. Medium unlocked." if first_clear else "Brass Frontier cleared."
 
 
+func _has_boss_relic_draft() -> bool:
+	return data.location == "brass" and data.difficulty in ["medium", "hard"] and data.segment == 1 \
+		and data.node.get("boss_id", "") == "tollkeeper"
+
+
 func reward_lane() -> int:
 	return int(data.get("reward_lane", -1)) if data.get("phase") == "reward" else -1
 
@@ -867,11 +908,12 @@ func reward(id: String) -> bool:
 	if is_final_boss():
 		data.phase = "result"
 	elif data.node.type == "boss":
-		var classes := HEROES.keys()
-		for hero: Dictionary in data.heroes:
-			classes.erase(hero.id)
-		data.phase = "recruit"
-		data.offers = _sample(classes, 3, int(data.seed), _node_salt(94))
+		if _has_boss_relic_draft():
+			data.phase = "boss_relic"
+			data.offers = _sample(BOSS_RELICS, BOSS_RELICS.size(), int(data.seed), _node_salt(193))
+			data.node_notice = ""
+		else:
+			_start_recruitment()
 		return _save_reward(before)
 	else:
 		data.phase = "map"
@@ -892,6 +934,19 @@ func shop_price(id: String) -> int:
 	var tile: Dictionary = ArenaSim.TILES[id]
 	var rarity_price: int = {"uncommon": 7, "rare": 13, "epic": 20}.get(tile.get("rarity", "common"), 0)
 	return 18 + 3 * (int(tile.width) - 2) + rarity_price
+
+
+func shop_class_offer_owner(id: String) -> String:
+	if not _is_offer("shop", id):
+		return ""
+	return data.get("shop_class_offers", {}).get(id, "")
+
+
+func shop_class_offer_lane(id: String) -> int:
+	var owner := shop_class_offer_owner(id)
+	if owner.is_empty():
+		return -1
+	return data.heroes.find_custom(func(hero: Dictionary): return hero.id == owner)
 
 
 func shop_buy(id: String) -> bool:
@@ -1581,6 +1636,20 @@ func _shop_tiles() -> Array:
 	var owned := _owned_reward(upgrades, 153, favor_owned_family)
 	stock.append(owned if not owned.is_empty() else _sample(upgrades, 1, int(data.seed), _node_salt(53))[0])
 	return stock
+
+
+func _add_class_shop_offers() -> void:
+	var owners := {}
+	for lane in range(data.heroes.size()):
+		var hero_id: String = data.heroes[lane].id
+		var pool := ClassDecks.common(hero_id) + ClassDecks.uncommon(hero_id)
+		var fresh := pool.filter(func(id: String): return id not in data.offers)
+		if fresh.is_empty():
+			continue
+		var id: String = _sample(fresh, 1, int(data.seed), _node_salt(194 + lane))[0]
+		data.offers.append(id)
+		owners[id] = hero_id
+	data.shop_class_offers = owners
 
 
 func _owned_reward(pool: Array, salt: int, favor_owned_family := true, inventory: Variant = null) -> String:

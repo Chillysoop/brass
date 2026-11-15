@@ -95,7 +95,7 @@ func _check_reward_combine(game: Control) -> void:
 	if started:
 		run.data.node = run.data.layers[FrontierRun.NODES_PER_SEGMENT - 1][0]
 		run.data.phase = "combat"
-		started = run.finish_combat(true, 100) and run.reward("skip")
+		started = run.finish_combat(true, 100) and run.reward("skip") and run.choose_boss_relic("skip")
 	if started:
 		var recruit: String = run.data.offers[0]
 		started = run.choose_recruit(recruit) and run.choose_recruit_starter(run.data.offers[0])
