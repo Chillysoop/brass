@@ -2,7 +2,11 @@ extends Control
 
 const GameIcons = preload("res://scripts/game_icons.gd")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
+const AttackAnimation = preload("res://scripts/attack_animation.gd")
+const HeroChoreography = preload("res://scripts/hero_attack_choreography.gd")
+const EnemyChoreography = preload("res://scripts/enemy_attack_choreography.gd")
 const WORLD_SIZE := Vector2(1000.0, 520.0)
+const MAX_CASTS := 48
 const INK := Color("#182126")
 const FRAME := Color("#47534b")
 const SAND := Color("#be955f")
@@ -149,6 +153,12 @@ var _textures: Dictionary = {}
 var _positions: Dictionary = {}
 var _facing: Dictionary = {}
 var _effects: Array[Dictionary] = []
+var _attack_casts: Array[Dictionary] = []
+var _actor_casts: Dictionary = {}
+var _hero_clips: Array[Array] = []
+var _hero_profiles: Dictionary = {}
+var _enemy_profiles: Dictionary = {}
+var _attack_rate := 1.0
 var _animation_time := 0.0
 
 
@@ -166,11 +176,25 @@ func _ready() -> void:
 	resized.connect(queue_redraw)
 
 
-func reset_view(units_data: Array) -> void:
+func reset_view(units_data: Array, lanes: Array = []) -> void:
 	units = units_data
 	combat_tick = 0
 	_windups.clear()
 	_effects.clear()
+	_attack_casts.clear()
+	_actor_casts.clear()
+	_hero_clips.clear()
+	_attack_rate = 1.0
+	for lane: Array in lanes:
+		var clips: Array[Dictionary] = []
+		for entry: Dictionary in lane:
+			if not ArenaSim.TILES.has(entry.id):
+				continue
+			var right_edge := (int(entry.start) + int(ArenaSim.TILES[entry.id].width)) * ArenaSim.TICKS_PER_BEAT
+			clips.append({"right_edge": right_edge,
+				"ready": maxi(int(entry.start) * ArenaSim.TICKS_PER_BEAT, right_edge - 31),
+				"profile": _hero_profile(entry.id)})
+		_hero_clips.append(clips)
 	_positions.clear()
 	_facing.clear()
 	_animation_time = 0.0
@@ -179,18 +203,33 @@ func reset_view(units_data: Array) -> void:
 	queue_redraw()
 
 
-func present(units_data: Array, events: Array, tick := 0) -> void:
+func present(units_data: Array, events: Array, tick := 0, attack_cues: Array = [], playback_speed := 1) -> void:
 	units = units_data
 	combat_tick = tick
+	_attack_rate = float(playback_speed)
 	for unit: Dictionary in units:
 		var finish := int(unit.get("intent_tick", 0))
 		if unit.side != "enemy" or unit.hp <= 0 or str(unit.get("intent", "")).is_empty() or finish <= tick:
 			_windups.erase(unit.id)
 		else:
 			var previous: Vector2i = _windups.get(unit.id, Vector2i.ZERO)
-			if previous.y != finish:
-				var started := previous.x if finish < previous.y else tick
+			var started := int(unit.get("intent_start_tick", previous.x if finish <= previous.y else tick))
+			if previous != Vector2i(started, finish):
 				_windups[unit.id] = Vector2i(started, finish)
+	var cast_tiles := {}
+	for cue: Dictionary in attack_cues:
+		var profile := _hero_profile(cue.tile) if cue.kind == "hero_cast" else _enemy_profile(cue.tile, cue.get("attack", {}))
+		var effect := cue.duplicate()
+		effect["profile"] = profile
+		effect["age"] = 0.0
+		effect["lifetime"] = AttackAnimation.lifetime(profile)
+		_attack_casts.append(effect)
+		_actor_casts[cue.actor] = effect
+		cast_tiles[cue.actor] = cue.tile
+		if _attack_casts.size() > MAX_CASTS:
+			var oldest: Dictionary = _attack_casts.pop_front()
+			if _actor_casts.get(oldest.actor, {}) == oldest:
+				_actor_casts.erase(oldest.actor)
 	for event in events:
 		var tile: String = event.get("tile", "")
 		if tile == "relay_link_broken" and str(event.target).begins_with("crown_regent"):
@@ -207,6 +246,8 @@ func present(units_data: Array, events: Array, tick := 0) -> void:
 					_effects.remove_at(index)
 		if kind == "teleport":
 			_positions[event.actor] = event.to
+			if cast_tiles.get(event.actor, "") == tile:
+				continue
 		var effect: Dictionary = event.duplicate()
 		effect["kind"] = kind
 		effect["age"] = 0.0
@@ -240,6 +281,14 @@ func _process(delta: float) -> void:
 		if effect.age >= EFFECT_LENGTHS[effect.kind]:
 			_effects.remove_at(index)
 		changed = true
+	for index in range(_attack_casts.size() - 1, -1, -1):
+		var cast := _attack_casts[index]
+		cast.age += delta * _attack_rate
+		if cast.age >= cast.lifetime:
+			if _actor_casts.get(cast.actor, {}) == cast:
+				_actor_casts.erase(cast.actor)
+			_attack_casts.remove_at(index)
+		changed = true
 	if changed or _has_animated_warning():
 		queue_redraw()
 
@@ -266,6 +315,22 @@ func _draw() -> void:
 			continue
 		var point := _project(_positions.get(unit.id, unit.pos), field)
 		_draw_unit(unit, point, sprite_scale)
+	for cast: Dictionary in _attack_casts:
+		var moving: bool = cast.profile.style in ["blink", "dash"]
+		var origin: Vector2 = cast.from if moving else cast.get("strike_from", cast.from)
+		var start := _project(origin, field)
+		var target := _project(cast.to, field)
+		var arrival := _project(cast.get("arrival", cast.from), field)
+		var radius := clampf(float(cast.get("radius", 0.0)), 0.0, 240.0)
+		var progress := float(cast.age) / float(cast.lifetime)
+		var cast_size := clampf(sprite_scale * 61.0, 16.0, 39.0)
+		AttackAnimation.draw_cast(self, cast.profile, start, target, arrival, progress,
+			cast_size, cast.get("landed", true), radius * field.size / WORLD_SIZE)
+		if radius <= 0.0 and cast.profile.style in ["pull", "bolt", "shot", "ward", "heal"]:
+			for contact: Vector2 in cast.get("contact_points", []):
+				var end := _project(contact, field)
+				if end.distance_squared_to(target) > 36.0:
+					AttackAnimation.draw_secondary_contact(self, cast.profile, start, end, progress, cast_size)
 	for effect in _effects:
 		_draw_feedback(effect, field)
 
@@ -316,16 +381,32 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	var stride := _animation_time * 16.0 + float(unit.lane)
 	var bounce := Vector2(0.0, -absf(sin(stride)) * motion * 3.0)
 	var lean := sin(stride) * motion * 0.022
-	if not str(unit.get("intent", "")).is_empty():
-		var windup := maxf(0.0, float(unit.get("intent_tick", 0) - combat_tick))
-		lean -= facing * (1.0 - clampf(windup / 36.0, 0.0, 1.0)) * 0.11
+	var cast: Dictionary = _actor_casts.get(unit.id, {})
+	var prepare := _windup_details(unit)
+	var acting := not cast.is_empty() and float(cast.age) < 0.18
+	var pose := Vector4.ZERO
+	if acting:
+		var direction: Vector2 = cast.to - cast.from
+		if absf(direction.x) > 8.0:
+			facing = signf(direction.x)
+		var follow_through := pow(1.0 - float(cast.age) / 0.18, 1.7)
+		pose = AttackAnimation.pose(cast.profile, follow_through, facing, true)
+	elif not prepare.is_empty():
+		if not friendly:
+			for target: Dictionary in units:
+				if target.id == unit.intent and absf(target.pos.x - unit.pos.x) > 8.0:
+					facing = signf(target.pos.x - unit.pos.x)
+					break
+		pose = AttackAnimation.pose(prepare.profile, smoothstep(0.04, 1.0, prepare.charge), facing, false)
+	bounce += Vector2(pose.x, pose.y) * art_height
+	lean += pose.z
 	var flash := 0.0
 	for effect in _effects:
 		if effect.kind != "hit":
 			continue
 		if effect.target == unit.id:
 			flash = maxf(flash, 1.0 - float(effect.age) * 10.0)
-		if effect.actor == unit.id and float(effect.age) < 0.16:
+		if not acting and effect.actor == unit.id and float(effect.age) < 0.16:
 			var hit_direction: Vector2 = (effect.to - effect.from).normalized()
 			var recoil := sin(float(effect.age) / 0.16 * PI)
 			bounce += hit_direction * recoil * 7.0
@@ -334,7 +415,7 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	if texture:
 		var width := art_height * texture.get_size().aspect()
 		var flip := 1.0 if (facing > 0.0) == friendly else -1.0
-		draw_set_transform(point + bounce, lean, Vector2(flip, 1.0))
+		draw_set_transform(point + bounce, lean, Vector2(flip * (1.0 - pose.w * 0.67), 1.0 + pose.w))
 		var tint := GOLD.lightened(0.35) if art_key == "marshal" and not _textures.has("marshal") else Color.WHITE
 		if unit.name == "Crucible Twin · Ember":
 			tint = Color("#ffc391")
@@ -343,13 +424,15 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		draw_texture_rect(texture, Rect2(-width * 0.5, -art_height, width, art_height), false, tint.lerp(GOLD, flash * 0.6))
 		draw_set_transform(Vector2.ZERO)
 	else:
-		var body_center := point - Vector2(0.0, art_height * 0.37)
+		var body_center := point + bounce - Vector2(0.0, art_height * 0.37)
 		var body_radius := art_height * 0.3
 		draw_circle(body_center, body_radius, INK, true, -1.0, true)
 		draw_circle(body_center, body_radius * 0.8, accent.darkened(0.38), true, -1.0, true)
 		draw_circle(body_center, body_radius * 0.8, accent, false, 2.0, true)
 		var initial := String(unit.name).left(1)
 		_draw_centered(initial, body_center + Vector2(0.0, 5.0), 15, WHITE)
+	if not acting and not prepare.is_empty():
+		AttackAnimation.windup(self, point + bounce, facing, art_height, prepare.charge, prepare.profile)
 	var health_width := clampf(radius * 2.7, 31.0, 58.0)
 	var bar_offset := 7.0 if friendly else 13.0
 	var bar := Rect2(point + Vector2(-health_width * 0.5, -art_height - bar_offset), Vector2(health_width, 5.0))
@@ -437,6 +520,35 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		_draw_centered("HARPOON" if wreck_phase == 1 else "DECK SLAM", bar.get_center() - Vector2(0.0, 9.0), 14, GOLD)
 	elif not str(unit.get("dock_winch_ally", "")).is_empty():
 		_draw_centered("WINCH PULL", bar.get_center() - Vector2(0.0, 9.0), 13, DOCK_WINCH_COLOR)
+
+
+func _hero_profile(id: String) -> Dictionary:
+	if not _hero_profiles.has(id):
+		_hero_profiles[id] = HeroChoreography.profile(id, ArenaSim.TILES.get(id, {}))
+	return _hero_profiles[id]
+
+
+func _enemy_profile(id: String, attack: Dictionary) -> Dictionary:
+	if not _enemy_profiles.has(id):
+		_enemy_profiles[id] = EnemyChoreography.profile(id, attack)
+	return _enemy_profiles[id]
+
+
+func _windup_details(unit: Dictionary) -> Dictionary:
+	if unit.side == "enemy":
+		if not _windups.has(unit.id):
+			return {}
+		var window: Vector2i = _windups[unit.id]
+		var charge := clampf(inverse_lerp(float(window.x), float(window.y), float(combat_tick)), 0.0, 1.0)
+		return {"charge": charge, "profile": _enemy_profile(unit.get("intent_attack_id", unit.get("sprite", unit.id)), unit.get("attack", {}))}
+	var lane: int = unit.lane
+	if combat_tick <= 0 or lane < 0 or lane >= _hero_clips.size():
+		return {}
+	var loop_tick := posmod(combat_tick - 1, ArenaSim.LOOP_TICKS) + 1
+	for clip: Dictionary in _hero_clips[lane]:
+		if loop_tick > clip.ready and loop_tick < clip.right_edge:
+			return {"charge": inverse_lerp(float(clip.ready), float(clip.right_edge), float(loop_tick)), "profile": clip.profile}
+	return {}
 
 
 func _draw_relay_charge(unit: Dictionary, point: Vector2, radius: float, bar: Rect2) -> void:
@@ -637,12 +749,6 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 		"tar_slow", "fuse_disarmed":
 			var tint := HERO_COLOR if kind == "fuse_disarmed" else Color("#be915d")
 			draw_arc(to_point, 9.0 + progress * 19.0, 0.0, TAU, 26, Color(tint, opacity), 2.0, true)
-		"hit":
-			if ArenaSim.is_ranged_tile(effect.tile):
-				var lift := Vector2(0.0, -19.0)
-				var tracer := Color(GOLD, pow(opacity, 4.0))
-				draw_line(from_point + lift, to_point + lift, tracer, 2.0, true)
-				draw_circle(from_point + lift, 4.0 * opacity, tracer, true, -1.0, true)
 		"pull", "push":
 			var siege_pull: bool = effect.tile == "siege_fuse"
 			var color := HERO_COLOR if kind == "pull" else GOLD

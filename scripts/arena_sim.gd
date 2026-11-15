@@ -444,6 +444,7 @@ static var FORGE_FAMILIES: Dictionary = CORE_FORGE_FAMILIES.duplicate()
 
 var units: Array[Dictionary] = []
 var trace: Array[Dictionary] = []
+var visual_cues: Array[Dictionary] = []
 var activations: Array[Dictionary] = []
 var boss_events: Array[Dictionary] = []
 var tick := 0
@@ -518,6 +519,7 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 	outcome = ""
 	units.clear()
 	trace.clear()
+	visual_cues = []
 	activations.clear()
 	boss_events.clear()
 	_activation = {}
@@ -705,6 +707,7 @@ func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_sca
 	var enemy := _unit("%s_%d" % [kind, units.size()], spec.name, "enemy", -1, position,
 		roundi(spec.hp * health_scale), spec.radius, spec.speed, spec.spacing)
 	enemy["attack"] = spec
+	enemy["attack_id"] = kind
 	enemy["sprite"] = spec.art
 	if not pilot.is_empty():
 		enemy["pilot_region"] = pilot
@@ -846,6 +849,7 @@ func _start_moonwreck_encounter(encounter: String, rng: RandomNumberGenerator, y
 
 func step() -> Array[Dictionary]:
 	_events = []
+	visual_cues = []
 	if outcome != "" or units.is_empty():
 		return _events
 	tick += 1
@@ -1173,7 +1177,10 @@ func _activate_lanes() -> void:
 				_activation.status = "unavailable"
 				_activation.reason = "%s had already fallen." % actor.name
 			else:
+				var origin: Vector2 = actor.pos
+				var first_event := _events.size()
 				_cast(actor, tile.id, tile.target)
+				_add_tile_visual_cue(actor, tile.id, origin, first_event)
 				if actor.get("class") == "rune_smith" and TILES[tile.id].width >= 3:
 					actor["rune_charged"] = true
 				if _activation.status == "landed":
@@ -1181,6 +1188,31 @@ func _activate_lanes() -> void:
 				if _activation.status == "landed" and _activation.reason.is_empty():
 					_activation.reason = _activation_result(_activation)
 			_activation = {}
+
+
+func _add_tile_visual_cue(actor: Dictionary, tile_id: String, origin: Vector2, first_event: int) -> void:
+	var target := _find_unit(_activation.target)
+	var tile: Dictionary = TILES[tile_id]
+	var radius: float = tile.get("radius", tile.get("splash", tile.get("guard_radius", 0.0)))
+	var impact: Vector2 = target.get("pos", origin)
+	var anchored := false
+	var contact_points: Array[Vector2] = []
+	for index in range(first_event, _events.size()):
+		var event: Dictionary = _events[index]
+		if event.actor != actor.id or event.tile != tile_id or event.kind not in ["hit", "guard", "heal", "pull", "push"]:
+			continue
+		var point: Vector2 = event.from if event.kind in ["push", "pull"] else event.to
+		if not anchored and event.target == _activation.target:
+			impact = point
+			anchored = true
+		if point not in contact_points:
+			contact_points.append(point)
+	visual_cues.append({
+		"kind": "hero_cast", "tick": tick, "actor": actor.id, "tile": tile_id,
+		"target": _activation.target, "from": origin, "to": impact, "contact_points": contact_points,
+		"strike_from": _activation.get("attack_origin", origin), "arrival": actor.pos,
+		"landed": _activation.status == "landed", "radius": radius if is_finite(radius) else 0.0,
+	})
 
 
 func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
@@ -1888,23 +1920,103 @@ func _run_enemies() -> void:
 		var reach: float = attack.get("reach", 290.0 if enemy.id == "scout" else 155.0)
 		if position.distance_to(target.pos) > reach:
 			continue
-		enemy.intent = target.id
-		enemy.intent_tick = tick + int(attack.get("windup", 24))
+		var action_id: String = enemy.get("attack_id", enemy.id)
+		if action_id == attack.get("special", ""):
+			action_id += "_strike"
 		var message := "%s winds up at %s." % [enemy.name, target.name]
 		if enemy.get("sprite") == "prism_warden":
 			message = _prism_mark(enemy, target)
 		elif enemy.get("marshal_plated", false):
+			action_id = "marshal_sweep"
 			message = "The Marshal charges a sweep. Push or pull it, then follow up with your other hero."
 		elif enemy.get("regent_sealed", false):
+			action_id = "regent_sweep"
 			message = "The Regent charges a sweep. Land a hit from each hero within 4 beats to break its seals."
 		elif rule == "ranged_damage":
 			message = "%s marks %s, the highest ranged damage dealer." % [enemy.name, target.name]
 		elif rule == "lowest_hp":
 			message = "%s rushes %s, the lowest-HP hero." % [enemy.name, target.name]
+		_start_enemy_intent(enemy, target.id, tick + int(attack.get("windup", 24)), action_id)
 		_emit("intent", message, enemy, target, "enemy_attack")
 
 
+func _start_enemy_intent(enemy: Dictionary, target_id: String, end_tick: int, attack_id: String) -> void:
+	enemy.intent = target_id
+	enemy.intent_tick = end_tick
+	enemy["intent_start_tick"] = tick
+	enemy["intent_attack_id"] = attack_id
+
+
 func _resolve_intent(enemy: Dictionary) -> void:
+	var target := _find_unit(enemy.intent)
+	var origin: Vector2 = enemy.pos
+	var attack_id: String = enemy.get("intent_attack_id", enemy.get("special_intent", enemy.get("attack_id", enemy.id)))
+	var attack: Dictionary = enemy.get("attack", {})
+	if enemy.get("sprite") == "marshal":
+		attack_id = "marshal_sweep" if enemy.get("marshal_plated", false) else "marshal"
+	elif enemy.get("sprite") == "regent":
+		attack_id = "regent_sweep" if enemy.get("regent_sealed", false) else "regent"
+	var hit_point: Vector2 = target.get("pos", origin)
+	var radius := _enemy_sweep_radius(enemy, attack)
+	var locked_aim := enemy.has("pilot_aim_point")
+	if enemy.has("blast_center"):
+		hit_point = enemy.blast_center
+		radius = enemy.blast_radius
+	elif locked_aim:
+		hit_point = origin.move_toward(enemy.pilot_aim_point, float(attack.reach))
+	elif enemy.get("dock_winch_ally", "") != "":
+		target = _find_unit(enemy.dock_winch_ally)
+		hit_point = target.get("pos", origin)
+	elif radius > 0.0:
+		hit_point = origin
+	var valid_target: bool = target.get("hp", 0) > 0 or radius > 0.0 or locked_aim
+
+	var first_event := _events.size()
+	_resolve_enemy_attack(enemy)
+	var missed := false
+	var contact_points: Array[Vector2] = []
+	var impact_target := ""
+	for index in range(first_event, _events.size()):
+		var event: Dictionary = _events[index]
+		if event.actor != enemy.id:
+			continue
+		if event.kind == "miss":
+			missed = true
+		elif event.kind == "hit" or event.kind == "heal" or event.kind == "pull":
+			if impact_target.is_empty():
+				impact_target = event.target
+			var point: Vector2 = event.from if event.kind == "pull" else event.to
+			if point not in contact_points:
+				contact_points.append(point)
+	if radius == 0.0 and not locked_aim and not contact_points.is_empty():
+		hit_point = contact_points[0]
+	visual_cues.append({
+		"kind": "enemy_cast", "tick": tick, "actor": enemy.id, "tile": attack_id, "attack": attack,
+		"target": target.get("id", "") if impact_target.is_empty() else impact_target,
+		"from": origin, "to": hit_point, "arrival": enemy.pos, "radius": radius,
+		"landed": (valid_target and not missed) or not contact_points.is_empty(), "contact_points": contact_points,
+	})
+
+
+func _enemy_sweep_radius(enemy: Dictionary, attack: Dictionary) -> float:
+	if enemy.get("wreckmaster_phase", 0) >= 2:
+		return enemy.wreckmaster_slam_radius
+	if enemy.get("tidekeeper_phase", 0) >= 2:
+		return enemy.tidekeeper_slam_radius
+	if enemy.get("admiral_phase", 0) >= 2:
+		return enemy.admiral_sweep_radius
+	if enemy.get("relay_charge_active", false) and enemy.get("sprite") in ["relay_marshal", "crown_regent"]:
+		return attack.reach + 125.0
+	if enemy.get("colossus_stage", 0) > 0:
+		return enemy.colossus_sweep_radius
+	if enemy.get("marshal_plated", false):
+		return attack.reach + 48.0
+	if enemy.get("regent_sealed", false):
+		return attack.reach + 70.0
+	return enemy.get("pilot_ring_radius", 0.0)
+
+
+func _resolve_enemy_attack(enemy: Dictionary) -> void:
 	var intent: String = enemy.intent
 	var attack: Dictionary = enemy.get("attack", {})
 	enemy.intent = ""
@@ -2022,8 +2134,7 @@ func _begin_variant_attack(enemy: Dictionary, target: Dictionary, attack: Dictio
 			message = "Dock Corsair aims a boarding hook at %s." % target.name
 			intent_tile = "corsair_hook"
 	enemy["special_intent"] = attack.special
-	enemy.intent = target.id
-	enemy.intent_tick = tick + int(attack.windup)
+	_start_enemy_intent(enemy, target.id, tick + int(attack.windup), intent_tile)
 	_emit("intent", message, enemy, target, intent_tile)
 	return true
 
@@ -2101,8 +2212,7 @@ func _begin_winch_pull(enemy: Dictionary) -> bool:
 		if ally.hp <= 0 or not ally.id.begins_with("dock_bruiser") or origin.distance_squared_to(ally.pos) > 300.0 * 300.0:
 			continue
 		enemy.dock_winch_ally = ally.id
-		enemy.intent = target.id
-		enemy.intent_tick = tick + DOCK_WINCH_TICKS
+		_start_enemy_intent(enemy, target.id, tick + DOCK_WINCH_TICKS, "dock_winch_windup")
 		_emit("intent", "Winch Pull in 2 beats. The Operator is drawing the Bruiser toward %s." % target.name,
 			enemy, target, "dock_winch_windup")
 		return true
@@ -2135,8 +2245,7 @@ func _begin_wreckmaster_harpoon(enemy: Dictionary) -> void:
 	if target.is_empty():
 		return
 	enemy.wreckmaster_phase = 1
-	enemy.intent = target.id
-	enemy.intent_tick = tick + WRECKMASTER_HARPOON_TICKS
+	_start_enemy_intent(enemy, target.id, tick + WRECKMASTER_HARPOON_TICKS, "wreckmaster_harpoon")
 	_emit("intent", "Harpoon at the end of beat 3. Expect a close Deck Slam next.", enemy, target, "wreckmaster_harpoon")
 
 
@@ -2151,8 +2260,7 @@ func _resolve_wreckmaster(enemy: Dictionary, intent: String) -> void:
 				var force := minf(950.0, sqrt(2.0 * IMPULSE_DECAY * travel))
 				_displace("pull", enemy, target, "wreckmaster_harpoon", offset, force)
 		enemy.wreckmaster_phase = 2
-		enemy.intent = intent
-		enemy.intent_tick = tick + WRECKMASTER_SLAM_TICKS
+		_start_enemy_intent(enemy, intent, tick + WRECKMASTER_SLAM_TICKS, "wreckmaster_slam_windup")
 		_emit("intent", "Deck Slam at the end of beat 6. Push the Wreckmaster away or brace.", enemy, target, "wreckmaster_slam_windup")
 		return
 	enemy.wreckmaster_phase = 0
@@ -2176,8 +2284,7 @@ func _begin_tidekeeper_harpoons(enemy: Dictionary) -> void:
 		if unit.side == "hero" and unit.hp > 0:
 			enemy.tidekeeper_targets.append(unit.id)
 	enemy.tidekeeper_phase = 1
-	enemy.intent = target.id
-	enemy.intent_tick = tick + WRECKMASTER_HARPOON_TICKS
+	_start_enemy_intent(enemy, target.id, tick + WRECKMASTER_HARPOON_TICKS, "tidekeeper_harpoon")
 	_emit("intent", "Twin Harpoons pull the party in at the end of beat 3.", enemy, target, "tidekeeper_harpoon")
 
 
@@ -2194,8 +2301,7 @@ func _resolve_tidekeeper(enemy: Dictionary, intent: String, attack: Dictionary) 
 				var force := minf(930.0, sqrt(2.0 * IMPULSE_DECAY * travel))
 				_displace("pull", enemy, hero, "tidekeeper_harpoon", offset, force)
 		enemy.tidekeeper_phase = 2
-		enemy.intent = intent
-		enemy.intent_tick = tick + TIDEKEEPER_SLAM_BEATS * TICKS_PER_BEAT
+		_start_enemy_intent(enemy, intent, tick + TIDEKEEPER_SLAM_BEATS * TICKS_PER_BEAT, "tidekeeper_slam_windup")
 		_emit("intent", "Breakwater Slam in %d beats. Push the Tidekeeper off its anchor." % TIDEKEEPER_SLAM_BEATS,
 			enemy, enemy, "tidekeeper_slam_windup")
 		return
@@ -2247,8 +2353,7 @@ func _begin_admiral_undertow(enemy: Dictionary) -> void:
 		if unit.side == "hero" and unit.hp > 0:
 			enemy.admiral_targets.append(unit.id)
 	enemy.admiral_phase = 1
-	enemy.intent = target.id
-	enemy.intent_tick = tick + WRECKMASTER_HARPOON_TICKS
+	_start_enemy_intent(enemy, target.id, tick + WRECKMASTER_HARPOON_TICKS, "admiral_undertow")
 	_emit("intent", "Undertow pulls the party in at the end of beat 3.", enemy, target, "admiral_undertow")
 
 
@@ -2265,8 +2370,7 @@ func _resolve_admiral(enemy: Dictionary, intent: String, attack: Dictionary) -> 
 				var force := minf(965.0, sqrt(2.0 * IMPULSE_DECAY * travel))
 				_displace("pull", enemy, hero, "admiral_undertow", offset, force)
 		enemy.admiral_phase = 2
-		enemy.intent = intent
-		enemy.intent_tick = tick + ADMIRAL_SWEEP_BEATS * TICKS_PER_BEAT
+		_start_enemy_intent(enemy, intent, tick + ADMIRAL_SWEEP_BEATS * TICKS_PER_BEAT, "admiral_sweep_windup")
 		_emit("intent", "Undertow Sweep in %d beats. Push the Admiral off its anchor." % ADMIRAL_SWEEP_BEATS,
 			enemy, enemy, "admiral_sweep_windup")
 		return
@@ -2342,8 +2446,8 @@ func _begin_relay_charge(enemy: Dictionary) -> void:
 	var marshal: bool = enemy.get("sprite") == "relay_marshal"
 	var crown: bool = enemy.get("sprite") == "crown_regent"
 	var beats := CROWN_CHARGE_BEATS if crown else (RELAY_MARSHAL_CHARGE_BEATS if marshal else RELAY_CHARGE_BEATS)
-	enemy.intent = target.id
-	enemy.intent_tick = tick + TICKS_PER_BEAT * beats - 1
+	var action_id := "crown_regent_charge" if crown else ("relay_marshal_charge" if marshal else "relay_charge")
+	_start_enemy_intent(enemy, target.id, tick + TICKS_PER_BEAT * beats - 1, action_id)
 	enemy.relay_charge_active = true
 	if crown:
 		enemy.crown_breakers.clear()
@@ -2420,8 +2524,7 @@ func _begin_forge_sweep(enemy: Dictionary) -> void:
 	var target := _select(enemy, _attack_target_rule(enemy))
 	if target.is_empty():
 		return
-	enemy.intent = target.id
-	enemy.intent_tick = tick + TICKS_PER_BEAT * COLOSSUS_SWEEP_BEATS - 1
+	_start_enemy_intent(enemy, target.id, tick + TICKS_PER_BEAT * COLOSSUS_SWEEP_BEATS - 1, "colossus_forging")
 	enemy.colossus_stage = 1
 	enemy.colossus_window_until = enemy.intent_tick
 	_emit("intent", "Forge Sweep in 9 beats. Push or pull the Colossus, then land hits from two different allies.",

@@ -227,8 +227,7 @@ static func block_oathbreaker_hit(sim, actor: Dictionary, enemy: Dictionary, dam
 
 static func _windup(sim, enemy: Dictionary, target: Dictionary, move: String, length: int, message: String) -> void:
 	enemy["special_intent"] = move
-	enemy.intent = target.id
-	enemy.intent_tick = sim.tick + length
+	sim._start_enemy_intent(enemy, target.id, sim.tick + length, move)
 	sim._emit("intent", message, enemy, target, move)
 
 

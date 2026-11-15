@@ -131,8 +131,7 @@ static func begin(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary
 				_:
 					return false
 	enemy.special_intent = move
-	enemy.intent = target.id
-	enemy.intent_tick = sim.tick + int(attack.windup)
+	sim._start_enemy_intent(enemy, target.id, sim.tick + int(attack.windup), move)
 	sim._emit("intent", message, enemy, target, move)
 	return true
 
