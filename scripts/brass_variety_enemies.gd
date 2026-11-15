@@ -3,6 +3,8 @@ extends RefCounted
 
 const BELLMAKER_RING := "bellmaker_ring"
 const BELLMAKER_SHOT := "bellmaker_shot"
+const SCOUT_ISOLATION_RANGE := 142.0
+const CAPTAIN_ORDER_REACH := 180.0
 
 const ENEMIES := {
 	"brass_bellmaker": {
@@ -16,13 +18,13 @@ const ENEMIES := {
 		"name": "Wire Runner", "art": "brass_runner", "special": "brass_runner",
 		"hp": 28, "radius": 20.0, "speed": 116.0, "spacing": 86.0, "reach": 115.0,
 		"damage": 3, "first": 95, "cooldown": 143, "windup": 22,
-		"hint": "Closes quickly for a light strike. Land a quick attack or have Guard ready.",
+		"hint": "Cuts sideways around its target before swinging. Use a ranged tile to keep it in reach.",
 	},
 	"brass_riveter": {
 		"name": "Pneumatic Riveter", "art": "brass_riveter", "special": "brass_riveter",
 		"hp": 28, "radius": 20.0, "speed": 78.0, "spacing": 110.0, "reach": 265.0,
 		"damage": 5, "first": 108, "cooldown": 192, "windup": 42,
-		"hint": "Takes two beats to sight a heavy rivet. Set Guard before it fires or push it out of reach.",
+		"hint": "Reloads twice as fast after a miss. Time Guard to catch a shot and keep the Riveter on its usual cycle.",
 	},
 	"brass_shieldwright": {
 		"name": "Shieldwright", "art": "brass_shieldwright", "special": "brass_shieldwright",
@@ -116,6 +118,23 @@ static func begin(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary
 			if position.distance_to(target.pos) > attack.reach:
 				return false
 			match move:
+				"recruit":
+					message = "The Recruit cocks its spring. A hit during the windup jams it."
+				"scout":
+					var isolated := _isolated_target(sim, enemy, attack.reach)
+					if not isolated.is_empty():
+						target = isolated
+						enemy["scout_flank"] = true
+						message = "The Scout sights an isolated hero. Close ranks before it fires."
+				"bruiser":
+					message = "The Bruiser winds up a shove that can bowl into a nearby hero."
+				"veteran":
+					var ally := _wounded_ally(sim.units, enemy)
+					if not ally.is_empty():
+						enemy["captain_rally"] = ally.id
+						message = "The Rivet Captain signals %s to fall back." % ally.name
+				"brass_runner":
+					message = "The Wire Runner prepares to cut across %s." % target.name
 				"brass_manifold":
 					enemy["pilot_ring_radius"] = attack.reach
 					message = "Manifold charges a pressure burst."
@@ -164,11 +183,19 @@ static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictiona
 	var vents := int(enemy.get("pressure_vents", 0))
 	enemy.erase("pressure_vents")
 	enemy.erase("pressure_last_hit")
+	var scout_flank: bool = enemy.get("scout_flank", false)
+	enemy.erase("scout_flank")
+	var captain_rally: String = enemy.get("captain_rally", "")
+	enemy.erase("captain_rally")
 	if target.get("hp", 0) <= 0:
+		if move == "brass_riveter":
+			_reload_riveter(sim, enemy, attack)
 		return
 	var reach: float = attack.get("magnet_reach", attack.reach)
 	if not _within_reach(enemy, target, reach):
 		sim._emit("miss", "%s moves out of %s's reach." % [target.name, enemy.name], enemy, target, move)
+		if move == "brass_riveter":
+			_reload_riveter(sim, enemy, attack)
 		return
 	if move == "brass_magnetar" and target.guard <= 0:
 		sim._emit("miss", "%s has no Guard left for the Magnetar to pull." % target.name, enemy, target, move)
@@ -176,9 +203,17 @@ static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictiona
 	if move == "brass_rivet_hound" and not _pounce(sim, enemy, target):
 		sim._emit("miss", "Rivet Hound's pounce falls short of %s." % target.name, enemy, target, move)
 		return
+	if move == "brass_runner":
+		_runner_crosscut(sim, enemy, target)
+	if not captain_rally.is_empty():
+		var ally: Dictionary = sim._find_unit(captain_rally)
+		if ally.get("hp", 0) > 0 and ally.intent.is_empty() and _within_reach(enemy, ally, CAPTAIN_ORDER_REACH):
+			sim._retreat_from(ally, target, "veteran", 58.0)
 	var defender: Dictionary = sim._intercept_target(target)
 	var damage: int = attack.damage
-	if move == "brass_flywheel":
+	if scout_flank and not _has_hero_near(sim.units, defender):
+		damage += 3
+	elif move == "brass_flywheel":
 		damage += 3 * int(enemy.get("flywheel_momentum", 0))
 	elif move == "brass_pressure_sentinel":
 		damage = maxi(1, damage - 4 * vents)
@@ -187,9 +222,14 @@ static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictiona
 	var offset: Vector2 = defender.pos - enemy.pos
 	if move == "brass_magnetar" and defender.hp > 0:
 		sim._displace("pull", enemy, defender, move, -offset, attack.force)
+	if move in ["bruiser", "veteran"] and defender.hp > 0:
+		sim._displace("push", enemy, defender, move, offset, attack.push)
 	if defender.hp >= before:
 		return
 	match move:
+		"bruiser":
+			if defender.hp > 0:
+				_bowl_into_hero(sim, enemy, defender, offset, attack.push)
 		"brass_springjack":
 			if defender.hp > 0:
 				sim._displace("push", enemy, defender, move, offset, attack.force)
@@ -206,6 +246,12 @@ static func on_tile_hit(sim, attacker: Dictionary, enemy: Dictionary, amount: in
 	if amount <= 0 or enemy.intent == "" or sim.tick > enemy.intent_tick:
 		return
 	match enemy.get("special_intent", ""):
+		"recruit":
+			enemy.intent = ""
+			enemy.intent_tick = 0
+			enemy.erase("special_intent")
+			enemy.next_attack = sim.tick + int(enemy.attack.cooldown)
+			sim._emit("interrupt", "The hit jams the Recruit's spring and stops its swing.", attacker, enemy, "recruit")
 		"brass_flywheel":
 			if amount < int(enemy.attack.interrupt_damage):
 				return
@@ -226,6 +272,61 @@ static func on_tile_hit(sim, attacker: Dictionary, enemy: Dictionary, amount: in
 static func _within_reach(enemy: Dictionary, target: Dictionary, reach: float) -> bool:
 	var origin: Vector2 = enemy.pos
 	return origin.distance_squared_to(target.pos) <= reach * reach
+
+
+static func _has_hero_near(units: Array, target: Dictionary) -> bool:
+	return units.any(func(hero: Dictionary) -> bool:
+		return hero.side == "hero" and hero.hp > 0 and hero.id != target.id and _within_reach(target, hero, SCOUT_ISOLATION_RANGE))
+
+
+static func _isolated_target(sim, enemy: Dictionary, reach: float) -> Dictionary:
+	var heroes: Array = sim._enemies_in_area(enemy, enemy.pos, reach)
+	if sim.units.filter(func(unit: Dictionary) -> bool: return unit.side == "hero" and unit.hp > 0).size() < 2:
+		return {}
+	for hero: Dictionary in heroes:
+		if not _has_hero_near(sim.units, hero):
+			return hero
+	return {}
+
+
+static func _wounded_ally(units: Array, captain: Dictionary) -> Dictionary:
+	for ally: Dictionary in units:
+		if ally.side == captain.side and ally.id != captain.id and ally.hp > 0 and ally.hp * 2 <= ally.max_hp \
+				and ally.intent.is_empty() and _within_reach(captain, ally, CAPTAIN_ORDER_REACH):
+			return ally
+	return {}
+
+
+static func _bowl_into_hero(sim, enemy: Dictionary, defender: Dictionary, offset: Vector2, force: float) -> void:
+	var origin: Vector2 = defender.pos
+	var direction := offset.normalized()
+	var travel: float = force * force / (2.0 * sim.IMPULSE_DECAY)
+	var path_end: Vector2 = sim._bounded(origin + direction * travel, defender.radius)
+	for hero: Dictionary in sim.units:
+		if hero.side != "hero" or hero.hp <= 0 or hero.id == defender.id:
+			continue
+		var separation: Vector2 = hero.pos - origin
+		if separation.dot(direction) <= 0.0:
+			continue
+		var closest := Geometry2D.get_closest_point_to_segment(hero.pos, origin, path_end)
+		if closest.distance_to(hero.pos) <= defender.radius + hero.radius + 3.0:
+			sim._damage(enemy, hero, 4, "bruiser", "Bowled into an ally")
+			return
+
+
+static func _runner_crosscut(sim, enemy: Dictionary, target: Dictionary) -> void:
+	var origin: Vector2 = enemy.pos
+	var offset: Vector2 = origin - target.pos
+	var landing: Vector2 = sim._slide_landing(enemy, sim._bounded(target.pos + offset.rotated(0.35), enemy.radius))
+	if not landing.is_equal_approx(origin):
+		enemy.pos = landing
+		enemy.prev_pos = landing
+		sim._emit("retreat", "The Wire Runner cuts sideways before the strike.", enemy, target, "brass_runner", 0, origin, landing)
+
+
+static func _reload_riveter(sim, enemy: Dictionary, attack: Dictionary) -> void:
+	enemy.next_attack = sim.tick + ceili(float(attack.cooldown) * 0.5)
+	sim._emit("intent", "The Riveter vents the missed shot and reloads early.", enemy, enemy, "brass_riveter")
 
 
 static func _begin_bellmaker(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary) -> bool:

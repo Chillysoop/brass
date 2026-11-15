@@ -7,6 +7,8 @@ var failures: Array[String] = []
 
 func _initialize() -> void:
 	_check_page_and_slinger()
+	_check_pike_and_vault()
+	_check_runner_press()
 	_check_glaiveguard_and_templar()
 	_check_spotter()
 	_check_drummer_and_twinspur()
@@ -17,7 +19,7 @@ func _initialize() -> void:
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Fourteen Crown Relay threats passed the timing, placement, and combat response checks.")
+		print("Crown Relay threats passed the timing, placement, and combat response checks.")
 	quit(0 if failures.is_empty() else 1)
 
 
@@ -29,10 +31,46 @@ func _check_page_and_slinger() -> void:
 	page.step()
 	_check(page.units[0].hp == 100 and page.units[0].guard == 7,
 		"An early Guard should absorb the Page's starter-safe strike.")
+	var formation := _fixture("crown_page")
+	var nearby := _enemy(formation, "relay_runner", Vector2(460, 320), 999)
+	var distant := _enemy(formation, "relay_runner", Vector2(660, 260), 999)
+	_advance(formation, 39)
+	_check(nearby.pos.distance_to(formation.units[0].pos) < 140.0 and distant.pos == Vector2(660, 260)
+		and _events(formation, "charge", "crown_page_advance").size() == 1,
+		"The Page's advance should move only nearby idle allies forward.")
 	var slinger := _fixture("crown_slinger")
 	_advance(slinger, 39)
 	_check(_events(slinger, "retreat", "crown_slinger").size() == 1 and slinger.units[1].pos.x > 420.0,
 		"After the sling shot lands, the Slinger should open distance with the target.")
+
+
+func _check_pike_and_vault() -> void:
+	var idle := _fixture("relay_recruit", [[]], 999)
+	var braced := _fixture("relay_recruit")
+	_advance(braced, 1)
+	for sim: ArenaSim in [idle, braced]:
+		sim._displace("push", sim.units[0], sim.units[1], "bash", Vector2.RIGHT, 200.0)
+	_check(braced.units[1].impulse.x < idle.units[1].impulse.x,
+		"A planted pike resists displacement only during its windup.")
+	var lancer := _fixture("relay_lancer")
+	_advance(lancer, 34)
+	_check(lancer.units[1].pos.x < lancer.units[0].pos.x and lancer.units[0].impulse.x > 0.0
+		and _events(lancer, "charge", "relay_lancer").size() == 1,
+		"The Lancer should vault behind the hero and push them back toward the enemy line.")
+
+
+func _check_runner_press() -> void:
+	var heavy := _fixture("relay_runner", [[], [{"id": "slam", "start": 0}]], 2)
+	var fast := _fixture("relay_runner", [[], [{"id": "shot", "start": 0}]], 2)
+	for fight: ArenaSim in [heavy, fast]:
+		fight.units[1].pos = Vector2(310, 326)
+	_advance(heavy, 29)
+	_advance(fast, 29)
+	_check(heavy.units[0].hp == 100 and heavy.units[1].hp == 87
+		and _events(heavy, "hit", "relay_runner_press").size() == 1,
+		"The Runner pressures a hero winding a large attack and gains damage while that attack is still pending.")
+	_check(fast.units[0].hp == 92 and fast.units[1].hp == 100,
+		"A short tile avoids the pressure bonus and leaves the Runner on its closest target.")
 
 
 func _check_glaiveguard_and_templar() -> void:
@@ -55,15 +93,15 @@ func _check_glaiveguard_and_templar() -> void:
 
 func _check_spotter() -> void:
 	var sim := _fixture("crown_spotter")
-	var page := _enemy(sim, "crown_page", Vector2(425, 315), 1)
+	var initiate := _enemy(sim, "relay_recruit", Vector2(410, 315), 1)
 	_advance(sim, 25)
 	_check(_events(sim, "mark", "crown_spotter").size() == 1 and sim.units[0].hp == 100,
 		"Spotter should mark while an ally is available to follow up.")
-	_advance(sim, 39)
-	_check(sim.units[0].hp == 94 and _events(sim, "mark_spent", "crown_spotter").size() == 1,
+	_advance(sim, 31)
+	_check(sim.units[0].hp == 93 and _events(sim, "mark_spent", "crown_spotter").size() == 1,
 		"The next hit against a marked hero should gain three damage and spend the mark.")
-	sim._damage(page, sim.units[0], 3, "crown_page")
-	_check(sim.units[0].hp == 91, "A spent mark should have no effect on a later strike.")
+	sim._damage(initiate, sim.units[0], 4, "relay_recruit")
+	_check(sim.units[0].hp == 89, "A spent mark should have no effect on a later strike.")
 
 
 func _check_drummer_and_twinspur() -> void:

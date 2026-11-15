@@ -1,11 +1,14 @@
 extends RefCounted
 
+const PAGE_ADVANCE := "crown_page_advance"
+const RUNNER_PRESS := "relay_runner_press"
+
 const ENEMIES := {
 	"crown_page": {
 		"name": "Crown Page", "art": "crown_page", "special": "crown_page",
 		"hp": 31, "radius": 20.0, "speed": 91.0, "spacing": 82.0, "reach": 140.0,
 		"damage": 3, "first": 82, "cooldown": 155, "windup": 38,
-		"hint": "Winds up a short strike. Finish a Guard tile before the hit, or push the Page away.",
+		"hint": "Its first command sends nearby allies forward. Separate the Page from its allies to leave it without a crew to rally.",
 	},
 	"crown_slinger": {
 		"name": "Crown Slinger", "art": "crown_slinger", "special": "crown_slinger",
@@ -93,6 +96,30 @@ static func begin(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary
 	var distance: float = enemy.pos.distance_to(target.pos)
 	var message := "%s winds up at %s." % [enemy.name, target.name]
 	match move:
+		"crown_page":
+			if not enemy.get("crown_page_signaled", false) and _has_ally(sim, enemy):
+				move = PAGE_ADVANCE
+				enemy["pilot_ring_radius"] = 155.0
+				message = "%s signals nearby allies to advance." % enemy.name
+			elif distance > attack.reach:
+				return false
+		"relay_recruit":
+			if distance > attack.reach:
+				return false
+			message = "%s plants its pike against pushes and pulls." % enemy.name
+		"relay_runner":
+			for hero: Dictionary in sim._enemies_in_area(enemy, enemy.pos, attack.reach):
+				if _charging_large_attack(sim, hero):
+					target = hero
+					move = RUNNER_PRESS
+					message = "%s presses %s's heavy windup." % [enemy.name, target.name]
+					break
+			if move == "relay_runner" and distance > attack.reach:
+				return false
+		"relay_lancer":
+			if distance > attack.reach:
+				return false
+			message = "%s prepares to vault behind %s." % [enemy.name, target.name]
 		"crown_war_drummer":
 			target = _drum_target(sim, enemy, attack.drum_reach)
 			if target.is_empty():
@@ -144,6 +171,9 @@ static func begin(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary
 
 static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary, move: String) -> void:
 	match move:
+		PAGE_ADVANCE:
+			_resolve_advance(sim, enemy)
+			return
 		"crown_glaiveguard", "crown_storm_templar":
 			_resolve_ring(sim, enemy, attack, move)
 			return
@@ -180,11 +210,17 @@ static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictiona
 			sim._emit("mark", "%s marks %s for the next enemy strike." % [enemy.name, target.name], enemy, target, move, 3)
 		return
 	var damage: int = attack.damage
+	if move == RUNNER_PRESS and _charging_large_attack(sim, target):
+		damage += 5
 	if move == "crown_banneret" and not _has_ally(sim, enemy):
 		damage += 4
 		sim._guard(enemy, 8, move)
 	var defender: Dictionary = sim._intercept_target(target)
+	if move == "relay_lancer":
+		_vault_behind(sim, enemy, defender)
 	sim._damage(enemy, defender, damage, move)
+	if move == "relay_lancer" and defender.hp > 0:
+		sim._displace("push", enemy, defender, move, defender.pos - enemy.pos, attack.push)
 	if move == "crown_oathbreaker":
 		enemy["crown_oathbrace_trigger_until"] = sim.tick + 3 * sim.TICKS_PER_BEAT
 		sim._emit("mark", "%s readies its brace for the first hit." % enemy.name, enemy, enemy, move)
@@ -193,6 +229,50 @@ static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictiona
 	if move == "crown_twinspur" and target.hp > 0:
 		_windup(sim, enemy, target, "crown_twinspur_followup", attack.followup_ticks,
 			"%s follows with a second strike." % enemy.name)
+
+
+static func _charging_large_attack(sim, hero: Dictionary) -> bool:
+	var loop_tick: int = sim._tick_in_loop(sim.tick)
+	for tile: Dictionary in sim._lanes[hero.lane]:
+		if int(tile.end) - int(tile.start) >= 4 and sim.TILES[tile.id].damage > 0 \
+				and loop_tick > int(tile.start) * sim.TICKS_PER_BEAT and loop_tick < int(tile.end) * sim.TICKS_PER_BEAT:
+			return true
+	return false
+
+
+static func _resolve_advance(sim, enemy: Dictionary) -> void:
+	var radius: float = enemy.get("pilot_ring_radius", 0.0)
+	enemy.erase("pilot_ring_radius")
+	enemy["crown_page_signaled"] = true
+	for ally: Dictionary in sim.units:
+		if ally.side != enemy.side or ally.id == enemy.id or ally.hp <= 0 or ally.intent != "" \
+				or ally.pos.distance_to(enemy.pos) > radius:
+			continue
+		var target: Dictionary = sim._select(ally, "nearest")
+		if target.is_empty():
+			continue
+		var origin: Vector2 = ally.pos
+		var space := origin.distance_to(target.pos) - float(ally.radius + target.radius) - 8.0
+		var landing: Vector2 = origin.move_toward(target.pos, clampf(space, 0.0, 44.0))
+		if origin.distance_squared_to(landing) > 1.0 and sim._free_position(landing, ally):
+			ally.pos = landing
+			ally.prev_pos = landing
+			sim._emit("charge", "%s advances on the Page's signal." % ally.name, ally, target, PAGE_ADVANCE, 0, origin, landing)
+
+
+static func _vault_behind(sim, enemy: Dictionary, defender: Dictionary) -> void:
+	var origin: Vector2 = enemy.pos
+	var target: Vector2 = defender.pos
+	var direction := origin.direction_to(target)
+	if direction.is_zero_approx():
+		return
+	var landing: Vector2 = sim._bounded(target + direction * float(enemy.radius + defender.radius + 12.0), enemy.radius)
+	if (landing - target).dot(direction) <= 0.0 or not sim._free_position(landing, enemy):
+		return
+	enemy.pos = landing
+	enemy.prev_pos = landing
+	enemy.impulse = Vector2.ZERO
+	sim._emit("charge", "%s vaults behind %s." % [enemy.name, defender.name], enemy, defender, "relay_lancer", 0, origin, landing)
 
 
 static func on_tile_hit(sim, _attacker: Dictionary, enemy: Dictionary, _amount: int, _tile_id: String, _order: int) -> void:

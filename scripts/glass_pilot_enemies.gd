@@ -4,6 +4,12 @@ const REFRACTION_ENGINE := "glass_refraction_engine"
 const REFRACTION_BEAM := "glass_refraction_beam"
 const REFRACTION_DISCHARGE := "glass_refraction_discharge"
 const REFRACTION_BROKEN := "glass_refraction_broken"
+const GLINT_EXCHANGE := "glass_glint_exchange"
+const HUNTER_SHOT := "glass_hunter_crossfire"
+const SKIRMISH := "glass_skirmisher_feint"
+const OVERSEER_PULSE := "glass_overseer_pulse"
+const QUENCH_RECOIL := "glass_quench_recoil"
+const OVERSEER_SAFE_RADIUS := 94.0
 
 const ENEMIES := {
 	REFRACTION_ENGINE: {
@@ -83,7 +89,7 @@ const ENEMIES := {
 		"name": "Quench Sentinel", "art": "glass_quench_sentinel", "special": "glass_quench_sentinel",
 		"hp": 75, "radius": 26.0, "speed": 89.0, "spacing": 98.0, "reach": 168.0,
 		"damage": 7, "first": 92, "cooldown": 156, "windup": 34,
-		"hint": "Strips up to 7 Guard before a jab. Use displacement to make it miss or stack enough Guard for both.",
+		"hint": "Fully block its ice jab to send it reeling and delay its next attack.",
 	},
 	"glass_furnace_knight": {
 		"name": "Furnace Knight", "art": "glass_furnace_knight", "special": "glass_furnace_knight",
@@ -102,6 +108,11 @@ static func begin(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary
 	match move:
 		REFRACTION_ENGINE:
 			return _begin_refraction(sim, enemy, target, attack, distance)
+		"glass_recruit":
+			if enemy.get("glint_spent", false) or distance > attack.reach:
+				return false
+			move = GLINT_EXCHANGE
+			message = "The Apprentice raises mirrored glass to swap positions."
 		"glass_lacquerer":
 			if enemy.get("lacquer_spent", false) or distance > attack.reach:
 				return false
@@ -122,6 +133,19 @@ static func begin(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary
 			if distance > attack.reach:
 				return false
 			match move:
+				"glass_hunter":
+					move = HUNTER_SHOT
+					enemy["pilot_aim_point"] = position + position.direction_to(target.pos) * float(attack.reach)
+					enemy["pilot_aim_width"] = 26.0
+					message = "The Hunter's shot stops at the first hero in the marked lane."
+				"glass_skirmisher":
+					move = SKIRMISH
+					message = "The Skirmisher winds up. Hit it now to make it back off."
+				"glass_overseer":
+					move = OVERSEER_PULSE
+					enemy["pilot_ring_radius"] = attack.reach
+					enemy["pilot_inner_ring_radius"] = OVERSEER_SAFE_RADIUS
+					message = "The Overseer charges a glass ring. Its center is safe."
 				"glass_cullet_slinger":
 					enemy["pilot_aim_point"] = target.pos
 					enemy["pilot_aim_width"] = 22.0
@@ -139,7 +163,7 @@ static func begin(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary
 				"glass_ash_siphon":
 					message = "%s winds up a draining strike on %s." % [enemy.name, target.name]
 				"glass_quench_sentinel":
-					message = "%s prepares to shatter %s's Guard." % [enemy.name, target.name]
+					message = "The Sentinel readies an ice jab. A full block makes it recoil."
 				"glass_furnace_knight":
 					message = "%s winds up at %s. Heat %d of 3." % [enemy.name, target.name, enemy.get("furnace_heat", 0)]
 				_:
@@ -160,6 +184,16 @@ static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictiona
 	if move == "glass_cullet_slinger":
 		_resolve_slinger(sim, enemy, target, attack)
 		return
+	match move:
+		GLINT_EXCHANGE:
+			_resolve_glint(sim, enemy, target, attack)
+			return
+		HUNTER_SHOT:
+			_resolve_hunter_shot(sim, enemy, target, attack)
+			return
+		OVERSEER_PULSE:
+			_resolve_overseer_pulse(sim, enemy, target, attack)
+			return
 	if move == "glass_mirrorback" or target.get("hp", 0) <= 0:
 		return
 	var position: Vector2 = enemy.pos
@@ -190,17 +224,19 @@ static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictiona
 			if distance >= attack.far_threshold:
 				damage += 7
 				sim._emit("ranged_warning", "%s lands a long shot." % enemy.name, enemy, defender, move, 7)
-		"glass_quench_sentinel":
-			var removed := mini(defender.guard, 7)
-			if removed > 0:
-				defender.guard -= removed
-				sim._emit("guard_break", "%s breaks %d Guard." % [enemy.name, removed], enemy, defender, move, removed)
 		"glass_furnace_knight":
 			damage += 3 * int(enemy.get("furnace_heat", 0))
 	var hp_before: int = defender.hp
-	sim._damage(enemy, defender, damage, "enemy_attack")
+	var guard_before: int = defender.guard
+	var damage_cue := move if move in [SKIRMISH, "glass_quench_sentinel"] else "enemy_attack"
+	sim._damage(enemy, defender, damage, damage_cue)
 	var hp_lost: int = hp_before - defender.hp
 	match move:
+		"glass_quench_sentinel":
+			if hp_lost == 0 and defender.guard < guard_before:
+				enemy.next_attack += sim.TICKS_PER_BEAT * 2
+				sim._retreat_from(enemy, defender, QUENCH_RECOIL, 42.0)
+				sim._emit("interrupt", "The Sentinel recoils from the full block.", defender, enemy, QUENCH_RECOIL)
 		"glass_kiln_ram":
 			if defender.hp > 0:
 				sim._displace("push", enemy, defender, move, defender.pos - position, 370.0)
@@ -221,18 +257,89 @@ static func on_tile_hit(sim, attacker: Dictionary, enemy: Dictionary, amount: in
 	if amount <= 0:
 		return
 	var move: String = enemy.get("special_intent", "")
-	if move not in ["glass_lacquerer", "glass_mirrorback"]:
+	if move == SKIRMISH:
+		if enemy.hp <= 0 or not sim._retreat_from(enemy, attacker, SKIRMISH, 56.0):
+			return
+	elif move not in ["glass_lacquerer", "glass_mirrorback"]:
 		return
 	enemy.special_intent = ""
 	enemy.intent = ""
 	enemy.intent_tick = 0
 	enemy.next_attack = sim.tick + int(enemy.attack.cooldown)
+	if move == SKIRMISH:
+		sim._emit("interrupt", "%s drives the Skirmisher out of its windup." % attacker.name, attacker, enemy, move)
+		return
 	if move == "glass_lacquerer":
 		sim._emit("interrupt", "%s scrapes away the wet lacquer." % attacker.name, attacker, enemy, "glass_lacquerer_interrupted")
 		return
 	var reflected := clampi(ceili(amount * 0.55), 1, 15)
 	sim._emit("counter", "%s reflects %d damage at %s." % [enemy.name, reflected, attacker.name], enemy, attacker, "glass_mirrorback_counter", reflected)
 	sim._damage(enemy, attacker, reflected, "glass_mirrorback_counter")
+
+
+static func _resolve_glint(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary) -> void:
+	enemy["glint_spent"] = true
+	if target.get("hp", 0) <= 0 or enemy.pos.distance_to(target.pos) > attack.reach:
+		sim._emit("miss", "The Apprentice loses its reflection.", enemy, target, GLINT_EXCHANGE)
+		return
+	var origin: Vector2 = enemy.pos
+	var destination: Vector2 = target.pos
+	var landing: Vector2 = sim._bounded(destination, enemy.radius)
+	var hero_landing: Vector2 = sim._bounded(origin, target.radius)
+	if landing.distance_to(hero_landing) < enemy.radius + target.radius:
+		sim._emit("miss", "The Apprentice has no room to exchange places.", enemy, target, GLINT_EXCHANGE)
+		return
+	for unit: Dictionary in sim.units:
+		if unit.hp <= 0 or unit.id in [enemy.id, target.id]:
+			continue
+		if landing.distance_to(unit.pos) < enemy.radius + unit.radius or hero_landing.distance_to(unit.pos) < target.radius + unit.radius:
+			sim._emit("miss", "The Apprentice has no room to exchange places.", enemy, target, GLINT_EXCHANGE)
+			return
+	for pair: Array in [[enemy, landing], [target, hero_landing]]:
+		var unit: Dictionary = pair[0]
+		unit.pos = pair[1]
+		unit.prev_pos = pair[1]
+		unit.velocity = Vector2.ZERO
+		unit.impulse = Vector2.ZERO
+	sim._emit("teleport", "%s swaps places with %s." % [enemy.name, target.name], enemy, target, GLINT_EXCHANGE, 0, origin, landing)
+	sim._emit("teleport", "%s lands in the Apprentice's place." % target.name, target, enemy, GLINT_EXCHANGE, 0, destination, hero_landing)
+	enemy.next_attack = sim.tick + sim.TICKS_PER_BEAT * 2
+
+
+static func _resolve_hunter_shot(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary) -> void:
+	var origin: Vector2 = enemy.pos
+	var aim: Vector2 = enemy.pilot_aim_point
+	var direction := origin.direction_to(aim)
+	var width: float = enemy.pilot_aim_width
+	enemy.erase("pilot_aim_point")
+	enemy.erase("pilot_aim_width")
+	var blocker := {}
+	var distance := minf(attack.reach, origin.distance_to(aim))
+	for hero: Dictionary in sim.units:
+		if hero.side != "hero" or hero.hp <= 0:
+			continue
+		var offset: Vector2 = hero.pos - origin
+		var along := offset.dot(direction)
+		if along > 0.0 and along <= distance and absf(offset.cross(direction)) <= width:
+			blocker = hero
+			distance = along
+	if blocker.is_empty():
+		sim._emit("miss", "The crew clears the Hunter's shot lane.", enemy, target, HUNTER_SHOT)
+	else:
+		sim._damage(enemy, sim._intercept_target(blocker), attack.damage, HUNTER_SHOT)
+
+
+static func _resolve_overseer_pulse(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary) -> void:
+	enemy.erase("pilot_ring_radius")
+	enemy.erase("pilot_inner_ring_radius")
+	var hits := 0
+	var position: Vector2 = enemy.pos
+	for hero: Dictionary in sim._enemies_in_area(enemy, position, attack.reach):
+		if position.distance_to(hero.pos) >= OVERSEER_SAFE_RADIUS:
+			sim._damage(enemy, hero, attack.damage, OVERSEER_PULSE)
+			hits += 1
+	if hits == 0:
+		sim._emit("miss", "The crew clears the Overseer's ring.", enemy, target, OVERSEER_PULSE)
 
 
 static func _begin_refraction(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary, distance: float) -> bool:

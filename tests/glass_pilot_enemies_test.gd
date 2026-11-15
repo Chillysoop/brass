@@ -15,11 +15,15 @@ func _initialize() -> void:
 	_check_arbalist_and_ram()
 	_check_conductor()
 	_check_siphon_and_knight()
+	_check_glint_exchange()
+	_check_hunter_crossfire()
+	_check_skirmisher_feint()
+	_check_overseer_ring()
 	_check_quench()
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Thirteen Glass Foundry threats passed telegraph, impact, and counter checks.")
+		print("Glass Foundry threats passed telegraph, impact, and counter checks.")
 	quit(0 if failures.is_empty() else 1)
 
 
@@ -164,13 +168,73 @@ func _check_siphon_and_knight() -> void:
 	_check(heating.units[0].hp == 81, "The next knight hit should deal three additional damage.")
 
 
+func _check_glint_exchange() -> void:
+	var sim := _fixture([[]], "glass_recruit")
+	var origin: Vector2 = sim.units[1].pos
+	var destination: Vector2 = sim.units[0].pos
+	sim.step()
+	_check(sim.units[1].intent_attack_id == "glass_glint_exchange", "Glint Exchange needs a live windup.")
+	_advance(sim, 32)
+	_check(sim.units[0].pos == origin and sim.units[1].pos == destination and sim.units[0].hp == 100,
+		"Glint Exchange trades positions without dealing damage.")
+	_advance(sim, 125)
+	_check(_events(sim, "teleport", "glass_glint_exchange").size() == 2 and sim.units[0].hp == 96,
+		"The Apprentice swaps once, then resumes its basic attack.")
+
+
+func _check_hunter_crossfire() -> void:
+	var screened := _fixture([[], []], "glass_hunter")
+	var exposed := _fixture([[], []], "glass_hunter")
+	for sim in [screened, exposed]:
+		sim.units[0].pos = Vector2(320.0, 265.0)
+		sim.units[1].pos = Vector2(235.0, 265.0)
+		sim.units[1]["ranged_damage"] = 10
+		sim.step()
+		_check(sim.units[2].intent == sim.units[1].id and sim.units[2].has("pilot_aim_point"),
+			"The Hunter should mark the ranged hero's lane.")
+	exposed.units[0].pos.y += 70.0
+	_advance(screened, 34)
+	_advance(exposed, 34)
+	_check(screened.units[0].hp == 89 and screened.units[1].hp == 100
+		and exposed.units[0].hp == 100 and exposed.units[1].hp == 89,
+		"The first hero in the lane should take the hit in place of the original target.")
+
+
+func _check_skirmisher_feint() -> void:
+	var interrupted := _fixture([[_tile("shot", 0)]], "glass_skirmisher", 30)
+	var normal := _fixture([[]], "glass_skirmisher", 30)
+	_advance(interrupted, 54)
+	_advance(normal, 54)
+	_check(interrupted.units[0].hp == 100 and normal.units[0].hp == 93
+		and _events(interrupted, "retreat", "glass_skirmisher_feint").size() == 1,
+		"Landing a tile during the Skirmisher's windup should force a retreat and prevent the hit.")
+
+
+func _check_overseer_ring() -> void:
+	var sim := _fixture([[], [], []], "glass_overseer")
+	sim.units[0].pos = Vector2(335.0, 265.0)
+	sim.units[1].pos = Vector2(255.0, 265.0)
+	sim.units[2].pos = Vector2(145.0, 265.0)
+	sim.step()
+	_check(sim.units[3].has("pilot_inner_ring_radius") and sim.units[3].has("pilot_ring_radius"),
+		"Both boundaries of the Overseer's ring should be present while charging.")
+	_advance(sim, 37)
+	_check(sim.units[0].hp == 100 and sim.units[1].hp == 87 and sim.units[2].hp == 100,
+		"The Overseer's pulse should leave heroes in its center and outside the ring unharmed.")
+
+
 func _check_quench() -> void:
-	var light := _fixture([[_tile("guard", 0)]], "glass_quench_sentinel", 51)
-	var stacked := _fixture([[_tile("guard", 0), _tile("guard", 2)]], "glass_quench_sentinel", 51)
-	_advance(light, 85)
-	_advance(stacked, 85)
-	_check(light.units[0].hp == 96 and stacked.units[0].hp == 100 and stacked.units[0].guard == 6,
-		"Quench must remove seven Guard before damage, with enough Guard protecting HP.")
+	var guarded := _fixture([[_tile("guard", 0)]], "glass_quench_sentinel", 51)
+	var partial := _fixture([[]], "glass_quench_sentinel", 51)
+	partial.units[0].guard = 4
+	_advance(guarded, 85)
+	_advance(partial, 85)
+	_check(guarded.units[0].hp == 100 and guarded.units[0].guard == 3 and partial.units[0].hp == 97,
+		"The ice jab should use Guard normally.")
+	_check(guarded.units[1].next_attack == partial.units[1].next_attack + 2 * BEAT
+		and _events(guarded, "retreat", "glass_quench_recoil").size() == 1
+		and _events(partial, "retreat", "glass_quench_recoil").is_empty(),
+		"Only a full block should make the Sentinel recoil and delay its next attack.")
 
 
 func _fixture(lanes: Array, enemy_id: String, first := 1) -> ArenaSim:

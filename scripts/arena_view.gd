@@ -117,6 +117,10 @@ const EFFECT_LENGTHS := {
 	"haste": 0.42,
 }
 const MARK_COLOR := Color("#e4adff")
+const SIGNATURE_WINDUP_LABELS := {
+	"crown_page_advance": "ADVANCE", "relay_recruit": "BRACED", "relay_runner_press": "HEAVY WINDUP",
+	"dockhand_parry": "PARRY", "chain_warden": "CHAIN REEL", "glass_skirmisher_feint": "FEINT",
+}
 const RELIC_EFFECTS := ["afterimage", "barrage_rack", "siege_fuse", "stepped_gear", "twin_bell", "switchback_lens", "longshot_prism"]
 const ENCOUNTER_EFFECTS := {
 	"tollkeeper_repair_interrupted": "repair_interrupted",
@@ -486,6 +490,8 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		if repairing:
 			_draw_centered("REPAIRING", bar.get_center() - Vector2(0.0, 9.0), 13, REPAIR_COLOR)
 		var special: String = unit.get("special_intent", "")
+		if SIGNATURE_WINDUP_LABELS.has(special):
+			_draw_centered(SIGNATURE_WINDUP_LABELS[special], bar.get_center() - Vector2(0.0, 9.0), 12, WHITE)
 		if special in ["powder_runner", "brass_pressure_sentinel"]:
 			var progress_count: int = unit.get("powder_hits", unit.get("pressure_vents", 0))
 			for index in range(2):
@@ -702,7 +708,12 @@ func _draw_intents(field: Rect2) -> void:
 			continue
 		if unit.has("pilot_ring_radius"):
 			var radius: Vector2 = float(unit.pilot_ring_radius) * field.size / WORLD_SIZE
-			if special == "bellmaker_ring":
+			if unit.has("pilot_inner_ring_radius"):
+				var inner: Vector2 = float(unit.pilot_inner_ring_radius) * field.size / WORLD_SIZE
+				_draw_ring_warning(start, inner, radius, Color("#cab9fa"))
+			elif special == "crown_page_advance":
+				_draw_sweep_warning(start, radius, RELAY_SHIELD_COLOR)
+			elif special == "bellmaker_ring":
 				_draw_sweep_warning(start, radius, GOLD)
 			elif special == "glass_refraction_discharge":
 				_draw_sweep_warning(start, radius, Color("#b9bfff"))
@@ -743,6 +754,8 @@ func _draw_intents(field: Rect2) -> void:
 			_draw_sweep_warning(start, sweep_radius * field.size / WORLD_SIZE)
 			continue
 		var secondary: String = unit.get("prism_secondary", "")
+		if special == "chain_warden":
+			secondary = unit.get("chain_mate", "")
 		var marked: Array = [target_id, secondary]
 		if tide_phase == 1:
 			marked = unit.get("tidekeeper_targets", [])
@@ -772,7 +785,7 @@ func _draw_intents(field: Rect2) -> void:
 				warning = GOLD
 			if unit.get("relay_charge_active", false) or wreck_phase == 1 or tide_phase == 1 or admiral_phase == 1:
 				warning = GOLD
-			elif not winch_ally.is_empty():
+			elif special == "chain_warden" or not winch_ally.is_empty():
 				warning = DOCK_WINCH_COLOR
 			elif target.id == secondary:
 				warning = TELEPORT_COLOR.darkened(0.21)
@@ -843,6 +856,20 @@ func _dock_sweep_radius(unit: Dictionary) -> float:
 
 func _draw_sweep_warning(center: Vector2, radius: Vector2, warning: Color = Color("#f29c76")) -> void:
 	_draw_ellipse(center, radius, Color(warning, 0.11))
+	_draw_dashed_ellipse(center, radius, warning)
+
+
+func _draw_ring_warning(center: Vector2, inner: Vector2, outer: Vector2, warning: Color) -> void:
+	for section in range(32):
+		var first := Vector2.RIGHT.rotated(section * TAU / 32.0)
+		var second := Vector2.RIGHT.rotated((section + 1) * TAU / 32.0)
+		draw_colored_polygon(PackedVector2Array([center + first * inner, center + first * outer,
+			center + second * outer, center + second * inner]), Color(warning, 0.13))
+	_draw_dashed_ellipse(center, inner, warning)
+	_draw_dashed_ellipse(center, outer, warning)
+
+
+func _draw_dashed_ellipse(center: Vector2, radius: Vector2, warning: Color) -> void:
 	for dash in range(24):
 		var start := float(dash) * TAU / 24.0
 		var points := PackedVector2Array()

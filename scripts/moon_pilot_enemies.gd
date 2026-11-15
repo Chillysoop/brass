@@ -1,5 +1,14 @@
 extends RefCounted
 
+const DOCKHAND_PARRY := "dockhand_parry"
+const DOCKHAND_RIPOSTE := "dockhand_riposte"
+const DOCK_BRUISER_SHOVE := "dock_bruiser"
+const DOCK_BRUISER_WALL := "dock_bruiser_wall"
+const WALL_SHOVE_FORCE := 490.0
+const WALL_IMPACT_DAMAGE := 4
+const CHAIN_REACH := 180.0
+const CHAIN_FORCE := 390.0
+
 const ENEMIES := {
 	"dock_saltblade": {
 		"name": "Saltblade", "art": "dock_saltblade", "special": "dock_saltblade",
@@ -64,7 +73,7 @@ const ENEMIES := {
 		"special": "signal_gunner", "rifle_min": 244.0, "rifle_max": 530.0, "rifle_bonus": 6,
 	},
 	"chain_warden": {
-		"name": "Chain Warden", "art": "chain_warden", "hint": "Strips up to 8 Guard from the most guarded hero in reach before striking.",
+		"name": "Chain Warden", "art": "chain_warden", "hint": "Reels two nearby heroes together, or pulls a lone target toward itself. Separate to break the chain.",
 		"hp": 65, "radius": 27.0, "speed": 85.0, "spacing": 106.0,
 		"reach": 166.0, "damage": 7, "first": 54, "cooldown": 139, "windup": 35, "special": "chain_warden",
 	},
@@ -91,10 +100,28 @@ static func begin(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary
 				return false
 			message = "Signal Gunner lines up a long shot at %s." % target.name
 		"chain_warden":
-			target = _most_guarded_hero(sim.units, enemy, attack.reach)
-			if target.is_empty():
+			if distance > attack.reach:
 				return false
-			message = "Chain Warden readies a Guard-breaking swing at %s." % target.name
+			var partner := _closest_chain_partner(sim.units, target)
+			enemy["chain_mate"] = partner.get("id", "")
+			if partner.is_empty():
+				message = "Chain Warden aims to reel in %s." % target.name
+			else:
+				message = "Chain Warden links %s and %s. Separate to break the chain." % [target.name, partner.name]
+		"dock_recruit":
+			if distance > attack.reach:
+				return false
+			var parry: bool = enemy.get("dockhand_parry_next", true)
+			enemy["dockhand_parry_next"] = not parry
+			if not parry:
+				return false
+			_start_move(sim, enemy, target, DOCKHAND_PARRY, int(attack.windup),
+				"Dockhand baits a close strike. A melee hit gives it a riposte.")
+			return true
+		DOCK_BRUISER_SHOVE:
+			if distance > attack.reach:
+				return false
+			message = "Dock Bruiser readies a shoulder check. Block the shove or stay away from the wall."
 		_:
 			if distance > attack.reach:
 				return false
@@ -131,13 +158,23 @@ static func begin(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary
 					message = "Wreck Bell prepares to ring. Move clear of its radius."
 				_:
 					return false
-	enemy["special_intent"] = attack.special
-	sim._start_enemy_intent(enemy, target.id, sim.tick + int(attack.windup), attack.special)
-	sim._emit("intent", message, enemy, target, attack.special)
+	_start_move(sim, enemy, target, attack.special, int(attack.windup), message)
 	return true
 
 
+static func _start_move(sim, enemy: Dictionary, target: Dictionary, move: String, windup: int, message: String) -> void:
+	enemy["special_intent"] = move
+	sim._start_enemy_intent(enemy, target.id, sim.tick + windup, move)
+	sim._emit("intent", message, enemy, target, move)
+
+
 static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary, move: String) -> void:
+	if move == DOCKHAND_PARRY:
+		sim._emit("miss", "Dockhand drops its stance without a close strike to parry.", enemy, enemy, move)
+		return
+	if move == "chain_warden":
+		_resolve_chain_reel(sim, enemy, target, attack)
+		return
 	if move == "dock_torchbearer":
 		_resolve_lantern_swing(sim, enemy, attack)
 		return
@@ -172,17 +209,14 @@ static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictiona
 		return
 	var defender: Dictionary = sim._intercept_target(target)
 	var damage: int = attack.damage
-	if move == "chain_warden":
-		var stripped := mini(defender.guard, 8)
-		if stripped > 0:
-			defender.guard -= stripped
-			sim._emit("guard_break", "Chain Warden strips %d Guard from %s." % [stripped, defender.name],
-				enemy, defender, move, stripped)
-	elif move == "signal_gunner":
+	if move == "signal_gunner":
 		damage += int(attack.rifle_bonus)
 	var hp_before: int = defender.hp
 	var guard_before: int = defender.guard
 	sim._damage(enemy, defender, damage, move)
+	if move == DOCK_BRUISER_SHOVE and defender.hp > 0 and defender.hp < hp_before:
+		sim._displace("push", enemy, defender, move, defender.pos - origin, WALL_SHOVE_FORCE)
+		defender["dock_wall_source"] = enemy.id
 	if move == "dock_saltblade" and defender.guard < guard_before:
 		sim._retreat_from(enemy, defender, move, 64.0)
 	if move == "tar_pitcher" and defender.hp > 0 and defender.hp < hp_before:
@@ -190,10 +224,14 @@ static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictiona
 		sim._emit("tar_slow", "Tar slows %s for two beats." % defender.name, enemy, defender, move)
 
 
-static func on_tile_hit(sim, attacker: Dictionary, enemy: Dictionary, amount: int, _tile_id: String, order: int) -> void:
+static func on_tile_hit(sim, attacker: Dictionary, enemy: Dictionary, amount: int, tile_id: String, order: int) -> void:
 	if amount <= 0 or enemy.intent == "" or sim.tick > enemy.intent_tick:
 		return
 	match enemy.get("special_intent", ""):
+		DOCKHAND_PARRY:
+			var origin: Vector2 = enemy.pos
+			if not sim.is_ranged_tile(tile_id) and origin.distance_to(attacker.pos) <= enemy.attack.reach:
+				_start_move(sim, enemy, attacker, DOCKHAND_RIPOSTE, 0, "Dockhand catches the close attack and ripostes.")
 		"dock_shellback":
 			if amount >= 17:
 				enemy["cracked_shell"] = true
@@ -239,19 +277,57 @@ static func _wounded_ally(units: Array, enemy: Dictionary, reach: float) -> Dict
 	return wounded
 
 
-static func _most_guarded_hero(units: Array, enemy: Dictionary, reach: float) -> Dictionary:
-	var origin: Vector2 = enemy.pos
-	var target := {}
-	var nearest := INF
+static func _closest_chain_partner(units: Array, target: Dictionary) -> Dictionary:
+	var origin: Vector2 = target.pos
+	var partner := {}
+	var nearest := CHAIN_REACH
 	for hero: Dictionary in units:
-		if hero.side == enemy.side or hero.hp <= 0:
+		if hero.side != target.side or hero.id == target.id or hero.hp <= 0:
 			continue
 		var distance := origin.distance_to(hero.pos)
-		if distance <= reach and (target.is_empty() or hero.guard > target.guard \
-				or (hero.guard == target.guard and distance < nearest)):
-			target = hero
+		if distance < nearest:
+			partner = hero
 			nearest = distance
-	return target
+	return partner
+
+
+static func _resolve_chain_reel(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary) -> void:
+	var partner_id: String = enemy.get("chain_mate", "")
+	enemy.erase("chain_mate")
+	var origin: Vector2 = enemy.pos
+	if target.get("hp", 0) <= 0 or origin.distance_to(target.pos) > attack.reach:
+		sim._emit("miss", "Chain Warden's chain falls short.", enemy, target, "chain_warden")
+		return
+	var partner: Dictionary = sim._find_unit(partner_id) if not partner_id.is_empty() else {}
+	var target_pos: Vector2 = target.pos
+	var anchor: Vector2 = origin
+	if not partner_id.is_empty():
+		if partner.get("hp", 0) <= 0 or target_pos.distance_to(partner.pos) > CHAIN_REACH:
+			sim._emit("miss", "The marked heroes separate and break the chain.", enemy, target, "chain_warden")
+			return
+		anchor = partner.pos
+	sim._damage(enemy, sim._intercept_target(target), attack.damage, "chain_warden")
+	if target.hp <= 0:
+		return
+	var tension := anchor - target_pos
+	var force := minf(CHAIN_FORCE, tension.length() * 4.0)
+	if not tension.is_zero_approx():
+		sim._displace("pull", enemy, target, "chain_warden", tension, force)
+		if not partner.is_empty():
+			sim._displace("pull", enemy, partner, "chain_warden", -tension, force)
+
+
+static func resolve_wall_slam(sim, hero: Dictionary, impulse: Vector2, candidate: Vector2, bounded: Vector2) -> void:
+	var blocked_motion := candidate - bounded
+	if impulse.length() < 95.0:
+		hero.erase("dock_wall_source")
+	elif not blocked_motion.is_zero_approx() and impulse.dot(blocked_motion.normalized()) >= 95.0:
+		var source: Dictionary = sim._find_unit(hero.dock_wall_source)
+		hero.erase("dock_wall_source")
+		if not source.is_empty():
+			sim._emit("hammer_collision", "Dock Bruiser's shove drives %s into the wall." % hero.name,
+				source, hero, DOCK_BRUISER_WALL, WALL_IMPACT_DAMAGE, hero.pos, bounded)
+			sim._damage(source, hero, WALL_IMPACT_DAMAGE, DOCK_BRUISER_WALL)
 
 
 static func _resolve_deck_ram(sim, enemy: Dictionary, attack: Dictionary) -> void:

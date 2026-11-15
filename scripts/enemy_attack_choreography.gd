@@ -53,9 +53,13 @@ const MOVES := {
 	"glass_refraction_beam": ["bolt", "prism", "lilac", 2, 1.50, 1.58, 5],
 	"glass_refraction_discharge": ["burst", "glass", "shard", 3, 1.33, 1.43, 5],
 	"glass_recruit": ["thrust", "glass", "gold", 0, 0.73, 0.75, 1],
+	"glass_glint_exchange": ["blink", "prism", "gold", 2, 1.06, 0.94, 3],
 	"glass_hunter": ["shot", "glass", "amber", 1, 0.96, 0.97, 2],
+	"glass_hunter_crossfire": ["shot", "glass", "ivory", 0, 1.12, 1.07, 2],
 	"glass_skirmisher": ["slash", "shard", "glass", 3, 0.84, 0.78, 2],
+	"glass_skirmisher_feint": ["slash", "lilac", "glass", 2, 0.95, 0.88, 2],
 	"glass_overseer": ["heavy", "glass", "copper", 2, 1.04, 1.25, 2],
+	"glass_overseer_pulse": ["burst", "violet", "prism", 1, 1.19, 1.13, 4],
 	"glass_duelist": ["thrust", "shard", "lilac", 3, 0.91, 0.84, 2],
 	"duelist_blink": ["blink", "prism", "lilac", 1, 1.06, 0.98, 3],
 	"glass_twin": ["bolt", "prism", "shard", 3, 1.24, 1.27, 3],
@@ -85,8 +89,9 @@ const MOVES := {
 	# Crown Relay.
 	"relay_recruit": ["thrust", "ivory", "lilac", 0, 0.70, 0.74, 1],
 	"relay_runner": ["slash", "signal", "ivory", 1, 0.83, 0.84, 2],
+	"relay_runner_press": ["thrust", "signal", "prism", 0, 1.00, 1.15, 2],
 	"relay_guard": ["heavy", "ivory", "prism", 0, 0.96, 1.06, 2],
-	"relay_lancer": ["thrust", "lilac", "gold", 2, 1.06, 1.21, 3],
+	"relay_lancer": ["dash", "lilac", "gold", 1, 1.09, 1.21, 3],
 	"crown_mender": ["shot", "lilac", "ivory", 1, 0.82, 0.75, 1],
 	"mender_repair": ["heal", "mend", "prism", 1, 0.93, 0.88, 2],
 	"relay_captain": ["heavy", "lilac", "gold", 1, 1.22, 1.29, 2],
@@ -96,6 +101,7 @@ const MOVES := {
 	"crown_regent": ["heavy", "violet", "gold", 3, 1.40, 1.49, 3],
 	"crown_regent_charge": ["burst", "signal", "lilac", 3, 1.50, 1.71, 5],
 	"crown_page": ["slash", "ivory", "gold", 0, 0.69, 0.74, 1],
+	"crown_page_advance": ["ward", "gold", "lilac", 1, 0.93, 0.81, 3],
 	"crown_slinger": ["shot", "gold", "violet", 2, 0.84, 0.82, 2],
 	"crown_glaiveguard": ["spin", "ivory", "gold", 0, 1.12, 1.23, 2],
 	"crown_spotter": ["mark", "signal", "ivory", 1, 0.92, 0.94, 3],
@@ -117,6 +123,8 @@ const MOVES := {
 
 	# Moonwreck Docks.
 	"dock_recruit": ["slash", "sea", "copper", 0, 0.72, 0.72, 1],
+	"dockhand_parry": ["guard", "sea", "iron", 2, 0.90, 0.95, 2],
+	"dockhand_riposte": ["slash", "foam", "gold", 3, 0.87, 1.09, 2],
 	"dock_bruiser": ["heavy", "copper", "foam", 1, 1.08, 1.23, 2],
 	"dock_winch": ["thrust", "sea", "iron", 0, 0.79, 0.83, 1],
 	"dock_winch_windup": ["pull", "gold", "foam", 0, 0.89, 0.92, 3],
@@ -145,12 +153,13 @@ const MOVES := {
 	"reef_diver": ["thrust", "moon", "sea", 3, 1.02, 1.04, 3],
 	"signal_gunner": ["shot", "gold", "sea", 3, 1.16, 1.21, 3],
 	"signal_gunner_strike": ["thrust", "gold", "sea", 1, 0.83, 0.91, 1],
-	"chain_warden": ["slash", "iron", "sea", 3, 1.07, 1.19, 3],
+	"chain_warden": ["pull", "iron", "sea", 1, 1.07, 1.19, 3],
 	"chain_warden_strike": ["heavy", "iron", "sea", 1, 0.93, 1.06, 2],
 	"wreck_bell": ["burst", "moon", "gold", 0, 1.23, 1.33, 4],
 }
 
 const ALIASES := {
+	"dock_recruit_strike": "dock_recruit",
 	"collossus_forge_sweep": "colossus_forging",
 	"colossus_forge_sweep": "colossus_forging",
 	"relay_discharge": "relay_charge", "relay_marshal_discharge": "relay_marshal_charge",

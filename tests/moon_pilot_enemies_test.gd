@@ -8,6 +8,8 @@ var failures: Array[String] = []
 
 
 func _initialize() -> void:
+	_check_dockhand()
+	_check_dock_bruiser()
 	_check_saltblade_and_torchbearer()
 	_check_bilge_sapper_and_shellback()
 	_check_harrier()
@@ -23,8 +25,38 @@ func _initialize() -> void:
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Thirteen Moonwreck enemy threats and their combat responses passed.")
+		print("Moonwreck enemy threats and their combat responses passed.")
 	quit(0 if failures.is_empty() else 1)
+
+
+func _check_dockhand() -> void:
+	var melee := _arena("dock_recruit", [[_tile("bash", 0)]], 105.0, 19, "starshot")
+	var ranged := _arena("dock_recruit", [[_tile("shot", 0)]], 105.0, 19)
+	_advance(melee, 48)
+	_advance(ranged, 48)
+	var counters := _events(melee, "hit", MoonPilotEnemies.DOCKHAND_RIPOSTE)
+	_check(counters.size() == 1 and counters[0].tick == 2 * BEAT and melee.units[0].hp == 96,
+		"Surviving a close hit during Dockhand's parry should trigger its riposte on that beat.")
+	_check(_events(ranged, "hit", MoonPilotEnemies.DOCKHAND_RIPOSTE).is_empty() and ranged.units[0].hp == 100,
+		"A ranged hit should leave the Dockhand's bait unanswered.")
+
+
+func _check_dock_bruiser() -> void:
+	var wall := _arena("dock_bruiser", [[]], 100.0)
+	var clear := _arena("dock_bruiser", [[]], 100.0)
+	var block := _arena("dock_bruiser", [[]], 100.0)
+	for sim in [wall, block]:
+		sim.units[0].pos.x = 85.0
+		sim.units[1].pos.x = 185.0
+	block.units[0].guard = 10
+	for sim in [wall, clear, block]:
+		_advance(sim, 70)
+	_check(wall.units[0].hp == 86 and _events(wall, "hit", MoonPilotEnemies.DOCK_BRUISER_WALL).size() == 1,
+		"Only a real wall impact should cause a secondary hit, and the impact should only hit once.")
+	_check(clear.units[0].hp == 90 and _events(clear, "hit", MoonPilotEnemies.DOCK_BRUISER_WALL).is_empty(),
+		"A hero shoved into clear space should only take the first hit.")
+	_check(block.units[0].hp == 100 and _events(block, "push", MoonPilotEnemies.DOCK_BRUISER_SHOVE).is_empty(),
+		"Fully blocking the Bruiser's check should stop the shove.")
 
 
 func _check_saltblade_and_torchbearer() -> void:
@@ -162,11 +194,24 @@ func _check_signal_gunner() -> void:
 
 
 func _check_chain_warden() -> void:
-	var sim := _arena("chain_warden", [[], []], 110.0)
-	sim.units[1].guard = 18
-	_advance(sim, 36)
-	_check(sim.units[0].hp == 100 and sim.units[1].hp == 100 and sim.units[1].guard == 3,
-		"Chain Warden should target the most guarded hero in reach and strip Guard before dealing damage.")
+	var linked := _arena("chain_warden", [[], []], 110.0)
+	var separated := _arena("chain_warden", [[], []], 110.0)
+	var solo := _arena("chain_warden", [[]], 110.0)
+	for sim in [linked, separated]:
+		sim.units[0].guard = 10
+		sim.units[1].guard = 18
+		sim.units[1].pos.y = 358.0
+		sim.step()
+	separated.units[1].pos.y = 454.0
+	for sim in [linked, separated, solo]:
+		_advance(sim, 36)
+	_check(linked.units[0].hp == 100 and linked.units[0].guard == 3 and linked.units[1].guard == 18
+		and linked.units[0].impulse.y > 0.0 and linked.units[1].impulse.y < 0.0,
+		"Guard blocks Chain Warden's damage while its chain reels the two marked heroes together.")
+	_check(_events(separated, "pull", "chain_warden").is_empty() and separated.units[0].guard == 10,
+		"Moving the marked heroes apart should break Chain Warden's chain before it releases.")
+	_check(solo.units[0].hp == 93 and solo.units[0].impulse.x > 0.0,
+		"Chain Warden should reel a lone hero toward itself.")
 
 
 func _check_wreck_bell() -> void:
@@ -193,10 +238,10 @@ func _check_bulwark_intercepts() -> void:
 		"An intercepted pilot attack must spend Bulwark's protection for the loop.")
 
 
-func _arena(kind: String, lanes: Array, distance: float, first := 1) -> ArenaSim:
+func _arena(kind: String, lanes: Array, distance: float, first := 1, hero_id := "warden") -> ArenaSim:
 	var heroes: Array = []
 	for lane in lanes:
-		heroes.append({"hero": "warden", "hp": 100, "max_hp": 100})
+		heroes.append({"hero": hero_id, "hp": 100, "max_hp": 100})
 	var sim := ArenaSim.new()
 	sim.start(lanes, "solo", {"location": "moonwreck", "encounter": "opening", "heroes": heroes})
 	sim.units.resize(heroes.size())

@@ -13,6 +13,12 @@ const PILOT_ENEMY_SCRIPTS := {
 	"brass": BrassVarietyEnemies, "glass": GlassPilotEnemies,
 	"crown": CrownVarietyEnemies, "moonwreck": MoonPilotEnemies,
 }
+const CORE_ENEMY_REGIONS := {
+	"recruit": "brass", "scout": "brass", "bruiser": "brass", "veteran": "brass",
+	"glass_recruit": "glass", "glass_hunter": "glass", "glass_skirmisher": "glass", "glass_overseer": "glass",
+	"relay_recruit": "crown", "relay_runner": "crown", "relay_lancer": "crown",
+	"dock_recruit": "moonwreck", "dock_bruiser": "moonwreck",
+}
 
 const BEATS := 12
 const LANCE_TRAVEL_CAP := 80.0
@@ -181,7 +187,8 @@ const CAMPAIGN_ENEMIES := {
 		"spacing": 130.0, "reach": 232.0, "damage": 39, "first": 116, "cooldown": 117, "windup": 48,
 		"target": "ranged_damage", "push": 335.0, "displacement": 0.66},
 	"relay_recruit": {"name": "Relay Initiate", "art": "scout", "hp": 34, "radius": 21.0, "speed": 91.0,
-		"spacing": 83.0, "reach": 128.0, "damage": 4, "first": 118, "cooldown": 174, "windup": 30},
+		"spacing": 83.0, "reach": 128.0, "damage": 4, "first": 118, "cooldown": 174, "windup": 30,
+		"windup_displacement": 0.45},
 	"relay_runner": {"name": "Relay Runner", "art": "scout", "hp": 59, "radius": 19.0, "speed": 101.0,
 		"spacing": 88.0, "reach": 149.0, "damage": 8, "first": 124, "cooldown": 155, "windup": 27},
 	"relay_guard": {"name": "Relay Guard", "art": "relay_guard", "hp": 62, "radius": 25.0, "speed": 80.0,
@@ -781,7 +788,7 @@ func _reinforcement_spawn_position(enemy: Dictionary) -> Vector2:
 
 func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_scale := 1.0, damage_scale := 1.0) -> void:
 	var source: Dictionary = CAMPAIGN_ENEMIES.get(kind, {})
-	var pilot := ""
+	var pilot: String = CORE_ENEMY_REGIONS.get(kind, "")
 	if source.is_empty():
 		for region: String in PILOT_ENEMY_SCRIPTS:
 			source = PILOT_ENEMY_SCRIPTS[region].ENEMIES.get(kind, {})
@@ -789,6 +796,8 @@ func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_sca
 				pilot = region
 				break
 	var spec := source.duplicate()
+	if CORE_ENEMY_REGIONS.has(kind):
+		spec["special"] = kind
 	spec.damage = roundi(spec.damage * damage_scale)
 	var enemy := _unit("%s_%d" % [kind, units.size()], spec.name, "enemy", -1, position,
 		roundi(spec.hp * health_scale), spec.radius, spec.speed, spec.spacing)
@@ -1096,7 +1105,10 @@ func _move_units() -> void:
 			lance_steps[next_positions.size()] = drive * DELTA
 		unit.velocity = drive + impulse
 		unit.impulse = impulse.move_toward(Vector2.ZERO, IMPULSE_DECAY * DELTA)
-		var next := _bounded(position + unit.velocity * DELTA, unit.radius)
+		var candidate: Vector2 = position + unit.velocity * DELTA
+		var next := _bounded(candidate, unit.radius)
+		if unit.has("dock_wall_source"):
+			MoonPilotEnemies.resolve_wall_slam(self, unit, impulse, candidate, next)
 		if unit.get("class") == "lancer":
 			unit["travel"] = minf(80.0, unit.get("travel", 0.0) + position.distance_to(next))
 		next_positions.append(next)
@@ -2082,7 +2094,10 @@ func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: Str
 		_compass_loop = _loop_index()
 		force += 145.0
 	force *= float(target.get("attack", {}).get("displacement", 1.0))
+	if target.get("special_intent") == "relay_recruit":
+		force *= float(target.attack.windup_displacement)
 	if force > 0.0:
+		target.erase("dock_wall_source")
 		_track_collision_push(kind, actor, target, tile_id)
 	var direction := offset.normalized() if offset.length_squared() > 0.001 else Vector2.RIGHT
 	var start_position: Vector2 = target.pos
@@ -2318,7 +2333,7 @@ func _resolve_intent(enemy: Dictionary) -> void:
 			var point: Vector2 = event.from if event.kind == "pull" else event.to
 			if point not in contact_points:
 				contact_points.append(point)
-	if radius == 0.0 and not locked_aim and not contact_points.is_empty():
+	if radius == 0.0 and (not locked_aim or attack_id == GlassPilotEnemies.HUNTER_SHOT) and not contact_points.is_empty():
 		hit_point = contact_points[0]
 	visual_cues.append({
 		"kind": "enemy_cast", "tick": tick, "actor": enemy.id, "tile": attack_id, "attack": attack,
