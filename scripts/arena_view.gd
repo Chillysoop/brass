@@ -104,6 +104,7 @@ const EFFECT_LENGTHS := {
 	"bell_ring": 0.49,
 	"tar_slow": 0.45,
 	"fuse_disarmed": 0.55,
+	"haste": 0.42,
 }
 const MARK_COLOR := Color("#e4adff")
 const RELIC_EFFECTS := ["afterimage", "barrage_rack", "siege_fuse", "stepped_gear", "twin_bell", "switchback_lens", "longshot_prism"]
@@ -126,6 +127,10 @@ const ENCOUNTER_EFFECTS := {
 	"admiral_interrupted": "relay_interrupted",
 	"powder_runner_disarmed": "fuse_disarmed",
 	"reef_diver_interrupted": "relay_interrupted",
+	"glass_lacquerer_interrupted": "relay_interrupted",
+	"dock_shellback_interrupted": "relay_interrupted",
+	"brass_flywheel_canceled": "relay_interrupted",
+	"brass_pressure_vented": "relay_interrupted",
 }
 const FLOATING_CUES := {
 	"relay_interrupted": "INTERRUPTED",
@@ -155,8 +160,9 @@ func _ready() -> void:
 		var path: String = SPRITE_PATHS[key]
 		if ResourceLoader.exists(path, "Texture2D"):
 			_textures[key] = ResourceLoader.load(path, "Texture2D") as Texture2D
-	for id: String in GameIcons.GLASS_PILOT_ART.keys() + GameIcons.MOON_PILOT_ART.keys():
-		_textures[id] = GameIcons.pilot_enemy_art(id)
+	for frames: Dictionary in GameIcons.ENEMY_SHEETS.values():
+		for id: String in frames:
+			_textures[id] = GameIcons.pilot_enemy_art(id)
 	resized.connect(queue_redraw)
 
 
@@ -180,8 +186,11 @@ func present(units_data: Array, events: Array, tick := 0) -> void:
 		var finish := int(unit.get("intent_tick", 0))
 		if unit.side != "enemy" or unit.hp <= 0 or str(unit.get("intent", "")).is_empty() or finish <= tick:
 			_windups.erase(unit.id)
-		elif int(_windups.get(unit.id, Vector2i.ZERO).y) != finish:
-			_windups[unit.id] = Vector2i(tick, finish)
+		else:
+			var previous: Vector2i = _windups.get(unit.id, Vector2i.ZERO)
+			if previous.y != finish:
+				var started := previous.x if finish < previous.y else tick
+				_windups[unit.id] = Vector2i(started, finish)
 	for event in events:
 		var tile: String = event.get("tile", "")
 		if tile == "relay_link_broken" and str(event.target).begins_with("crown_regent"):
@@ -348,9 +357,12 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	draw_rect(bar, accent.darkened(0.71))
 	var health_ratio := clampf(float(unit.hp) / maxf(1.0, float(unit.max_hp)), 0.0, 1.0)
 	draw_rect(Rect2(bar.position, Vector2(bar.size.x * health_ratio, bar.size.y)), accent)
-	if float(unit.get("guard", 0)) > 0.0:
+	if int(unit.get("crown_oathbrace_until", 0)) > combat_tick:
+		draw_line(bar.position + Vector2(0.0, -2.0), bar.position + Vector2(bar.size.x, -2.0), RELAY_SHIELD_COLOR, 2.0, true)
+	elif float(unit.get("guard", 0)) > 0.0:
 		draw_line(bar.position + Vector2(0.0, -2.0), bar.position + Vector2(bar.size.x, -2.0), GOLD, 2.0, true)
-	for index in range(int(unit.get("furnace_heat", 0))):
+	var stacks: int = unit.get("furnace_heat", unit.get("flywheel_momentum", 0))
+	for index in range(stacks):
 		var pip := Vector2(bar.end.x + 5.0 + index * 6.0, bar.get_center().y)
 		draw_circle(pip, 2.4, ENEMY_COLOR.lightened(0.2), true, -1.0, true)
 	if _windups.has(unit.id):
@@ -360,13 +372,15 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		draw_rect(gauge.grow(1), INK)
 		draw_rect(gauge, Color("#593b29"))
 		draw_rect(Rect2(gauge.position, Vector2(gauge.size.x * charge, gauge.size.y)), GOLD.lerp(ENEMY_COLOR, charge * charge))
-		if unit.get("special_intent", "") == "powder_runner":
+		var special: String = unit.get("special_intent", "")
+		if special in ["powder_runner", "brass_pressure_sentinel"]:
+			var progress_count: int = unit.get("powder_hits", unit.get("pressure_vents", 0))
 			for index in range(2):
 				var pip := gauge.end + Vector2(5.0 + index * 6.0, -2.0)
-				draw_circle(pip, 2.3, HERO_COLOR if index < unit.get("powder_hits", 0) else GOLD, true, -1.0, true)
+				draw_circle(pip, 2.3, HERO_COLOR if index < progress_count else GOLD, true, -1.0, true)
 	if int(unit.get("tar_slow_until", 0)) > combat_tick:
 		draw_arc(point, radius, 0.0, PI, 16, Color("#be915d"), 2.0, true)
-	if int(unit.get("arsenal_mark", {}).get("expires", -1)) >= combat_tick:
+	if int(unit.get("arsenal_mark", {}).get("expires", -1)) >= combat_tick or int(unit.get("crown_spotter_until", 0)) > combat_tick:
 		var center := bar.position + Vector2(-8.0, 2.5)
 		var diamond := PackedVector2Array([center + Vector2(0, -5), center + Vector2(4, 0),
 			center + Vector2(0, 5), center + Vector2(-4, 0)])
@@ -503,11 +517,16 @@ func _draw_intents(field: Rect2) -> void:
 		var target_id: String = unit.get("intent", "")
 		if unit.hp <= 0 or target_id.is_empty():
 			continue
+		var special: String = unit.get("special_intent", "")
 		if unit.has("blast_center"):
-			_draw_sweep_warning(_project(unit.blast_center, field), float(unit.blast_radius) * field.size / WORLD_SIZE)
+			var radius: Vector2 = float(unit.blast_radius) * field.size / WORLD_SIZE
+			var center := _project(unit.blast_center, field)
+			if special == "crown_chorister":
+				_draw_sweep_warning(center, radius, RELAY_SHIELD_COLOR)
+			else:
+				_draw_sweep_warning(center, radius)
 			continue
 		var start := _project(_positions.get(unit.id, unit.pos), field)
-		var special: String = unit.get("special_intent", "")
 		if special == "glass_mirrorback":
 			var flicker := 0.75 + sin(_animation_time * 15.0) * 0.18
 			draw_arc(start, 24.0, 0.0, TAU, 32, Color(RELAY_SHIELD_COLOR, flicker), 3.0, true)
@@ -565,7 +584,7 @@ func _draw_intents(field: Rect2) -> void:
 			var warning := ENEMY_COLOR.darkened(0.34)
 			if unit.get("sprite") == "crown_mender":
 				warning = HERO_COLOR.darkened(0.16)
-			if special in ["glass_annealer", "patch_rigger"]:
+			if special in ["glass_annealer", "patch_rigger", "brass_linksmith", "glass_crucible_binder", "crown_war_drummer", "crown_chorister"]:
 				warning = RELAY_SHIELD_COLOR
 			elif special in ["powder_runner", "signal_gunner", "glass_lens_arbalist"]:
 				warning = GOLD
@@ -590,8 +609,7 @@ func _dock_sweep_radius(unit: Dictionary) -> float:
 	return unit.get("admiral_sweep_radius", unit.get("tidekeeper_slam_radius", unit.get("wreckmaster_slam_radius", 0.0)))
 
 
-func _draw_sweep_warning(center: Vector2, radius: Vector2) -> void:
-	var warning := Color("#f29c76")
+func _draw_sweep_warning(center: Vector2, radius: Vector2, warning: Color = Color("#f29c76")) -> void:
 	_draw_ellipse(center, radius, Color(warning, 0.11))
 	for dash in range(24):
 		var start := float(dash) * TAU / 24.0
@@ -608,7 +626,7 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 	var progress := float(effect.age) / float(EFFECT_LENGTHS[kind])
 	var opacity := 1.0 - progress
 	match kind:
-		"counter", "arc", "ranged_warning":
+		"counter", "arc", "ranged_warning", "haste":
 			var lift := Vector2(0.0, -19.0)
 			var tint := GOLD if kind == "ranged_warning" else RELAY_SHIELD_COLOR
 			draw_line(from_point + lift, to_point + lift, Color(tint, opacity * opacity), 2.5, true)

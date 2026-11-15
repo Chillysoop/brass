@@ -8,6 +8,9 @@ var failures: Array[String] = []
 
 
 func _initialize() -> void:
+	_check_saltblade_and_torchbearer()
+	_check_bilge_sapper_and_shellback()
+	_check_harrier()
 	_check_powder_runner()
 	_check_bulwark_intercepts()
 	_check_tar_pitcher()
@@ -20,8 +23,55 @@ func _initialize() -> void:
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Eight Moonwreck enemy threats and their combat responses passed.")
+		print("Thirteen Moonwreck enemy threats and their combat responses passed.")
 	quit(0 if failures.is_empty() else 1)
+
+
+func _check_saltblade_and_torchbearer() -> void:
+	var struck := _arena("dock_saltblade", [[]], 97.0, 18)
+	var guarded := _arena("dock_saltblade", [[_tile("guard", 0)]], 97.0, 18)
+	_advance(struck, 45)
+	_advance(guarded, 45)
+	_check(struck.units[0].hp == 96 and guarded.units[0].hp == 100
+		and _events(guarded, "retreat", "dock_saltblade").size() == 1 and guarded.units[1].pos.x > struck.units[1].pos.x,
+		"Guard should block Saltblade's hit and trigger its backstep.")
+	var close := _arena("dock_torchbearer", [[]], 100.0)
+	var apart := _arena("dock_torchbearer", [[_tile("bash", 0)]], 100.0)
+	_advance(close, 48)
+	_advance(apart, 48)
+	_check(close.units[0].hp == 93 and apart.units[0].hp == 100 and apart.units[1].intent == "",
+		"Bash should knock a Torchbearer outside the swing's reach before its lantern lands.")
+
+
+func _check_bilge_sapper_and_shellback() -> void:
+	var stationary := _arena("dock_bilge_sapper", [[]], 120.0)
+	var moved := _arena("dock_bilge_sapper", [[]], 120.0)
+	moved.step()
+	moved.units[0].pos.y += 75.0
+	_advance(stationary, 40)
+	_advance(moved, 40)
+	_check(stationary.units[0].hp == 95 and moved.units[0].hp == 100
+		and _events(moved, "hazard_burst", "dock_bilge_sapper").size() == 1,
+		"The Bilge Sapper's splash should land on its original mark.")
+	var light := _arena("dock_shellback", [[_tile("shot", 0)]], 98.0, 5)
+	var heavy := _arena("dock_shellback", [[_tile("bash", 0)]], 98.0, 5)
+	_advance(light, 46)
+	_advance(heavy, 46)
+	_check(light.units[1].guard == 8 and heavy.units[1].guard == 0
+		and heavy.units[1].get("cracked_shell", false) and _events(heavy, "interrupt", "dock_shellback_interrupted").size() == 1,
+		"Bash should crack the shell on the windup where an ordinary Shot leaves it intact.")
+
+
+func _check_harrier() -> void:
+	var struck := _arena("dock_hull_harrier", [[]], 100.0)
+	var pushed := _arena("dock_hull_harrier", [[_tile("bash", 0)]], 136.0, 12)
+	_advance(struck, 37)
+	_advance(pushed, 48)
+	_check(struck.units[0].hp == 95 and struck.units[1].pos.x < struck.units[0].pos.x
+		and _events(struck, "teleport", "dock_hull_harrier").size() == 1,
+		"Hull Harrier should cross the target and strike from the opposite side.")
+	_check(pushed.units[0].hp == 100 and _events(pushed, "teleport", "dock_hull_harrier").is_empty(),
+		"Pushing Hull Harrier out of reach should stop the swing and the reposition.")
 
 
 func _check_powder_runner() -> void:

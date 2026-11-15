@@ -23,6 +23,57 @@ const MOON_PILOT_ART := {
 	"chain_warden": Rect2i(888, 476, 433, 380),
 	"wreck_bell": Rect2i(1387, 466, 364, 388),
 }
+const BRASS_VARIETY_ART := {
+	"brass_runner": Rect2i(49, 38, 282, 291),
+	"brass_riveter": Rect2i(400, 69, 259, 252),
+	"brass_shieldwright": Rect2i(745, 22, 297, 312),
+	"brass_linksmith": Rect2i(1110, 21, 303, 309),
+	"brass_springjack": Rect2i(23, 383, 333, 287),
+	"brass_rivet_hound": Rect2i(379, 426, 327, 228),
+	"brass_manifold": Rect2i(737, 375, 333, 305),
+	"brass_sparkbow": Rect2i(1110, 375, 315, 321),
+	"brass_magnetar": Rect2i(26, 738, 328, 307),
+	"brass_grounder": Rect2i(397, 733, 310, 324),
+	"brass_flywheel": Rect2i(747, 756, 321, 298),
+	"brass_pressure_sentinel": Rect2i(1114, 723, 304, 339),
+}
+const CROWN_VARIETY_ART := {
+	"crown_page": Rect2i(38, 39, 263, 294),
+	"crown_slinger": Rect2i(362, 75, 312, 258),
+	"crown_glaiveguard": Rect2i(685, 16, 386, 318),
+	"crown_spotter": Rect2i(1128, 5, 306, 330),
+	"crown_war_drummer": Rect2i(36, 354, 282, 309),
+	"crown_feintblade": Rect2i(355, 369, 348, 292),
+	"crown_twinspur": Rect2i(735, 397, 342, 264),
+	"crown_ballista": Rect2i(1093, 386, 343, 265),
+	"crown_storm_templar": Rect2i(13, 697, 330, 356),
+	"crown_banneret": Rect2i(408, 684, 316, 371),
+	"crown_galvanist": Rect2i(755, 739, 283, 316),
+	"crown_beacon_sentry": Rect2i(1092, 684, 322, 373),
+}
+const EARLY_VARIETY_ART := {
+	"glass_cullet_slinger": Rect2i(12, 144, 280, 266),
+	"glass_kiln_porter": Rect2i(335, 14, 340, 396),
+	"glass_facet_hound": Rect2i(682, 146, 377, 262),
+	"glass_lacquerer": Rect2i(1093, 57, 288, 354),
+	"glass_crucible_binder": Rect2i(1381, 54, 387, 355),
+	"dock_saltblade": Rect2i(6, 554, 319, 293),
+	"dock_torchbearer": Rect2i(359, 508, 293, 338),
+	"dock_bilge_sapper": Rect2i(675, 529, 300, 317),
+	"dock_shellback": Rect2i(1004, 506, 376, 341),
+	"dock_hull_harrier": Rect2i(1380, 498, 383, 351),
+}
+const ENEMY_SHEETS := {
+	"res://assets/glass-pilot-enemies.png": GLASS_PILOT_ART,
+	"res://assets/moon-pilot-enemies.png": MOON_PILOT_ART,
+	"res://assets/brass-variety-enemies.png": BRASS_VARIETY_ART,
+	"res://assets/crown-variety-enemies.png": CROWN_VARIETY_ART,
+	"res://assets/early-variety-enemies.png": EARLY_VARIETY_ART,
+	"res://assets/crown-specialists.png": {
+		"crown_oathbreaker": Rect2i(145, 46, 589, 689),
+		"crown_chorister": Rect2i(1274, 51, 421, 703),
+	},
+}
 const FAMILY_ICONS := {"bash": "push", "blink": "teleport", "shot": "shot", "guard": "guard", "slam": "area"}
 const RELIC_ICONS := {
 	"towline_knot": "pull", "bridgeplate": "guard", "brass_metronome": "review",
@@ -61,18 +112,15 @@ static func relic(id: String) -> String:
 
 
 static func pilot_enemy_art(id: String) -> Texture2D:
-	var sheet := "res://assets/glass-pilot-enemies.png"
-	var frame: Rect2i = GLASS_PILOT_ART.get(id, Rect2i())
-	if not frame.has_area():
-		sheet = "res://assets/moon-pilot-enemies.png"
-		frame = MOON_PILOT_ART.get(id, Rect2i())
-	if not frame.has_area() or not ResourceLoader.exists(sheet, "Texture2D"):
-		return null
-	var sprite := AtlasTexture.new()
-	sprite.atlas = load(sheet) as Texture2D
-	sprite.region = Rect2(frame)
-	sprite.filter_clip = true
-	return sprite
+	for sheet: String in ENEMY_SHEETS:
+		var frame: Rect2i = ENEMY_SHEETS[sheet].get(id, Rect2i())
+		if frame.has_area() and ResourceLoader.exists(sheet, "Texture2D"):
+			var sprite := AtlasTexture.new()
+			sprite.atlas = load(sheet) as Texture2D
+			sprite.region = Rect2(frame)
+			sprite.filter_clip = true
+			return sprite
+	return null
 
 
 static func icon(key: String) -> Texture2D:

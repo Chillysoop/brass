@@ -248,9 +248,8 @@ func start_run(seed_value := 0, difficulty := "easy", location := "brass") -> bo
 		"gold": gold, "layers": layers, "node": layers[0][0], "visited": [layers[0][0].id],
 		"offers": _sample(HEROES.keys(), 3, run_seed, 11), "result": "", "marks_earned": 0,
 		"midpoint_paid": false, "elite_relic_drafted": false, "node_notice": "",
+		"pilot_fights": [], "encounter_roster_version": PilotFormations.CURRENT_VERSION,
 	}
-	if location in ["glass", "moonwreck"] and difficulty != "easy":
-		data.pilot_fights = []
 	loadout = {"lanes": [[]], "storage": [[], [], []], "defaults": ["nearest"], "suppressed": {}}
 	save()
 	return true
@@ -331,6 +330,7 @@ func choose_starter(id: String) -> bool:
 	if "brass_metronome" in data.relics:
 		loadout.lanes[0][0].start = 1
 	data.phase = "combat"
+	_lock_pilot_formation()
 	data.offers = []
 	save()
 	return true
@@ -454,7 +454,7 @@ func _pilot_formation_for(node: Dictionary, segment: int, kind: String) -> Array
 	if not data.has("pilot_fights"):
 		return []
 	return PilotFormations.choose(data.location, segment, kind,
-		int(data.seed) ^ _node_salt(187, node), data.pilot_fights)
+		int(data.seed) ^ _node_salt(187, node), data.pilot_fights, int(data.get("encounter_roster_version", 1)))
 
 
 func _lock_pilot_formation() -> void:

@@ -2,7 +2,10 @@ extends SceneTree
 
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
-const LOCATIONS := ["glass", "moonwreck"]
+const PilotFormations = preload("res://scripts/pilot_formations.gd")
+const CampaignFormations = preload("res://scripts/campaign_formations.gd")
+const ClassDecks = preload("res://scripts/class_decks.gd")
+const LOCATIONS := ["brass", "glass", "crown", "moonwreck"]
 const RUN_COUNT := 256
 
 var failures: Array[String] = []
@@ -11,6 +14,7 @@ var failures: Array[String] = []
 func _initialize() -> void:
 	for location: String in LOCATIONS:
 		_check_locked_formation(location)
+		_check_openers(location)
 		_check_route_variety(location)
 	for failure: String in failures:
 		printerr(failure)
@@ -21,15 +25,24 @@ func _check_locked_formation(location: String) -> void:
 	var path := "user://pilot-formations-test-%s-%d.json" % [location, Time.get_ticks_usec()]
 	var run := FrontierRun.new()
 	run.load_save(path)
-	run.profile[location + "_medium_unlocked"] = true
+	var unlock := "medium_unlocked" if location == "brass" else location + "_medium_unlocked"
+	run.profile[unlock] = true
 	if not _expect(run.start_run(946, "medium", location), "The pilot must start on Medium."):
 		return
+	var lead: String = run.data.offers[0]
+	_expect(run.choose_hero(lead) and run.choose_relic("pocket_bell") and run.choose_starter("bash"),
+		"A fresh expedition must enter its opening combat from the regular starter draft.")
+	var opening := run.encounter()
+	var resumed_opening := FrontierRun.new()
+	_expect(opening.has("formation") and run.data.node.has("pilot_formation")
+		and resumed_opening.load_save(path) and opening == resumed_opening.encounter(),
+		"A rotated opener must keep its exact formation after save and resume.")
 	run.data.hero = "warden"
 	run.data.heroes = [_hero("warden"), _hero("hexwright")]
 	run.loadout.lanes = [[], []]
 	run.data.phase = "map"
 	run.data.node = run.data.layers[6][0]
-	run.data.pilot_fights = [{"kind": "battle", "enemies": ["glass_skirmisher" if location == "glass" else "dock_bruiser"]}]
+	run.data.pilot_fights = [{"kind": "opening", "enemies": _formation_ids(opening.get("formation", []))}]
 	var before: Dictionary = run.data.duplicate(true)
 	var gate: Dictionary = run.available_nodes()[0]
 	var preview := run._encounter_for(gate, 2)
@@ -49,6 +62,9 @@ func _check_locked_formation(location: String) -> void:
 		if _expect(run.event_choice(1), "A late-act Bounty Board must be playable."):
 			var bounty := run.encounter()
 			_expect(bounty.kind == "elite" and bounty.has("formation"), "A late-act event override must choose from the pilot elite pool.")
+			run.data.erase("encounter_roster_version")
+			_expect(run.save() and resume.load_save(path) and resume.encounter() == bounty,
+				"A locked encounter must resume with its persisted lineup across roster versions.")
 			run.data.erase("pilot_fights")
 			run.data.node.erase("pilot_formation")
 			_expect(run.save() and resume.load_save(path) and not resume.encounter().has("formation"),
@@ -79,6 +95,25 @@ func _enemy_ids(sim: ArenaSim, options: Dictionary) -> Array[String]:
 	return enemies
 
 
+func _check_openers(location: String) -> void:
+	var sim := ArenaSim.new()
+	var rosters: Array = CampaignFormations.ROSTERS[location][1].opening
+	var minimum_hp := 100
+	for roster: Array in rosters:
+		var formation := CampaignFormations.deploy(roster, "opening", 1, 12)
+		for hero: String in ArenaSim.HERO_CLASSES:
+			for tile: String in ["bash", "shot", "slam", ClassDecks.starter(hero)]:
+				var lanes := [[{"id": tile, "start": 0, "target": "nearest"}]]
+				sim.start(lanes, "solo", {"location": location, "encounter": "opening", "formation": formation,
+					"hero": hero, "hp": 100, "max_hp": 100})
+				while sim.tick < 3600 and sim.outcome.is_empty():
+					sim.step()
+				_expect(sim.outcome == "victory" and sim.units[0].hp >= 75,
+					"%s must be a viable opener for %s using %s." % [roster[0], hero, tile])
+				minimum_hp = mini(minimum_hp, sim.units[0].hp)
+	print("  %s · %d opener lineups across all classes and four starter tiles · minimum %d HP" % [location, rosters.size(), minimum_hp])
+
+
 func _check_route_variety(location: String) -> void:
 	var seed_rng := RandomNumberGenerator.new()
 	seed_rng.seed = 912488620
@@ -98,7 +133,7 @@ func _check_route_variety(location: String) -> void:
 		var percentage := 100.0 * float(repeats) / spawns
 		var policy := "combat-first" if prefer_combat else "mixed"
 		print("  %s Hard · %s · %d seeds · %.1f%% familiar (%d / %d spawns)" % [location, policy, sample.size(), percentage, repeats, spawns])
-		_expect(percentage < 50.0, "%s Hard must meet the pilot target on %s paths." % [location, policy])
+		_expect(percentage <= 25.0, "%s Hard must meet the encounter variety target on %s paths." % [location, policy])
 
 
 func _sample_route(seed_value: int, location: String, prefer_combat: bool) -> Vector2i:
@@ -108,11 +143,12 @@ func _sample_route(seed_value: int, location: String, prefer_combat: bool) -> Ve
 	rng.seed = 831623 + seed_value
 	var layers := run._make_map(seed_value, "hard", location)
 	run.data = {"seed": seed_value, "location": location, "difficulty": "hard", "layers": layers,
-		"hero": "warden", "heroes": [], "hp": 100, "max_hp": 100, "relics": [], "pilot_fights": []}
+		"hero": "warden", "heroes": [], "hp": 100, "max_hp": 100, "relics": [], "pilot_fights": [],
+		"encounter_roster_version": PilotFormations.CURRENT_VERSION}
 	var current: Dictionary = layers[0][0]
 	var totals := Vector2i.ZERO
 	var seen := {}
-	var recent: Dictionary = {"battle": [], "elite": []}
+	var fought_lineups := {}
 	for row in range(layers.size()):
 		var kind: String = current.type
 		if kind in ["opening", "battle", "elite", "boss"]:
@@ -122,18 +158,18 @@ func _sample_route(seed_value: int, location: String, prefer_combat: bool) -> Ve
 				run.data.heroes[lane] = _hero("warden")
 			var options := run._encounter_for(current, act)
 			var enemies := _enemy_ids(sim, options)
-			if recent.has(kind):
+			if kind != "boss":
+				_expect(options.has("formation") and enemies == _formation_ids(options.get("formation", [])),
+					"Every regular or elite node and opener must spawn its seeded lineup.")
+			if kind in ["battle", "elite"]:
 				for enemy: String in enemies:
 					totals += Vector2i(int(seen.has(enemy)), 1)
-				var lineup := enemies.duplicate()
-				lineup.sort()
-				if act > 1:
-					_expect(options.has("formation") and enemies.size() >= 1,
-						"The arena must generate a real pilot formation for each late combat node.")
-					_expect(lineup not in recent[kind], "The pilot must skip recently seen %s lineups." % kind)
-				recent[kind].append(lineup)
-				if recent[kind].size() > (2 if kind == "battle" else 1):
-					recent[kind].pop_front()
+			var lineup := enemies.duplicate()
+			lineup.sort()
+			var key := "+".join(lineup)
+			if kind in ["battle", "elite"]:
+				_expect(not fought_lineups.has(key), "An audited Hard route must avoid exact lineup repeats when alternatives exist.")
+			fought_lineups[key] = true
 			for enemy: String in enemies:
 				seen[enemy] = true
 			run.data.pilot_fights.append({"kind": kind, "enemies": enemies})

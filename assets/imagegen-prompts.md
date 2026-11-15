@@ -2,6 +2,15 @@
 
 Generated with the built-in ImageGen tool. The transparent character atlas was cropped into four game sprites.
 
+## Campaign enemy variety atlases
+
+Create separated full-body 2D combat sprites with true transparency and clear gutters. Match the existing Brass & Aether screen-print look: dark ink outlines, limited worn-metal palettes, readable shapes at small sizes, and an elevated three-quarter view facing left. Leave out labels, effects outside the silhouettes, floor shadows, and scenery.
+
+- `brass-variety-enemies.png`: 12 field machines in weathered brass, warm copper, ivory, and turquoise, from a light Wire Runner to a bulky Pressure Sentinel. Use weapons, tools, and body shapes to distinguish their roles.
+- `crown-variety-enemies.png`: 12 relay troops in ivory, warm brass, and violet with small cyan signal lights. Distinguish the drummer by its drum, the spotter by its scope, and the sentry by its lantern beacon.
+- `early-variety-enemies.png`: five Glass Foundry workers and constructs in charcoal, bronze, glass, and amber, paired with five Moonwreck raiders in navy, sea green, and tarnished brass. Give each region a consistent palette and each enemy a distinct profile.
+- `crown-specialists.png`: two late Crown troops in the established relay colors. Give the Oathbreaker a broad braced silhouette and the Chorister an upright silhouette with an ornate chime.
+
 ## Arena
 
 Use case: stylized-concept. Generate a production-ready 16:9 2D game background plate, no interface, no creatures or people, no lettering. A circular open gladiator arena for original fantasy space-knight game Brass & Aether. Fixed slightly elevated orthographic camera, broad flat muted golden sandstone fighting floor, center 85% of the arena view free and unobstructed, very subtle irregular scuffs in the sand, just low layered rust and sandstone boundary walls at outer edges and top, soft shadows, simple red pennants above top boundary, navy space-fantasy rooftops only in upper corners. Restrained hand-drawn screen print, simple bold shape design, warm sandstone / ink navy / burnt terracotta with restrained teal. A functional tactical game battle backdrop, clean readable open floor, avoid grids, rings on floor, foreground occlusion, detailed engraving, text and logos.

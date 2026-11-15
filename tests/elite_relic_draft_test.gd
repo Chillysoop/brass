@@ -36,8 +36,9 @@ func _check_seeded_draft() -> void:
 	var wildcard_roles := {}
 	var observed := {}
 	var same_seed: Array = []
-	var comparison_seed := 0
-	for seed_value in range(1, 25):
+	# This route reaches a post-elite pair that Siege Fuse can pull together.
+	var comparison_seed := 28
+	for seed_value in range(1, comparison_seed + 1):
 		if not _start(run, seed_value):
 			return
 		run.loadout.lanes[0].append({"id": "shot", "start": 2, "target": "nearest"})
@@ -61,13 +62,12 @@ func _check_seeded_draft() -> void:
 		_check(draft[0].id == "barrage_rack" and draft[0].companion.is_empty(),
 			"Two already-equipped short attacks should make Barrage Rack the fit.")
 		wildcard_roles[draft[2].id] = true
-		if comparison_seed == 0 and ids.has("afterimage") and ids.has("siege_fuse"):
-			comparison_seed = seed_value
+		if seed_value == comparison_seed and ids.has("afterimage") and ids.has("siege_fuse"):
 			same_seed = draft.duplicate(true)
 	_check(wildcard_roles.size() > 1, "Seeds should change the roles of otherwise equally viable offers.")
 	_check(observed.size() == SOLO_RELIC_IDS.size(), "The eligible relics must all be reachable across seeded drafts.")
-	_check(comparison_seed != 0, "The companion comparison needs a draft offering both prototype relics.")
-	if comparison_seed == 0 or not _start(run, comparison_seed):
+	_check(not same_seed.is_empty(), "The companion comparison needs a draft offering both prototype relics.")
+	if same_seed.is_empty() or not _start(run, comparison_seed):
 		return
 	run.loadout.lanes[0].append({"id": "shot", "start": 2, "target": "nearest"})
 	var preview := _reach_elite(run, _elites(run)[0])
@@ -126,6 +126,7 @@ func _check_same_seed_battle(first: FrontierRun, second: FrontierRun, teleport: 
 	var relics := ["afterimage", "siege_fuse"]
 	var tiles := [teleport, heavy]
 	var beats := [5, 4]
+	var shared_formation: Array = []
 	for index in range(runs.size()):
 		var run: FrontierRun = runs[index]
 		var width: int = ArenaSim.TILES[tiles[index]].width
@@ -144,8 +145,14 @@ func _check_same_seed_battle(first: FrontierRun, second: FrontierRun, teleport: 
 		if battles.is_empty() or not run.choose_node(battles[0].id):
 			_check(false, "Both builds must reach a shared post-elite battle.")
 			return
+		var encounter := run.encounter()
+		var formation: Array = encounter.get("formation", [])
+		if index == 0:
+			shared_formation = formation
+		_check(formation.size() >= 2 and formation == shared_formation,
+			"Both builds must fight the same group of enemies.")
 		var sim := ArenaSim.new()
-		sim.start(run.loadout.lanes, "solo", run.encounter())
+		sim.start(run.loadout.lanes, "solo", encounter)
 		while sim.tick < 6000 and sim.outcome.is_empty():
 			sim.step()
 		var procced := sim.trace.any(func(event: Dictionary):

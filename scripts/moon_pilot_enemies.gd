@@ -1,6 +1,36 @@
 extends RefCounted
 
 const ENEMIES := {
+	"dock_saltblade": {
+		"name": "Saltblade", "art": "dock_saltblade", "special": "dock_saltblade",
+		"hp": 28, "radius": 21.0, "speed": 101.0, "spacing": 83.0, "reach": 133.0,
+		"damage": 4, "first": 75, "cooldown": 156, "windup": 27,
+		"hint": "Backsteps if Guard absorbs its slash. Follow it with a ranged tile, or close in after the slash lands.",
+	},
+	"dock_torchbearer": {
+		"name": "Torchbearer", "art": "dock_torchbearer", "special": "dock_torchbearer",
+		"hp": 34, "radius": 23.0, "speed": 87.0, "spacing": 87.0, "reach": 129.0,
+		"damage": 7, "first": 74, "cooldown": 177, "windup": 47,
+		"hint": "Slowly raises its lantern before swinging through the marked circle. Time Guard or push the torchbearer out of range.",
+	},
+	"dock_bilge_sapper": {
+		"name": "Bilge Sapper", "art": "dock_bilge_sapper", "special": "dock_bilge_sapper",
+		"hp": 37, "radius": 22.0, "speed": 83.0, "spacing": 159.0, "reach": 310.0,
+		"damage": 5, "first": 63, "cooldown": 154, "windup": 39, "blast_radius": 52.0,
+		"hint": "Marks a spot with brine. Step or blink off it before the splash, or use Guard to block the damage.",
+	},
+	"dock_shellback": {
+		"name": "Shellback", "art": "dock_shellback", "special": "dock_shellback",
+		"hp": 46, "radius": 26.0, "speed": 75.0, "spacing": 91.0, "reach": 144.0,
+		"damage": 5, "first": 81, "cooldown": 168, "windup": 41,
+		"hint": "Raises 8 Guard if it finishes locking its shell. Hit for at least 17 HP during the windup to break the shell for the fight.",
+	},
+	"dock_hull_harrier": {
+		"name": "Hull Harrier", "art": "dock_hull_harrier", "special": "dock_hull_harrier",
+		"hp": 42, "radius": 22.0, "speed": 99.0, "spacing": 86.0, "reach": 156.0,
+		"damage": 5, "first": 70, "cooldown": 149, "windup": 36,
+		"hint": "Swings to the far side of its target and strikes. Push it out of range while it readies the rope.",
+	},
 	"powder_runner": {
 		"name": "Powder Runner", "art": "powder_runner", "hint": "Land two separate tile hits during its fuse, or defeat it before the shot.",
 		"hp": 50, "radius": 23.0, "speed": 88.0, "spacing": 156.0, "target": "lowest_hp",
@@ -69,6 +99,21 @@ static func begin(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary
 			if distance > attack.reach:
 				return false
 			match attack.special:
+				"dock_saltblade":
+					message = "Saltblade prepares a slash. Guard makes it backstep."
+				"dock_torchbearer":
+					enemy["pilot_ring_radius"] = attack.reach
+					message = "Torchbearer slowly raises its lantern for a swing."
+				"dock_bilge_sapper":
+					enemy["blast_center"] = target.pos
+					enemy["blast_radius"] = attack.blast_radius
+					message = "Bilge Sapper marks a brine splash. Move clear of the circle."
+				"dock_shellback":
+					if enemy.get("cracked_shell", false):
+						return false
+					message = "Shellback locks its shell. A hit for 17 HP cracks it."
+				"dock_hull_harrier":
+					message = "Hull Harrier readies a swing around %s." % target.name
 				"powder_runner":
 					enemy["powder_hits"] = 0
 					enemy.erase("powder_last_hit")
@@ -94,6 +139,15 @@ static func begin(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary
 
 
 static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary, move: String) -> void:
+	if move == "dock_torchbearer":
+		_resolve_lantern_swing(sim, enemy, attack)
+		return
+	if move == "dock_bilge_sapper":
+		_resolve_brine(sim, enemy, attack)
+		return
+	if move == "dock_shellback":
+		sim._guard(enemy, 8, move)
+		return
 	if move == "deck_ram":
 		_resolve_deck_ram(sim, enemy, attack)
 		return
@@ -114,6 +168,9 @@ static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictiona
 	if move == "patch_rigger":
 		sim._guard(target, attack.patch_guard, move, enemy)
 		return
+	if move == "dock_hull_harrier" and not sim._teleport(enemy, target, move, 0.0):
+		sim._emit("miss", "Hull Harrier finds no room to swing through.", enemy, target, move)
+		return
 	var defender: Dictionary = sim._intercept_target(target)
 	var damage: int = attack.damage
 	if move == "chain_warden":
@@ -125,7 +182,10 @@ static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictiona
 	elif move == "signal_gunner":
 		damage += int(attack.rifle_bonus)
 	var hp_before: int = defender.hp
+	var guard_before: int = defender.guard
 	sim._damage(enemy, defender, damage, move)
+	if move == "dock_saltblade" and defender.guard < guard_before:
+		sim._retreat_from(enemy, defender, move, 64.0)
 	if move == "tar_pitcher" and defender.hp > 0 and defender.hp < hp_before:
 		defender["tar_slow_until"] = sim.tick + 2 * sim.TICKS_PER_BEAT
 		sim._emit("tar_slow", "Tar slows %s for two beats." % defender.name, enemy, defender, move)
@@ -135,6 +195,11 @@ static func on_tile_hit(sim, attacker: Dictionary, enemy: Dictionary, amount: in
 	if amount <= 0 or enemy.intent == "" or sim.tick > enemy.intent_tick:
 		return
 	match enemy.get("special_intent", ""):
+		"dock_shellback":
+			if amount >= 17:
+				enemy["cracked_shell"] = true
+				_cancel_windup(sim, enemy)
+				sim._emit("interrupt", "The hit cracks Shellback's shell.", attacker, enemy, "dock_shellback_interrupted")
 		"powder_runner":
 			if order == enemy.get("powder_last_hit", -1):
 				return
@@ -217,3 +282,21 @@ static func _resolve_wreck_bell(sim, enemy: Dictionary, attack: Dictionary) -> v
 		sim._damage(enemy, hero, attack.damage, "wreck_bell")
 		if hero.hp > 0:
 			sim._displace("push", enemy, hero, "wreck_bell", hero.pos - enemy.pos, 375.0)
+
+
+static func _resolve_lantern_swing(sim, enemy: Dictionary, attack: Dictionary) -> void:
+	enemy.erase("pilot_ring_radius")
+	var affected: Array = sim._enemies_in_area(enemy, enemy.pos, attack.reach)
+	if affected.is_empty():
+		sim._emit("miss", "Torchbearer's lantern swing misses.", enemy, enemy, "dock_torchbearer")
+	for hero: Dictionary in affected:
+		sim._damage(enemy, hero, attack.damage, "dock_torchbearer")
+
+
+static func _resolve_brine(sim, enemy: Dictionary, attack: Dictionary) -> void:
+	var center: Vector2 = enemy.blast_center
+	enemy.erase("blast_center")
+	enemy.erase("blast_radius")
+	sim._emit("hazard_burst", "The brine splashes.", enemy, {}, "dock_bilge_sapper", int(attack.blast_radius), center, center)
+	for hero: Dictionary in sim._enemies_in_area(enemy, center, attack.blast_radius):
+		sim._damage(enemy, hero, attack.damage, "dock_bilge_sapper")

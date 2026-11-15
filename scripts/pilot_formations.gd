@@ -1,5 +1,8 @@
 extends RefCounted
 
+const CURRENT_VERSION := 2
+const CampaignFormations = preload("res://scripts/campaign_formations.gd")
+
 const GLASS := {
 	2: {
 		"battle": [
@@ -55,25 +58,34 @@ const MOONWRECK := {
 }
 
 
-static func choose(location: String, act: int, kind: String, seed_value: int, history: Array) -> Array:
-	var region := GLASS if location == "glass" else MOONWRECK
-	if location not in ["glass", "moonwreck"] or not region.has(act) or not region[act].has(kind):
+static func choose(location: String, act: int, kind: String, seed_value: int, history: Array, version := 1) -> Array:
+	var legacy: Dictionary = {"glass": GLASS, "moonwreck": MOONWRECK}.get(location, {})
+	var formations: Array = legacy.get(act, {}).get(kind, [])
+	if version >= CURRENT_VERSION:
+		formations = formations + CampaignFormations.ROSTERS.get(location, {}).get(act, {}).get(kind, [])
+	if formations.is_empty():
 		return []
-	var formations: Array = region[act][kind]
 	var recent: Array = []
 	var sightings := {}
+	var seen_lineups := {}
 	var recent_limit := 2 if kind == "battle" else 1
 	for entry: Dictionary in history:
 		for enemy: String in entry.enemies:
 			sightings[enemy] = int(sightings.get(enemy, 0)) + 1
+		var lineup := _lineup(entry.enemies)
+		seen_lineups[lineup] = true
 		if entry.kind == kind:
-			recent.append(_lineup(entry.enemies))
+			recent.append(lineup)
 			if recent.size() > recent_limit:
 				recent.pop_front()
 
 	var eligible := formations.filter(func(team: Array): return _lineup(team) not in recent)
 	if eligible.is_empty():
 		eligible = formations
+	if version >= CURRENT_VERSION:
+		var unplayed := eligible.filter(func(team: Array): return not seen_lineups.has(_lineup(team)))
+		if not unplayed.is_empty():
+			eligible = unplayed
 	var best_score := -100000
 	var best: Array = []
 	for team: Array in eligible:
@@ -93,13 +105,16 @@ static func choose(location: String, act: int, kind: String, seed_value: int, hi
 			best.append(team)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = seed_value
-	return _deployment(best[rng.randi_range(0, best.size() - 1)], kind == "elite")
+	var choice: Array = best[rng.randi_range(0, best.size() - 1)]
+	if version >= CURRENT_VERSION:
+		return CampaignFormations.deploy(choice, kind, act, seed_value)
+	return _deployment(choice, kind == "elite")
 
 
-static func _lineup(team: Array) -> Array:
-	var sorted := team.duplicate()
+static func _lineup(team: Array) -> String:
+	var sorted := PackedStringArray(team)
 	sorted.sort()
-	return sorted
+	return "+".join(sorted)
 
 
 static func _deployment(team: Array, elite: bool) -> Array:

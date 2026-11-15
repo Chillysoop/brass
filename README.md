@@ -30,9 +30,7 @@ Your first elite victory offers a relic draft before the tile rewards, which inc
 
 All twelve classes have two signature choices at Rare, Epic, and Legendary. If your lead takes their Uncommon signature in Leg 1, the next regular win offers a Rare. The gates into Legs 2 and 3 offer a Rare to the new recruit. The Leg 2 gate also offers one to the lead if they have yet to see one there or in Leg 1. Later elite wins can offer the next rarity up to Epic. Try the choices in **Arena Practice → Combat tiles → Signature upgrades**.
 
-Seeded battle and elite formations can include a Rivet Bombardier, Kiln Duelist, Relay Mender, or Dock Corsair. The encounter preview shows who you will face.
-
-Start a new Glass Foundry or Moonwreck Docks expedition on Medium or Hard to try the expanded enemy pools in Acts 2 and 3. The preview describes each new threat. Glass Mirrorback reflects the first hit during its stance. Wait it out or bait it with a quick hit under Guard. Powder Runner's fuse can be disarmed with two separate tile hits, or stopped by defeating the runner before it fires.
+Enemy encounters rotate from the opening fight onward in new expeditions. Each act adds regional threats, and elites draw from separate formations. The encounter preview shows who you will face and what each enemy does. Crown War Drummers speed up nearby attacks, Glass Mirrorbacks reflect the first hit during their stance, and two separate tile hits can disarm a Powder Runner's fuse. Continue restores your saved encounter.
 
 Medium starts solo. After the Tollkeeper, take a Legendary tile into your build and recruit a second hero with a starter tile. Both lanes fire on the same beat clock. Push or pull the Gilded Marshal to expose its armor, then land a hit with the other hero before it closes. Defeating the Marshal unlocks Brass Frontier Hard and Glass Foundry Easy. Each hero can take a Legendary trophy after the final boss.
 

@@ -1,6 +1,36 @@
 extends RefCounted
 
 const ENEMIES := {
+	"glass_cullet_slinger": {
+		"name": "Cullet Slinger", "art": "glass_cullet_slinger", "special": "glass_cullet_slinger",
+		"hp": 28, "radius": 21.0, "speed": 91.0, "spacing": 112.0, "reach": 340.0,
+		"damage": 4, "first": 63, "cooldown": 167, "windup": 33,
+		"hint": "Sights a thin line where you stand. Cross the line before the shot, or move Guard before it fires.",
+	},
+	"glass_kiln_porter": {
+		"name": "Kiln Porter", "art": "glass_kiln_porter", "special": "glass_kiln_porter",
+		"hp": 34, "radius": 25.0, "speed": 91.0, "spacing": 87.0, "reach": 159.0,
+		"damage": 6, "first": 79, "cooldown": 171, "windup": 42,
+		"hint": "Winds up a hammer strike. The blow loses half its damage past 110 range. Push the porter back or set Guard before the swing.",
+	},
+	"glass_facet_hound": {
+		"name": "Facet Hound", "art": "glass_facet_hound", "special": "glass_facet_hound",
+		"hp": 39, "radius": 23.0, "speed": 129.0, "spacing": 68.0, "reach": 116.0,
+		"damage": 4, "first": 69, "cooldown": 112, "windup": 24,
+		"hint": "Snaps quickly for extra damage at close range. Push it back before the bite, or keep it outside melee range.",
+	},
+	"glass_lacquerer": {
+		"name": "Lacquerer", "art": "glass_lacquerer", "special": "glass_lacquerer",
+		"hp": 40, "radius": 22.0, "speed": 82.0, "spacing": 139.0, "reach": 235.0,
+		"damage": 4, "first": 72, "cooldown": 153, "windup": 38,
+		"hint": "Tries once to coat itself with 10 Guard. Land a hit while the coat is wet to cancel it.",
+	},
+	"glass_crucible_binder": {
+		"name": "Crucible Binder", "art": "glass_crucible_binder", "special": "glass_crucible_binder",
+		"hp": 44, "radius": 23.0, "speed": 83.0, "spacing": 142.0, "reach": 181.0,
+		"damage": 4, "first": 65, "cooldown": 163, "windup": 37, "guard_reach": 180.0,
+		"hint": "Links its tongs to a nearby ally. Both gain 6 Guard if the link holds through the windup. Push or pull them apart.",
+	},
 	"glass_mirrorback": {
 		"name": "Glass Mirrorback", "art": "glass_mirrorback", "special": "glass_mirrorback",
 		"hp": 65, "radius": 25.0, "speed": 86.0, "spacing": 91.0, "reach": 150.0,
@@ -58,19 +88,34 @@ static func begin(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary
 	var distance := position.distance_to(target.pos)
 	var message: String
 	match move:
+		"glass_lacquerer":
+			if enemy.get("lacquer_spent", false) or distance > attack.reach:
+				return false
+			enemy["lacquer_spent"] = true
+			message = "%s starts coating its armor. Strike before the coat sets." % enemy.name
 		"glass_mirrorback":
 			if distance > attack.stance_reach:
 				return false
 			message = "%s raises its mirror. The next hit can rebound." % enemy.name
-		"glass_annealer":
+		"glass_annealer", "glass_crucible_binder":
 			target = _guard_target(sim, enemy, attack.guard_reach)
 			if target.is_empty():
 				return false
 			message = "%s readies Guard for %s." % [enemy.name, target.name]
+			if move == "glass_crucible_binder":
+				message = "%s links its tongs to %s." % [enemy.name, target.name]
 		_:
 			if distance > attack.reach:
 				return false
 			match move:
+				"glass_cullet_slinger":
+					enemy["pilot_aim_point"] = target.pos
+					enemy["pilot_aim_width"] = 22.0
+					message = "%s sights a narrow shot at %s." % [enemy.name, target.name]
+				"glass_kiln_porter":
+					message = "%s raises a glass hammer for a heavy swing." % enemy.name
+				"glass_facet_hound":
+					message = "%s prepares a close bite." % enemy.name
 				"glass_lens_arbalist":
 					message = "%s sights %s. Its shot hits harder past %d range." % [enemy.name, target.name, int(attack.far_threshold)]
 				"glass_kiln_ram":
@@ -93,13 +138,23 @@ static func begin(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary
 
 
 static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary, move: String) -> void:
+	if move == "glass_lacquerer":
+		sim._guard(enemy, 10, move)
+		return
+	if move == "glass_cullet_slinger":
+		_resolve_slinger(sim, enemy, target, attack)
+		return
 	if move == "glass_mirrorback" or target.get("hp", 0) <= 0:
 		return
 	var position: Vector2 = enemy.pos
 	var distance := position.distance_to(target.pos)
-	if move == "glass_annealer":
+	if move in ["glass_annealer", "glass_crucible_binder"]:
 		if distance <= attack.guard_reach:
-			sim._guard(target, 9, move, enemy)
+			if move == "glass_annealer":
+				sim._guard(target, 9, move, enemy)
+			else:
+				sim._guard(target, 6, move, enemy)
+				sim._guard(enemy, 6, move)
 		else:
 			sim._emit("miss", "%s moves beyond the kiln's Guard." % target.name, enemy, target, move)
 		return
@@ -109,6 +164,12 @@ static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictiona
 	var defender: Dictionary = sim._intercept_target(target)
 	var damage: int = attack.damage
 	match move:
+		"glass_kiln_porter":
+			if distance > 110.0:
+				damage = maxi(1, roundi(damage * 0.5))
+		"glass_facet_hound":
+			if distance < 86.0:
+				damage += 3
 		"glass_lens_arbalist":
 			if distance >= attack.far_threshold:
 				damage += 7
@@ -141,15 +202,37 @@ static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictiona
 
 
 static func on_tile_hit(sim, attacker: Dictionary, enemy: Dictionary, amount: int, _tile_id: String, _order: int) -> void:
-	if enemy.get("special_intent", "") != "glass_mirrorback" or amount <= 0:
+	if amount <= 0:
+		return
+	var move: String = enemy.get("special_intent", "")
+	if move not in ["glass_lacquerer", "glass_mirrorback"]:
 		return
 	enemy.special_intent = ""
 	enemy.intent = ""
 	enemy.intent_tick = 0
 	enemy.next_attack = sim.tick + int(enemy.attack.cooldown)
+	if move == "glass_lacquerer":
+		sim._emit("interrupt", "%s scrapes away the wet lacquer." % attacker.name, attacker, enemy, "glass_lacquerer_interrupted")
+		return
 	var reflected := clampi(ceili(amount * 0.55), 1, 15)
 	sim._emit("counter", "%s reflects %d damage at %s." % [enemy.name, reflected, attacker.name], enemy, attacker, "glass_mirrorback_counter", reflected)
 	sim._damage(enemy, attacker, reflected, "glass_mirrorback_counter")
+
+
+static func _resolve_slinger(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary) -> void:
+	var origin: Vector2 = enemy.pos
+	var mark: Vector2 = enemy.pilot_aim_point
+	var width: float = enemy.pilot_aim_width
+	enemy.erase("pilot_aim_point")
+	enemy.erase("pilot_aim_width")
+	if target.get("hp", 0) <= 0:
+		return
+	var end := origin.move_toward(mark, float(attack.reach))
+	var closest := Geometry2D.get_closest_point_to_segment(target.pos, origin, end)
+	if target.pos.distance_to(closest) <= width:
+		sim._damage(enemy, sim._intercept_target(target), attack.damage, "glass_cullet_slinger")
+	else:
+		sim._emit("miss", "%s moves outside the shot line." % target.name, enemy, target, "glass_cullet_slinger")
 
 
 static func _guard_target(sim, enemy: Dictionary, radius: float) -> Dictionary:

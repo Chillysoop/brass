@@ -7,6 +7,9 @@ var failures: Array[String] = []
 
 
 func _initialize() -> void:
+	_check_slinger_and_porter()
+	_check_hound_and_lacquerer()
+	_check_binder()
 	_check_mirrorback()
 	_check_annealer()
 	_check_arbalist_and_ram()
@@ -16,8 +19,61 @@ func _initialize() -> void:
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Eight Glass Foundry threats passed telegraph, impact, and counter checks.")
+		print("Thirteen Glass Foundry threats passed telegraph, impact, and counter checks.")
 	quit(0 if failures.is_empty() else 1)
+
+
+func _check_slinger_and_porter() -> void:
+	var still := _fixture([[]], "glass_cullet_slinger")
+	var across := _fixture([[]], "glass_cullet_slinger")
+	still.step()
+	across.step()
+	across.units[0].pos.y += 75.0
+	_advance(still, 34)
+	_advance(across, 34)
+	_check(still.units[0].hp == 96 and across.units[0].hp == 100,
+		"The Slinger should hit the original line and miss a target that crosses it.")
+	var close := _fixture([[]], "glass_kiln_porter")
+	var wide := _fixture([[]], "glass_kiln_porter")
+	close.units[1].pos = close.units[0].pos + Vector2(99.0, 0.0)
+	wide.units[1].pos = wide.units[0].pos + Vector2(137.0, 0.0)
+	_advance(close, 43)
+	_advance(wide, 43)
+	_check(close.units[0].hp == 94 and wide.units[0].hp == 97,
+		"The Porter's hammer should deal half damage when held outside 110 range.")
+
+
+func _check_hound_and_lacquerer() -> void:
+	var close := _fixture([[]], "glass_facet_hound")
+	var wide := _fixture([[]], "glass_facet_hound")
+	close.units[1].pos = close.units[0].pos + Vector2(70.0, 0.0)
+	wide.units[1].pos = wide.units[0].pos + Vector2(103.0, 0.0)
+	_advance(close, 25)
+	_advance(wide, 25)
+	_check(close.units[0].hp == 93 and wide.units[0].hp == 96,
+		"The Hound's bite should reward leaving space between fighters.")
+	var unbroken := _fixture([[]], "glass_lacquerer", 9)
+	var early_hit := _fixture([[_tile("shot", 0)]], "glass_lacquerer", 9)
+	_advance(unbroken, 47)
+	_advance(early_hit, 47)
+	_check(unbroken.units[1].guard == 10 and early_hit.units[1].guard == 0
+		and _events(early_hit, "interrupt", "glass_lacquerer_interrupted").size() == 1,
+		"A hit during the Lacquerer's coating windup should prevent the Guard grant.")
+
+
+func _check_binder() -> void:
+	var together := _fixture([[]], "glass_crucible_binder")
+	var separated := _fixture([[]], "glass_crucible_binder")
+	for sim: ArenaSim in [together, separated]:
+		sim._add_campaign_enemy("glass_facet_hound", Vector2(525.0, 265.0), 500)
+		sim.units[2].speed = 0.0
+		sim.step()
+	separated.units[2].pos.y += 185.0
+	_advance(together, 38)
+	_advance(separated, 38)
+	_check(together.units[1].guard == 6 and together.units[2].guard == 6
+		and separated.units[1].guard == 0 and separated.units[2].guard == 0,
+		"Separating a Binder from its linked ally should deny the Guard on both.")
 
 
 func _check_mirrorback() -> void:

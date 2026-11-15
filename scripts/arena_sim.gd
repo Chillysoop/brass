@@ -5,7 +5,12 @@ const ClassExpansionTiles = preload("res://scripts/class_expansion_tiles.gd")
 const UniversalTileUpgrades = preload("res://scripts/universal_tile_upgrades.gd")
 const GlassPilotEnemies = preload("res://scripts/glass_pilot_enemies.gd")
 const MoonPilotEnemies = preload("res://scripts/moon_pilot_enemies.gd")
-const PILOT_ENEMY_SCRIPTS := {"glass": GlassPilotEnemies, "moonwreck": MoonPilotEnemies}
+const BrassVarietyEnemies = preload("res://scripts/brass_variety_enemies.gd")
+const CrownVarietyEnemies = preload("res://scripts/crown_variety_enemies.gd")
+const PILOT_ENEMY_SCRIPTS := {
+	"brass": BrassVarietyEnemies, "glass": GlassPilotEnemies,
+	"crown": CrownVarietyEnemies, "moonwreck": MoonPilotEnemies,
+}
 
 const BEATS := 12
 const LANCE_TRAVEL_CAP := 80.0
@@ -596,13 +601,16 @@ func _start_campaign(options: Dictionary) -> void:
 		_start_glass_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""), alternate, formation)
 		return
 	if options.get("location", "brass") == "crown":
-		_start_crown_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""), alternate)
+		_start_crown_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""), alternate, formation)
 		return
 	if options.get("location", "brass") == "moonwreck":
 		_start_moonwreck_encounter(encounter, rng, y, difficulty, segment, options.get("boss_id", ""), alternate, formation)
 		return
 	var health_scale: float = {"medium": [1.12, 2.15, 2.15], "hard": [1.21, 2.35, 3.0]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	var damage_scale: float = {"medium": [1.07, 1.58, 1.58], "hard": [1.10, 1.64, 1.80]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
+	if not formation.is_empty() and encounter != "boss":
+		_spawn_formation(formation, y, health_scale, damage_scale)
+		return
 	match encounter:
 		"battle":
 			if alternate:
@@ -643,7 +651,7 @@ func _start_glass_encounter(encounter: String, rng: RandomNumberGenerator, y: fl
 	var third_leg := difficulty == "hard" and segment == 3
 	var health_scale: float = {"medium": [1.14, 2.15, 2.15], "hard": [1.20, 2.27, 2.90]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	var damage_scale: float = {"medium": [1.08, 1.51, 1.51], "hard": [1.12, 1.55, 1.70]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
-	if not formation.is_empty() and encounter in ["battle", "elite"]:
+	if not formation.is_empty() and encounter != "boss":
 		_spawn_formation(formation, y, health_scale, damage_scale)
 		return
 	match encounter:
@@ -751,13 +759,17 @@ func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_sca
 	units.append(enemy)
 
 
-func _start_crown_encounter(encounter: String, rng: RandomNumberGenerator, y: float, difficulty: String, segment: int, boss_id: String, alternate: bool) -> void:
+func _start_crown_encounter(encounter: String, rng: RandomNumberGenerator, y: float, difficulty: String, segment: int, boss_id: String, alternate: bool, formation: Array) -> void:
 	var medium := difficulty == "medium"
 	var hard := difficulty == "hard"
 	var extra_leg := (medium or hard) and segment >= 2
 	var third_leg := hard and segment == 3
 	var health_scale: float = {"medium": [1.10, 2.05, 2.05], "hard": [1.14, 2.15, 2.82]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	var damage_scale: float = {"medium": [1.07, 1.55, 1.55], "hard": [1.08, 1.59, 1.72]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
+	if not formation.is_empty() and encounter != "boss":
+		_spawn_formation(formation, y, health_scale, damage_scale)
+		_refresh_relay_links(false)
+		return
 	match encounter:
 		"battle":
 			var partner := "relay_runner" if rng.randi_range(0, 1) == 0 else "relay_lancer"
@@ -803,7 +815,7 @@ func _start_moonwreck_encounter(encounter: String, rng: RandomNumberGenerator, y
 	var third_leg := hard and segment == 3
 	var health_scale: float = {"medium": [1.0, 2.22, 2.22], "hard": [1.0, 2.34, 2.95]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	var damage_scale: float = {"medium": [1.0, 1.60, 1.60], "hard": [1.0, 1.64, 1.80]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
-	if not formation.is_empty() and encounter in ["battle", "elite"]:
+	if not formation.is_empty() and encounter != "boss":
 		_spawn_formation(formation, y, health_scale, damage_scale)
 		return
 	match encounter:
@@ -2567,6 +2579,10 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 				amount -= prevented
 				_emit("guard", "The Crown shields block %d damage." % prevented,
 					_find_unit(target.relay_shield_sources[0]), target, "relay_absorb", prevented)
+	if amount > 0 and actor.side == "enemy" and target.has("crown_spotter_until"):
+		amount += CrownVarietyEnemies.consume_spotter_mark(self, actor, target)
+	if actor.side == "hero" and target.has("crown_oathbrace_until"):
+		amount -= CrownVarietyEnemies.block_oathbreaker_hit(self, actor, target, amount)
 	var enemy_strike: bool = tile_id == "enemy_attack" or actor.has("pilot_region")
 	if enemy_strike and target.get("class") == "bulwark" and target.get("bulwark_loop", -1) != _loop_index():
 		target["bulwark_loop"] = _loop_index()
