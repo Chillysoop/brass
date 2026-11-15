@@ -109,6 +109,7 @@ func _run() -> void:
 	await _check_storage_popup(lab)
 	_check_forge(lab)
 	_check_blink_forge(lab)
+	_check_forge_layout_edit(lab)
 	_check_retry_boss_hud(lab)
 	if failures.is_empty():
 		print("Arena controls checks passed.")
@@ -552,6 +553,53 @@ func _check_blink_forge(lab: Control) -> void:
 	_check(restored.load_save(save_path) and restored.data.phase == "map"
 		and restored.loadout.storage[0] == [lab._entry("phase_cut", 0, "nearest")],
 		"The chosen rest upgrade and its compatible target must save with the consumed rest action.")
+	for suffix in ["", ".bak", ".tmp"]:
+		if FileAccess.file_exists(save_path + suffix):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path + suffix))
+
+func _check_forge_layout_edit(lab: Control) -> void:
+	var save_path := "user://forge-layout-test-%d.json" % Time.get_ticks_usec()
+	lab.run.load_save(save_path)
+	lab.run_start(42)
+	lab.run.choose_hero(lab.run.data.offers[0])
+	lab.run.choose_relic("pocket_bell")
+	lab.run.choose_starter("bash")
+	lab.run.data.phase = "rest"
+	lab.run.loadout.lanes[0].assign([lab._entry("bash", 0, "nearest"),
+		lab._entry("shield_ram", 7, "highest_hp"), lab._entry("hook_sweep", 9, "nearest")])
+	lab.run.loadout.storage[0].assign([lab._entry("shield_ram", 0, "nearest")])
+	lab.run_rest_forge()
+	var source := {"lane": 0, "id": "shield_ram", "start": 7}
+	lab._select(source)
+	lab._open_camp_forge()
+	lab.forge_screen._inspect("bulwark_charge")
+	var caption: String = lab.forge_screen._room_instruction.text
+	_check(lab.forge_screen._confirm.disabled and lab.forge_screen._edit_layout.visible
+		and "one free beat immediately after Shield Ram" in caption and "Blocked by Hook Sweep" in caption,
+		"A camp upgrade should explain which adjacent beat and tile are blocking it.")
+	var room: HBoxContainer = lab.forge_screen._layout_preview
+	_check(room.get_child_count() == ArenaSim.BEATS and "Beat 10 · Hook Sweep" in room.get_child(9).tooltip_text,
+		"The preview should mark the overlapping beat on the twelve-beat strip.")
+	lab.forge_screen._edit_layout.pressed.emit()
+	_check(not lab.forge_screen.visible and lab.storage_screen.visible and lab.action.text == "Back to forge",
+		"Edit timeline should open the existing timeline and storage with a direct way back to the chosen upgrade.")
+	_check(lab.storage_screen._discard.disabled, "The tile being upgraded should stay safe while the forge is open.")
+	lab.run.save_path = "user://missing-forge-folder/forge-layout.json"
+	lab._place(source, 0, 5)
+	_check(lab.lanes[0][1].start == 7, "If a layout edit cannot save, the pending upgrade should retain its original tile.")
+	lab.run.save_path = save_path
+	lab._place(source, 0, 5)
+	lab.storage_pick(0, lab.storage_rows[0][0])
+	lab.action.pressed.emit()
+	_check(lab.forge_screen.visible and lab.forge_screen._inspected_id == "bulwark_charge" \
+		and not lab.forge_screen._confirm.disabled and lab.forge_firing_beat("bulwark_charge") == 8,
+		"Returning should preserve the inspected branch and follow the original tile after rearranging.")
+	lab.forge_screen._confirm.pressed.emit()
+	var restored := FrontierRun.new()
+	_check(restored.load_save(save_path) and restored.data.phase == "map"
+		and restored.loadout.lanes[0][1] == lab._entry("bulwark_charge", 5, "highest_hp")
+		and restored.loadout.storage[0] == [lab._entry("shield_ram", 0, "nearest")],
+		"The upgrade should consume the rest and modify only the tile the player chose, even with another copy in storage.")
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(save_path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path + suffix))

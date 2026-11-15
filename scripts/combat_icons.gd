@@ -73,7 +73,10 @@ static func add_tile_corner(button: Button, metric: Dictionary) -> void:
 
 
 static func _tile_guard(spec: Dictionary) -> int:
-	return int(spec.get("guard", spec.get("guard_bonus", spec.get("bastion_party_guard", spec.get("ally_guard", 0)))))
+	for key: String in ["guard", "guard_on_hit", "guard_bonus", "bastion_party_guard", "ally_guard"]:
+		if spec.has(key):
+			return int(spec[key])
+	return 0
 
 
 static func tile_stats(spec: Dictionary, extent := 16) -> HBoxContainer:
@@ -90,7 +93,8 @@ static func tile_stats(spec: Dictionary, extent := 16) -> HBoxContainer:
 			row.add_child(stat("range", value, extent, "Reach in arena units: %s" % value))
 	var guard := _tile_guard(spec)
 	if guard > 0:
-		row.add_child(stat("guard", str(guard), extent, "Guard: %d. See the tile description for recipients and conditions." % guard))
+		var detail := "%d Guard on hit." % guard if spec.has("guard_on_hit") else "Guard: %d. See the tile description for recipients and conditions." % guard
+		row.add_child(stat("guard", str(guard), extent, detail))
 	var heal := int(spec.get("heal", 0))
 	if heal > 0:
 		row.add_child(stat("heal", str(heal), extent, "Restores up to %d health." % heal))

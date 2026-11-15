@@ -286,10 +286,18 @@ func _check_medium_rewards(game: Control) -> void:
 		"The first reward screen identifies the lead hero and pick position.")
 	_check_reward_tile_identity(game.frontier_screen, first_offers, lead)
 	var first_tile: String = first_offers[0]
-	await _click(game.frontier_screen, "RewardTile_" + first_tile)
+	var first_button := game.frontier_screen.find_child("RewardTile_" + first_tile, true, false) as Button
+	var first_details := first_button.get_parent().find_child("ChoiceDetails", true, false) as Control
+	var body_point := first_details.get_global_rect().get_center()
+	_push_mouse_button(body_point, true)
+	_push_mouse_button(body_point + Vector2(15.0, 0.0), false)
+	_check(run.reward_position() == 0, "Dragging across a reward card does not claim it.")
+	_push_mouse_button(body_point, true)
+	_push_mouse_button(body_point, false)
+	await process_frame
 	_check(run.data.phase == "reward" and run.reward_position() == 1 and run.reward_lane() == 1
 		and run.loadout.lanes[0].size() == 1 and run.loadout.lanes[0][0].id == first_tile
-		and run.loadout.lanes[1].is_empty(), "Claiming the lead's tile equips it in their own lane and advances to the recruit.")
+		and run.loadout.lanes[1].is_empty(), "Clicking the card body equips the tile and advances to the recruit.")
 	_check(_reward_header_has(game.frontier_screen, "RewardPlacement",
 		"%s added to %s’s timeline" % [ArenaSim.TILES[first_tile].label, FrontierRun.HEROES[lead].label]),
 		"The next pick confirms which timeline received the lead's tile.")
@@ -440,12 +448,17 @@ func _click(page: Control, node_name: String) -> void:
 	if not clickable:
 		return
 	for down in [true, false]:
-		var event := InputEventMouseButton.new()
-		event.position = button.get_global_rect().get_center()
-		event.button_index = MOUSE_BUTTON_LEFT
-		event.pressed = down
-		root.push_input(event, true)
+		_push_mouse_button(button.get_global_rect().get_center(), down)
 	await process_frame
+
+
+func _push_mouse_button(at: Vector2, down: bool) -> void:
+	var event := InputEventMouseButton.new()
+	event.position = at
+	event.global_position = at
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = down
+	root.push_input(event, true)
 
 
 func _check(condition: bool, message: String) -> void:

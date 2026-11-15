@@ -70,8 +70,8 @@ func _check_reinforcement_fight(game: Control, run: FrontierRun) -> bool:
 	game.run_return()
 	await process_frame
 	var button := game.frontier_screen.find_child("ReinforcementNode", true, false) as Button
-	_check(button != null and button.tooltip_text.contains("beat %d" % int(destination.reinforcement_beat)),
-		"The map advertises the reinforcement beat before choosing the battle.")
+	_check(button != null and button.text != destination.label and button.tooltip_text.contains("beat %d" % int(destination.reinforcement_beat)),
+		"The map gives reinforcement fights a distinct short label and explains the arrival beat.")
 	if not _press(game.frontier_screen, "ReinforcementNode"):
 		return false
 	await process_frame
@@ -115,7 +115,7 @@ func _check_boss(game: Control, run: FrontierRun) -> void:
 	game.run_return()
 	await process_frame
 	var button := game.frontier_screen.find_child("RefractionEngineBossNode", true, false) as Button
-	_check(button != null and button.text.contains("Refraction Engine"),
+	_check(button != null and button.text == "Refraction" and button.tooltip_text.contains("Refraction Engine"),
 		"The Glass map keeps the assigned Refraction Engine boss node.")
 	if not _press(game.frontier_screen, "RefractionEngineBossNode"):
 		return
@@ -179,6 +179,12 @@ func _check_compact_map(game: Control, run: FrontierRun) -> void:
 	_check(storage != null and viewport.encloses(storage.get_global_rect()) and viewport.encloses(footer.get_global_rect())
 		and viewport.encloses(key.get_global_rect()), "The route key, reward receipt, and footer actions fit in the compact viewport.")
 	_check(status.get_v_scroll_bar().visible, "Overflowing route details can scroll independently.")
+	run.data.erase("reward_placement")
+	game.run_return()
+	await process_frame
+	board = game.frontier_screen.find_child("ExpeditionMapBoard", true, false) as Control
+	_check(game.frontier_screen.find_child("OpenRewardStorage", true, false) != null,
+		"The map keeps opening storage after a later reward replaces the placement receipt.")
 	var occupied: Array[Rect2] = []
 	for child: Node in board.get_children():
 		if child is Button:
@@ -194,7 +200,7 @@ func _check_compact_map(game: Control, run: FrontierRun) -> void:
 
 func _reachable_button(board: Control, label: String) -> Button:
 	for child: Node in board.get_children():
-		if child is Button and not child.disabled and child.text == label:
+		if child is Button and not child.disabled and child.tooltip_text.begins_with(label + " ·"):
 			return child
 	return null
 

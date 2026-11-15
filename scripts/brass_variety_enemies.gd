@@ -60,7 +60,7 @@ const ENEMIES := {
 		"name": "Sparkbow", "art": "brass_sparkbow", "special": "brass_sparkbow",
 		"hp": 64, "radius": 23.0, "speed": 75.0, "spacing": 205.0, "reach": 390.0,
 		"damage": 8, "first": 56, "cooldown": 155, "windup": 44, "line_width": 22.0, "target": "farthest",
-		"hint": "Locks a piercing shot on a line toward the farthest hero. Shift the formation or shield heroes along the line.",
+		"hint": "Aims a piercing shot at the farthest hero. Time a dash or teleport to leave the marked line, or grant Guard before the shot.",
 	},
 	"brass_magnetar": {
 		"name": "Magnetar", "art": "brass_magnetar", "special": "brass_magnetar",

@@ -10,6 +10,7 @@ const CombatIcons = preload("res://scripts/combat_icons.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
 const ClassMasteries = preload("res://scripts/class_masteries.gd")
 const TileKeywords = preload("res://scripts/tile_keywords.gd")
+const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 const INK := Color("#101820")
 const PANEL := Color("#182632")
 const PANEL_DARK := Color("#111f2a")
@@ -26,6 +27,26 @@ const TYPE_NAMES := {
 	"battle": "Battle", "opening": "Opening battle", "elite": "Elite", "shop": "Shop",
 	"event": "Event", "rest": "Rest site", "boss": "Boss"
 }
+const COMPACT_ROUTE_NAMES := {
+	"Roadside Quartermaster": "Roadside Shop", "Crucible Quartermaster": "Crucible Shop",
+	"Furnace Overlook": "Furnace View", "Polished Barricade": "Polished Wall",
+	"Tempered Colossus": "Colossus", "Refraction Engine": "Refraction",
+	"Signalkeeper's Loft": "Signal Loft", "Cloudbreak Lookout": "Cloudbreak",
+	"Signalman's Infirmary": "Signal Infirmary", "Standard-Bearer's Supply": "Standard Supply",
+	"Upper Beacon Shelter": "Beacon Shelter", "Bell Tower Approach": "Bell Tower",
+	"Breakwater Sentinels": "Sea Wall Guard", "Blackwater Moorings": "Blackwater Dock",
+	"Glasswright's Cart": "Glasswright Cart", "Pearl Diver's Bench": "Diver's Bench",
+	"Storm-Tossed Crate": "Storm Crate", "Wreckwright's Stores": "Wreckwright Shop",
+	"Royal Signal Corps": "Royal Signal", "Royal Signal Guard": "Royal Guard",
+	"Regent's Honor Guard": "Regent Guard", "Lenswright's Bench": "Lens Bench",
+	"Signal Scriptorium": "Signal Scribe", "Semaphore Exchange": "Signal Exchange",
+	"Bannerwright's Stall": "Banner Stall", "Liftmaster's Supply": "Lift Supply",
+	"Lenswright's Cart": "Lens Cart", "Blackglass Shelter": "Blackglass Camp",
+	"Semaphore Terrace": "Signal Terrace", "Crown Signal Array": "Crown Array",
+	"Windbreak Station": "Windbreak", "Lantern Chandlery": "Lantern Shop",
+	"Sea Wall Traverse": "Sea Wall", "Saltwater Exchange": "Salt Exchange",
+}
+const REINFORCEMENT_NAMES := {"Dust Patrol": "Dust Ambush", "Piston Guard": "Piston Wave"}
 const BOSS_BRIEFS := {
 	"gilded_marshal": {
 		"portrait": "marshal",
@@ -179,7 +200,7 @@ func render(model, page_override: String = "", battle_overlay := false) -> void:
 		"result": _result()
 	if phase != "result":
 		if phase == "map":
-			_reward_placement_banner(_footer_actions())
+			_reward_placement_banner(_footer_actions(), false)
 	_layout.modulate.a = 0.70
 	create_tween().tween_property(_layout, "modulate:a", 1.0, 0.16)
 
@@ -234,11 +255,13 @@ func _shell(phase: String) -> void:
 	bar.add_child(_top_actions)
 	if phase != "map" and not _battle_overlay:
 		_reward_placement_banner(_layout)
+	if phase == "reward":
+		_add_enchantment_notice(_layout)
 	if not _battle_overlay and not _run.save_error.is_empty():
 		_layout.add_child(_label(_run.save_error, 15, RUST))
 
 
-func _reward_placement_banner(parent: BoxContainer) -> void:
+func _reward_placement_banner(parent: BoxContainer, storage_shortcut := true) -> void:
 	var placement: Dictionary = _run.current_reward_placement()
 	var tile: Dictionary = ArenaSim.TILES.get(placement.get("id", ""), {})
 	if tile.is_empty():
@@ -261,10 +284,23 @@ func _reward_placement_banner(parent: BoxContainer) -> void:
 	notice.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	notice.tooltip_text = text
 	row.add_child(notice)
-	if stored:
-		var open := _button("Open storage", _host.run_open_reward_storage)
-		open.name = "OpenRewardStorage"
-		row.add_child(open)
+	if stored and storage_shortcut:
+		_add_storage_shortcut(row)
+
+
+func _add_storage_shortcut(parent: BoxContainer) -> void:
+	var open := _button("Open storage", _host.run_open_reward_storage)
+	open.name = "OpenRewardStorage"
+	parent.add_child(open)
+
+
+func _add_enchantment_notice(parent: BoxContainer) -> void:
+	var copy: String = _run.data.get("enchantment_notice", "")
+	if not copy.is_empty():
+		var notice := _label(copy, 16, TEAL)
+		notice.name = "EnchantmentNotice"
+		notice.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		parent.add_child(notice)
 
 
 func _start_new_run(seed_value: int, difficulty: String, location: String) -> void:
@@ -545,6 +581,7 @@ func _map() -> void:
 	details.add_child(relics)
 	if not str(_run.data.get("node_notice", "")).is_empty():
 		details.add_child(_notice())
+	_add_enchantment_notice(details)
 	sidebar.add_child(HSeparator.new())
 	sidebar.add_child(_label("Route key", 17, GOLD))
 	var keys := GridContainer.new()
@@ -563,6 +600,8 @@ func _map() -> void:
 		key.add_child(_label(TYPE_NAMES[type] if texture else "%s   %s" % [TYPE_GLYPHS[type], TYPE_NAMES[type]], 15, MUTED))
 	var footer := _footer_actions()
 	footer.name = "ExpeditionMapFooter"
+	if _run.loadout.storage.any(func(row: Array) -> bool: return not row.is_empty()):
+		_add_storage_shortcut(footer)
 	footer.add_child(_button("Manage tiles", func(): _host.run_show_arena()))
 
 
@@ -606,7 +645,8 @@ func _map_board() -> Control:
 		var type: String = node.type
 		var reachable: bool = active.has(id)
 		var past: bool = id in visited
-		var label: String = node.get("label", TYPE_NAMES.get(type, type.capitalize()))
+		var full_label := battle_title(node)
+		var label := _compact_route_name(node, full_label)
 		var button := _button(label, func(): _choose_node(id), reachable)
 		button.custom_minimum_size.y = 0.0
 		for state in ["normal", "hover", "pressed"]:
@@ -620,14 +660,14 @@ func _map_board() -> Control:
 		button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 		button.disabled = not reachable
 		button.add_theme_font_size_override("font_size", 14)
-		button.tooltip_text = "%s · %s%s" % [label, TYPE_NAMES.get(type, type.capitalize()), " · completed" if past else (" · reachable" if reachable else " · unavailable")]
+		button.tooltip_text = "%s · %s%s" % [full_label, TYPE_NAMES.get(type, type.capitalize()), " · completed" if past else (" · reachable" if reachable else " · unavailable")]
 		if type == "boss":
 			button.name = {"tollkeeper": "TollkeeperBossNode", "brass_bellmaker": "BellmakerBossNode",
 				"crucible_twins": "CrucibleTwinsBossNode", "glass_refraction_engine": "RefractionEngineBossNode"}.get(node.boss_id, "FirstBossNode")
 		if node.has("reinforcement_beat"):
 			button.name = "ReinforcementNode"
-			button.text = "Wave %d · %s" % [int(node.reinforcement_beat), button.text]
 			button.tooltip_text += "\nReinforcements arrive on beat %d." % int(node.reinforcement_beat)
+		button.accessibility_name = button.tooltip_text
 		button.add_theme_stylebox_override("disabled", _box(PANEL_DARK, GOLD.darkened(0.35) if past else EDGE.darkened(0.15), 6, 4))
 		button.add_theme_color_override("font_disabled_color", GOLD if past else MUTED.darkened(0.11))
 		board.add_child(button)
@@ -643,10 +683,33 @@ func _map_board() -> Control:
 	return board
 
 
+static func battle_title(node: Dictionary) -> String:
+	var type: String = node.get("type", "")
+	var label: String = node.get("label", TYPE_NAMES.get(type, type.capitalize()))
+	if node.has("reinforcement_beat"):
+		return REINFORCEMENT_NAMES.get(label, "%s Reinforcements" % label)
+	return label
+
+
+static func _compact_route_name(node: Dictionary, full_label: String) -> String:
+	var label := full_label.trim_prefix("The ")
+	if node.has("reinforcement_beat") and not node.get("label", "") in REINFORCEMENT_NAMES:
+		var original: String = node.get("label", "Patrol")
+		return "%s Wave" % original.get_slice(" ", 0)
+	return COMPACT_ROUTE_NAMES.get(label, label)
+
+
 func _fit_route_nodes(board: Control, buttons: Array[Button], row_spacing: float) -> void:
 	var width := minf(181.0, board.size.x * 0.265)
 	var height := clampf(board.size.y * row_spacing - 4.0, 0.0, 41.0)
 	for button in buttons:
+		var font := button.get_theme_font("font")
+		var frame_inset := button.get_theme_stylebox("normal").get_minimum_size().x
+		var text_width := width - frame_inset - (27.0 if button.icon else 0.0)
+		var points := 14
+		while points > 12 and font.get_string_size(button.text, HORIZONTAL_ALIGNMENT_LEFT, -1, points).x > text_width:
+			points -= 1
+		button.add_theme_font_size_override("font_size", points)
 		button.offset_left = -width / 2.0
 		button.offset_right = width / 2.0
 		button.offset_top = -height / 2.0
@@ -696,11 +759,11 @@ func _reward() -> void:
 		return
 	var boss: bool = _run.data.get("node", {}).get("type") == "boss"
 	var final_boss: bool = boss and _run.is_final_boss()
-	var title := "Choose a trophy" if final_boss else ("Legendary reward" if boss else "Choose a reward")
+	var title := "Final trophy · ends this expedition" if final_boss else ("Legendary reward" if boss else "Choose a reward")
 	var milestone := ""
 	var mystery: String = _run.mystery_kind()
 	if boss:
-		milestone = str(_run.data.get("node_notice", "")) if final_boss else "Leg %d cleared" % _leg_number()
+		milestone = "%s Your trophy is recorded in the recap. Aether Marks and unlocks carry forward." % str(_run.data.get("node_notice", "")) if final_boss else "Leg %d cleared" % _leg_number()
 	elif mystery == "salvage_bench":
 		title = "Copy a Common tile"
 	elif mystery == "class_cache":
@@ -711,6 +774,8 @@ func _reward() -> void:
 	if lane >= 0 and lane < party.size():
 		var hero_id: String = party[lane].id
 		_reward_heading(title, milestone, hero_id)
+		if final_boss and _battle_overlay:
+			_layout.add_child(_label("Recorded in the recap. Marks and unlocks carry forward.", 15, MUTED))
 	else:
 		_page_title(title, milestone)
 	var offers: Array = _run.data.get("offers", [])
@@ -736,6 +801,7 @@ func _reward() -> void:
 		var select_tile: Button = card.get_child(card.get_child_count() - 1)
 		select_tile.name = "RewardTile_" + id
 		_add_tile_header(card, id, tile, owner, _battle_overlay)
+		_enable_reward_card_click(card, select_tile)
 	if not _battle_overlay:
 		_layout.add_child(notice)
 	var actions := _footer_actions()
@@ -750,6 +816,8 @@ func _reward() -> void:
 	var bonus: int = _run.reward_skip_gold()
 	var skip := _button("Skip for +%d gold" % bonus if bonus > 0 else "Skip reward", func(): _claim_reward("skip", notice))
 	skip.name = "SkipReward"
+	if bonus == 0 and not final_boss and _run.reward_count() > 1:
+		skip.tooltip_text = "The gold bonus is paid once per fight."
 	actions.add_child(skip)
 	var price: int = _run.reward_reroll_price()
 	if price > 0:
@@ -758,6 +826,32 @@ func _reward() -> void:
 		reroll.disabled = int(_run.data.gold) < price
 		reroll.tooltip_text = "The price doubles each time you reroll in this act."
 		actions.add_child(reroll)
+
+
+func _enable_reward_card_click(card: VBoxContainer, action: Button) -> void:
+	var panel := card.get_parent() as PanelContainer
+	var press := []
+	var on_input := func(event: InputEvent, receiver: Control):
+		if action.disabled or not event is InputEventMouseButton or event.button_index != MOUSE_BUTTON_LEFT:
+			return
+		if event.pressed:
+			press.assign([event.global_position])
+			receiver.accept_event()
+		elif not press.is_empty():
+			var origin: Vector2 = press.pop_back()
+			receiver.accept_event()
+			if origin.distance_squared_to(event.global_position) <= 100.0:
+				action.pressed.emit()
+	# Keep the real button for keyboard navigation and leave every keyword hover in place.
+	var remaining: Array[Node] = [panel]
+	while not remaining.is_empty():
+		var node := remaining.pop_back() as Control
+		if node == null or node == action:
+			continue
+		remaining.append_array(node.get_children())
+		if node.mouse_filter != MOUSE_FILTER_IGNORE:
+			node.mouse_default_cursor_shape = CURSOR_POINTING_HAND
+			node.gui_input.connect(on_input.bind(node))
 
 
 func _reward_owner(lane: int, party: Array) -> String:
@@ -835,6 +929,7 @@ func _elite_relic_draft(offers: Array) -> void:
 				card.move_child(role_row, 0)
 		else:
 			_add_card_icon(card, GameIcons.relic(id), tone)
+		_enable_reward_card_click(card, select_relic)
 
 
 func _boss_relic_draft() -> void:
@@ -844,6 +939,7 @@ func _boss_relic_draft() -> void:
 		var id: String = offer.id
 		var card := _relic_draft_card(cards, id, "BossRelic_", func(): _claim_boss_relic(id))
 		_add_card_icon(card, GameIcons.relic(id), RELIC_DRAFT_TONES.get(id, GOLD))
+		_enable_reward_card_click(card, card.get_child(card.get_child_count() - 1))
 	var skip := _button("Skip relic", func(): _claim_boss_relic("skip"))
 	skip.name = "SkipBossRelic"
 	_footer_actions().add_child(skip)
@@ -869,33 +965,76 @@ func _claim_boss_relic(id: String) -> void:
 
 
 func _enchantment_draft() -> void:
-	_page_title("Choose an enchantment", "Equip it on one compatible tile. You can move it between battles or save it for a later tile.")
+	_page_title("Choose an enchantment", "Equip it now or keep it for a later tile.")
 	var cards := _cards_row()
+	cards.size_flags_vertical = SIZE_SHRINK_BEGIN
+	var slots := VBoxContainer.new()
+	slots.size_flags_vertical = SIZE_EXPAND_FILL
+	var group := ButtonGroup.new()
 	for offer: Dictionary in _run.enchantment_offers():
 		var id: String = offer.id
 		var tone := GameIcons.enchantment_color(id)
-		var card := _choice(cards, offer.label, offer.description, "Select", func(): _claim_enchantment(id))
-		var panel := card.get_parent() as PanelContainer
-		panel.size_flags_vertical = SIZE_SHRINK_CENTER
-		panel.custom_minimum_size.y = 320
-		panel.add_theme_stylebox_override("panel", _box(PANEL, tone.darkened(0.50), 9, 18))
-		var button: Button = card.get_child(card.get_child_count() - 1)
+		var card := _panel_stack(cards, Vector2.ZERO, true)
+		card.get_parent().add_theme_stylebox_override("panel", _box(PANEL, tone.darkened(0.50), 9, 14))
+		var button := _button(offer.label, func(): _render_enchantment_targets(slots, id), true)
 		button.name = "Enchantment_" + id
-		_add_card_icon(card, offer.icon, tone)
-		if panel.get_index() == 0:
+		button.toggle_mode = true
+		button.button_group = group
+		GameIcons.decorate(button, offer.icon, 22)
+		card.add_child(button)
+		var description := TileKeywords.description(offer.description, 16, MUTED)
+		card.add_child(description)
+		if card.get_parent().get_index() == 0:
 			button.grab_focus()
+	_layout.add_child(slots)
+	_render_enchantment_targets(slots, "")
 	var skip := _button("Skip enchantment", func(): _claim_enchantment("skip"))
 	skip.name = "SkipEnchantment"
 	_footer_actions().add_child(skip)
 
 
-func _claim_enchantment(id: String) -> void:
-	if _run.choose_enchantment(id):
-		if id == "skip":
-			_host.run_return()
-		else:
-			_host.run_open_enchantment_loadout()
-	elif not _run.save_error.is_empty():
+func _render_enchantment_targets(slots: VBoxContainer, id: String) -> void:
+	for child in slots.get_children():
+		slots.remove_child(child)
+		child.queue_free()
+	var choices := _panel_stack(slots, Vector2.ZERO)
+	if id.is_empty():
+		choices.add_child(_label("Select an enchantment to see eligible tiles.", 17, MUTED))
+		return
+	var enchantment := TileEnchantments.info(id)
+	choices.add_child(_label("Equip %s" % enchantment.label, 23, GOLD, true))
+	var targets := GridContainer.new()
+	targets.columns = 3
+	targets.add_theme_constant_override("h_separation", 8)
+	targets.add_theme_constant_override("v_separation", 6)
+	choices.add_child(targets)
+	for inventory in ["lanes", "storage"]:
+		var rows: Array = _run.loadout[inventory]
+		for row_index in range(rows.size()):
+			for tile: Dictionary in rows[row_index]:
+				var spec: Dictionary = ArenaSim.TILES[tile.id]
+				if not TileEnchantments.is_eligible(id, spec, tile.id):
+					continue
+				var destination := {"id": tile.id, "start": tile.start}
+				destination["lane" if inventory == "lanes" else "row"] = row_index
+				var location := "Beat %d" % (int(tile.start) + int(spec.width)) if inventory == "lanes" else "Storage"
+				var equip := _button("%s · %s" % [spec.label, location], func(): _claim_enchantment(id, destination))
+				equip.name = "EquipEnchantment_" + tile.id
+				equip.size_flags_horizontal = SIZE_EXPAND_FILL
+				equip.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+				equip.tooltip_text = spec.description
+				GameIcons.decorate(equip, GameIcons.tile(tile.id, spec), 17)
+				targets.add_child(equip)
+	if targets.get_child_count() == 0:
+		choices.add_child(_label("No compatible tiles equipped or in storage.", 16, MUTED))
+	var keep := _button("Keep for later", func(): _claim_enchantment(id))
+	keep.name = "KeepEnchantment"
+	keep.size_flags_horizontal = SIZE_SHRINK_END
+	choices.add_child(keep)
+
+
+func _claim_enchantment(id: String, destination := {}) -> void:
+	if _run.choose_enchantment(id, destination) or not _run.save_error.is_empty():
 		_host.run_return()
 
 
@@ -949,8 +1088,12 @@ func _shop() -> void:
 		var owner: String = ledger_owners.get(id, "")
 		var row := cards if owner.is_empty() else ledger_cards
 		var caption := "Purchased" if purchased else "Buy · %d gold" % price
-		var unavailable := purchased or int(_run.data.get("gold", 0)) < price
-		var card := _choice(row, tile.label, tile.description, caption, func(): _buy_tile(id, notice), unavailable)
+		var destination: String = "" if purchased else _host.run_shop_placement_label(id)
+		var unavailable := purchased or int(_run.data.get("gold", 0)) < price or destination.is_empty()
+		var body: String = tile.description
+		if not purchased:
+			body += "\n" + (destination if not destination.is_empty() else "Make room to buy this tile.")
+		var card := _choice(row, tile.label, body, caption, func(): _buy_tile(id, notice), unavailable)
 		var purchase: Button = card.get_child(card.get_child_count() - 1)
 		purchase.name = "ShopTile_" + id
 		var panel := card.get_parent() as PanelContainer
@@ -972,9 +1115,14 @@ func _shop() -> void:
 	var actions := _footer_actions()
 	actions.add_child(_button("Manage tiles", func(): _host.run_show_arena()))
 	var heal_label := "Heal 15 HP each · 12 gold" if _party().size() > 1 else "Heal 15 HP · 12 gold"
+	if _run.data.get("shop_healed", false):
+		heal_label = "Heal used"
+	elif not _party_needs_healing():
+		heal_label = "Party at full health"
 	var healing := _button(heal_label, func():
 		_refresh_after_choice(_run.shop_heal())
 	)
+	healing.name = "ShopHeal"
 	healing.disabled = int(_run.data.get("gold", 0)) < 12 or _run.data.get("shop_healed", false) or not _party_needs_healing()
 	actions.add_child(healing)
 	var relic_id: String = _run.data.get("shop_relic", "")
@@ -1071,7 +1219,9 @@ func _pick_event(index: int) -> void:
 func _rest() -> void:
 	_page_title(_run.data.get("node", {}).get("label", "Rest site"), "")
 	var cards := _cards_row()
-	_add_card_icon(_choice(cards, "Rest", "Recover 30% max HP per hero.", "Heal", func(): _run.rest("heal"); _host.run_return()), "rest")
+	var can_heal := _party_needs_healing()
+	_add_card_icon(_choice(cards, "Rest", "Recover up to 30% of max HP per hero.", "Heal" if can_heal else "Party at full health",
+		func(): _run.rest("heal"); _host.run_return(), not can_heal), "rest")
 	_add_card_icon(_choice(cards, "Forge", "Advance one tile to the next rarity.", "Open forge", func(): _host.run_rest_forge()), "forge")
 	_continue(_leave)
 
@@ -1094,22 +1244,25 @@ func _result() -> void:
 			detail += "\n" + notice
 	if victory:
 		var trophies: Dictionary = _run.data.get("trophies", {})
+		var recorded := PackedStringArray()
 		for member: Dictionary in _party():
 			var tile_id: String = trophies.get(member.id, "")
 			if ArenaSim.TILES.has(tile_id):
-				detail += "\n%s  ·  %s" % [_hero_name(member.id), ArenaSim.TILES[tile_id].label]
+				recorded.append("%s · %s" % [_hero_name(member.id), ArenaSim.TILES[tile_id].label])
 		var legacy_trophy: String = _run.data.get("trophy", "")
 		if trophies.is_empty() and ArenaSim.TILES.has(legacy_trophy):
-			detail += "\nVictory reward  ·  " + ArenaSim.TILES[legacy_trophy].label
+			recorded.append(ArenaSim.TILES[legacy_trophy].label)
+		if not recorded.is_empty():
+			detail += "\n\nRecorded trophies\n" + "\n".join(recorded)
 		var mastered := PackedStringArray()
 		for id: String in _run.data.get("new_masteries", []):
 			mastered.append(_hero_name(id))
 		if not mastered.is_empty():
-			detail += "\nMasteries unlocked · " + ", ".join(mastered)
-	detail += "\n+%d Aether Marks this run." % int(_run.data.get("marks_earned", 0))
+			detail += "\n\nMasteries unlocked · " + ", ".join(mastered)
+	detail += "\n\n+%d Aether Marks this run." % int(_run.data.get("marks_earned", 0))
 	detail += "\n%d Aether Marks available." % int(_run.profile.get("marks", 0))
 	_choice(cards, "Victory" if victory else "Defeat", detail, "", Callable())
-	_continue(func(): _finish(false))
+	_continue(func(): _finish(false)).text = "Back to title"
 	_footer_actions().add_child(_button("Open Aether Chart", func(): _finish(true)))
 
 

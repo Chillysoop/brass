@@ -24,6 +24,10 @@ func _run() -> void:
 	_expect(HeroChoreography.profile("bash", ArenaSim.TILES.bash).style == "thrust"
 		and HeroChoreography.profile("slam", ArenaSim.TILES.slam).style == "heavy"
 		and HeroChoreography.profile("rail_shot", ArenaSim.TILES.rail_shot).style == "bolt", "Core attacks need distinct animation families.")
+	var skyline := "horizon_round_upgrade_rare_power"
+	_expect(ArenaSim.TILES[skyline].label == "Skyline Shot"
+		and HeroChoreography.profile(skyline, ArenaSim.TILES[skyline]).signature_effect == "skyline",
+		"Starshot's actual rare Power upgrade must use its signature rifle effect.")
 
 	var view := ArenaView.new()
 	root.add_child(view)

@@ -1,5 +1,6 @@
 extends Control
 
+const ArenaSim = preload("res://scripts/arena_sim.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const GameIcons = preload("res://scripts/game_icons.gd")
 const CombatIcons = preload("res://scripts/combat_icons.gd")
@@ -10,6 +11,8 @@ const EDGE := Color("#3c505b")
 const GOLD := Color("#ecc482")
 const CREAM := Color("#f3e7d1")
 const MUTED := Color("#aababc")
+const BLOCKED := Color("#f0ad90")
+const CLEAR := Color("#85d8cd")
 const TARGETS := {
 	"nearest": "Nearest", "farthest": "Farthest", "lowest_hp": "Lowest HP",
 	"highest_hp": "Highest HP", "self": "Self"
@@ -30,7 +33,10 @@ var _links: Control
 var _detail_name: Label
 var _detail_stats: HBoxContainer
 var _detail_description: RichTextLabel
+var _room_instruction: Label
+var _layout_preview: HBoxContainer
 var _confirm: Button
+var _edit_layout: Button
 var _keep_reward: Button
 var _save_reward: Button
 var _error: Label
@@ -42,7 +48,7 @@ func configure(host: Control) -> void:
 		_build()
 
 
-func open(source_id: String, copies := 3, reward := false, can_keep_reward := false) -> void:
+func open(source_id: String, copies := 3, reward := false, can_keep_reward := false, inspected := "") -> void:
 	_source_id = source_id
 	_tiers = TilePacking.forge_tiers(source_id)
 	_next_ids = TilePacking.next_options(source_id)
@@ -74,15 +80,20 @@ func open(source_id: String, copies := 3, reward := false, can_keep_reward := fa
 	for tier in range(_tiers.size()):
 		if not _tiers[tier].is_empty():
 			_add_tier(tier)
-	_inspect(source_id)
+	var focus_id := inspected if _cards.has(inspected) else source_id
+	_inspect(focus_id)
 	show()
 	_links.queue_redraw()
-	(_cards[source_id] as Button).grab_focus()
+	(_cards[focus_id] as Button).grab_focus()
 
 
 func show_error(message: String) -> void:
 	_error.text = message
 	_error.show()
+
+
+func resume_layout() -> void:
+	open(_source_id, 1, false, false, _inspected_id)
 
 
 func _build() -> void:
@@ -173,6 +184,14 @@ func _build() -> void:
 	copy.add_child(_detail_stats)
 	_detail_description = TileKeywords.description("", 16, MUTED)
 	copy.add_child(_detail_description)
+	_room_instruction = _label("", 15, BLOCKED)
+	_room_instruction.name = "ForgeRoomInstruction"
+	_room_instruction.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	copy.add_child(_room_instruction)
+	_layout_preview = HBoxContainer.new()
+	_layout_preview.name = "ForgeSpacePreview"
+	_layout_preview.add_theme_constant_override("separation", 3)
+	copy.add_child(_layout_preview)
 
 	var actions := VBoxContainer.new()
 	actions.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -181,6 +200,10 @@ func _build() -> void:
 	_confirm = _button("Choose a next-tier tile", _confirm_upgrade)
 	_confirm.custom_minimum_size = Vector2(240, 48)
 	actions.add_child(_confirm)
+	_edit_layout = _button("Edit timeline", func(): _host.forge_edit_layout(_inspected_id))
+	_edit_layout.name = "EditForgeLayout"
+	_edit_layout.custom_minimum_size.y = 38
+	actions.add_child(_edit_layout)
 	_keep_reward = _button("Keep original tile", func(): _host.run_keep_reward_tile())
 	_keep_reward.name = "KeepRewardTile"
 	_keep_reward.custom_minimum_size.y = 34
@@ -283,8 +306,10 @@ func _inspect(id: String) -> void:
 	_confirm.disabled = not can_choose or not fits
 	var prompt := "Combine into " if _is_combine else "Upgrade to "
 	_confirm.text = prompt + tile.label if can_choose else "Choose a next-tier tile"
-	if not fits:
+	var layout: Dictionary = _host.forge_layout(id) if can_choose else {}
+	if not fits and layout.is_empty():
 		_confirm.text = "Needs more room"
+	_show_layout(layout, tile, fits)
 	_confirm.add_theme_stylebox_override("normal", _box(Color("#5b442a"), GOLD))
 	_confirm.add_theme_stylebox_override("hover", _box(Color("#715637"), GOLD))
 	_confirm.add_theme_stylebox_override("pressed", _box(Color("#45311d"), GOLD))
@@ -304,6 +329,76 @@ func _inspect(id: String) -> void:
 		var pressed := frame.duplicate() as StyleBoxFlat
 		pressed.bg_color = fill.darkened(0.10)
 		card.add_theme_stylebox_override("pressed", pressed)
+
+
+func _show_layout(layout: Dictionary, upgrade: Dictionary, fits: bool) -> void:
+	for child in _layout_preview.get_children():
+		_layout_preview.remove_child(child)
+		child.queue_free()
+	var extra := 0
+	if not layout.is_empty():
+		extra = int(upgrade.width) - int(ArenaSim.TILES[layout.source.id].width)
+	_layout_preview.visible = extra > 0
+	_room_instruction.visible = extra > 0
+	_edit_layout.visible = extra > 0 and not fits
+	if extra <= 0:
+		return
+	_edit_layout.text = "Edit storage" if layout.stored else "Edit timeline"
+	var source: Dictionary = ArenaSim.TILES[layout.source.id]
+	var source_start := int(layout.source.start)
+	var extension_start := source_start + int(source.width)
+	var extension_end := source_start + int(upgrade.width)
+	var cell_name := "cell" if layout.stored else "beat"
+	var needed := "one free %s" % cell_name if extra == 1 else "%d free %ss" % [extra, cell_name]
+	var blockers := PackedStringArray()
+	for item: Dictionary in layout.items:
+		if int(item.start) >= extension_end or int(item.start) + int(ArenaSim.TILES[item.id].width) <= extension_start:
+			continue
+		var label: String = ArenaSim.TILES[item.id].label
+		if label not in blockers:
+			blockers.append(label)
+	if fits:
+		_room_instruction.text = "Fits here with %s immediately after %s." % [needed, source.label]
+	else:
+		_room_instruction.text = "Needs %s immediately after %s." % [needed, source.label]
+		if extension_end > int(layout.capacity):
+			_room_instruction.text += " Move it earlier in the %s." % ("row" if layout.stored else "timeline")
+		elif not blockers.is_empty():
+			_room_instruction.text += " Blocked by %s." % ", ".join(blockers)
+	_room_instruction.add_theme_color_override("font_color", CLEAR if fits else BLOCKED)
+	for index in range(int(layout.capacity)):
+		var occupant := ""
+		for item: Dictionary in layout.items:
+			if int(item.start) <= index and index < int(item.start) + int(ArenaSim.TILES[item.id].width):
+				occupant = ArenaSim.TILES[item.id].label
+				break
+		var is_source := index >= source_start and index < extension_start
+		var is_extension := index >= extension_start and index < extension_end
+		var color := EDGE
+		if is_source:
+			color = GOLD
+		elif is_extension:
+			color = CLEAR if occupant.is_empty() else BLOCKED
+		var cell := Label.new()
+		cell.text = str(index + 1)
+		cell.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		cell.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
+		cell.mouse_filter = Control.MOUSE_FILTER_PASS
+		cell.custom_minimum_size.y = 23
+		cell.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		cell.add_theme_font_size_override("font_size", 12)
+		cell.add_theme_color_override("font_color", CREAM if is_source or is_extension else MUTED)
+		var style := _box(INK.lerp(color, 0.25 if is_source or is_extension else 0.08), color)
+		style.content_margin_top = 2
+		style.content_margin_bottom = 2
+		style.set_corner_radius_all(4)
+		cell.add_theme_stylebox_override("normal", style)
+		var contents := occupant if not occupant.is_empty() else "Open"
+		cell.tooltip_text = "%s %d · %s" % [cell_name.capitalize(), index + 1, contents]
+		if is_extension and not occupant.is_empty():
+			cell.tooltip_text += " blocks this upgrade"
+		cell.accessibility_name = cell.tooltip_text
+		_layout_preview.add_child(cell)
 
 
 func _confirm_upgrade() -> void:

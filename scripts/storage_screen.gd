@@ -62,7 +62,7 @@ func set_tile_size(beat_pitch: float, row_height: float) -> void:
 
 
 func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can_combine := false,
-		enchantment := {}) -> void:
+		enchantment := {}, protect_selected := false) -> void:
 	var focus := get_viewport().gui_get_focus_owner()
 	var scroll_top := _grid.scroll_vertical
 	_focused_cell = focus.get_meta("storage_cell", Vector2i(-1, -1)) if is_instance_valid(focus) else Vector2i(-1, -1)
@@ -78,7 +78,8 @@ func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can
 		used += _build_row(row_index, tiles, offers)
 	_capacity.text = "%d / %d cells used" % [used, COLUMNS * ROWS]
 	_send.disabled = not _selected.has("row")
-	_discard.disabled = not _selected.has("lane")
+	_discard.disabled = not _selected.has("lane") or protect_selected
+	_discard.tooltip_text = "Return to the forge before discarding this tile." if protect_selected else ""
 	_forge.visible = camp
 	_forge.disabled = not _selected.has("lane")
 	_combine.visible = can_combine

@@ -22,6 +22,7 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_check_routes()
+	_check_event_costs()
 	var game = Arena.instantiate()
 	root.add_child(game)
 	await process_frame
@@ -29,7 +30,7 @@ func _run() -> void:
 	await _compare_rewards(game)
 	game.queue_free()
 	await process_frame
-	for path in [save_path, save_path + ".control", save_path + ".salvage_bench",
+	for path in [save_path, save_path + ".costs", save_path + ".control", save_path + ".salvage_bench",
 			save_path + ".traveling_smith", save_path + ".class_cache"]:
 		for suffix in ["", ".bak", ".tmp"]:
 			if FileAccess.file_exists(path + suffix):
@@ -39,6 +40,28 @@ func _run() -> void:
 	if failures.is_empty():
 		print("Act I mystery routes and three distinct Warden timelines passed from seed %d." % EASY_SEED)
 	quit(0 if failures.is_empty() else 1)
+
+
+func _check_event_costs() -> void:
+	var run := FrontierRun.new()
+	run.load_save(save_path + ".costs")
+	if not _check(run.start_run(2197832764) and run.choose_hero(run.data.offers.front())
+		and run.choose_relic(run.data.offers.front()) and run.choose_starter(run.data.offers.front()),
+		"Open the route from the Jammed Crane playtest."):
+		return
+	run.data.phase = "event"
+	run.data.node = run._node("event", "Jammed Crane", 1, 0)
+	run.data.heroes[0].hp = 93
+	run.data.heroes[0].max_hp = 108
+	run._sync_lead_hero()
+	_check(str(run.event_options()[1]).contains("40% take 11 damage") and run.event_choice(1)
+		and run.data.hp == 82 and run.data.max_hp == 108 and run.data.node_notice.contains("Took 11 damage"),
+		"The crane shows the exact damage for the playtest seed and leaves maximum HP intact.")
+	run.data.phase = "event"
+	run.data.node = run._node("event", "Relay Auction", 1, 0)
+	run.data.relics = ["stepped_gear", "afterimage"]
+	_check(str(run.event_options()[1]).contains("Trade Stepped Gear") and run.event_choice(1)
+		and run.data.relics == ["afterimage"], "The auction names the exact relic that is removed.")
 
 
 func _check_routes() -> void:

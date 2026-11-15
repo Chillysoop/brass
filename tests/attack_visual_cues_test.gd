@@ -9,6 +9,8 @@ var failures: Array[String] = []
 func _initialize() -> void:
 	_check_multi_hit_at_loop_edge()
 	_check_blink_and_miss()
+	_check_afterimage_cue_origin()
+	_check_meteor_footprint()
 	_check_enemy_ground_target()
 	_check_boss_phase_change()
 	_check_canceled_windup()
@@ -56,6 +58,39 @@ func _check_blink_and_miss() -> void:
 	var whiff := _cue(miss, "hero_cast", "bash")
 	_expect(not whiff.is_empty() and not whiff.landed and miss.units[1].hp == miss.units[1].max_hp,
 		"A tile can play its attack animation when it misses without reporting a landed hit.")
+
+
+func _check_afterimage_cue_origin() -> void:
+	var sim := _fixture("bruiser", [{"id": "blink", "start": 0}, {"id": "rivet_bolt", "start": 3}], 170.0)
+	var hero: Dictionary = sim.units[0]
+	hero.relics = ["afterimage"]
+	var start: Vector2 = hero.pos
+	_advance(sim, 5 * BEAT - 1)
+	_expect(hero.get("afterimage", {}).get("position") == start and sim.visual_cues.is_empty(),
+		"The Afterimage stays at Blink's departure point until the follow-up is due.")
+	sim.step()
+	var cue := _cue(sim, "hero_cast", "rivet_bolt")
+	_expect(cue.get("tick") == 5 * BEAT and cue.get("from_afterimage", false) and cue.get("strike_from") == start
+		and cue.get("from") == hero.pos and start != hero.pos and not hero.has("afterimage"),
+		"The follow-up uses the Afterimage without moving the living hero or playing it before its tile finishes.")
+
+
+func _check_meteor_footprint() -> void:
+	var sim := _fixture("bruiser", [{"id": "meteor_seal", "start": 0}], 220.0)
+	var primary: Dictionary = sim.units[1]
+	var landing: Vector2 = primary.pos
+	sim._add_campaign_enemy("bruiser", landing + Vector2(20.0, 120.0))
+	var secondary: Dictionary = sim.units[2]
+	secondary.speed = 0.0
+	secondary.next_attack = 1000
+	_advance(sim, 5 * BEAT - 1)
+	_expect(sim.visual_cues.is_empty() and primary.hp == primary.max_hp and secondary.hp == secondary.max_hp,
+		"Meteor Seal must not land before the tile ends.")
+	sim.step()
+	var cue := _cue(sim, "hero_cast", "meteor_seal")
+	_expect(cue.get("tick") == 5 * BEAT and cue.get("to") == landing
+		and cue.get("radius") == ArenaSim.TILES.meteor_seal.radius and cue.get("contact_points", []).size() == 2,
+		"Meteor Seal draws one impact at the actual area center and knows both contacts.")
 
 
 func _check_enemy_ground_target() -> void:

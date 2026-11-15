@@ -5,10 +5,18 @@ const LIGHT := Color("#fff5de")
 
 
 static func lifetime(profile: Dictionary) -> float:
+	match profile.get("signature_effect", ""):
+		"meteor": return 0.64
+		"skyline", "marshal_sweep": return 0.49
+		"hammer": return 0.46
 	match profile.style:
 		"shot", "slash", "thrust": return 0.22 + 0.025 * float(profile.weight)
 		"dash", "bolt", "pull": return 0.29 + 0.025 * float(profile.weight)
 		_: return 0.33 + 0.055 * float(profile.weight)
+
+
+static func release_duration(profile: Dictionary) -> float:
+	return 0.26 if profile.get("signature_effect", "") in ["skyline", "hammer", "marshal_sweep"] else 0.18
 
 
 # x/y move the portrait around its feet. z is lean and w is squash.
@@ -28,6 +36,9 @@ static func pose(profile: Dictionary, weight: float, facing: float, released: bo
 		"blink": motion = Vector4(0.015, -0.07, 0.03, 0.16)
 		"burst", "mine": motion = Vector4(0.05, 0.055, 0.16, -0.08)
 		"mark": motion = Vector4(0.045, -0.03, 0.06, 0.035)
+	match profile.get("signature_effect", ""):
+		"skyline": motion = Vector4(-0.20, -0.055, -0.24, -0.06)
+		"hammer": motion = Vector4(0.14, 0.035, 0.28, -0.06)
 	if not released:
 		motion *= -0.62
 		if profile.style in ["guard", "dash", "mine"]:
@@ -47,7 +58,10 @@ static func windup(canvas: CanvasItem, at: Vector2, facing: float, size: float, 
 	var color := Color(profile.color, alpha)
 	var style: String = profile.style
 	var radius := size * lerpf(0.23, 0.10, charge)
-	if style in ["shot", "bolt", "thrust", "pull"]:
+	if profile.get("signature_effect", "") == "skyline":
+		var muzzle := at + Vector2(facing * size * 0.50, -size * 0.46)
+		_diamond(canvas, muzzle, size * lerpf(0.18, 0.06, charge), color, 2.0)
+	elif style in ["shot", "bolt", "thrust", "pull"]:
 		_diamond(canvas, at + Vector2(facing * size * 0.21, -size * 0.33), radius * 0.5, color, 1.5)
 	elif style in ["ward", "guard", "heal", "blink", "mark"]:
 		var center := at - Vector2(0, size * 0.24)
@@ -75,6 +89,23 @@ static func draw_cast(canvas: CanvasItem, profile: Dictionary, start: Vector2, t
 	var front := start_chest + direction * size * 0.40
 	var close_end := front.move_toward(end_chest, size * (1.05 if hit else 0.62))
 	var expansion := sin(progress * PI * 0.5)
+	match profile.get("signature_effect", ""):
+		"meteor":
+			if hit:
+				_draw_meteor(canvas, target, footprint, size, progress)
+				return
+		"skyline":
+			_draw_skyline(canvas, start, end_chest, size, progress, hit)
+			return
+		"marshal_sweep":
+			if footprint.x > 0.0:
+				_draw_marshal_release(canvas, start, footprint, progress)
+				return
+		"hammer":
+			var strike_anchor := arrival if style == "dash" else start
+			_draw_hammer_swing(canvas, strike_anchor, target, size, progress, hit)
+			if style != "dash":
+				return
 	match style:
 		"slash":
 			var sweep := 1.25 + variant * 0.26
@@ -151,13 +182,7 @@ static func draw_cast(canvas: CanvasItem, profile: Dictionary, start: Vector2, t
 		"dash", "blink":
 			var last := arrival if not start.is_equal_approx(arrival) else start.move_toward(target, size * 0.72)
 			if style == "blink":
-				var ring := Vector2(size * 0.62, size * 0.32)
-				_ellipse(canvas, start, ring * lerpf(1.1, 0.46, expansion), progress * 3.0, progress * 3.0 + TAU * 0.90, ink, 2.2)
-				_ellipse(canvas, last, ring * lerpf(0.52, 1.46, expansion), -progress * 2.0, TAU * 0.90 - progress * 2.0, ink, 2.2)
-				canvas.draw_dashed_line(start + lift, last + lift, light, 2.1, 9.0)
-				for i in range(n):
-					var shard := start.lerp(last, float(i + 1) / (n + 1)) + lift * (0.4 + expansion * 0.8)
-					_diamond(canvas, shard, size * 0.10, ink, 1.5)
+				_draw_blink(canvas, start, last, size, progress, hit, ink, light)
 			else:
 				for i in range(n):
 					var across := normal * (i - (n - 1) * 0.5) * size * 0.18
@@ -166,6 +191,121 @@ static func draw_cast(canvas: CanvasItem, profile: Dictionary, start: Vector2, t
 				_sparks(canvas, end_chest, direction.angle(), size * 0.66, n + 2, expansion, ink)
 		"guard", "ward", "heal", "mark", "mine":
 			_draw_glyph(canvas, style, start, target if hit else start, lift, size, variant, n, progress, ink, light)
+
+
+static func _draw_blink(canvas: CanvasItem, start: Vector2, arrival: Vector2, size: float, progress: float,
+		hit: bool, ink: Color, light: Color) -> void:
+	var trail_alpha := 1.0 - progress
+	var edge := Color("#392557", maxf(0.0, trail_alpha * 0.84))
+	var portal_radius := Vector2(size * 0.92, size * 0.40)
+	var departure := portal_radius * lerpf(1.08, 0.23, progress)
+	_ellipse(canvas, start, departure, 0.0, TAU, edge, 5.0)
+	_ellipse(canvas, start, departure, 0.0, TAU, ink, 2.9)
+	_diamond(canvas, start - Vector2(0.0, size * 0.53), size * 0.28 * trail_alpha, light, 2.0)
+	if not hit:
+		return
+	var arrival_ring := portal_radius * lerpf(0.44, 1.37, progress)
+	_ellipse(canvas, arrival, arrival_ring, 0.0, TAU, edge, 5.2)
+	_ellipse(canvas, arrival, arrival_ring, 0.0, TAU, Color("#e9d6ff", trail_alpha), 3.0)
+	_ellipse(canvas, arrival, arrival_ring * 0.68, 0.0, TAU, ink, 1.7)
+	var trail_height := Vector2(0.0, -size * 0.63)
+	var tail := start.lerp(arrival, progress * 0.78) + trail_height
+	canvas.draw_dashed_line(tail, arrival + trail_height, edge, 3.8, maxf(3.0, size * 0.22))
+	canvas.draw_dashed_line(tail, arrival + trail_height, light, 1.9, maxf(3.0, size * 0.22))
+	_sparks(canvas, arrival - Vector2(0.0, size * 0.32), 0.6, size * 0.57, 7, progress, ink)
+
+
+static func _draw_skyline(canvas: CanvasItem, start: Vector2, target_chest: Vector2, size: float, progress: float,
+		hit: bool) -> void:
+	var facing := 1.0 if target_chest.x >= start.x else -1.0
+	var muzzle := start + Vector2(size * facing * 0.60, -size * 0.95)
+	var target := target_chest if hit else muzzle.lerp(target_chest, 0.84)
+	var direction := muzzle.direction_to(target)
+	var across := direction.orthogonal()
+	var opacity := 1.0 - progress
+	var dark := Color("#192e42", opacity * 0.82)
+	var trace := Color("#76def4", opacity)
+	var white := Color("#f2ffff", opacity)
+	var tail := muzzle.lerp(target, smoothstep(0.04, 0.96, progress) * 0.82)
+	_line(canvas, tail, target, dark, trace, white, 2.8)
+	var flash := 1.0 - smoothstep(0.0, 0.40, progress)
+	if flash > 0.0:
+		var flare := size * (0.23 + 0.39 * flash)
+		var flare_tint := Color(white, flash)
+		var edge := Color(dark, flash * 0.94)
+		canvas.draw_colored_polygon(PackedVector2Array([muzzle - direction * flare * 0.45, muzzle + across * flare * 0.56,
+			muzzle + direction * flare * 1.9, muzzle - across * flare * 0.56]), edge)
+		canvas.draw_colored_polygon(PackedVector2Array([muzzle - direction * flare * 0.30, muzzle + across * flare * 0.36,
+			muzzle + direction * flare * 1.54, muzzle - across * flare * 0.36]), flare_tint)
+	if hit:
+		_sparks(canvas, target, direction.angle(), size * 0.9, 7, progress, trace)
+
+
+static func _draw_meteor(canvas: CanvasItem, hit: Vector2, footprint: Vector2, size: float, progress: float) -> void:
+	var opacity := 1.0 - progress
+	var travel := smoothstep(0.0, 0.34, progress)
+	var upward := Vector2(0.44, -0.90)
+	var across := upward.orthogonal()
+	var center := hit - Vector2(0.0, size * 0.40)
+	var rim := footprint if footprint.x > 0.0 else Vector2(size * 2.1, size)
+	var dark := Color("#602922", opacity * 0.90)
+	var orange := Color("#f97136", opacity)
+	var gold := Color("#ffd489", opacity)
+	var ring := rim * lerpf(0.27, 1.0, smoothstep(0.0, 0.84, progress))
+	_ellipse(canvas, hit, ring, 0.0, TAU, dark, 5.2)
+	_ellipse(canvas, hit, ring, 0.0, TAU, gold, 2.8)
+	if progress < 0.72:
+		_ellipse(canvas, hit, ring * 0.79, 0.0, TAU, orange, 2.1)
+	if progress < 0.40:
+		var fade := 1.0 - smoothstep(0.24, 0.40, progress)
+		var head := center + upward * size * lerpf(1.68, 0.0, travel)
+		var tail := upward * size * lerpf(4.90, 2.15, travel)
+		var flame_width := size * lerpf(0.69, 0.42, travel)
+		var trail := PackedVector2Array([head - upward * size * 0.42, head + across * flame_width,
+			head + tail * 0.70 + across * flame_width * 0.41, head + tail,
+			head + tail * 0.81 - across * flame_width * 0.45, head - across * flame_width])
+		canvas.draw_colored_polygon(trail, Color(dark, fade))
+		var fire := PackedVector2Array([head - upward * size * 0.31, head + across * flame_width * 0.76,
+			head + tail * 0.88, head - across * flame_width * 0.75])
+		canvas.draw_colored_polygon(fire, Color(orange, fade))
+		var meteor := PackedVector2Array()
+		for index in range(8):
+			var direction := Vector2.RIGHT.rotated(float(index) * TAU / 8.0 + 0.24)
+			meteor.append(head + direction * size * (0.45 if index % 3 == 0 else 0.57))
+		canvas.draw_colored_polygon(meteor, Color("#593640", fade))
+		canvas.draw_circle(head - upward * size * 0.17 + across * size * 0.15, size * 0.25,
+			Color(gold, fade * 0.87), true, -1.0, true)
+	_sparks(canvas, center, 0.9, size * 1.72, 10, progress, gold)
+
+
+static func _draw_hammer_swing(canvas: CanvasItem, start: Vector2, target: Vector2, size: float, progress: float,
+		hit: bool) -> void:
+	var facing := 1.0 if target.x >= start.x else -1.0
+	var shoulder := start + Vector2(facing * size * 0.32, -size * 0.70)
+	var impact := target - Vector2(0.0, size * 0.55)
+	var a := -2.0 if facing > 0.0 else -3.24
+	var b := 0.15 if facing > 0.0 else -1.07
+	var opacity := 1.0 - progress
+	var shadow := Color("#653828", opacity * 0.9)
+	var gold := Color("#eba750", opacity)
+	var white := Color("#fff3c5", opacity)
+	_arc(canvas, shoulder, size * lerpf(0.94, 1.40, progress), a + progress * 0.2, b,
+		shadow, gold, white, 4.4)
+	if hit:
+		_diamond(canvas, impact, size * lerpf(0.32, 0.82, progress), white, 2.3)
+		_sparks(canvas, impact, 0.4, size * 1.1, 7, progress, gold)
+
+
+static func _draw_marshal_release(canvas: CanvasItem, center: Vector2, radius: Vector2, progress: float) -> void:
+	var opacity := 1.0 - progress
+	var ring := radius * lerpf(0.52, 1.0, smoothstep(0.0, 0.58, progress))
+	var dark := Color("#542835", opacity * 0.9)
+	var gold := Color("#ffd17f", opacity)
+	var cream := Color("#fff0c7", opacity)
+	_ellipse(canvas, center, radius, 0.0, TAU, Color("#712f30", opacity * 0.66), 3.4)
+	_ellipse(canvas, center, ring, 0.0, TAU, dark, 7.0)
+	_ellipse(canvas, center, ring, 0.0, TAU, gold, 3.6)
+	_ellipse(canvas, center, ring * 0.91, 0.0, TAU, cream, 1.85)
 
 
 static func draw_secondary_contact(canvas: CanvasItem, profile: Dictionary, start: Vector2, target: Vector2,

@@ -84,11 +84,13 @@ var _title: Label
 var _tile_badges: HBoxContainer
 var _detail: Label
 var _hint: Label
+var _close: Button
 var _retry: Button
 var _focus_misses := false
 
 
-func open(activations: Array, boss_events: Array, outcome: String, encounter := "", can_retry := false) -> void:
+func open(activations: Array, boss_events: Array, outcome: String, encounter := "", can_retry := false,
+		show_back := true, previous_event := {}) -> void:
 	if _list == null:
 		_build()
 	_events.clear()
@@ -117,11 +119,19 @@ func open(activations: Array, boss_events: Array, outcome: String, encounter := 
 		results += "   ·   %d skipped after a hero fell" % counts.unavailable
 	_summary.text = results
 	_retry.visible = can_retry
+	_close.visible = show_back
 	_filters.boss.visible = not boss_events.is_empty()
 	_filters.relics.visible = activations.any(func(event: Dictionary): return not event.get("relics", []).is_empty())
 	_focus_misses = outcome == "defeat"
 	show()
 	_show_filter("all")
+	if not previous_event.is_empty():
+		for index in range(_visible_events.size()):
+			if _visible_events[index].order == previous_event.order:
+				_list.select(index)
+				_list.ensure_current_is_visible()
+				_select(index)
+				break
 	if not _visible_events.is_empty():
 		_list.grab_focus()
 	else:
@@ -207,9 +217,9 @@ func _build() -> void:
 	footer.alignment = BoxContainer.ALIGNMENT_END
 	footer.add_theme_constant_override("separation", 8)
 	column.add_child(footer)
-	var close := _button("Back to arena", func(): close_requested.emit())
-	close.name = "CloseBattleReview"
-	footer.add_child(close)
+	_close = _button("Back to arena", func(): close_requested.emit())
+	_close.name = "CloseBattleReview"
+	footer.add_child(_close)
 	_retry = _button("Retry in Practice", func(): retry_requested.emit())
 	_retry.tooltip_text = "Replay this fight with the original party and inventory."
 	footer.add_child(_retry)
@@ -282,6 +292,13 @@ func _select(index: int) -> void:
 				_detail.text += "\n" + source
 		var rule: String = RULE_NAMES.get(event.rule, str(event.rule).capitalize())
 		var target: String = event.get("target_name", "")
+		if event.rule == "self":
+			var support: String = ArenaSim.TILES.get(event.tile, {}).get("support", "")
+			if support == "weakest":
+				rule = "Lowest-health ally"
+			elif support == "party":
+				rule = "All living allies"
+				target = ""
 		_hint.text = "Targeting: %s" % rule if target.is_empty() else "Targeting: %s  ·  %s" % [rule, target]
 		if event.status == "miss":
 			var advice := _miss_advice(event)

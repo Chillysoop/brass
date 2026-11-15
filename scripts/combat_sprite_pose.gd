@@ -141,6 +141,13 @@ static func arm_pose(profile: Dictionary, weight: float, released: bool) -> Vect
 		"pull": angle = Vector3(-0.18, 0.22, -0.12)
 		"guard": angle = Vector3(-0.35, -0.28, 0.04)
 		"ward", "heal", "mark", "blink": angle = Vector3(-0.58, -0.22, 0.025)
+	match profile.get("signature_effect", ""):
+		"hammer":
+			angle = Vector3(0.92, -0.24, 0.086) if released else Vector3(-0.82, 0.17, 0.035)
+			return angle * minf(weight * float(profile.weight), 1.18)
+		"skyline":
+			angle = Vector3(-0.28, -0.25, -0.10) if released else Vector3(-0.10, -0.10, 0.055)
+			return angle * minf(weight * float(profile.weight), 1.18)
 	if not released:
 		if profile.style in ["shot", "bolt"]:
 			angle = Vector3(-0.12, -0.07, 0.065)

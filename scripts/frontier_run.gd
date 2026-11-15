@@ -625,6 +625,7 @@ func choose_node(id: String) -> bool:
 	data.segment = 1 + floori(float(selected.row) / NODES_PER_SEGMENT)
 	data.visited.append(id)
 	data.node_notice = ""
+	data.erase("enchantment_notice")
 	data.erase("reward_placement")
 	data.erase("reward_hints")
 	data.erase("shop_class_offers")
@@ -1285,13 +1286,35 @@ func enchantment_offers() -> Array:
 	return offers
 
 
-func choose_enchantment(id: String) -> bool:
+func choose_enchantment(id: String, destination := {}) -> bool:
 	if data.get("phase") != "enchantment" or (id != "skip" and id not in TileEnchantments.IDS):
 		return false
+	var before_loadout: Variant = null
+	var equipped_tile := ""
+	if not destination.is_empty():
+		var rows: Array = loadout.storage if destination.has("row") else loadout.lanes
+		var row := int(destination.get("row", destination.get("lane", -1)))
+		if id == "skip" or row < 0 or row >= rows.size():
+			return false
+		var item_index: int = rows[row].find_custom(func(item: Dictionary):
+			return item.start == destination.get("start", -1) and item.id == destination.get("id", "")
+		)
+		if item_index < 0:
+			return false
+		var item: Dictionary = rows[row][item_index]
+		if not TileEnchantments.is_eligible(id, ArenaSim.TILES.get(item.id, {}), item.id):
+			return false
+		before_loadout = loadout.duplicate(true)
+		item.enchantment = id
+		equipped_tile = ArenaSim.TILES[item.id].label
 	var before := data.duplicate(true)
 	data.enchantment = "" if id == "skip" else id
+	if id != "skip":
+		var label: String = TileEnchantments.info(id).label
+		data.enchantment_notice = "%s kept for later." % label if equipped_tile.is_empty() \
+			else "%s equipped on %s." % [label, equipped_tile]
 	data.phase = "map"
-	return _save_run_change(before)
+	return _save_run_change(before, {}, before_loadout)
 
 
 func active_enchantment() -> String:
@@ -1382,7 +1405,7 @@ func leave_node() -> bool:
 	return _return_to_map(data.duplicate(true))
 
 
-func rest(action: String) -> bool:
+func rest(action: String, forge_notice := "") -> bool:
 	if data.get("phase") != "rest" or action not in ["heal", "forge"]:
 		return false
 	var before := data.duplicate(true)
@@ -1390,6 +1413,8 @@ func rest(action: String) -> bool:
 		for hero: Dictionary in data.heroes:
 			hero.hp = mini(int(hero.max_hp), int(hero.hp) + ceili(float(hero.max_hp) * 0.30))
 		_sync_lead_hero()
+	elif not forge_notice.is_empty():
+		data.node_notice = forge_notice
 	return _return_to_map(before)
 
 
@@ -1512,6 +1537,8 @@ func choose_mystery_upgrade(source: Dictionary, upgrade: String) -> bool:
 		data.phase = "map"
 		data.offers = []
 		data.node_notice = "%s upgraded to %s." % [ArenaSim.TILES[source_id].label, ArenaSim.TILES[upgrade].label]
+		if not enchantment.is_empty() and not item.has("enchantment"):
+			data.node_notice += "\n%s returned to storage." % TileEnchantments.info(enchantment).label
 		if _save_run_change(before):
 			return true
 		item.id = source_id
@@ -1531,22 +1558,22 @@ func event_text() -> String:
 		"Class Cache": return "Pick a category, then choose an Uncommon from your hero's deck."
 		"Jammed Crane": return "A jammed lift holds a salvage crate above the roadway. The crew offers a cut if you walk away."
 		"Loaded Beacon": return "A beacon is drawing a nearby clockwork patrol. Its keeper can disarm it for a fee."
-		"Relay Auction": return "A relay broker will exchange your first relic for a choice of Rare tiles."
+		"Relay Auction": return "A relay broker offers Rare tiles in exchange for a relic."
 		"Cracked Mold": return "A chipped casting mold holds a salvageable tile. A glasswright offers to buy the mold intact."
 		"Smelter Relay": return "A live smelter relay is calling a Foundry patrol. Its operator can shut it off for a fee."
-		"Cinder Exchange": return "A Foundry broker offers a choice of Rare tiles in exchange for your first relic."
+		"Cinder Exchange": return "A Foundry broker offers Rare tiles in exchange for a relic."
 		"Steam Infirmary": return "An attendant can treat the whole expedition with the Foundry's last clean vapor tank."
 		"Lenswright's Bench": return "A lenswright offers to cut a Rare tile from one of two slabs on the workbench."
 		"Prism Cache": return "Heat bleeds from a half-buried cache. A scavenger will pay for its location, or you can try to open it."
 		"Beacon Intercept": return "A loose banner is relaying your position to a Crown patrol. The keeper offers to jam the signal for a fee."
 		"Signal Cache": return "A runner offers to buy the coordinates of a dropped signal case. Opening it yourself would trigger a ward."
-		"Signal Scriptorium": return "A signalwright offers a choice of Rare tiles in exchange for your first relic."
+		"Signal Scriptorium": return "A signalwright offers Rare tiles in exchange for a relic."
 		"Signalman's Infirmary": return "The upper relay's medic can patch up both heroes for a fee."
 		"Lost Dispatch": return "A courier offers two Rare tiles in exchange for the fare to recover a lost dispatch."
 		"Storm Cache": return "A salvager will pay for a storm-lashed cache's location. Its contents are valuable, but the lightning ward is still live."
 		"Tethered Barge": return "You pull a stranded barge back to the dock. Its crew offers you a share of the salvage, or you can leave it with them and rest aboard."
 		"Rusted Foghorn": return "A rusted foghorn calls a nearby wreck patrol. The keeper can muffle it for a fee."
-		"Diver's Exchange": return "A wreck diver offers a choice of Rare tiles for your first relic."
+		"Diver's Exchange": return "A wreck diver offers Rare tiles in exchange for a relic."
 		"Lifeboat Clinic": return "A lifeboat medic offers to patch up both heroes before you head out past the sea wall."
 		"Pearl Diver's Bench": return "A pearl diver has two Rare tiles for sale, fresh from a wreck caught on the breakwater."
 		"Storm-Tossed Crate": return "A crate keeps slamming against the pier. A deckhand offers to buy the location, or you can climb down and pry it open."
@@ -1562,13 +1589,16 @@ func event_options() -> Array:
 	match EVENT_KINDS.get(data.get("node", {}).get("label", "")):
 		"salvage":
 			var attempt := "Free the casting" if data.location == "glass" else "Free the crate"
-			return ["Take 8 gold", attempt + " · 60% Uncommon reward, 40% lose 10% max HP"]
+			return ["Take 8 gold", "%s · 60%% Uncommon reward, 40%% take %s" % [attempt, _event_damage_label(0.10)]]
 		"ambush": return ["Disarm it · pay 6 gold", "Fight the patrol · win a tile and 12 gold"] if int(data.gold) >= 6 else ["Walk away", "Fight the patrol · win a tile and 12 gold"]
-		"trade": return ["Walk away", "Trade first relic · choose a Rare tile" if not data.relics.is_empty() else "No relic to trade"]
+		"trade":
+			var relic: String = data.relics.front() if not data.relics.is_empty() else ""
+			var label: String = RELICS.get(relic, {}).get("label", relic.capitalize())
+			return ["Walk away", "Trade %s · choose a Rare tile" % label if not relic.is_empty() else "No relic to trade"]
 		"infirmary": return ["Walk away", "Treat the party · pay 10 gold for 20 HP each" if int(data.gold) >= 10 else "Treatment costs 10 gold"]
 		"lenswright": return ["Walk away", "Pay 14 gold · choose a Rare tile" if int(data.gold) >= 14 else "Cutting costs 14 gold"]
-		"prism_cache": return ["Sell the location · gain 12 gold", "Open the cache · lose 15% max HP for an Epic tile"]
-		"signal_cache": return ["Sell the coordinates · gain 14 gold", "Open the case · lose 12% max HP and choose a Rare tile"]
+		"prism_cache": return ["Sell the location · gain 12 gold", "Open the cache · take %s for an Epic tile" % _event_damage_label(0.15)]
+		"signal_cache": return ["Sell the coordinates · gain 14 gold", "Open the case · take %s and choose a Rare tile" % _event_damage_label(0.12)]
 		"barge": return ["Take your share · gain 12 gold", "Rest aboard · recover up to 24 HP"]
 		"wager": return ["Take 4 gold", "Stake 10 gold · 60% win 24 gold"]
 		"permit": return ["Walk away", "Pay 24 gold · gain a random relic" if not _available_relics().is_empty() else "No relics available"]
@@ -1609,8 +1639,9 @@ func event_choice(index: int) -> bool:
 				data.phase = "reward"
 				data.offers = _tier_rewards(_tier_pool(1), 2, 92)
 			else:
+				var failure := "The mold shattered." if data.location == "glass" else "The crane collapsed."
+				data.node_notice = "%s Took %s." % [failure, _event_damage_label(0.10)]
 				_apply_event_damage(0.10)
-				data.node_notice = "The mold shattered. Lost 10% of maximum HP." if data.location == "glass" else "The crane collapsed. Lost 10% of maximum HP."
 		"ambush":
 			if index == 1:
 				data.phase = "combat"
@@ -1619,7 +1650,8 @@ func event_choice(index: int) -> bool:
 				data.gold -= 6
 		"trade":
 			if index == 1 and not data.relics.is_empty():
-				data.relics.pop_front()
+				var relic: String = data.relics.pop_front()
+				data.node_notice = "Traded %s." % RELICS.get(relic, {}).get("label", relic.capitalize())
 				data.phase = "reward"
 				data.offers = _tier_rewards(_tier_pool(2), 2, 92)
 		"infirmary":
@@ -1636,18 +1668,18 @@ func event_choice(index: int) -> bool:
 			if index == 0:
 				data.gold += 12
 			else:
+				data.node_notice = "The cache triggered a ward. Took %s." % _event_damage_label(0.15)
 				_apply_event_damage(0.15)
 				data.phase = "reward"
 				data.offers = _sample(_tier_pool(3), 1, int(data.seed), _node_salt(92))
-				data.node_notice = "Opening the cache cost 15% of maximum HP."
 		"signal_cache":
 			if index == 0:
 				data.gold += 14
 			else:
+				data.node_notice = "The signal ward struck. Took %s." % _event_damage_label(0.12)
 				_apply_event_damage(0.12)
 				data.phase = "reward"
 				data.offers = _tier_rewards(_tier_pool(2), 2, 92)
-				data.node_notice = "The signal ward cost 12% of maximum HP."
 		"barge":
 			if index == 0:
 				data.gold += 12
@@ -2402,10 +2434,30 @@ func _heal(amount: int, revive := true) -> void:
 	_sync_lead_hero()
 
 
+func _event_damage(hero: Dictionary, fraction: float) -> int:
+	return clampi(int(hero.hp) - 1, 0, ceili(float(hero.max_hp) * fraction))
+
+
+func _event_damage_label(fraction: float) -> String:
+	var hits: Array[int] = []
+	var party_cost := PackedStringArray()
+	for hero: Dictionary in data.heroes:
+		if int(hero.hp) > 0:
+			var damage := _event_damage(hero, fraction)
+			hits.append(damage)
+			party_cost.append("%d on %s" % [damage, HEROES[hero.id].label])
+	if hits.is_empty():
+		return "0 damage"
+	if hits.size() == 1:
+		return "%d damage" % hits[0]
+	if hits.count(hits[0]) == hits.size():
+		return "%d damage per living hero" % hits[0]
+	return "damage (%s)" % ", ".join(party_cost)
+
+
 func _apply_event_damage(fraction: float) -> void:
 	for hero: Dictionary in data.heroes:
-		if hero.hp > 0:
-			hero.hp = maxi(1, int(hero.hp) - ceili(float(hero.max_hp) * fraction))
+		hero.hp = int(hero.hp) - _event_damage(hero, fraction)
 	_sync_lead_hero()
 
 

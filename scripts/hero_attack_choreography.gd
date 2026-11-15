@@ -46,6 +46,11 @@ const MOTIF_VARIANTS := {
 	"pull": 0, "gravity_hook": 1, "grapple": 2, "tether_dart": 3,
 }
 
+const SIGNATURE_EFFECTS := {
+	"bash": "hammer", "shield_ram": "hammer", "rebound": "hammer", "bulwark_charge": "hammer",
+	"slam": "hammer", "meteor_seal": "meteor",
+}
+
 
 static func profile(id: String, tile: Dictionary) -> Dictionary:
 	var base_id: String = tile.get("base_tile", id)
@@ -66,6 +71,9 @@ static func profile(id: String, tile: Dictionary) -> Dictionary:
 		trail_count += 1
 	if technique:
 		accent = accent.lerp(PALETTES.ward[0], 0.22)
+	var signature_effect: String = SIGNATURE_EFFECTS.get(base_id, "")
+	if base_id == "horizon_round" and id != base_id and not technique:
+		signature_effect = "skyline"
 	return {
 		"style": style,
 		"color": color.lerp(accent, variation * 0.20),
@@ -74,6 +82,7 @@ static func profile(id: String, tile: Dictionary) -> Dictionary:
 		"variant": variant,
 		"weight": clampf(0.66 + width * 0.10 + damage * 0.004 + rarity * 0.06 + variation * 0.10, 0.6, 1.8),
 		"trail_count": mini(5, trail_count),
+		"signature_effect": signature_effect,
 	}
 
 

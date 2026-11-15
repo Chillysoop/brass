@@ -426,8 +426,8 @@ const CORE_TILES := {
 	},
 	"shield_ram": {
 		"label": "Shield Ram", "width": 2, "range": 160.0, "damage": 21,
-		"family": "bash", "rarity": "uncommon",
-		"targets": TARGET_RULES, "description": "Hit and push an enemy. Gain 8 guard."
+		"family": "bash", "rarity": "uncommon", "guard_on_hit": 8,
+		"targets": TARGET_RULES, "description": "Hit and push an enemy. Gain 8 Guard on hit."
 	},
 	"hook_bash": {
 		"label": "Hook Bash", "width": 2, "range": 490.0, "damage": 18,
@@ -436,8 +436,8 @@ const CORE_TILES := {
 	},
 	"bulwark_charge": {
 		"label": "Bulwark Charge", "width": 3, "range": 330.0, "damage": 28,
-		"family": "bash", "rarity": "rare",
-		"targets": TARGET_RULES, "description": "Rush the target if the path is clear, then hit and push. Gain 12 guard on hit."
+		"family": "bash", "rarity": "rare", "guard_on_hit": 12,
+		"targets": TARGET_RULES, "description": "Rush the target if the path is clear, then hit and push. Gain 12 Guard on hit."
 	},
 	"rebound": {
 		"label": "Rebound", "width": 3, "range": 275.0, "damage": 24,
@@ -465,7 +465,7 @@ const CORE_TILES := {
 		"targets": TARGET_RULES, "description": "Damage and pull enemies around the target. Interrupt their active windups."
 	},
 	"meteor_seal": {
-		"label": "Meteor Seal", "width": 5, "range": 580.0, "damage": 42, "rarity": "legendary",
+		"label": "Meteor Seal", "width": 5, "range": 580.0, "damage": 42, "radius": 175.0, "rarity": "legendary",
 		"targets": TARGET_RULES, "description": "Drop a meteor on the target, damaging nearby enemies."
 	}
 }
@@ -662,6 +662,9 @@ func _start_campaign(options: Dictionary) -> void:
 		return
 	var health_scale: float = {"medium": [1.12, 2.15, 2.15], "hard": [1.21, 2.35, 3.0]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
 	var damage_scale: float = {"medium": [1.07, 1.58, 1.58], "hard": [1.10, 1.64, 1.80]}.get(difficulty, [1.0, 1.0, 1.0])[segment - 1]
+	var first_gate := encounter == "opening" and segment == 1 and difficulty != "hard"
+	if first_gate:
+		health_scale *= 0.8
 	if not formation.is_empty() and encounter != "boss":
 		_spawn_formation(formation, y, health_scale, damage_scale)
 		return
@@ -712,7 +715,7 @@ func _start_campaign(options: Dictionary) -> void:
 					else:
 						_add_campaign_enemy("boss", Vector2(647, y), 0, health_scale, damage_scale)
 		_:
-			_add_campaign_enemy("recruit", Vector2(522, y))
+			_add_campaign_enemy("recruit", Vector2(522, y), 0, 0.8 if first_gate else 1.0)
 
 
 func _start_glass_encounter(encounter: String, rng: RandomNumberGenerator, y: float, difficulty: String, segment: int, boss_id: String, alternate: bool, formation: Array) -> void:
@@ -1537,7 +1540,8 @@ func _add_tile_visual_cue(actor: Dictionary, tile_id: String, origin: Vector2, f
 	visual_cues.append({
 		"kind": "hero_cast", "tick": tick, "actor": actor.id, "tile": tile_id,
 		"target": _activation.target, "from": origin, "to": impact, "contact_points": contact_points,
-		"strike_from": _activation.get("attack_origin", origin), "arrival": actor.pos,
+		"strike_from": _activation.get("attack_origin", origin), "from_afterimage": _activation.has("attack_origin"),
+		"arrival": actor.pos,
 		"landed": _activation.status == "landed", "radius": radius if is_finite(radius) else 0.0,
 	})
 
@@ -1586,14 +1590,14 @@ func _cast(actor: Dictionary, tile_id: String, rule: String, reach := -1.0) -> v
 			_strike_and_push(actor, target, tile_id, tile.damage, 600.0)
 		"shield_ram":
 			_strike_and_push(actor, target, tile_id, tile.damage, 635.0)
-			_guard_from_tile(actor, actor, 8, tile_id)
+			_guard_from_tile(actor, actor, tile.guard_on_hit, tile_id)
 		"hook_bash":
 			_damage(actor, target, tile.damage, tile_id)
 			_pull_toward(actor, target, tile_id, _attack_origin(actor), 780.0)
 		"bulwark_charge":
 			if _charge(actor, target, tile_id):
 				_strike_and_push(actor, target, tile_id, tile.damage, 810.0)
-				_guard_from_tile(actor, actor, 12, tile_id)
+				_guard_from_tile(actor, actor, tile.guard_on_hit, tile_id)
 			else:
 				_emit("miss", "%s: Bulwark Charge has no clear path." % actor.name, actor, target, tile_id)
 				return
@@ -1612,7 +1616,7 @@ func _cast(actor: Dictionary, tile_id: String, rule: String, reach := -1.0) -> v
 		"event_horizon":
 			_gravity_strike(actor, target, tile_id, 245.0, true)
 		"meteor_seal":
-			for enemy in _enemies_in_area(actor, target.pos, 175.0):
+			for enemy in _enemies_in_area(actor, target.pos, tile.radius):
 				_damage(actor, enemy, tile.damage, tile_id)
 		_:
 			match tile.get("family", ""):
@@ -2006,12 +2010,13 @@ func _cast_blink(actor: Dictionary, target: Dictionary, tile_id: String, tile: D
 
 func _blink_to_target(actor: Dictionary, target: Dictionary, tile_id: String, retreat: float) -> bool:
 	var departure: Vector2 = actor.pos
+	var facing: float = actor.facing
 	var label: String = TILES[tile_id].label
 	if not _teleport(actor, target, tile_id, retreat):
 		_emit("miss", "%s: %s had no clear landing." % [actor.name, label], actor, target, tile_id)
 		return false
 	if _has_relic(actor, "afterimage"):
-		actor["afterimage"] = {"position": departure, "source": label, "beat": _beat()}
+		actor["afterimage"] = {"position": departure, "facing": facing, "source": label, "beat": _beat()}
 	return true
 
 

@@ -42,7 +42,7 @@ const MOVES := {
 	"brass_springjack": ["thrust", "copper", "steam", 3, 1.19, 1.34, 3],
 	"brass_rivet_hound": ["dash", "rust", "gold", 2, 0.96, 0.89, 3],
 	"brass_manifold": ["burst", "steam", "amber", 2, 1.28, 1.24, 4],
-	"brass_sparkbow": ["bolt", "amber", "steam", 0, 1.15, 1.15, 2],
+	"brass_sparkbow": ["bolt", "rust", "ivory", 0, 1.15, 1.15, 2],
 	"brass_magnetar": ["pull", "violet", "gold", 2, 1.13, 1.20, 4],
 	"brass_magnetar_strike": ["thrust", "violet", "iron", 0, 0.86, 0.94, 1],
 	"brass_grounder": ["bolt", "gold", "prism", 2, 0.96, 0.94, 3],
@@ -177,6 +177,7 @@ static func profile(id: String, attack: Dictionary = {}) -> Dictionary:
 	return {
 		"style": spec[0], "color": PALETTE[spec[1]], "accent": PALETTE[spec[2]],
 		"variant": spec[3], "scale": spec[4], "weight": spec[5], "trail_count": spec[6],
+		"signature_effect": "marshal_sweep" if key == "marshal_sweep" else "",
 	}
 
 

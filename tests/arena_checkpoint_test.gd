@@ -215,6 +215,13 @@ func _check_defeat_animation(lab: Control) -> void:
 	lab._complete_result_animation()
 	_check(lab.battle_review.is_visible_in_tree() and run.data.phase == "result" and run.data.result == "defeat",
 		"Completing the defeat animation opens Battle Review with the saved result.")
+	_check(lab.action.text == "See results" and not lab.battle_review._close.visible,
+		"Campaign defeat review offers one exit to the results.")
+	lab.battle_review._retry.pressed.emit()
+	_check(lab.state == "setup" and not lab.campaign, "Defeat can be retried in Practice.")
+	lab.return_button.pressed.emit()
+	_check(lab.battle_review.is_visible_in_tree() and lab.sim.outcome == "defeat" and run.data.result == "defeat",
+		"Returning from Practice restores the original defeat review.")
 
 
 func _set_save_block(blocked: bool) -> bool:

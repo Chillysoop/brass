@@ -203,9 +203,11 @@ func _check_practice_retry() -> void:
 			break
 	_check(run.data == resolved and run.profile == profile and run.loadout == original,
 		"Edits and combat in practice must preserve the expedition result, profile, and equipment.")
-	await _press_text(game.arena_screen, "Back to expedition")
-	_check(game.frontier_screen.visible and run.data == resolved, "Leaving practice restores the actual expedition checkpoint.")
+	await _press_text(game.arena_screen, "Back to review")
+	_check(game.battle_review.visible and game.campaign and game.state == "finished" and game.lanes == original.lanes
+		and run.data == resolved, "Leaving practice restores the original fight review and equipment.")
 	if resolved.phase == "reward":
+		await _press_text(game.arena_screen, "Back to rewards")
 		await _press_named(game.frontier_screen, "RewardTile_" + str(run.data.offers.front()))
 		_check(run.data.phase == "map", "One reward selection claims the tile and returns to the route.")
 	run.abandon_run()
@@ -350,14 +352,14 @@ func _check_enchantment_reward() -> void:
 	if run.data.phase != "enchantment":
 		return
 	await _press_named(game.frontier_screen, "Enchantment_guarded")
-	_check(game.storage_screen.is_visible_in_tree() and run.active_enchantment() == "guarded",
-		"Claiming Guarded opens Tile storage to equip it.")
-	if not game.storage_screen.is_visible_in_tree():
-		return
-	var start := int(game.lanes[0][0].start)
-	var tile_card: Control = game.tile_cards[0][start]
-	_click(tile_card.get_child(0) as Button, "the timeline Bash")
-	await _press_named(game.storage_screen, "EnchantSelected")
+	_check(run.data.phase == "enchantment" and run.active_enchantment().is_empty(),
+		"Selecting Guarded shows eligible tiles before claiming it.")
+	await _press_named(game.frontier_screen, "EquipEnchantment_bash")
+	_check(run.data.phase == "map" and run.active_enchantment() == "guarded"
+		and run.loadout.lanes[0][0].get("enchantment", "") == "guarded",
+		"One click equips Guarded on Bash and returns to the map.")
+	await _press_text(game.frontier_screen, "Manage tiles")
+	await _press_text(game.arena_screen, "Tile storage")
 	var badge: Node = game.arena_screen.find_child("TileEnchantmentBadge", true, false)
 	_check(badge != null and badge.get_meta("enchantment", "") == "guarded",
 		"An enchanted timeline tile shows its badge.")

@@ -104,6 +104,9 @@ func _check_draft_and_shop(game: Control) -> void:
 	var purchase := game.frontier_screen.find_child("ShopTile_" + recruit_tile, true, false) as Button
 	if not _check(purchase != null and not purchase.disabled, "The recruit's stocked tile can be bought from the shop."):
 		return
+	var destination := purchase.get_parent().find_child("ChoiceDetails", true, false) as RichTextLabel
+	_check(destination.get_parsed_text().contains("Goes to " + FrontierRun.HEROES[recruit].label),
+		"The recruit's card states its destination before purchase.")
 	var price := run.shop_price(recruit_tile)
 	var gold: int = run.data.gold
 	var card_slot := purchase.get_parent().get_parent().get_index()
@@ -143,6 +146,8 @@ func _check_storage_purchase(game: Control, id: String) -> void:
 	var purchase := game.frontier_screen.find_child("ShopTile_" + id, true, false) as Button
 	if not _check(purchase != null and not purchase.disabled, "The normal shop tile remains available to buy."):
 		return
+	var destination := purchase.get_parent().find_child("ChoiceDetails", true, false) as RichTextLabel
+	_check(destination.get_parsed_text().contains("Goes to tile storage"), "The shop previews storage when both lanes are full.")
 	purchase.pressed.emit()
 	await process_frame
 	var placement := {"id": id, "row": 0, "start": 0}
@@ -157,6 +162,16 @@ func _check_storage_purchase(game: Control, id: String) -> void:
 	var sold := game.frontier_screen.find_child("ShopTile_" + id, true, false) as Button
 	_check(sold != null and sold.disabled and sold.text == "Purchased",
 		"The completed purchase remains visible and disabled after reload.")
+	run.data.heroes[0].hp = int(run.data.heroes[0].max_hp) - 20
+	game.run_resume()
+	await process_frame
+	var heal := game.frontier_screen.find_child("ShopHeal", true, false) as Button
+	if _check(heal != null and not heal.disabled, "The healing service is available to the injured party."):
+		heal.pressed.emit()
+		await process_frame
+		heal = game.frontier_screen.find_child("ShopHeal", true, false) as Button
+		_check(heal != null and heal.disabled and heal.text == "Heal used",
+			"The heal button states that the one-time service has been used even if the party still needs healing.")
 	var open := game.frontier_screen.find_child("OpenRewardStorage", true, false) as Button
 	if not _check(open != null and open.is_visible_in_tree(), "A stored market purchase shows the storage shortcut."):
 		return

@@ -38,14 +38,23 @@ func _run() -> void:
 				game._action()
 				_check(game.state == "running", "The battle starts without requiring a timeline edit.")
 				game.speed = 2
+				var firing_edge_seen := false
+				var second_loop_seen := false
 				for tick in range(3000):
 					game._physics_process(1.0 / 60)
+					if battles == 0 and game.state == "running":
+						if game.sim.tick == 2 * ArenaSim.TICKS_PER_BEAT + 2:
+							var card: Control = game.tile_cards[0][0]
+							firing_edge_seen = card.get_meta("timing_marker").visible
+						second_loop_seen = second_loop_seen or game.status.text.begins_with("Loop 2")
 					if game.state == "finished":
 						break
 				_check(game.sim.outcome == "victory", "Win %s (%d HP)" % [run.data.node.label, run.data.hp])
 				_check(game.result_banner.visible and game.result_text.text == "VICTORY" and not game.timeline_intro.visible,
 					"A win shows the victory cue and retires the opening lesson.")
 				if battles == 0:
+					_check(firing_edge_seen and second_loop_seen,
+						"The first battle holds the firing-edge highlight and names the first loop reset.")
 					var resumed := FrontierRun.new()
 					_check(resumed.load_save(save_path) and resumed.profile.timeline_intro_seen,
 						"The opening lesson completion survives a reload before the first reward.")

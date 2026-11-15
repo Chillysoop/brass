@@ -50,8 +50,10 @@ func _check_draft() -> void:
 		_check(run.load_save(path) and run.enchantment_offers() == draft, "Resume the same open draft.")
 		var original_save_path := run.save_path
 		run.save_path = path + ".missing/file.json"
-		_check(not run.choose_enchantment("guarded") and run.data.get("phase") == "enchantment"
-			and run.active_enchantment().is_empty(), "A failed save must restore the open draft.")
+		_check(not run.choose_enchantment("guarded", {"lane": 0, "start": 0, "id": "bash"})
+			and run.data.get("phase") == "enchantment" and run.active_enchantment().is_empty()
+			and not run.loadout.lanes[0][0].has("enchantment"),
+			"A failed inline equip save must restore the open draft and the original tile.")
 		run.save_path = original_save_path
 		var chosen := "skip" if difficulty == "medium" else "longshot"
 		_check(not run.choose_enchantment("warded") and run.choose_enchantment(chosen),
