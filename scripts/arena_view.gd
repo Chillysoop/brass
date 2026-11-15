@@ -68,6 +68,7 @@ const EFFECT_LENGTHS := {
 	"repair_heal": 0.60,
 	"repair_interrupted": 0.65,
 	"repair_separated": 0.65,
+	"marshal_plate_broken": 1.1,
 	"relay_interrupted": 0.65,
 	"relay_link_broken": 0.42,
 	"relay_marshal_separated": 0.55,
@@ -128,6 +129,9 @@ const ENCOUNTER_EFFECTS := {
 	"recruit_jammed": "spring_jam",
 	"tollkeeper_repair_interrupted": "repair_interrupted",
 	"tollkeeper_repair_separated": "repair_separated",
+	"marshal_shattered": "marshal_plate_broken",
+	"marshal_pressure_break": "marshal_plate_broken",
+	"marshal_defense_break": "marshal_plate_broken",
 	"relay_interrupted": "relay_interrupted",
 	"relay_link_broken": "relay_link_broken",
 	"relay_marshal_interrupted": "relay_interrupted",
@@ -155,6 +159,7 @@ const FLOATING_CUES := {
 	"spring_jam": "SPRING JAMMED",
 	"repair_interrupted": "REPAIR INTERRUPTED",
 	"repair_separated": "OUT OF REPAIR RANGE",
+	"marshal_plate_broken": "PLATE BROKEN",
 	"relay_interrupted": "INTERRUPTED",
 	"relay_link_broken": "LINK BROKEN",
 	"relay_marshal_separated": "SEPARATED",
@@ -519,15 +524,19 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 			center + Vector2(0, 5), center + Vector2(-4, 0)])
 		draw_colored_polygon(diamond, MARK_COLOR)
 	if unit.get("marshal_plated", false):
-		var exposed: bool = int(unit.get("marshal_exposed_until", 0)) > 0
+		var exposed_until := int(unit.get("marshal_exposed_until", 0))
+		var exposed := exposed_until > 0
 		var plate_color := HERO_COLOR if exposed else GOLD
-		var label := "PLATED"
+		var label := "ARMOR OPEN" if exposed else "PLATED"
 		var remaining := 1.0
 		if unit.has("marshal_plate_max_integrity"):
 			remaining = float(unit.marshal_plate_integrity) / float(unit.marshal_plate_max_integrity)
 			label = "PLATE %d%%" % ceili(remaining * 100.0)
+			if exposed:
+				var beats_left := maxi(1, ceili(float(exposed_until - combat_tick) / ArenaSim.TICKS_PER_BEAT))
+				label = "OPEN · %d %s" % [beats_left, "BEAT" if beats_left == 1 else "BEATS"]
 			draw_arc(point, radius * 1.4, -PI * 0.5, TAU - PI * 0.5, 32, Color(GOLD, 0.24), 2.0, true)
-		_draw_centered("ARMOR OPEN" if exposed else label, bar.get_center() - Vector2(0.0, 9.0), 14, plate_color)
+		_draw_centered(label, bar.get_center() - Vector2(0.0, 9.0), 14, plate_color)
 		draw_arc(point, radius * 1.4, -PI * 0.5, TAU * remaining - PI * 0.5, 32, Color(plate_color, 0.8), 2.0, true)
 	if unit.get("regent_sealed", false):
 		var count: int = unit.get("regent_seals_left", 3)
@@ -689,7 +698,10 @@ func _draw_marshal_cues(board: Rect2) -> void:
 			_draw_centered("GILDED SWEEP · %d DAMAGE · GUARD OR CLEAR THE RING" % ArenaSim.MARSHAL_MEDIUM_SWEEP_DAMAGE,
 				baseline, 14, GOLD)
 		elif unit.get("marshal_plated", false):
-			_draw_centered("DISPLACE + ALLY HIT  /  WEAR DOWN PLATE  /  WEATHER SWEEP", baseline, 14, GOLD)
+			if int(unit.get("marshal_exposed_until", 0)) > 0:
+				_draw_centered("PLATE OPEN · HIT WITH ANOTHER HERO", baseline, 14, HERO_COLOR)
+			else:
+				_draw_centered("HITS WEAR THE PLATE · FULLY GUARD OR CLEAR THE SWEEP", baseline, 14, GOLD)
 		break
 
 
@@ -1031,7 +1043,7 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			draw_arc(to_point, 8.0 + progress * 21.0, 0.0, TAU, 24, Color(REPAIR_COLOR, opacity), 2.0, true)
 		"repair_interrupted", "repair_separated":
 			draw_arc(from_point, 8.0 + progress * 21.0, 0.0, TAU, 24, Color(REPAIR_COLOR, opacity), 2.0, true)
-		"guard", "heal", "defeat_unit", "relay_interrupted", "relay_link_broken", "relay_marshal_separated", "tidekeeper_unanchored", "admiral_reversed", "spring_jam":
+		"guard", "heal", "defeat_unit", "relay_interrupted", "relay_link_broken", "relay_marshal_separated", "tidekeeper_unanchored", "admiral_reversed", "spring_jam", "marshal_plate_broken":
 			var color := GOLD if kind == "guard" else ENEMY_COLOR
 			if kind == "heal":
 				color = HERO_COLOR
@@ -1069,7 +1081,8 @@ func _draw_feedback(effect: Dictionary, field: Rect2) -> void:
 		for index in range(4):
 			var ray := Vector2.RIGHT.rotated(index * TAU / 4.0 + 0.7)
 			draw_line(impact + ray * (4.0 + progress * 8.0), impact + ray * (10.0 + progress * 11.0), Color(color, opacity), 2.0, true)
-	_draw_centered(label, point - Vector2(0.0, 24.0 + progress * 25.0), 15, Color(color, opacity))
+	var lift := 52.0 if kind == "marshal_plate_broken" else 24.0
+	_draw_centered(label, point - Vector2(0.0, lift + progress * 25.0), 15, Color(color, opacity))
 
 
 func _draw_arrow(from_point: Vector2, to_point: Vector2, color: Color) -> void:

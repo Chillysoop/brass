@@ -1178,13 +1178,15 @@ func shop_class_offer_lane(id: String) -> int:
 	return data.heroes.find_custom(func(hero: Dictionary): return hero.id == owner)
 
 
-func shop_buy(id: String) -> bool:
+func shop_buy(id: String, placement := {}) -> bool:
 	if not _is_offer("shop", id) or int(data.gold) < shop_price(id):
 		return false
+	var before := data.duplicate(true)
 	data.gold -= shop_price(id)
 	data.offers.erase(id)
-	save()
-	return true
+	if not placement.is_empty():
+		data.reward_placement = placement
+	return _save_reward(before)
 
 
 func shop_heal() -> bool:

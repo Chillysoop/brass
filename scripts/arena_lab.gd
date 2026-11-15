@@ -2106,4 +2106,4 @@ func _finish_reward_combine(claim: Callable) -> bool:
 func run_buy_shop(id: String) -> bool:
 	if not ArenaSim.TILES.has(id):
 		return run.shop_buy(id)
-	return _claim_loot(id, run.shop_buy.unbind(1), run.shop_class_offer_lane(id))
+	return _claim_loot(id, run.shop_buy, run.shop_class_offer_lane(id))

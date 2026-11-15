@@ -147,8 +147,16 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 	var lead: Array = run.loadout.lanes[0].duplicate(true)
 	game.run_return()
 	await process_frame
-	var assault := game.frontier_screen.find_child("RecruitLoadout_assault", true, false) as Button
-	_check(assault != null and assault.visible and not assault.disabled, "The alternative assault kit is offered alongside support.")
+	for kit: Dictionary in kits:
+		var button := game.frontier_screen.find_child("RecruitLoadout_" + str(kit.id), true, false) as Button
+		if not _check(button != null and button.is_visible_in_tree() and not button.disabled, "Both recruit kits can be equipped."):
+			return
+		var beat := 0
+		for id: String in kit.tiles:
+			beat += int(ArenaSim.TILES[id].width)
+			var label := button.get_parent().find_child("RecruitTileBeat_" + id, true, false) as Label
+			_check(label != null and label.is_visible_in_tree() and label.text == "Beat %d" % beat,
+				"Each recruit tile shows its firing beat at the end of the tile.")
 	if not _press(game.frontier_screen, "RecruitLoadout_support"):
 		return
 	await process_frame

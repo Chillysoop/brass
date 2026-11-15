@@ -2,6 +2,7 @@ extends SceneTree
 
 const Arena = preload("res://arena.tscn")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
+const ArenaView = preload("res://scripts/arena_view.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 
@@ -133,6 +134,7 @@ func _finish_fight(run: FrontierRun) -> bool:
 
 
 func _check_marshal() -> void:
+	var view := ArenaView.new()
 	for approach: String in MARSHAL_BUILDS:
 		var build: Dictionary = MARSHAL_BUILDS[approach]
 		var lanes: Array = []
@@ -166,12 +168,17 @@ func _check_marshal() -> void:
 		var broken_by: String = sim.units.back().get("marshal_last_break", "")
 		_check(sim.outcome == "victory", approach + " · defeat the Marshal on the matched fixture")
 		_check(broken_by == approach, approach + " · break the plate using the intended mechanic")
-		_check(sim.trace.any(func(event: Dictionary) -> bool: return event.tile == build.break),
-			approach + " · record the intended plate break in combat")
+		var break_events := sim.trace.filter(func(event: Dictionary) -> bool: return event.tile == build.break)
+		_check(break_events.size() == 1, approach + " · record the intended plate break once in combat")
+		view.reset_view(sim.units, lanes)
+		view.present(sim.units, break_events, sim.tick)
+		_check(view._effects.size() == 1 and view._effects[0].kind == "marshal_plate_broken",
+			approach + " · show the plate break in the arena")
 		var weathered_sweep := sim.trace.any(func(event: Dictionary) -> bool: return event.tile == "marshal_sweep_weathered")
 		_check(weathered_sweep == (approach == "defense"),
 			approach + " · only the defensive fixture relies on weathering sweeps")
 		print("Marshal · %s · %s · %d/%d HP" % [approach, sim.outcome, int(sim.units[0].hp), int(sim.units[1].hp)])
+	view.free()
 
 
 func _play(sim: ArenaSim) -> void:

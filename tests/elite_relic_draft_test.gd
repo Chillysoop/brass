@@ -36,8 +36,8 @@ func _check_seeded_draft() -> void:
 	var wildcard_roles := {}
 	var observed := {}
 	var same_seed: Array = []
-	# This route reaches a post-elite pair that Siege Fuse can pull together.
-	var comparison_seed := 28
+	# This route starts the post-elite battle with both enemies in the arena, so Siege Fuse can pull on beat four.
+	var comparison_seed := 32
 	for seed_value in range(1, comparison_seed + 1):
 		if not _start(run, seed_value):
 			return
@@ -126,7 +126,7 @@ func _check_same_seed_battle(first: FrontierRun, second: FrontierRun, teleport: 
 	var relics := ["afterimage", "siege_fuse"]
 	var tiles := [teleport, heavy]
 	var beats := [5, 4]
-	var shared_formation: Array = []
+	var shared_encounter := {}
 	for index in range(runs.size()):
 		var run: FrontierRun = runs[index]
 		var width: int = ArenaSim.TILES[tiles[index]].width
@@ -146,20 +146,24 @@ func _check_same_seed_battle(first: FrontierRun, second: FrontierRun, teleport: 
 			_check(false, "Both builds must reach a shared post-elite battle.")
 			return
 		var encounter := run.encounter()
-		var formation: Array = encounter.get("formation", [])
+		var comparable := encounter.duplicate(true)
+		comparable.erase("relics")
 		if index == 0:
-			shared_formation = formation
-		_check(formation.size() >= 2 and formation == shared_formation,
-			"Both builds must fight the same group of enemies.")
+			shared_encounter = comparable
+			if encounter.get("formation", []).size() < 2:
+				_check(false, "Siege Fuse needs two enemies in the starting formation before the first heavy attack.")
+				return
+		else:
+			_check(comparable == shared_encounter, "Both builds must fight the same seeded encounter from the same checkpoint.")
 		var sim := ArenaSim.new()
 		sim.start(run.loadout.lanes, "solo", encounter)
 		while sim.tick < 6000 and sim.outcome.is_empty():
 			sim.step()
 		var procced := sim.trace.any(func(event: Dictionary):
-			return event.kind == "relic_proc" and event.tile == relics[index] and event.beat == beats[index])
-		_check(sim.outcome == "victory" and procced,
-			"%s should win the shared encounter and activate on beat %d." % [relics[index], beats[index]])
-	_check(first.data.node.id == second.data.node.id, "The two builds must fight the same route encounter.")
+			return event.kind == "relic_proc" and event.tile == relics[index] \
+				and event.tick == beats[index] * ArenaSim.TICKS_PER_BEAT)
+		_check(sim.outcome == "victory", "%s should win the shared encounter." % relics[index])
+		_check(procced, "%s should activate on beat %d of the first loop." % [relics[index], beats[index]])
 
 
 func _check_next_route_node(run: FrontierRun, route: Array) -> bool:

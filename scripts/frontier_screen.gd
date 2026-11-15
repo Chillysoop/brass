@@ -27,7 +27,8 @@ const TYPE_NAMES := {
 const BOSS_BRIEFS := {
 	"gilded_marshal": {
 		"portrait": "marshal",
-		"hint": "A push or pull exposes the Marshal's plating for three beats. Land a hit with another hero during that window to shatter it."
+		"hint": "A push or pull exposes the Marshal's plating for three beats. Land a hit with another hero during that window to shatter it.",
+		"medium_hint": "The Marshal raises plating as its health drops. Direct hits and sweeps that cost the crew no HP wear the plate down."
 	},
 	"iron_regent": {
 		"portrait": "regent",
@@ -287,6 +288,9 @@ func _draft(phase: String) -> void:
 	}.get(phase, "")
 	if phase in ["starter", "recruit_starter"]:
 		subtitle = _hero_name(_run.data.get("pending_recruit", _run.data.get("hero", "")))
+	var loadouts: Array = _run.recruit_loadout_offers()
+	if not loadouts.is_empty():
+		subtitle += " · All heroes share the same clock."
 	var boss: Dictionary = _run.first_boss_preview() if phase == "hero" else {}
 	if not boss.is_empty():
 		subtitle = "Act I boss · %s\n%s" % [boss.title, boss.description]
@@ -307,7 +311,6 @@ func _draft(phase: String) -> void:
 		switch.name = "RelicDraftSwitch"
 		_footer_actions().add_child(switch)
 		offers = _run.build_relic_offers()
-	var loadouts: Array = _run.recruit_loadout_offers()
 	if loadouts.is_empty():
 		_add_draft_cards(cards, offers, phase)
 	else:
@@ -330,8 +333,10 @@ func _add_recruit_loadouts(cards: HBoxContainer, offers: Array) -> void:
 		var pitch := _label(offer.description, 17, MUTED)
 		pitch.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		card.add_child(pitch)
+		var beat := 0
 		for id: String in offer.tiles:
 			var spec: Dictionary = ArenaSim.TILES[id]
+			beat += int(spec.width)
 			var row := HBoxContainer.new()
 			row.add_theme_constant_override("separation", 12)
 			card.add_child(row)
@@ -345,6 +350,10 @@ func _add_recruit_loadouts(cards: HBoxContainer, offers: Array) -> void:
 			var copy := _label(spec.description, 14, MUTED)
 			copy.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			tile.add_child(copy)
+			var firing_beat := _label("Beat %d" % beat, 15, TEAL)
+			firing_beat.name = "RecruitTileBeat_" + id
+			firing_beat.size_flags_vertical = SIZE_SHRINK_BEGIN
+			row.add_child(firing_beat)
 		var pick := _button("Choose loadout", func():
 			_run.choose_recruit_loadout(offer.id)
 			_host.run_return(), true)
@@ -677,7 +686,10 @@ func _combat() -> void:
 	_page_title(tollkeeper.get("title", node.get("label", "Opening battle")), caption)
 	var region := _cards_row()
 	var brief: Dictionary = BOSS_BRIEFS.get(boss_id, {})
-	var instruction: String = tollkeeper.get("description", brief.get("hint", ""))
+	var hint: String = brief.get("hint", "")
+	if _run.data.get("difficulty", "") == "medium":
+		hint = brief.get("medium_hint", hint)
+	var instruction: String = tollkeeper.get("description", hint)
 	_continue(func(): _host.run_show_arena())
 	var detail := _choice(region, "Boss counter" if not instruction.is_empty() else "", instruction, "", Callable())
 	if brief.has("portrait"):
@@ -1040,7 +1052,7 @@ func _buy_tile(id: String, notice: Label) -> void:
 	if _host.run_buy_shop(id):
 		_host.run_return()
 	else:
-		notice.text = "No room for this tile. Manage tiles to free a continuous span."
+		notice.text = _run.save_error if not _run.save_error.is_empty() else "No room for this tile. Manage tiles to free a continuous span."
 
 
 func _event() -> void:

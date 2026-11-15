@@ -120,6 +120,47 @@ func _check_draft_and_shop(game: Control) -> void:
 		and run.loadout.lanes[1].size() == recruit_tiles + 1
 		and run.loadout.lanes[1].any(func(tile: Dictionary): return tile.id == recruit_tile),
 		"The shop charges its listed price and places the bought class tile on the recruit's timeline.")
+	var receipt := game.frontier_screen.find_child("RewardPlacement", true, false) as Label
+	_check(receipt != null and receipt.text == "%s added to %s’s timeline" % [ArenaSim.TILES[recruit_tile].label, FrontierRun.HEROES[recruit].label],
+		"The shop confirms which hero received the purchased tile.")
+	await _check_storage_purchase(game, ordinary_stock[0])
+
+
+func _check_storage_purchase(game: Control, id: String) -> void:
+	var run: FrontierRun = game.run
+	var full_lane: Array = []
+	for beat in range(0, ArenaSim.BEATS, int(ArenaSim.TILES.guard.width)):
+		full_lane.append({"id": "guard", "start": beat, "target": "self"})
+	run.loadout.lanes = [full_lane, full_lane.duplicate(true)]
+	run.data.gold = 100
+	var before := run.data.duplicate(true)
+	var inventory := run.loadout.duplicate(true)
+	run.save_path = save_path + ".missing/purchase.json"
+	_check(not game.run_buy_shop(id) and run.data == before and run.loadout == inventory and not run.save_error.is_empty(),
+		"A failed tile purchase restores gold, stock, the prior receipt, and inventory.")
+	run.save_path = save_path
+	game.run_return()
+	await process_frame
+	var purchase := game.frontier_screen.find_child("ShopTile_" + id, true, false) as Button
+	if not _check(purchase != null and not purchase.disabled, "The normal shop tile remains available to buy."):
+		return
+	purchase.pressed.emit()
+	await process_frame
+	var placement := {"id": id, "row": 0, "start": 0}
+	if not _check(run.current_reward_placement() == placement, "A full party sends the purchased tile to storage.") \
+		or not _check(run.load_save(save_path), "Resume the shop after the purchase."):
+		return
+	var restored := run.current_reward_placement()
+	_check(restored.get("id") == id and int(restored.get("row", -1)) == 0 and int(restored.get("start", -1)) == 0,
+		"The shop keeps the purchased tile's exact location after reloading.")
+	game.run_resume()
+	await process_frame
+	var open := game.frontier_screen.find_child("OpenRewardStorage", true, false) as Button
+	if not _check(open != null and open.is_visible_in_tree(), "A stored market purchase shows the storage shortcut."):
+		return
+	open.pressed.emit()
+	_check(game.storage_screen.visible and game.selected.get("id") == id and game.selected.get("row") == 0,
+		"The shortcut opens storage and selects the purchased tile.")
 
 
 func _enter_shop(run: FrontierRun) -> bool:
