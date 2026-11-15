@@ -50,6 +50,8 @@ const MOVES := {
 	"brass_pressure_sentinel": ["heavy", "ember", "steam", 3, 1.30, 1.58, 5],
 
 	# Glass Foundry.
+	"glass_refraction_beam": ["bolt", "prism", "lilac", 2, 1.50, 1.58, 5],
+	"glass_refraction_discharge": ["burst", "glass", "shard", 3, 1.33, 1.43, 5],
 	"glass_recruit": ["thrust", "glass", "gold", 0, 0.73, 0.75, 1],
 	"glass_hunter": ["shot", "glass", "amber", 1, 0.96, 0.97, 2],
 	"glass_skirmisher": ["slash", "shard", "glass", 3, 0.84, 0.78, 2],

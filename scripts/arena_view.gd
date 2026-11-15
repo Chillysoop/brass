@@ -111,6 +111,7 @@ const EFFECT_LENGTHS := {
 	"arc": 0.40,
 	"ranged_warning": 0.33,
 	"bell_ring": 0.49,
+	"reinforcement": 0.65,
 	"tar_slow": 0.45,
 	"fuse_disarmed": 0.55,
 	"haste": 0.42,
@@ -157,6 +158,7 @@ const FLOATING_CUES := {
 var units: Array = []
 var combat_tick := 0
 var _windups: Dictionary = {}
+var _reinforcement_warning: Dictionary = {}
 var location := "brass"
 var _textures: Dictionary = {}
 var _positions: Dictionary = {}
@@ -185,9 +187,10 @@ func _ready() -> void:
 	resized.connect(queue_redraw)
 
 
-func reset_view(units_data: Array, lanes: Array = []) -> void:
+func reset_view(units_data: Array, lanes: Array = [], reinforcement: Dictionary = {}) -> void:
 	units = units_data
 	combat_tick = 0
+	_reinforcement_warning = reinforcement
 	_windups.clear()
 	_effects.clear()
 	_attack_casts.clear()
@@ -212,9 +215,11 @@ func reset_view(units_data: Array, lanes: Array = []) -> void:
 	queue_redraw()
 
 
-func present(units_data: Array, events: Array, tick := 0, attack_cues: Array = [], playback_speed := 1) -> void:
+func present(units_data: Array, events: Array, tick := 0, attack_cues: Array = [], playback_speed := 1,
+		reinforcement: Dictionary = {}) -> void:
 	units = units_data
 	combat_tick = tick
+	_reinforcement_warning = reinforcement
 	_attack_rate = float(playback_speed)
 	for unit: Dictionary in units:
 		var finish := int(unit.get("intent_tick", 0))
@@ -317,6 +322,8 @@ func _draw() -> void:
 	if location == "crown":
 		_draw_relay_links(field)
 	_draw_intents(field)
+	if not _reinforcement_warning.is_empty():
+		_draw_reinforcement_markers(field)
 	for effect in _effects:
 		_draw_ground_effect(effect, field)
 	var ordered_units := units.duplicate()
@@ -344,6 +351,8 @@ func _draw() -> void:
 					AttackAnimation.draw_secondary_contact(self, cast.profile, start, end, progress, cast_size)
 	for effect in _effects:
 		_draw_feedback(effect, field)
+	if not _reinforcement_warning.is_empty():
+		_draw_reinforcement_countdown(board)
 
 
 func _draw_arena(board: Rect2) -> void:
@@ -381,7 +390,7 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	var model_height := 132.0
 	if art_key in ["tempered_colossus", "crown_regent", "wreckmaster", "tidekeeper", "drowned_admiral"]:
 		model_height = 218.0
-	elif art_key in ["marshal", "regent", "glass_twin", "prism_warden", "relay_captain", "relay_marshal", "brass_bellmaker"]:
+	elif art_key in ["marshal", "regent", "glass_twin", "prism_warden", "relay_captain", "relay_marshal", "brass_bellmaker", "glass_refraction_engine"]:
 		model_height = 191.0
 	elif art_key == "clockwork":
 		model_height = 154.0
@@ -436,6 +445,8 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 			tint = RIGHT_RELAY_COLOR.lerp(Color.WHITE, 0.32)
 		elif art_key == "brass_bellmaker":
 			tint = Color("#ffd5a9")
+		elif art_key == "glass_refraction_engine":
+			tint = Color("#a2eaff")
 		draw_texture_rect(texture, Rect2(-width * 0.5, -art_height, width, art_height), false, tint.lerp(GOLD, flash * 0.6))
 		draw_set_transform(Vector2.ZERO)
 	else:
@@ -673,23 +684,30 @@ func _draw_intents(field: Rect2) -> void:
 			var radius: Vector2 = float(unit.pilot_ring_radius) * field.size / WORLD_SIZE
 			if special == "bellmaker_ring":
 				_draw_sweep_warning(start, radius, GOLD)
+			elif special == "glass_refraction_discharge":
+				_draw_sweep_warning(start, radius, Color("#b9bfff"))
 			else:
 				_draw_sweep_warning(start, radius)
 			continue
 		if unit.has("pilot_aim_point"):
-			var origin: Vector2 = unit.pos
+			var origin: Vector2 = unit.get("refraction_origin", unit.pos)
 			var endpoint := origin.move_toward(unit.pilot_aim_point, float(unit.attack.reach))
 			var edge := (endpoint - origin).normalized().orthogonal() * float(unit.pilot_aim_width)
 			var upper := _project(origin + edge, field)
 			var lower := _project(origin - edge, field)
 			var upper_end := _project(endpoint + edge, field)
 			var lower_end := _project(endpoint - edge, field)
-			draw_colored_polygon(PackedVector2Array([upper, upper_end, lower_end, lower]), Color(ENEMY_COLOR, 0.16))
+			var beam_color := ENEMY_COLOR
+			if special == "glass_refraction_beam":
+				beam_color = Color("#91e9ff")
+				if origin.distance_to(unit.pos) >= unit.attack.alignment:
+					beam_color.a = 0.35
+			draw_colored_polygon(PackedVector2Array([upper, upper_end, lower_end, lower]), Color(beam_color, beam_color.a * 0.16))
 			var cap := float(unit.pilot_aim_width) * field.size / WORLD_SIZE
-			_draw_ellipse(_project(origin, field), cap, Color(ENEMY_COLOR, 0.12))
-			_draw_ellipse(_project(endpoint, field), cap, Color(ENEMY_COLOR, 0.12))
-			draw_dashed_line(upper, upper_end, ENEMY_COLOR, 2.0, 6.0)
-			draw_dashed_line(lower, lower_end, ENEMY_COLOR, 2.0, 6.0)
+			_draw_ellipse(_project(origin, field), cap, Color(beam_color, beam_color.a * 0.12))
+			_draw_ellipse(_project(endpoint, field), cap, Color(beam_color, beam_color.a * 0.12))
+			draw_dashed_line(upper, upper_end, beam_color, 2.0, 6.0)
+			draw_dashed_line(lower, lower_end, beam_color, 2.0, 6.0)
 			continue
 		var wreck_phase: int = unit.get("wreckmaster_phase", 0)
 		var tide_phase: int = unit.get("tidekeeper_phase", 0)
@@ -756,10 +774,45 @@ func _draw_repair_intent(unit: Dictionary, target_id: String, start: Vector2, fi
 
 
 func _has_animated_warning() -> bool:
+	if not _reinforcement_warning.is_empty():
+		return true
 	for unit: Dictionary in units:
 		if unit.hp > 0 and not str(unit.get("intent", "")).is_empty():
 			return true
 	return false
+
+
+func _draw_reinforcement_markers(field: Rect2) -> void:
+	var glow := 0.65 + 0.2 * sin(_animation_time * 8.0)
+	var tint := Color(GOLD, glow)
+	for position: Vector2 in _reinforcement_warning.positions:
+		var point := _project(position, field)
+		var radius := Vector2(21.0, 11.0)
+		_draw_ellipse(point, radius, Color(INK, 0.55))
+		for direction in [-1.0, 1.0]:
+			var side := point + Vector2(18.0 * direction, 0.0)
+			draw_polyline(PackedVector2Array([side - Vector2(7.0 * direction, 8.0), side, side - Vector2(7.0 * direction, -8.0)]),
+				tint, 2.0, true)
+		draw_line(point - Vector2(3.0, 0.0), point + Vector2(3.0, 0.0), tint, 2.0, true)
+		draw_line(point - Vector2(0.0, 3.0), point + Vector2(0.0, 3.0), tint, 2.0, true)
+
+
+func _draw_reinforcement_countdown(board: Rect2) -> void:
+	var badge := Rect2(board.end.x - 235.0, board.position.y + 12.0, 223.0, 30.0)
+	var remaining := int(_reinforcement_warning.tick) - combat_tick
+	var fill := 1.0 - clampf(float(remaining) / float(_reinforcement_warning.tick), 0.0, 1.0)
+	var copy := "Reinforcements · Beat %d" % int(_reinforcement_warning.beat)
+	if combat_tick > 0:
+		var beats_left := ceili(float(remaining) / ArenaSim.TICKS_PER_BEAT)
+		copy = "Reinforcements in %d %s" % [beats_left, "beat" if beats_left == 1 else "beats"]
+	draw_rect(badge, Color(INK, 0.94))
+	draw_rect(badge, Color(GOLD, 0.53), false, 1.0)
+	var track := Rect2(badge.position + Vector2(1.0, badge.size.y - 3.0), Vector2(badge.size.x - 2.0, 2.0))
+	draw_rect(track, Color(GOLD, 0.26))
+	track.size.x *= fill
+	if fill > 0.0:
+		draw_rect(track, GOLD)
+	_draw_centered(copy, badge.get_center() + Vector2(0.0, 4.0), 14, WHITE)
 
 
 func _dock_sweep_radius(unit: Dictionary) -> float:
@@ -791,6 +844,12 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			var extent := float(effect.amount) * field.size / WORLD_SIZE
 			var ring := extent * lerpf(0.22, 1.0, progress)
 			draw_arc(to_point, ring.x, 0.0, TAU, 36, Color(GOLD, opacity), 2.0, true)
+		"reinforcement":
+			var radius := lerpf(12.0, 32.0, progress)
+			_draw_ellipse(to_point, Vector2(radius, radius * 0.5), Color(GOLD, opacity * 0.28))
+			for direction in [-1.0, 1.0]:
+				var foot := to_point + Vector2(radius * direction, 0.0)
+				draw_line(foot - Vector2(0.0, 27.0 * opacity), foot, Color(GOLD, opacity), 2.0, true)
 		"tar_slow", "fuse_disarmed":
 			var tint := HERO_COLOR if kind == "fuse_disarmed" else Color("#be915d")
 			draw_arc(to_point, 9.0 + progress * 19.0, 0.0, TAU, 26, Color(tint, opacity), 2.0, true)

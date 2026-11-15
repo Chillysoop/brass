@@ -319,7 +319,7 @@ func _reset_fight() -> void:
 	selected.clear()
 	pending_forge.clear()
 	_start_sim()
-	arena.reset_view(sim.units, lanes)
+	arena.reset_view(sim.units, lanes, sim.pending_reinforcement())
 	_rebuild_loadout()
 	_update_controls()
 
@@ -347,7 +347,7 @@ func _action() -> void:
 			elif retry_options.is_empty():
 				battle_name = "Arena Practice"
 			_start_sim()
-			arena.reset_view(sim.units, lanes)
+			arena.reset_view(sim.units, lanes, sim.pending_reinforcement())
 			state = "running"
 			_rebuild_loadout()
 		"running": state = "paused"
@@ -370,7 +370,7 @@ func _physics_process(_delta: float) -> void:
 		# At 2×, show the boundary for the frame even if it was the first of two steps.
 		if sim.tick % ArenaSim.TICKS_PER_BEAT == 0:
 			edge_tick = sim.tick
-		arena.present(sim.units, events, sim.tick, sim.visual_cues, speed)
+		arena.present(sim.units, events, sim.tick, sim.visual_cues, speed, sim.pending_reinforcement())
 		for event: Dictionary in events:
 			if event.kind == "relic_proc":
 				_pulse_relic(event.tile)

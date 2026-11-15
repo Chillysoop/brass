@@ -4,7 +4,9 @@ const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
 const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 
+const FURNACE_KNIGHT_ART := Rect2i(1353, 450, 404, 411)
 const GLASS_PILOT_ART := {
+	"glass_refraction_engine": FURNACE_KNIGHT_ART,
 	"glass_mirrorback": Rect2i(11, 22, 386, 373),
 	"glass_annealer": Rect2i(464, 18, 376, 379),
 	"glass_lens_arbalist": Rect2i(906, 21, 392, 384),
@@ -12,7 +14,7 @@ const GLASS_PILOT_ART := {
 	"glass_shard_conductor": Rect2i(74, 435, 321, 425),
 	"glass_ash_siphon": Rect2i(467, 477, 368, 381),
 	"glass_quench_sentinel": Rect2i(881, 445, 426, 405),
-	"glass_furnace_knight": Rect2i(1353, 450, 404, 411),
+	"glass_furnace_knight": FURNACE_KNIGHT_ART,
 }
 const MOON_PILOT_ART := {
 	"powder_runner": Rect2i(83, 54, 289, 359),
@@ -84,6 +86,8 @@ const RELIC_ICONS := {
 	"overflow_chalice": "rest", "stepped_gear": "forge", "mercy_seal": "guard",
 	"twin_bell": "relic", "switchback_lens": "route", "longshot_prism": "shot",
 	"tollkeeper_signet": "boss", "bastion_medal": "guard", "guild_ledger": "shop",
+	"tollkeeper_repair_kit": "rest", "bellmaker_clapper": "area", "bellmaker_long_echo": "shot",
+	"bellmaker_resonant_plate": "guard",
 }
 const TILE_ICONS := {"pull": "pull", "gravity_hook": "pull", "slam": "area", "meteor_seal": "area",
 	"hook_bash": "pull", "graviton": "pull", "event_horizon": "pull",

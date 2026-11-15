@@ -1,6 +1,18 @@
 extends RefCounted
 
+const REFRACTION_ENGINE := "glass_refraction_engine"
+const REFRACTION_BEAM := "glass_refraction_beam"
+const REFRACTION_DISCHARGE := "glass_refraction_discharge"
+const REFRACTION_BROKEN := "glass_refraction_broken"
+
 const ENEMIES := {
+	REFRACTION_ENGINE: {
+		"name": "The Refraction Engine", "art": REFRACTION_ENGINE, "special": REFRACTION_ENGINE,
+		"hp": 255, "radius": 40.0, "speed": 75.0, "spacing": 155.0, "reach": 710.0,
+		"damage": 17, "first": 100, "cooldown": 128, "windup": 68,
+		"beam_width": 29.0, "alignment": 38.0, "discharge_radius": 163.0, "discharge_windup": 45,
+		"hint": "The Engine locks a beam onto a marked line. Push or pull it out of alignment, move off the line, or time Guard. Stay at range from its close discharge.",
+	},
 	"glass_cullet_slinger": {
 		"name": "Cullet Slinger", "art": "glass_cullet_slinger", "special": "glass_cullet_slinger",
 		"hp": 28, "radius": 21.0, "speed": 91.0, "spacing": 112.0, "reach": 340.0,
@@ -88,6 +100,8 @@ static func begin(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary
 	var distance := position.distance_to(target.pos)
 	var message: String
 	match move:
+		REFRACTION_ENGINE:
+			return _begin_refraction(sim, enemy, target, attack, distance)
 		"glass_lacquerer":
 			if enemy.get("lacquer_spent", false) or distance > attack.reach:
 				return false
@@ -137,6 +151,9 @@ static func begin(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary
 
 
 static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary, move: String) -> void:
+	if move in [REFRACTION_BEAM, REFRACTION_DISCHARGE]:
+		_resolve_refraction(sim, enemy, target, attack, move)
+		return
 	if move == "glass_lacquerer":
 		sim._guard(enemy, 10, move)
 		return
@@ -216,6 +233,85 @@ static func on_tile_hit(sim, attacker: Dictionary, enemy: Dictionary, amount: in
 	var reflected := clampi(ceili(amount * 0.55), 1, 15)
 	sim._emit("counter", "%s reflects %d damage at %s." % [enemy.name, reflected, attacker.name], enemy, attacker, "glass_mirrorback_counter", reflected)
 	sim._damage(enemy, attacker, reflected, "glass_mirrorback_counter")
+
+
+static func _begin_refraction(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary, distance: float) -> bool:
+	if distance > attack.reach:
+		return false
+	var discharge: bool = enemy.get("refraction_charged", false) and distance <= attack.discharge_radius + 38.0
+	var move := REFRACTION_DISCHARGE if discharge else REFRACTION_BEAM
+	var windup: int = attack.discharge_windup if discharge else attack.windup
+	var message: String
+	if discharge:
+		_clear_refraction_aim(enemy)
+		enemy["pilot_ring_radius"] = attack.discharge_radius
+		message = "The Engine vents a close discharge. Move outside its ring or time Guard."
+	else:
+		enemy.erase("pilot_ring_radius")
+		enemy["pilot_aim_point"] = _refraction_beam_end(sim, enemy.pos, target.pos, attack.reach)
+		enemy["pilot_aim_width"] = attack.beam_width
+		enemy["refraction_origin"] = enemy.pos
+		message = "The Engine locks its beam onto the marked line. Push or pull the Engine out of alignment, move off the line, or time Guard."
+	enemy["refraction_charged"] = not discharge
+	enemy.special_intent = move
+	sim._start_enemy_intent(enemy, target.id, sim.tick + windup, move)
+	sim._emit("intent", message, enemy, target, move)
+	sim._review_boss_event("start", move, message, enemy, target)
+	return true
+
+
+static func _refraction_beam_end(sim, origin: Vector2, target: Vector2, reach: float) -> Vector2:
+	var direction := origin.direction_to(target)
+	var lower: Vector2 = sim._bounded(Vector2.ZERO, 0.0)
+	var upper: Vector2 = sim._bounded(Vector2.INF, 0.0)
+	for axis in range(2):
+		if absf(direction[axis]) > 0.001:
+			var edge: float = upper[axis] if direction[axis] > 0.0 else lower[axis]
+			reach = minf(reach, (edge - origin[axis]) / direction[axis])
+	return origin + direction * reach
+
+
+static func _resolve_refraction(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary, move: String) -> void:
+	var victims: Array = []
+	var discharge := move == REFRACTION_DISCHARGE
+	var damage: int = attack.damage - 3 if discharge else attack.damage
+	if discharge:
+		enemy.erase("pilot_ring_radius")
+		victims = sim._enemies_in_area(enemy, enemy.pos, attack.discharge_radius)
+	else:
+		var origin: Vector2 = enemy.refraction_origin
+		var aim: Vector2 = enemy.pilot_aim_point
+		_clear_refraction_aim(enemy)
+		if origin.distance_to(enemy.pos) >= attack.alignment:
+			var message := "The Engine lost alignment. Its beam fizzled."
+			sim._emit("miss", message, enemy, target, REFRACTION_BROKEN, 0, enemy.pos, aim)
+			sim._review_boss_event("success", REFRACTION_BROKEN, message, enemy, target, "miss")
+			return
+		for hero: Dictionary in sim.units:
+			if hero.side != "hero" or hero.hp <= 0:
+				continue
+			var nearest := Geometry2D.get_closest_point_to_segment(hero.pos, origin, aim)
+			if nearest.distance_to(hero.pos) <= attack.beam_width:
+				victims.append(hero)
+	var attack_name := "discharge" if discharge else "beam"
+	if victims.is_empty():
+		var message := "The crew cleared the %s." % attack_name
+		sim._emit("miss", message, enemy, target, move)
+		sim._review_boss_event("success", move, message, enemy, target, "miss")
+		return
+	var hit_hp := false
+	for hero: Dictionary in victims:
+		var before: int = hero.hp
+		sim._damage(enemy, hero, damage, move)
+		hit_hp = hit_hp or hero.hp < before
+	var result := "The %s landed. Recheck the marked area or time Guard." if hit_hp else "Guard absorbed the %s."
+	sim._review_boss_event("miss" if hit_hp else "success", move, result % attack_name, enemy, target, "hit")
+
+
+static func _clear_refraction_aim(enemy: Dictionary) -> void:
+	enemy.erase("refraction_origin")
+	enemy.erase("pilot_aim_point")
+	enemy.erase("pilot_aim_width")
 
 
 static func _resolve_slinger(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary) -> void:

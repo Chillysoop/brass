@@ -120,8 +120,13 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 	if not _check(run.choose_node(preview.id), "Reach the Medium Bellmaker."):
 		return
 	_check(run.encounter().heroes[0].mastery == masteries[0].id, "The active mastery is carried into the encounter.")
-	if not _check(run.finish_combat(true, 61) and run.reward("skip") and run.boss_relic_offers().size() == 3
-		and run.choose_boss_relic("guild_ledger"), "The alternate Act I boss keeps the ordinary Medium relic rewards."):
+	if not _check(run.finish_combat(true, 61) and run.reward("skip"), "The Medium Bellmaker grants the Legendary reward before its relics."):
+		return
+	var relics := run.boss_relic_offers().map(func(offer: Dictionary): return offer.id)
+	relics.sort()
+	if not _check(relics == ["bellmaker_clapper", "bellmaker_long_echo", "bellmaker_resonant_plate"]
+		and not run.choose_boss_relic("guild_ledger") and run.choose_boss_relic("bellmaker_clapper"),
+		"The Bellmaker offers three distinctive relics before recruitment."):
 		return
 	var recruit: String = run.data.offers.front()
 	if not _check(run.choose_recruit(recruit), "Select a second hero after the Bellmaker."):

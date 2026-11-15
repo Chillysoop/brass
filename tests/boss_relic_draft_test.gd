@@ -51,7 +51,8 @@ func _check_draft_and_shop(game: Control) -> void:
 	var draft := run.boss_relic_offers()
 	var ids := draft.map(func(offer: Dictionary): return offer.id)
 	ids.sort()
-	if not _check(ids == ["bastion_medal", "guild_ledger", "tollkeeper_signet"], "Offer each of the three boss relics exactly once."):
+	if not _check(ids == ["bastion_medal", "guild_ledger", "tollkeeper_repair_kit", "tollkeeper_signet"],
+		"Offer each Tollkeeper relic exactly once."):
 		return
 	_check(not run.choose_boss_relic("pocket_bell") and not run.choose_recruit("warden"), "Only an offered relic or Skip can resolve the draft.")
 	var control := FrontierRun.new()

@@ -13,9 +13,13 @@ func _initialize() -> void:
 		var layers := run._make_map(seed_value)
 		_check_map(layers)
 		check(layers == run._make_map(seed_value), "Same seed must generate the same map.")
-		_check_map(run._make_map(seed_value, "easy", "glass"), 1, "crucible_twins")
+		var glass_easy := run._make_map(seed_value, "easy", "glass")
+		check(glass_easy.back()[0].boss_id in FrontierRun.GLASS_BOSS_SCOUTS, "Glass Easy uses one of the two Act I bosses.")
+		_check_map(glass_easy, 1, glass_easy.back()[0].boss_id)
 		var glass_medium := run._make_map(seed_value, "medium", "glass")
 		_check_map(glass_medium, 2, "prism_warden")
+		check(glass_medium.slice(0, 7) == _with_gate_link(glass_easy, glass_medium[7][0].id),
+			"Glass Medium keeps the first leg and connects its boss to the second leg.")
 		_check_glass_events(glass_medium)
 		var glass_hard := run._make_map(seed_value, "hard", "glass")
 		_check_map(glass_hard, 3, "tempered_colossus")
@@ -432,7 +436,7 @@ func _check_hard_and_glass(path: String) -> void:
 	run.choose_starter("shot")
 	check(run.encounter().location == "glass" and run.data.heroes.size() == 1, "Glass Easy must start as a solo Foundry run.")
 	_reach_boss(run)
-	check(run.is_final_boss() and run.encounter().boss_id == "crucible_twins", "Glass Easy must finish with the Crucible Twins.")
+	check(run.is_final_boss() and run.encounter().boss_id == "glass_refraction_engine", "Seed 76 ends Glass Easy at the Refraction Engine.")
 	var marks: int = run.profile.marks
 	run.finish_combat(true, [70])
 	check(run.profile.glass_medium_unlocked and run.profile.marks == marks + 19, "Glass Easy must bank its own first-clear payout.")
@@ -482,7 +486,7 @@ func _check_glass_medium(path: String) -> void:
 	run.choose_starter("shot")
 	_reach_boss(run)
 	var marks: int = run.profile.marks
-	check(run.encounter().boss_id == "crucible_twins" and not run.is_final_boss(), "The Crucible Twins must be the first Glass Medium boss.")
+	check(run.encounter().boss_id == "glass_refraction_engine" and not run.is_final_boss(), "Seed 76 keeps the same first Glass boss on Medium.")
 	run.finish_combat(true, [53])
 	check(run.profile.marks == marks + 4 and not run.profile.glass_hard_unlocked and not run.profile.crown_easy_unlocked,
 		"The first boss must grant its own marks and leave later routes locked.")
@@ -514,7 +518,7 @@ func _check_glass_hard(path: String) -> void:
 	run.choose_hero(run.data.offers[0])
 	run.choose_relic("pocket_bell")
 	run.choose_starter("shot")
-	for boss_id: String in FrontierRun.GLASS_BOSSES:
+	for boss_id: String in ["glass_refraction_engine", "prism_warden", "tempered_colossus"]:
 		_reach_boss(run)
 		var encounter := run.encounter()
 		check(encounter.boss_id == boss_id and encounter.location == "glass" and encounter.difficulty == "hard",

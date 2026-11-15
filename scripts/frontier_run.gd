@@ -17,7 +17,10 @@ const BASE_TILES := ["bash", "shot", "slam", "pull", "guard", "blink"]
 const STARTER_RELICS := ["pocket_bell", "copper_compass", "quartermasters_coin"]
 const BUILD_RELICS := ["towline_knot", "bridgeplate", "brass_metronome", "overflow_chalice", "stepped_gear", "mercy_seal"]
 const ELITE_RELICS := ["afterimage", "barrage_rack", "siege_fuse", "switchback_lens", "longshot_prism", "twin_bell"]
-const BOSS_RELICS := ["tollkeeper_signet", "bastion_medal", "guild_ledger"]
+const BOSS_RELICS := {
+	"tollkeeper": ["tollkeeper_signet", "bastion_medal", "guild_ledger", "tollkeeper_repair_kit"],
+	"brass_bellmaker": ["bellmaker_clapper", "bellmaker_long_echo", "bellmaker_resonant_plate"],
+}
 const RELIC_STARTERS := {"towline_knot": "pull", "bridgeplate": "shield_ram"}
 const FORGE_UNLOCKS := {"blink": "blink_artifice", "shot": "shot_artifice", "guard": "guard_artifice"}
 const RELICS := {
@@ -41,6 +44,10 @@ const RELICS := {
 	"tollkeeper_signet": {"label": "Tollkeeper's Signet", "description": "Damage tiles that finish on beats 1–4 deal +3 damage."},
 	"bastion_medal": {"label": "Bastion Medal", "description": "When a tile fires and grants Guard, it grants 3 extra Guard to each recipient."},
 	"guild_ledger": {"label": "Guild Ledger", "description": "Shops stock one extra tile from each hero's class deck."},
+	"tollkeeper_repair_kit": {"label": "Tollkeeper's Repair Kit", "description": "Once each loop, each hero heals 3 HP the first time they fully block an enemy hit."},
+	"bellmaker_clapper": {"label": "Bellmaker's Clapper", "description": "Once per hero each loop, a support tile sends a shockwave for 8 damage to each enemy within 110."},
+	"bellmaker_long_echo": {"label": "Long Echo", "description": "Each hero's first ranged hit per loop deals 4 extra damage."},
+	"bellmaker_resonant_plate": {"label": "Resonant Plate", "description": "Each hero gains 4 Guard when their first tile at least 3 beats wide finishes each loop."},
 }
 const META_NODES := {
 	"stout_start": {"label": "Stout Start", "description": "Begin each run with 8% more maximum HP.", "cost": 5, "requires": []},
@@ -146,6 +153,7 @@ const BOSS_LABELS := {
 	"tollkeeper": "The Tollkeeper", "gilded_marshal": "The Gilded Marshal",
 	"brass_bellmaker": "The Bellmaker",
 	"iron_regent": "The Iron Regent", "crucible_twins": "The Crucible Twins", "prism_warden": "The Prism Warden",
+	"glass_refraction_engine": "The Refraction Engine",
 	"tempered_colossus": "The Tempered Colossus",
 	"relay_captain": "The Relay Captain", "relay_marshal": "The Relay Marshal", "crown_regent": "The Crown Regent",
 	"wreckmaster": "The Wreckmaster", "tidekeeper": "The Tidekeeper", "drowned_admiral": "The Drowned Admiral",
@@ -155,6 +163,10 @@ const TOLLKEEPER_VARIANTS := {
 	"repair_drone": {"title": "The Tollkeeper + Repair Drone", "description": "The drone repairs the Tollkeeper from nearby. Separate them, interrupt the drone during a repair, or destroy it."},
 }
 const BELLMAKER_SCOUT := "Alternates a close bell shockwave and a long shot at the marked spot. Push it away to escape the ring, move off the mark, or time Guard."
+const GLASS_BOSS_SCOUTS := {
+	"crucible_twins": "Two attackers fight together. Use concentrated fire to take one out early, or place area attacks to catch both.",
+	"glass_refraction_engine": "The Engine locks a beam onto a marked line. Displace it during the windup, move off the line, or time Guard. Stay at range to avoid its close discharge.",
+}
 const BRASS_BOSSES := ["tollkeeper", "gilded_marshal", "iron_regent"]
 const GLASS_BOSSES := ["crucible_twins", "prism_warden", "tempered_colossus"]
 const CROWN_BOSSES := ["relay_captain", "relay_marshal", "crown_regent"]
@@ -546,11 +558,16 @@ func tollkeeper_preview() -> Dictionary:
 
 func first_boss_preview() -> Dictionary:
 	var layers: Array = data.get("layers", [])
-	if data.get("location") != "brass" or int(data.get("segment", 0)) != 1 or layers.size() < NODES_PER_SEGMENT:
+	if int(data.get("segment", 0)) != 1 or layers.size() < NODES_PER_SEGMENT:
 		return {}
 	var boss: Dictionary = layers[NODES_PER_SEGMENT - 1][0]
-	if boss.get("boss_id") == "brass_bellmaker":
+	var id: String = boss.get("boss_id", "")
+	if id == "brass_bellmaker":
 		return {"id": boss.id, "title": boss.label, "description": BELLMAKER_SCOUT}
+	if GLASS_BOSS_SCOUTS.has(id):
+		return {"id": boss.id, "title": boss.label, "description": GLASS_BOSS_SCOUTS[id]}
+	if id != "tollkeeper":
+		return {}
 	var variant := _tollkeeper_variant(boss)
 	var preview: Dictionary = TOLLKEEPER_VARIANTS[variant].duplicate()
 	preview.id = boss.id
@@ -585,6 +602,10 @@ func _encounter_for(node: Dictionary, segment: int) -> Dictionary:
 	if _is_easy_tollkeeper(node):
 		options["boss_variant"] = _tollkeeper_variant(node)
 	var formation := _pilot_formation_for(node, segment, kind)
+	var arrival := int(node.get("reinforcement_beat", 0))
+	if kind == "battle" and arrival > 0 and formation.size() > 1:
+		options["reinforcement_beat"] = arrival
+		options["reinforcements"] = [formation.pop_back()]
 	if not formation.is_empty():
 		options["formation"] = formation
 	return options
@@ -595,8 +616,9 @@ func _pilot_formation_for(node: Dictionary, segment: int, kind: String) -> Array
 		return node.pilot_formation.duplicate(true)
 	if not data.has("pilot_fights"):
 		return []
-	return PilotFormations.choose(data.location, segment, kind,
-		int(data.seed) ^ _node_salt(187, node), data.pilot_fights, int(data.get("encounter_roster_version", 1)))
+	var minimum_enemies := 2 if kind == "battle" and node.has("reinforcement_beat") else 1
+	return PilotFormations.choose(data.location, segment, kind, int(data.seed) ^ _node_salt(187, node),
+		data.pilot_fights, int(data.get("encounter_roster_version", 1)), minimum_enemies)
 
 
 func _lock_pilot_formation() -> void:
@@ -994,7 +1016,7 @@ func _resolve_boss() -> void:
 
 func _has_boss_relic_draft() -> bool:
 	return data.location == "brass" and data.difficulty in ["medium", "hard"] and data.segment == 1 \
-		and data.node.get("boss_id", "") in ["tollkeeper", "brass_bellmaker"]
+		and BOSS_RELICS.has(data.node.get("boss_id", ""))
 
 
 func reward_lane() -> int:
@@ -1051,7 +1073,8 @@ func reward(id: String) -> bool:
 	elif data.node.type == "boss":
 		if _has_boss_relic_draft():
 			data.phase = "boss_relic"
-			data.offers = _sample(BOSS_RELICS, BOSS_RELICS.size(), int(data.seed), _node_salt(193))
+			var relics: Array = BOSS_RELICS[data.node.boss_id]
+			data.offers = _sample(relics, relics.size(), int(data.seed), _node_salt(193))
 			data.node_notice = ""
 		else:
 			_start_recruitment()
@@ -1541,6 +1564,7 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 	var layers: Array = [[_node("opening", opening, 0, 1)]]
 	var used_events: Array[String] = []
 	_append_layers(layers, first_leg, labels, rng, used_events)
+	_mark_reinforcement_fight(layers, seed_value, seed_salt)
 	var first_boss: String = bosses[0]
 	var tollkeeper_variant := ""
 	if location == "brass":
@@ -1549,6 +1573,8 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 			first_boss = "brass_bellmaker"
 		elif difficulty == "easy":
 			tollkeeper_variant = "repair_drone" if _rng(seed_value, 421).randi_range(0, 1) == 1 else "solo"
+	elif glass and _rng(seed_value, 587).randi_range(0, 3) == 0:
+		first_boss = "glass_refraction_engine"
 	_append_boss(layers, first_boss, tollkeeper_variant)
 	var segments: int = SEGMENT_COUNTS[difficulty]
 	for segment in range(1, segments):
@@ -1633,6 +1659,17 @@ func _add_build_mystery(first_leg: Array, seed_value: int) -> void:
 	var variants := BUILD_MYSTERIES.keys()
 	var node := sites[rng.randi_range(0, sites.size() - 1)]
 	node.label = variants[rng.randi_range(0, variants.size() - 1)]
+
+
+func _mark_reinforcement_fight(first_leg: Array, seed_value: int, seed_salt: int) -> void:
+	var options: Array[Dictionary] = []
+	for layer: Array in first_leg.slice(3, 5):
+		for node: Dictionary in layer:
+			if node.type == "battle":
+				options.append(node)
+	var rng := _rng(seed_value, seed_salt + 614)
+	var fight := options[rng.randi_range(0, options.size() - 1)]
+	fight.reinforcement_beat = 7 if rng.randi_range(0, 1) == 0 else 9
 
 
 func _append_boss(layers: Array, id: String, variant := "") -> void:
@@ -2148,6 +2185,8 @@ func _restore_integers() -> void:
 func _restore_node(node: Dictionary) -> void:
 	node.row = int(node.row)
 	node.column = int(node.column)
+	if node.has("reinforcement_beat"):
+		node.reinforcement_beat = int(node.reinforcement_beat)
 	for spawn: Dictionary in node.get("pilot_formation", []):
 		spawn.delay = int(spawn.delay)
 	if node.type == "boss" and not node.has("boss_id"):

@@ -58,11 +58,14 @@ const MOONWRECK := {
 }
 
 
-static func choose(location: String, act: int, kind: String, seed_value: int, history: Array, version := 1) -> Array:
+static func choose(location: String, act: int, kind: String, seed_value: int, history: Array,
+		version := 1, minimum_enemies := 1) -> Array:
 	var legacy: Dictionary = {"glass": GLASS, "moonwreck": MOONWRECK}.get(location, {})
 	var formations: Array = legacy.get(act, {}).get(kind, [])
 	if version >= CURRENT_VERSION:
 		formations = formations + CampaignFormations.ROSTERS.get(location, {}).get(act, {}).get(kind, [])
+	if minimum_enemies > 1:
+		formations = formations.filter(func(team: Array): return team.size() >= minimum_enemies)
 	if formations.is_empty():
 		return []
 	var recent: Array = []

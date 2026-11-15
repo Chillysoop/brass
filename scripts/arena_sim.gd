@@ -53,6 +53,11 @@ const LONGSHOT_PRISM_RANGE := 180.0
 const TOLLKEEPER_SIGNET_DAMAGE := 3
 const TOLLKEEPER_SIGNET_LAST_BEAT := 4
 const BASTION_MEDAL_GUARD := 3
+const TOLLKEEPER_REPAIR_KIT_HP := 3
+const BELLMAKER_CLAPPER_RADIUS := 110.0
+const BELLMAKER_CLAPPER_DAMAGE := 8
+const BELLMAKER_LONG_ECHO_DAMAGE := 4
+const BELLMAKER_RESONANT_PLATE_GUARD := 4
 const TOLLKEEPER_REPAIR_CUE := "tollkeeper_repair"
 const BOSS_REVIEW_STAGES := {
 	"tollkeeper_repair": "start", "tollkeeper_repair_interrupted": "success", "tollkeeper_repair_separated": "success",
@@ -459,6 +464,7 @@ var activations: Array[Dictionary] = []
 var boss_events: Array[Dictionary] = []
 var tick := 0
 var outcome := ""
+var _reinforcement_wave: Dictionary = {}
 
 var _lanes: Array[Array] = []
 var _events: Array[Dictionary] = []
@@ -545,7 +551,12 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 	_overflow_healed = 0
 	_twin_bell_hits.clear()
 	_healed_tiles.clear()
+	_reinforcement_wave.clear()
 	if not options.is_empty():
+		var reinforcements: Array = options.get("reinforcements", [])
+		if not reinforcements.is_empty() and not options.get("formation", []).is_empty() and options.get("encounter") != "boss":
+			var beat := clampi(int(options.get("reinforcement_beat", 7)), 1, BEATS)
+			_reinforcement_wave = {"formation": reinforcements.duplicate(true), "tick": beat * TICKS_PER_BEAT, "beat": beat}
 		_start_campaign(options)
 	elif fixture == "solo":
 		units.append(_unit("hero_1", "Warden", "hero", 0, Vector2(270, 270), 165, 23.0, 122.0, 92.0))
@@ -698,7 +709,9 @@ func _start_glass_encounter(encounter: String, rng: RandomNumberGenerator, y: fl
 			if third_leg:
 				_add_campaign_enemy("glass_hunter", Vector2(676, y - 108.0), 47, 1.25, damage_scale)
 		"boss":
-			if boss_id == "tempered_colossus" or (boss_id.is_empty() and third_leg):
+			if boss_id == GlassPilotEnemies.REFRACTION_ENGINE:
+				_add_campaign_enemy(GlassPilotEnemies.REFRACTION_ENGINE, Vector2(642, y), 0, health_scale, damage_scale)
+			elif boss_id == "tempered_colossus" or (boss_id.is_empty() and third_leg):
 				_add_campaign_enemy("tempered_colossus", Vector2(635, y))
 			elif boss_id == "prism_warden" or (boss_id.is_empty() and extra_leg):
 				_add_campaign_enemy("prism_warden", Vector2(647, y), 0, 1.06 if difficulty == "hard" else 1.0, 1.02 if difficulty == "hard" else 1.0)
@@ -709,10 +722,49 @@ func _start_glass_encounter(encounter: String, rng: RandomNumberGenerator, y: fl
 			_add_campaign_enemy("glass_recruit", Vector2(522, y), 0, health_scale, damage_scale)
 
 
-func _spawn_formation(formation: Array, y: float, health_scale: float, damage_scale: float) -> void:
+func pending_reinforcement() -> Dictionary:
+	return _reinforcement_wave.get("warning", {}) if outcome.is_empty() else {}
+
+
+func _spawn_formation(formation: Array, y: float, health_scale: float, damage_scale: float, arrival := false) -> void:
 	for spawn: Dictionary in formation:
 		_add_campaign_enemy(spawn.id, Vector2(spawn.x, y + float(spawn.dy)), int(spawn.delay),
 			health_scale * float(spawn.health_scale), damage_scale * float(spawn.damage_scale))
+		if arrival:
+			var enemy: Dictionary = units.back()
+			enemy.next_attack = tick + maxi(1, int(enemy.next_attack))
+			enemy.pos = _reinforcement_spawn_position(enemy)
+			enemy.prev_pos = enemy.pos
+			_emit("reinforcement", "%s has arrived." % enemy.name, enemy, enemy)
+	if not arrival and not _reinforcement_wave.is_empty():
+		var positions := PackedVector2Array()
+		for spawn: Dictionary in _reinforcement_wave.formation:
+			positions.append(Vector2(spawn.x, y + float(spawn.dy)))
+		_reinforcement_wave.y = y
+		_reinforcement_wave.health_scale = health_scale
+		_reinforcement_wave.damage_scale = damage_scale
+		_reinforcement_wave.warning = {"beat": _reinforcement_wave.beat, "tick": _reinforcement_wave.tick, "positions": positions}
+		_reinforcement_wave.warning.make_read_only()
+
+
+func _arrive_reinforcements() -> void:
+	if tick != int(_reinforcement_wave.get("tick", -1)):
+		return
+	_spawn_formation(_reinforcement_wave.formation, _reinforcement_wave.y,
+		_reinforcement_wave.health_scale, _reinforcement_wave.damage_scale, true)
+	_reinforcement_wave.clear()
+
+
+func _reinforcement_spawn_position(enemy: Dictionary) -> Vector2:
+	var preferred := _bounded(enemy.pos, enemy.radius)
+	if _free_position(preferred, enemy):
+		return preferred
+	for distance: float in [48.0, 96.0, 144.0]:
+		for direction in range(8):
+			var candidate := _bounded(preferred + Vector2.DOWN.rotated(direction * TAU / 8.0) * distance, enemy.radius)
+			if _free_position(candidate, enemy):
+				return candidate
+	return preferred
 
 
 func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_scale := 1.0, damage_scale := 1.0) -> void:
@@ -908,6 +960,7 @@ func step() -> Array[Dictionary]:
 			if unit.hp > 0 and _has_relic(unit, "pocket_bell"):
 				_guard(unit, 5, "pocket_bell")
 	_move_units()
+	_arrive_reinforcements()
 	_refresh_relay_links()
 	if tick % TICKS_PER_BEAT == 0:
 		_activate_lanes()
@@ -1226,6 +1279,7 @@ func _activate_lanes() -> void:
 				if actor.has("mastery"):
 					_apply_mastery(actor, tile.id)
 				_apply_bastion_medal(actor, tile.id)
+				_apply_bellmaker_finishes(actor, tile.id)
 				_add_tile_visual_cue(actor, tile.id, origin, first_event)
 				if actor.get("class") == "rune_smith" and TILES[tile.id].width >= 3:
 					actor["rune_charged"] = true
@@ -1939,6 +1993,31 @@ func _apply_bastion_medal(actor: Dictionary, tile_id: String) -> void:
 			_activation.beat, "Granted %d extra Guard" % bonus)
 
 
+func _apply_bellmaker_finishes(actor: Dictionary, tile_id: String) -> void:
+	var tile: Dictionary = TILES[tile_id]
+	if tile.damage == 0 and _has_relic(actor, "bellmaker_clapper") \
+			and int(actor.get("bellmaker_clapper_loop", -1)) != _loop_index():
+		var enemies := _enemies_in_area(actor, actor.pos, BELLMAKER_CLAPPER_RADIUS)
+		if not enemies.is_empty():
+			actor["bellmaker_clapper_loop"] = _loop_index()
+			_emit("bell_ring", "Bellmaker's Clapper rings out.", actor, actor, "bellmaker_clapper", int(BELLMAKER_CLAPPER_RADIUS))
+			var damage := 0
+			for enemy: Dictionary in enemies:
+				var before: int = enemy.hp
+				_damage(actor, enemy, BELLMAKER_CLAPPER_DAMAGE, tile_id, "Bellmaker's Clapper")
+				damage += before - int(enemy.hp)
+			_relic_proc("bellmaker_clapper", "Bellmaker's Clapper", damage, actor, enemies[0], tile.label,
+				_activation.beat, "The shockwave hit %d and dealt %d damage in total" % [enemies.size(), damage])
+	if tile.width >= 3 and _has_relic(actor, "bellmaker_resonant_plate") \
+			and int(actor.get("bellmaker_resonant_plate_loop", -1)) != _loop_index():
+		actor["bellmaker_resonant_plate_loop"] = _loop_index()
+		var gain := mini(BELLMAKER_RESONANT_PLATE_GUARD, MAX_GUARD - int(actor.guard))
+		if gain > 0:
+			_guard(actor, gain, tile_id, {}, false)
+			_relic_proc("bellmaker_resonant_plate", "Resonant Plate", gain, actor, actor, tile.label,
+				_activation.beat, "Granted %d extra Guard" % gain)
+
+
 func _gravity_strike(actor: Dictionary, target: Dictionary, tile_id: String, radius: float, collapse: bool) -> void:
 	var impact: Vector2 = target.pos
 	for enemy in _enemies_in_area(actor, impact, radius):
@@ -2190,11 +2269,13 @@ func _resolve_intent(enemy: Dictionary) -> void:
 	var hit_point: Vector2 = target.get("pos", origin)
 	var radius := _enemy_sweep_radius(enemy, attack)
 	var locked_aim := enemy.has("pilot_aim_point")
+	var cue_origin := origin
 	if enemy.has("blast_center"):
 		hit_point = enemy.blast_center
 		radius = enemy.blast_radius
 	elif locked_aim:
-		hit_point = origin.move_toward(enemy.pilot_aim_point, float(attack.reach))
+		cue_origin = enemy.get("refraction_origin", origin)
+		hit_point = cue_origin.move_toward(enemy.pilot_aim_point, float(attack.reach))
 	elif enemy.get("dock_winch_ally", "") != "":
 		target = _find_unit(enemy.dock_winch_ally)
 		hit_point = target.get("pos", origin)
@@ -2224,7 +2305,7 @@ func _resolve_intent(enemy: Dictionary) -> void:
 	visual_cues.append({
 		"kind": "enemy_cast", "tick": tick, "actor": enemy.id, "tile": attack_id, "attack": attack,
 		"target": target.get("id", "") if impact_target.is_empty() else impact_target,
-		"from": origin, "to": hit_point, "arrival": enemy.pos, "radius": radius,
+		"from": cue_origin, "to": hit_point, "arrival": enemy.pos, "radius": radius,
 		"landed": (valid_target and not missed) or not contact_points.is_empty(), "contact_points": contact_points,
 	})
 
@@ -2904,6 +2985,19 @@ func _heal_guard_overflow(actor: Dictionary, tile_id: String, excess: int) -> vo
 	_relic_proc("overflow_chalice", "Overflow Chalice", healed, actor, recipient, TILES[tile_id].label, _activation.beat, effect)
 
 
+func _apply_tollkeeper_repair_kit(hero: Dictionary) -> void:
+	if not _has_relic(hero, "tollkeeper_repair_kit") or int(hero.get("tollkeeper_repair_kit_loop", -1)) == _loop_index():
+		return
+	hero["tollkeeper_repair_kit_loop"] = _loop_index()
+	var healed := mini(TOLLKEEPER_REPAIR_KIT_HP, int(hero.max_hp) - int(hero.hp))
+	if healed <= 0:
+		return
+	hero.hp += healed
+	var effect := "Restored %d HP to %s after a full block" % [healed, hero.name]
+	_emit("heal", effect, hero, hero, "tollkeeper_repair_kit", healed)
+	_relic_proc("tollkeeper_repair_kit", "Tollkeeper's Repair Kit", healed, hero, hero, "A fully blocked enemy hit", 0, effect)
+
+
 func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String, extra_hit := "") -> void:
 	if target.hp <= 0:
 		return
@@ -2969,6 +3063,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 	var blocked_text := " (%d blocked)" % blocked if blocked > 0 else ""
 	var details := "%s: %s hits %s for %d%s." % [actor.name, action, target.name, dealt, blocked_text]
 	_emit("hit", details, actor, target, tile_id, dealt, _attack_origin(actor))
+	if blocked > 0 and dealt == 0 and actor.side == "enemy" and target.side == "hero":
+		_apply_tollkeeper_repair_kit(target)
 	if dealt > 0 and target.hp > 0 and actor.side == "hero" and not str(target.intent).is_empty() \
 			and target.get("intent_attack_id") == TOLLKEEPER_REPAIR_CUE:
 		_cancel_tollkeeper_repair(target, _find_unit(target.intent), "tollkeeper_repair_interrupted", "A hit interrupts the drone's repair.")
@@ -3250,6 +3346,11 @@ func _timeline_relic_bonus(actor: Dictionary, target: Dictionary, tile_id: Strin
 			actor, target, TILES[tile_id].label, _activation.beat, "", _attack_origin(actor))
 	if target.id != _activation.target:
 		return bonus
+	if _has_relic(actor, "bellmaker_long_echo") and is_ranged_tile(tile_id) \
+			and int(actor.get("bellmaker_long_echo_loop", -1)) != _loop_index():
+		actor["bellmaker_long_echo_loop"] = _loop_index()
+		bonus += _relic_proc("bellmaker_long_echo", "Long Echo", BELLMAKER_LONG_ECHO_DAMAGE,
+			actor, target, TILES[tile_id].label, _activation.beat, "", _attack_origin(actor))
 	bonus += _stepped_gear_bonus(actor, target, tile_id)
 	bonus += _switchback_lens_bonus(actor, target, tile_id)
 	if _has_relic(actor, "longshot_prism") and not _spent_timeline_relics.has("longshot_prism"):
@@ -3329,18 +3430,17 @@ func _has_gap_before_activation() -> bool:
 
 func _relic_proc(id: String, label: String, amount: int, actor: Dictionary, target: Dictionary, source: String,
 		source_beat := 0, effect := "", origin := Vector2.INF) -> int:
-	if not _activation.has("relics"):
-		_activation["relics"] = []
-	var proc := {"id": id, "amount": amount, "target_name": target.name, "source": source, "source_beat": source_beat}
-	if not effect.is_empty():
-		proc["effect"] = effect
-	_activation.relics.append(proc)
 	var message := effect if not effect.is_empty() else "+%d damage" % amount
 	_emit("relic_proc", "%s · %s" % [label, message], actor, target, id, amount, origin)
-	var event: Dictionary = trace.back()
-	event["source_tile"] = _activation.tile
-	event["lane"] = _activation.lane
-	event["start"] = _activation.start
+	if not _activation.is_empty():
+		var proc := {"id": id, "amount": amount, "target_name": target.name, "source": source, "source_beat": source_beat}
+		if not effect.is_empty():
+			proc["effect"] = effect
+		_activation.get_or_add("relics", []).append(proc)
+		var event: Dictionary = trace.back()
+		event["source_tile"] = _activation.tile
+		event["lane"] = _activation.lane
+		event["start"] = _activation.start
 	return amount
 
 
@@ -3554,7 +3654,7 @@ func _check_outcome() -> void:
 			alive_enemy = true
 	if not alive_hero:
 		outcome = "defeat"
-	elif not alive_enemy:
+	elif not alive_enemy and _reinforcement_wave.is_empty():
 		outcome = "victory"
 	if outcome != "":
 		_emit("outcome", "Victory. The arena is clear." if outcome == "victory" else "Defeat. The crew has fallen.")

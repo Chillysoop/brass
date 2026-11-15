@@ -37,6 +37,9 @@ const BOSS_BRIEFS := {
 		"portrait": "glass_twin",
 		"hint": "Glass keeps its distance while Ember closes in. Use your targeting rules to focus one twin before turning on the other."
 	},
+	"glass_refraction_engine": {
+		"portrait": "glass_refraction_engine", "hint": FrontierRun.GLASS_BOSS_SCOUTS.glass_refraction_engine
+	},
 	"prism_warden": {
 		"portrait": "prism_warden",
 		"hint": "Push or pull the Warden, then strike with your other hero within three beats to shatter the prism ward. Give guard to your ranged leader and the hero with the lowest HP."
@@ -88,6 +91,8 @@ const RELIC_DRAFT_TONES := {
 	"afterimage": Color("#c8b7ec"), "barrage_rack": Color("#efbe8a"), "siege_fuse": Color("#9ddbd1"),
 	"twin_bell": Color("#f1cc79"), "switchback_lens": Color("#9dcce7"), "longshot_prism": Color("#d7bcee"),
 	"tollkeeper_signet": Color("#f2c185"), "bastion_medal": Color("#9ddbd1"), "guild_ledger": Color("#d3bded"),
+	"tollkeeper_repair_kit": Color("#b5d5a0"), "bellmaker_clapper": Color("#f2b68b"),
+	"bellmaker_long_echo": Color("#a8d9eb"), "bellmaker_resonant_plate": Color("#dfc4ee"),
 }
 
 var _host
@@ -251,7 +256,7 @@ func _draft(phase: String) -> void:
 		subtitle = _hero_name(_run.data.get("pending_recruit", _run.data.get("hero", "")))
 	var boss: Dictionary = _run.first_boss_preview() if phase == "hero" else {}
 	if not boss.is_empty():
-		subtitle = "Act I boss · " + boss.title
+		subtitle = "Act I boss · %s\n%s" % [boss.title, boss.description]
 	_page_title(title, subtitle)
 	if not boss.is_empty():
 		var scout: Label = _layout.get_child(_layout.get_child_count() - 1)
@@ -560,8 +565,13 @@ func _map_board(elite_detail: Label, first_boss: Dictionary) -> Control:
 		button.add_theme_font_size_override("font_size", 14)
 		button.tooltip_text = "%s · %s%s" % [label, TYPE_NAMES.get(type, type.capitalize()), " · completed" if past else (" · reachable" if reachable else " · unavailable")]
 		if type == "boss" and node.id == first_boss.get("id"):
-			button.name = "TollkeeperBossNode" if node.get("boss_id") == "tollkeeper" else "BellmakerBossNode"
+			button.name = {"tollkeeper": "TollkeeperBossNode", "brass_bellmaker": "BellmakerBossNode",
+				"crucible_twins": "CrucibleTwinsBossNode", "glass_refraction_engine": "RefractionEngineBossNode"}.get(node.boss_id, "FirstBossNode")
 			button.tooltip_text = "%s\n%s" % [first_boss.title, first_boss.description]
+		if node.has("reinforcement_beat"):
+			button.name = "ReinforcementNode"
+			button.text = "Wave %d · %s" % [int(node.reinforcement_beat), button.text]
+			button.tooltip_text += "\nReinforcements arrive on beat %d." % int(node.reinforcement_beat)
 		if reachable and type == "elite":
 			var preview := _elite_preview_copy(node)
 			if not preview.is_empty():
@@ -641,12 +651,31 @@ func _combat() -> void:
 
 
 func _add_enemy_preview(card: VBoxContainer) -> void:
-	var preview := ArenaSim.new()
-	preview.start(_run.loadout.lanes, "solo", _run.encounter())
+	var options: Dictionary = _run.encounter()
 	var formation := HBoxContainer.new()
 	formation.add_theme_constant_override("separation", 14)
 	card.add_child(formation)
 	card.move_child(formation, 0)
+	if not options.has("reinforcements"):
+		_add_formation_cards(formation, options)
+		return
+	var opening := _panel_stack(formation, Vector2.ZERO, true)
+	opening.add_child(_label("At the start", 16, GOLD))
+	_add_formation_cards(_cards_row(opening), options)
+	var incoming := _panel_stack(formation, Vector2.ZERO, true)
+	var arrival := _label("Reinforcements · beat %d" % int(options.reinforcement_beat), 16, TEAL)
+	arrival.name = "ReinforcementPreview"
+	incoming.add_child(arrival)
+	var wave := options.duplicate()
+	wave.formation = options.reinforcements
+	wave.erase("reinforcements")
+	wave.erase("reinforcement_beat")
+	_add_formation_cards(_cards_row(incoming), wave)
+
+
+func _add_formation_cards(formation: HBoxContainer, options: Dictionary) -> void:
+	var preview := ArenaSim.new()
+	preview.start(_run.loadout.lanes, "solo", options)
 	var shown := {}
 	for unit: Dictionary in preview.units:
 		if unit.side != "enemy" or shown.has(unit.name):
@@ -809,7 +838,7 @@ func _elite_relic_draft(offers: Array) -> void:
 
 
 func _boss_relic_draft() -> void:
-	_page_title("Choose a boss relic", "Applies to the whole crew, including recruits.")
+	_page_title("Choose a boss relic", "%s · Applies to the whole crew, including recruits." % _run.data.node.label)
 	var cards := _cards_row()
 	var selected := {"id": ""}
 	var advance := _continue(func(): _claim_boss_relic(selected.id))

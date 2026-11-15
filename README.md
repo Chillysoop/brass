@@ -44,13 +44,15 @@ All twelve classes have two signature choices at Rare, Epic, and Legendary. If y
 
 Enemy encounters rotate from the opening fight onward in new expeditions. Each act adds regional threats, and elites draw from separate formations. The encounter preview shows who you will face and what each enemy does. Crown War Drummers speed up nearby attacks, Glass Mirrorbacks reflect the first hit during their stance, and two separate tile hits can disarm a Powder Runner's fuse. Continue restores your saved encounter.
 
-Medium starts solo. After the Tollkeeper, take a Legendary tile into your build and recruit a second hero with a starter tile. Both lanes fire on the same beat clock. Push or pull the Gilded Marshal to expose its armor, then land a hit with the other hero before it closes. Defeating the Marshal unlocks Brass Frontier Hard and Glass Foundry Easy. Each hero can take a Legendary trophy after the final boss.
+One optional Act I battle in each region is marked **Wave** on the route map. A reinforcement arrives on beat 7 or 9 of the first loop. The encounter preview separates the starting enemy from the reinforcement, and the arena marks where and when the second enemy arrives.
 
-In Brass Frontier Medium and Hard, the Tollkeeper offers an optional boss relic after the Legendary pick. **Tollkeeper's Signet** adds 3 damage to tile hits that finish on beats 1–4. **Bastion Medal** adds 3 Guard when a tile grants it. **Guild Ledger** adds one tile from each hero's class deck to every shop.
+Medium starts solo. After the Act I boss, take a Legendary tile into your build and recruit a second hero. Both lanes fire on the same beat clock. Push or pull the Gilded Marshal to expose its armor, then land a hit with the other hero before it closes. Defeating the Marshal unlocks Brass Frontier Hard and Glass Foundry Easy. Each hero can take a Legendary trophy after the final boss.
 
-Glass Foundry Easy is a solo route that ends at the Crucible Twins. Hunters prioritize the hero with the most ranged tile damage. Skirmishers prioritize the hero with the lowest current HP. The clear awards Aether Marks and records the unlock for Glass Foundry Medium.
+In Brass Frontier Medium and Hard, the Act I boss offers a relic draft after the Legendary pick. The Tollkeeper offers Signet, Bastion Medal, Guild Ledger, and **Repair Kit**, which can heal a hero after a full block. The Bellmaker offers **Clapper**, **Long Echo**, and **Resonant Plate** to reward support tiles, ranged attacks, and wide tiles respectively.
 
-Glass Foundry Medium starts solo. After the Crucible Twins, take a Legendary tile and recruit a second hero for the next leg. The Prism Warden pressures the hero with the most ranged damage and the hero with the lowest current HP. Push or pull to open its ward, then hit it with the other hero within three beats. A clear records the unlocks for Glass Foundry Hard and Crown Relay Easy.
+Glass Foundry Easy is a solo route that ends at the Crucible Twins or the **Refraction Engine**, revealed during the opening draft. The Engine locks a beam onto a marked line. Move off the line, displace the Engine during the windup, or time Guard for the hit. Both bosses award Aether Marks and unlock Glass Foundry Medium.
+
+Glass Foundry Medium starts solo. After the Act I boss, take a Legendary tile and recruit a second hero for the next leg. The Prism Warden pressures the hero with the most ranged damage and the hero with the lowest current HP. Push or pull to open its ward, then hit it with the other hero within three beats. A clear records the unlocks for Glass Foundry Hard and Crown Relay Easy.
 
 Glass Foundry Hard adds the Tempering Causeway and a third hero after the Prism Warden. When the Tempered Colossus charges Forge Sweep, push or pull it with one hero, crack its guard with a hit from a second hero, and shatter it with a hit from the third. Shattering the guard cancels Forge Sweep for the rest of the fight.
 

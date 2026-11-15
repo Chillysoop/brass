@@ -157,10 +157,11 @@ func _sample_route(seed_value: int, location: String, prefer_combat: bool) -> Ve
 			for lane in range(act):
 				run.data.heroes[lane] = _hero("warden")
 			var options := run._encounter_for(current, act)
-			var enemies := _enemy_ids(sim, options)
+			var initial := _enemy_ids(sim, options)
+			var enemies := initial + _formation_ids(options.get("reinforcements", []))
 			if kind != "boss":
-				_expect(options.has("formation") and enemies == _formation_ids(options.get("formation", [])),
-					"Every regular or elite node and opener must spawn its seeded lineup.")
+				_expect(options.has("formation") and initial == _formation_ids(options.get("formation", [])),
+					"Each battle must open with its seeded starting lineup.")
 			if kind in ["battle", "elite"]:
 				for enemy: String in enemies:
 					totals += Vector2i(int(seen.has(enemy)), 1)
