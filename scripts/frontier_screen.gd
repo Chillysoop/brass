@@ -359,9 +359,12 @@ func _map() -> void:
 	var elite_detail := _label("", 15, CREAM)
 	elite_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	elite_detail.hide()
-	var map := _map_board(elite_detail)
+	var tollkeeper: Dictionary = _run.tollkeeper_preview()
+	var map := _map_board(elite_detail, tollkeeper)
 	region.add_child(map)
 	var sidebar := _panel_stack(region, Vector2(270, 0))
+	if not tollkeeper.is_empty():
+		_add_tollkeeper_scout(sidebar, tollkeeper)
 	var relic_names := PackedStringArray()
 	for id: String in _run.data.get("relics", []):
 		relic_names.append(FrontierRun.RELICS.get(id, {}).get("label", id.capitalize()))
@@ -385,7 +388,32 @@ func _map() -> void:
 	_footer_actions().add_child(_button("Manage tiles", func(): _host.run_show_arena()))
 
 
-func _map_board(elite_detail: Label) -> Control:
+func _add_tollkeeper_scout(sidebar: VBoxContainer, brief: Dictionary) -> void:
+	var scout := PanelContainer.new()
+	scout.name = "TollkeeperScout"
+	scout.add_theme_stylebox_override("panel", _box(PANEL_DARK, GOLD.darkened(0.28), 8, 12))
+	sidebar.add_child(scout)
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 6)
+	scout.add_child(content)
+	var heading := HBoxContainer.new()
+	heading.add_theme_constant_override("separation", 8)
+	content.add_child(heading)
+	var icon := GameIcons.icon("boss")
+	if icon:
+		heading.add_child(_icon_view(icon, 20))
+	heading.add_child(_label("Act I boss", 15, GOLD))
+	var title := _label(brief.title, 20, CREAM, true)
+	title.name = "TollkeeperScoutTitle"
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	content.add_child(title)
+	var hint := _label(brief.description, 14, TEAL)
+	hint.name = "TollkeeperScoutHint"
+	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	content.add_child(hint)
+
+
+func _map_board(elite_detail: Label, tollkeeper: Dictionary) -> Control:
 	var map_art: String = MAP_ART.get(_run.data.get("location", "brass"), MAP_ART.brass)
 	var board := _board(Vector2(655, 500), map_art)
 	var layers: Array = _run.data.get("layers", [])
@@ -432,6 +460,9 @@ func _map_board(elite_detail: Label) -> Control:
 		button.disabled = not reachable
 		button.add_theme_font_size_override("font_size", 14)
 		button.tooltip_text = "%s · %s%s" % [label, TYPE_NAMES.get(type, type.capitalize()), " · completed" if past else (" · reachable" if reachable else " · unavailable")]
+		if type == "boss" and node.get("boss_id") == "tollkeeper" and not tollkeeper.is_empty():
+			button.name = "TollkeeperBossNode"
+			button.tooltip_text = "%s\n%s" % [tollkeeper.title, tollkeeper.description]
 		if reachable and type == "elite":
 			var preview := _elite_preview_copy(node)
 			if not preview.is_empty():
@@ -493,14 +524,15 @@ func _choose_node(id: String) -> void:
 func _combat() -> void:
 	var node: Dictionary = _run.data.get("node", {})
 	var type: String = node.get("encounter_override", node.get("type", "battle"))
+	var boss_id: String = node.get("boss_id", "")
+	var tollkeeper: Dictionary = _run.tollkeeper_preview() if boss_id == "tollkeeper" else {}
 	var caption := "%s  ·  %s" % [TYPE_NAMES.get(type, "Battle"), _route_caption()]
 	if type == "elite" and _run.will_draft_elite_relic():
 		caption += "  ·  Relic draft"
-	_page_title(node.get("label", "Opening battle"), caption)
+	_page_title(tollkeeper.get("title", node.get("label", "Opening battle")), caption)
 	var region := _cards_row()
-	var boss_id: String = node.get("boss_id", "")
 	var brief: Dictionary = BOSS_BRIEFS.get(boss_id, {})
-	var instruction: String = brief.get("hint", "")
+	var instruction: String = tollkeeper.get("description", brief.get("hint", ""))
 	_continue(func(): _host.run_show_arena())
 	var detail := _choice(region, "Boss counter" if not instruction.is_empty() else "", instruction, "", Callable())
 	if brief.has("portrait"):
@@ -1148,7 +1180,8 @@ func _add_card_icon(card: VBoxContainer, key: String, accent := GOLD) -> void:
 func _add_portrait(card: VBoxContainer, id: String, height := 138) -> void:
 	var texture := GameIcons.pilot_enemy_art(id)
 	if texture == null:
-		var path := "res://assets/%s.png" % id
+		var asset := "tollkeeper-repair-drone" if id == "tollkeeper_drone" else id
+		var path := "res://assets/%s.png" % asset
 		if not ResourceLoader.exists(path, "Texture2D"):
 			return
 		texture = load(path) as Texture2D

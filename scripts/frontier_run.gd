@@ -142,6 +142,10 @@ const BOSS_LABELS := {
 	"relay_captain": "The Relay Captain", "relay_marshal": "The Relay Marshal", "crown_regent": "The Crown Regent",
 	"wreckmaster": "The Wreckmaster", "tidekeeper": "The Tidekeeper", "drowned_admiral": "The Drowned Admiral",
 }
+const TOLLKEEPER_VARIANTS := {
+	"solo": {"title": "The Tollkeeper", "description": "The Tollkeeper fights alone. Its strikes get stronger when it rallies at half health."},
+	"repair_drone": {"title": "The Tollkeeper + Repair Drone", "description": "The drone repairs the Tollkeeper from nearby. Separate them, interrupt the drone during a repair, or destroy it."},
+}
 const BRASS_BOSSES := ["tollkeeper", "gilded_marshal", "iron_regent"]
 const GLASS_BOSSES := ["crucible_twins", "prism_warden", "tempered_colossus"]
 const CROWN_BOSSES := ["relay_captain", "relay_marshal", "crown_regent"]
@@ -444,6 +448,28 @@ func encounter() -> Dictionary:
 	return _encounter_for(data.node, int(data.segment))
 
 
+func tollkeeper_preview() -> Dictionary:
+	var layers: Array = data.get("layers", [])
+	if layers.is_empty() or layers.back().is_empty():
+		return {}
+	var boss: Dictionary = layers.back()[0]
+	if not _is_easy_tollkeeper(boss):
+		return {}
+	var variant := _tollkeeper_variant(boss)
+	var preview: Dictionary = TOLLKEEPER_VARIANTS[variant].duplicate()
+	preview.variant = variant
+	return preview
+
+
+func _is_easy_tollkeeper(node: Dictionary) -> bool:
+	return data.get("location") == "brass" and data.get("difficulty") == "easy" and node.get("boss_id") == "tollkeeper"
+
+
+func _tollkeeper_variant(node: Dictionary) -> String:
+	var variant: String = node.get("boss_variant", "solo")
+	return variant if TOLLKEEPER_VARIANTS.has(variant) else "solo"
+
+
 func _encounter_for(node: Dictionary, segment: int) -> Dictionary:
 	var kind: String = node.get("encounter_override", node.type)
 	var roster: Array = []
@@ -457,6 +483,8 @@ func _encounter_for(node: Dictionary, segment: int) -> Dictionary:
 		"difficulty": data.difficulty, "location": data.location,
 		"boss_id": node.get("boss_id", ""), "final_boss": node.type == "boss" and int(node.row) == data.layers.size() - 1,
 	}
+	if _is_easy_tollkeeper(node):
+		options["boss_variant"] = _tollkeeper_variant(node)
 	var formation := _pilot_formation_for(node, segment, kind)
 	if not formation.is_empty():
 		options["formation"] = formation
@@ -1354,9 +1382,12 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 	var layers: Array = [[_node("opening", opening, 0, 1)]]
 	var used_events: Array[String] = []
 	_append_layers(layers, first_leg, labels, rng, used_events)
+	var tollkeeper_variant := ""
 	if location == "brass":
 		_add_build_mystery(layers, seed_value)
-	_append_boss(layers, bosses[0])
+		if difficulty == "easy":
+			tollkeeper_variant = "repair_drone" if _rng(seed_value, 421).randi_range(0, 1) == 1 else "solo"
+	_append_boss(layers, bosses[0], tollkeeper_variant)
 	var segments: int = SEGMENT_COUNTS[difficulty]
 	for segment in range(1, segments):
 		var gate := "Upper Gate Patrol" if segment == 1 else "Regent's Outer Guard"
@@ -1442,9 +1473,11 @@ func _add_build_mystery(first_leg: Array, seed_value: int) -> void:
 	node.label = variants[rng.randi_range(0, variants.size() - 1)]
 
 
-func _append_boss(layers: Array, id: String) -> void:
+func _append_boss(layers: Array, id: String, variant := "") -> void:
 	var boss := _node("boss", BOSS_LABELS[id], layers.size(), 1)
 	boss.boss_id = id
+	if not variant.is_empty():
+		boss.boss_variant = variant
 	layers.append([boss])
 
 

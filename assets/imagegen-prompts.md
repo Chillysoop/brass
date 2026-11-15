@@ -2,6 +2,12 @@
 
 Generated with the built-in ImageGen tool. The transparent character atlas was cropped into four game sprites.
 
+## Tollkeeper repair drone
+
+Generated with built-in ImageGen as `assets/tollkeeper-repair-drone.png`.
+
+Use case: stylized-concept. Make one transparent 2D enemy sprite for the Brass Frontier repair drone in Brass & Aether. A compact, low-slung, copper and ochre clockwork automaton stands on three broad crab-like legs. A pale mint-green glass repair canister and one chunky articulated wrench arm are its clear silhouette. Three-quarter side view facing left, complete sprite from top to feet, tightly composed with a slim clear margin. Match a hand-drawn brass clockwork board-game piece: flat rusty red and worn ochre metals, deep near-black ink outlines, simple contained etched stipple, graphic cel shading, warm off-white edge highlights and deliberately chunky details readable at 48 pixels. Face is one friendly small bright mint lens, capable but humble beside an armored boss. The subject is static, with wrench raised and no active beam. Transparent background, no ground plane, no cast shadow, no text, no borders, no particles, no additional objects.
+
 ## Campaign enemy variety atlases
 
 Create separated full-body 2D combat sprites with true transparency and clear gutters. Match the existing Brass & Aether screen-print look: dark ink outlines, limited worn-metal palettes, readable shapes at small sizes, and an elevated three-quarter view facing left. Leave out labels, effects outside the silhouettes, floor shadows, and scenery.

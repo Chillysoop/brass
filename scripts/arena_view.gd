@@ -18,6 +18,7 @@ const TELEPORT_COLOR := Color("#b2afd9")
 const RELAY_SHIELD_COLOR := Color("#91e2f4")
 const RIGHT_RELAY_COLOR := Color("#e7b3ff")
 const DOCK_WINCH_COLOR := Color("#e6c193")
+const REPAIR_COLOR := Color("#a9e5bd")
 const ARENA_TEXTURES := {"glass": "glass_arena", "crown": "crown_arena", "moonwreck": "moonwreck_arena"}
 const SPRITE_PATHS := {
 	"arena": "res://assets/arena.webp",
@@ -32,6 +33,7 @@ const SPRITE_PATHS := {
 	"crown_mender": "res://assets/crown_mender.png",
 	"dock_corsair": "res://assets/dock_corsair.png",
 	"clockwork": "res://assets/clockwork.png",
+	"tollkeeper_drone": "res://assets/tollkeeper-repair-drone.png",
 	"scout": "res://assets/scout.png",
 	"marshal": "res://assets/marshal.png",
 	"regent": "res://assets/regent.png",
@@ -63,6 +65,9 @@ const EFFECT_LENGTHS := {
 	"defeat_unit": 0.46,
 	"hazard_burst": 0.55,
 	"heal": 0.60,
+	"repair_heal": 0.60,
+	"repair_interrupted": 0.65,
+	"repair_separated": 0.65,
 	"relay_interrupted": 0.65,
 	"relay_link_broken": 0.42,
 	"relay_marshal_separated": 0.55,
@@ -113,6 +118,8 @@ const EFFECT_LENGTHS := {
 const MARK_COLOR := Color("#e4adff")
 const RELIC_EFFECTS := ["afterimage", "barrage_rack", "siege_fuse", "stepped_gear", "twin_bell", "switchback_lens", "longshot_prism"]
 const ENCOUNTER_EFFECTS := {
+	"tollkeeper_repair_interrupted": "repair_interrupted",
+	"tollkeeper_repair_separated": "repair_separated",
 	"relay_interrupted": "relay_interrupted",
 	"relay_link_broken": "relay_link_broken",
 	"relay_marshal_interrupted": "relay_interrupted",
@@ -137,6 +144,8 @@ const ENCOUNTER_EFFECTS := {
 	"brass_pressure_vented": "relay_interrupted",
 }
 const FLOATING_CUES := {
+	"repair_interrupted": "REPAIR INTERRUPTED",
+	"repair_separated": "OUT OF REPAIR RANGE",
 	"relay_interrupted": "INTERRUPTED",
 	"relay_link_broken": "LINK BROKEN",
 	"relay_marshal_separated": "SEPARATED",
@@ -237,6 +246,8 @@ func present(units_data: Array, events: Array, tick := 0, attack_cues: Array = [
 		var kind: String = ENCOUNTER_EFFECTS.get(tile, event.get("kind", ""))
 		if kind == "relic_proc" and tile in RELIC_EFFECTS:
 			kind = tile
+		elif kind == "heal" and tile == ArenaSim.TOLLKEEPER_REPAIR_CUE:
+			kind = "repair_heal"
 		if not EFFECT_LENGTHS.has(kind):
 			continue
 		if kind in ["relay_marshal_separated", "relay_interrupted", "admiral_reversed"]:
@@ -374,6 +385,8 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		model_height = 191.0
 	elif art_key == "clockwork":
 		model_height = 154.0
+	elif art_key == "tollkeeper_drone":
+		model_height = 108.0
 	var art_height := maxf(39.0, unit_scale * model_height)
 	var facing := float(_facing.get(unit.id, 1.0 if friendly else -1.0))
 	var velocity: Vector2 = unit.get("velocity", Vector2.ZERO)
@@ -452,9 +465,12 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		var window: Vector2i = _windups[unit.id]
 		var charge := clampf(inverse_lerp(float(window.x), float(window.y), float(combat_tick)), 0.0, 1.0)
 		var gauge := Rect2(bar.position + Vector2(0, 9), Vector2(bar.size.x, 4))
+		var repairing: bool = unit.get("intent_attack_id", "") == ArenaSim.TOLLKEEPER_REPAIR_CUE
 		draw_rect(gauge.grow(1), INK)
-		draw_rect(gauge, Color("#593b29"))
-		draw_rect(Rect2(gauge.position, Vector2(gauge.size.x * charge, gauge.size.y)), GOLD.lerp(ENEMY_COLOR, charge * charge))
+		draw_rect(gauge, REPAIR_COLOR.darkened(0.76) if repairing else Color("#593b29"))
+		draw_rect(Rect2(gauge.position, Vector2(gauge.size.x * charge, gauge.size.y)), REPAIR_COLOR if repairing else GOLD.lerp(ENEMY_COLOR, charge * charge))
+		if repairing:
+			_draw_centered("REPAIRING", bar.get_center() - Vector2(0.0, 9.0), 13, REPAIR_COLOR)
 		var special: String = unit.get("special_intent", "")
 		if special in ["powder_runner", "brass_pressure_sentinel"]:
 			var progress_count: int = unit.get("powder_hits", unit.get("pressure_vents", 0))
@@ -639,6 +655,9 @@ func _draw_intents(field: Rect2) -> void:
 				_draw_sweep_warning(center, radius)
 			continue
 		var start := _project(_positions.get(unit.id, unit.pos), field)
+		if unit.get("intent_attack_id", "") == ArenaSim.TOLLKEEPER_REPAIR_CUE:
+			_draw_repair_intent(unit, target_id, start, field)
+			continue
 		if special == "glass_mirrorback":
 			var flicker := 0.75 + sin(_animation_time * 15.0) * 0.18
 			draw_arc(start, 24.0, 0.0, TAU, 32, Color(RELAY_SHIELD_COLOR, flicker), 3.0, true)
@@ -708,6 +727,21 @@ func _draw_intents(field: Rect2) -> void:
 				warning = TELEPORT_COLOR.darkened(0.21)
 			draw_dashed_line(start, end, Color(warning, 0.8), 2.0, 6.0)
 			draw_arc(end, 14.0 + sin(_animation_time * 22.0) * 2.0, 0.0, TAU, 24, warning, 2.0, true)
+
+
+func _draw_repair_intent(unit: Dictionary, target_id: String, start: Vector2, field: Rect2) -> void:
+	var reach := float(unit.attack.get("repair_reach", 0.0))
+	if reach > 0.0:
+		_draw_sweep_warning(start, reach * field.size / WORLD_SIZE, Color(REPAIR_COLOR, 0.48))
+	for target: Dictionary in units:
+		if target.id != target_id or target.hp <= 0:
+			continue
+		var end := _project(_positions.get(target.id, target.pos), field)
+		var in_range: bool = unit.pos.distance_to(target.pos) <= reach
+		var tint := REPAIR_COLOR if in_range else REPAIR_COLOR.darkened(0.45)
+		draw_dashed_line(start, end, tint, 2.0, 6.0)
+		draw_arc(end, 12.0 + sin(_animation_time * 22.0) * 2.0, 0.0, TAU, 24, tint, 2.0, true)
+		return
 
 
 func _has_animated_warning() -> bool:
@@ -859,6 +893,11 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 				var ray := Vector2.RIGHT.rotated(index * TAU / 10.0)
 				var spark := from_point + ray * extent * progress * 0.85 - Vector2(0, sin(progress * PI) * (20.0 + 5.0 * (index % 3)))
 				draw_circle(spark, 2.0 + opacity * 1.6, Color(GOLD, opacity), true, -1.0, true)
+		"repair_heal":
+			draw_line(from_point, to_point, Color(REPAIR_COLOR, opacity * opacity), 2.5, true)
+			draw_arc(to_point, 8.0 + progress * 21.0, 0.0, TAU, 24, Color(REPAIR_COLOR, opacity), 2.0, true)
+		"repair_interrupted", "repair_separated":
+			draw_arc(from_point, 8.0 + progress * 21.0, 0.0, TAU, 24, Color(REPAIR_COLOR, opacity), 2.0, true)
 		"guard", "heal", "defeat_unit", "relay_interrupted", "relay_link_broken", "relay_marshal_separated", "tidekeeper_unanchored", "admiral_reversed":
 			var color := GOLD if kind == "guard" else ENEMY_COLOR
 			if kind == "heal":
@@ -874,18 +913,22 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 
 func _draw_feedback(effect: Dictionary, field: Rect2) -> void:
 	var kind: String = effect.kind
-	if kind not in ["hit", "miss", "wreckmaster_slam_miss"] and not FLOATING_CUES.has(kind):
+	if kind not in ["hit", "miss", "wreckmaster_slam_miss", "repair_heal"] and not FLOATING_CUES.has(kind):
 		return
-	var point := _project(effect.to, field)
+	var from_drone := kind in ["repair_interrupted", "repair_separated"]
+	var point := _project(effect.from if from_drone else effect.to, field)
 	var progress := float(effect.age) / float(EFFECT_LENGTHS[kind])
 	var opacity := 1.0 - progress
 	var label := "MISS"
 	var color := WHITE
 	if kind == "wreckmaster_slam_miss":
 		label = "SLAM MISSED"
+	if kind == "repair_heal":
+		label = "+%d HP" % effect.amount
+		color = REPAIR_COLOR
 	if FLOATING_CUES.has(kind):
 		label = FLOATING_CUES[kind]
-		color = RELAY_SHIELD_COLOR
+		color = REPAIR_COLOR if from_drone else RELAY_SHIELD_COLOR
 	if kind == "hit":
 		color = GOLD if String(effect.actor).begins_with("hero") else ENEMY_COLOR.lightened(0.19)
 		label = str(effect.amount)

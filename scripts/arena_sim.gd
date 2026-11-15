@@ -51,7 +51,9 @@ const LONGSHOT_PRISM_RANGE := 180.0
 const TOLLKEEPER_SIGNET_DAMAGE := 3
 const TOLLKEEPER_SIGNET_LAST_BEAT := 4
 const BASTION_MEDAL_GUARD := 3
+const TOLLKEEPER_REPAIR_CUE := "tollkeeper_repair"
 const BOSS_REVIEW_STAGES := {
+	"tollkeeper_repair": "start", "tollkeeper_repair_interrupted": "success", "tollkeeper_repair_separated": "success",
 	"marshal_plate": "start", "marshal_exposed": "progress", "marshal_shattered": "success",
 	"regent_seals": "start", "regent_seal_struck": "progress", "regent_shattered": "success",
 	"crucible_rally": "progress", "prism_ward": "start", "prism_exposed": "progress", "prism_shattered": "success",
@@ -135,6 +137,9 @@ const CAMPAIGN_ENEMIES := {
 		"special": "bombard", "blast_radius": 89.0},
 	"boss": {"name": "The Tollkeeper", "art": "clockwork", "hp": 330, "radius": 40.0, "speed": 86.0,
 		"spacing": 107.0, "reach": 204.0, "damage": 16, "first": 125, "cooldown": 123, "windup": 39, "push": 345.0, "displacement": 0.55},
+	"tollkeeper_drone": {"name": "Repair Drone", "art": "tollkeeper_drone", "hp": 36, "radius": 19.0, "speed": 75.0,
+		"spacing": 77.0, "reach": 132.0, "damage": 4, "first": 133, "cooldown": 172, "windup": 49,
+		"special": "repair", "repair_reach": 132.0, "repair_amount": 14, "repair_cue": TOLLKEEPER_REPAIR_CUE},
 	"marshal": {"name": "The Gilded Marshal", "art": "marshal", "hp": 860, "radius": 48.0, "speed": 89.0,
 		"spacing": 122.0, "reach": 227.0, "damage": 38, "first": 110, "cooldown": 105, "windup": 49, "push": 415.0, "displacement": 0.7},
 	"regent": {"name": "The Iron Regent", "art": "regent", "hp": 1140, "radius": 51.0, "speed": 86.0,
@@ -640,13 +645,20 @@ func _start_campaign(options: Dictionary) -> void:
 				fallback = "iron_regent"
 			elif difficulty in ["medium", "hard"] and segment >= 2:
 				fallback = "gilded_marshal"
-			match options.get("boss_id", fallback):
+			var boss_id: String = options.get("boss_id", fallback)
+			match boss_id:
 				"iron_regent":
 					_add_campaign_enemy("regent", Vector2(647, y))
 				"gilded_marshal":
 					_add_campaign_enemy("marshal", Vector2(647, y), 0, 1.10 if difficulty == "hard" else 1.0, 1.06 if difficulty == "hard" else 1.0)
 				_:
-					_add_campaign_enemy("boss", Vector2(647, y), 0, health_scale, damage_scale)
+					if boss_id == "tollkeeper" and difficulty == "easy" and segment == 1 and options.get("boss_variant") == "repair_drone":
+						_add_campaign_enemy("boss", Vector2(647, y), 0, 0.84, 0.94)
+						var tollkeeper_id: String = units.back().id
+						_add_campaign_enemy("tollkeeper_drone", Vector2(676, y + 76.0))
+						units.back()["repair_partner"] = tollkeeper_id
+					else:
+						_add_campaign_enemy("boss", Vector2(647, y), 0, health_scale, damage_scale)
 		_:
 			_add_campaign_enemy("recruit", Vector2(522, y))
 
@@ -973,7 +985,11 @@ func _move_units() -> void:
 			continue
 		var focus := _select(unit, _movement_target_rule(unit))
 		var drive := Vector2.ZERO
-		if unit.intent == "" and unit.get("attack", {}).get("support", false):
+		var repair_partner := _find_unit(unit.repair_partner) if unit.has("repair_partner") else {}
+		if unit.intent == "" and repair_partner.get("hp", 0) > 0:
+			var offset: Vector2 = repair_partner.pos - position
+			drive = offset.normalized() * clampf((offset.length() - unit.preferred_range) * 4.0, 0.0, unit.speed)
+		elif unit.intent == "" and unit.get("attack", {}).get("support", false):
 			drive = _relay_support_drive(unit, focus)
 		elif not focus.is_empty() and unit.intent == "":
 			var offset: Vector2 = focus.pos - position
@@ -1921,6 +1937,14 @@ func _run_enemies() -> void:
 			_begin_admiral_undertow(enemy)
 			continue
 		if enemy.intent != "":
+			if enemy.get("intent_attack_id") == TOLLKEEPER_REPAIR_CUE:
+				var partner := _find_unit(enemy.intent)
+				if partner.get("hp", 0) <= 0:
+					_cancel_tollkeeper_repair(enemy, partner, "tollkeeper_repair_interrupted", "The repair fails when the Tollkeeper falls.")
+					continue
+				if not _in_repair_range(enemy, partner):
+					_cancel_tollkeeper_repair(enemy, partner, "tollkeeper_repair_separated", "The repair link breaks when the drone and the Tollkeeper separate.")
+					continue
 			var winch_ally: String = enemy.get("dock_winch_ally", "")
 			if winch_ally != "" and _find_unit(winch_ally).get("hp", 0) <= 0:
 				_clear_winch_intent(enemy)
@@ -1944,6 +1968,8 @@ func _run_enemies() -> void:
 			if pilot.begin(self, enemy, target, attack):
 				continue
 		elif attack.has("special") and _begin_variant_attack(enemy, target, attack):
+			continue
+		if enemy.has("repair_partner") and _find_unit(enemy.repair_partner).get("hp", 0) > 0:
 			continue
 		var reach: float = attack.get("reach", 290.0 if enemy.id == "scout" else 155.0)
 		if position.distance_to(target.pos) > reach:
@@ -2154,8 +2180,10 @@ func _begin_variant_attack(enemy: Dictionary, target: Dictionary, attack: Dictio
 			target = _repair_target(enemy, attack.repair_reach)
 			if target.is_empty():
 				return false
-			message = "Relay Mender prepares to repair %s." % target.name
-			intent_tile = "mender_repair"
+			intent_tile = attack.get("repair_cue", "mender_repair")
+			message = "%s prepares to repair %s." % [enemy.name, target.name]
+			if intent_tile == TOLLKEEPER_REPAIR_CUE:
+				message = "The drone prepares a repair. Hit it or separate it from the Tollkeeper."
 		"grapple":
 			if distance <= attack.reach or distance > attack.grapple_reach:
 				return false
@@ -2188,13 +2216,19 @@ func _resolve_variant_attack(enemy: Dictionary, target: Dictionary, attack: Dict
 			else:
 				_emit("miss", "Kiln Duelist misses its blink strike.", enemy, target, "duelist_blink")
 		"repair":
+			var cue: String = attack.get("repair_cue", "mender_repair")
 			if distance > attack.repair_reach:
-				_emit("miss", "Relay Mender's repair target is out of range.", enemy, target, "mender_repair")
+				_emit("miss", "%s's repair target is out of range." % enemy.name, enemy, target, cue)
 				return
-			var amount := mini(14, int(target.max_hp - target.hp))
+			var amount := mini(int(attack.get("repair_amount", 14)), int(target.max_hp - target.hp))
 			if amount > 0:
 				target.hp += amount
-				_emit("heal", "Relay Mender repairs %d HP on %s." % [amount, target.name], enemy, target, "mender_repair", amount)
+				var message := "%s repairs %d HP on %s." % [enemy.name, amount, target.name]
+				if cue == TOLLKEEPER_REPAIR_CUE:
+					message = "The repair drone restores %d HP to the Tollkeeper." % amount
+				_emit("heal", message, enemy, target, cue, amount)
+				if cue == TOLLKEEPER_REPAIR_CUE:
+					_review_boss_event("miss", "tollkeeper_repair_completed", message, enemy, target, "heal")
 		"grapple":
 			if distance <= attack.grapple_reach:
 				var travel := maxf(0.0, distance - 70.0)
@@ -2207,6 +2241,11 @@ func _resolve_variant_attack(enemy: Dictionary, target: Dictionary, attack: Dict
 
 
 func _repair_target(mender: Dictionary, reach: float) -> Dictionary:
+	if mender.has("repair_partner"):
+		var partner := _find_unit(mender.repair_partner)
+		if partner.get("hp", 0) > 0 and partner.hp < partner.max_hp and _in_repair_range(mender, partner):
+			return partner
+		return {}
 	var position: Vector2 = mender.pos
 	var weakest := {}
 	var lowest_health := 1.0
@@ -2218,6 +2257,20 @@ func _repair_target(mender: Dictionary, reach: float) -> Dictionary:
 			weakest = ally
 			lowest_health = health
 	return weakest
+
+
+func _in_repair_range(drone: Dictionary, partner: Dictionary) -> bool:
+	var position: Vector2 = drone.pos
+	var reach: float = drone.attack.repair_reach
+	return position.distance_squared_to(partner.pos) <= reach * reach
+
+
+func _cancel_tollkeeper_repair(drone: Dictionary, partner: Dictionary, cue: String, message: String) -> void:
+	drone.intent = ""
+	drone.intent_tick = 0
+	drone.erase("special_intent")
+	drone.next_attack = tick + int(drone.attack.cooldown)
+	_emit("interrupt", message, drone, partner, cue)
 
 
 func _sweep(enemy: Dictionary, attack: Dictionary, extra_reach: float, bonus_damage: int) -> void:
@@ -2735,6 +2788,9 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 	var blocked_text := " (%d blocked)" % blocked if blocked > 0 else ""
 	var details := "%s: %s hits %s for %d%s." % [actor.name, action, target.name, dealt, blocked_text]
 	_emit("hit", details, actor, target, tile_id, dealt, _attack_origin(actor))
+	if dealt > 0 and target.hp > 0 and actor.side == "hero" and not str(target.intent).is_empty() \
+			and target.get("intent_attack_id") == TOLLKEEPER_REPAIR_CUE:
+		_cancel_tollkeeper_repair(target, _find_unit(target.intent), "tollkeeper_repair_interrupted", "A hit interrupts the drone's repair.")
 	if dealt > 0 and target.hp > 0 and actor.side == "hero" and _activation.get("tile") == tile_id and _activation.get("actor") == actor.id:
 		var pilot: Variant = PILOT_ENEMY_SCRIPTS.get(target.get("pilot_region", ""))
 		if pilot != null:
