@@ -126,6 +126,7 @@ func _initialize() -> void:
 	_check_specialist_drafts(path)
 	_check_navigation(path)
 	_check_legacy_medium_unlocks()
+	_check_class_progression()
 	_check_slam_pool()
 	_check_arsenal_rewards()
 	for suffix in ["", ".bak", ".tmp"]:
@@ -348,6 +349,68 @@ func _check_slam_pool() -> void:
 		"Carrying a Slam should add its family to rarity-appropriate rewards.")
 
 
+func _check_class_progression() -> void:
+	var path := "user://frontier-class-progression-test-%d.json" % Time.get_ticks_usec()
+	var run := FrontierRun.new()
+	run.load_save(path)
+	var starters := ["warden", "hexwright", "apothecary", "starshot", "duelist"]
+	check(run.available_classes().size() == starters.size()
+		and starters.all(func(id: String) -> bool: return id in run.available_classes()),
+		"A fresh profile must have five classes available.")
+	check(not run.buy_class("bulwark") and not run.can_choose_starter(),
+		"A fresh profile needs Marks for a class purchase and a Brass clear for direct selection.")
+	check(run.start_run(42) and run.data.offers.size() == 3
+		and run.data.offers.all(func(id: String) -> bool: return id in starters),
+		"Start drafts must draw only from the available roster.")
+	check(not run.choose_preferred_hero(run.data.offers[0]) and not run.choose_hero("bulwark"),
+		"A first run must use the offered draft and reject locked classes.")
+	if run.choose_hero(run.data.offers[0]) and run.choose_relic("pocket_bell") and run.choose_starter("bash"):
+		_reach_boss(run)
+		check(run.finish_combat(true, 100) and _finish_rewards(run, "skip"), "Clear Brass Easy to unlock direct selection.")
+		check(not run.buy_class("bulwark"), "Class purchases must be blocked during the victory recap.")
+		check(run.finish_run() and run.can_choose_starter(), "Direct selection must be available after the first clear.")
+	else:
+		check(false, "The fresh roster must complete the starter draft.")
+	var marks := int(run.profile.marks)
+	var price := run.class_unlock_cost("bulwark")
+	check(price > 0 and run.buy_class("bulwark") and int(run.profile.marks) == marks - price,
+		"Buying a class must charge its listed cost exactly once.")
+	check(not run.buy_class("bulwark") and int(run.profile.marks) == marks - price,
+		"A repeat purchase must be rejected without charging Marks.")
+	check(run.load_save(path) and "bulwark" in run.available_classes() and "cinder_mage" not in run.available_classes(),
+		"The purchased class must stay unlocked after reloading without unlocking other classes.")
+	run.save_path = path + ".missing/file.json"
+	check(not run.buy_class("breaker") and "breaker" not in run.available_classes() and int(run.profile.marks) == marks - price,
+		"A failed save must restore the Marks and leave the class locked.")
+	run.save_path = path
+	var saw_purchase_in_draft := false
+	var saw_purchase_outside_draft := false
+	for seed in range(1, 13):
+		if not run.start_run(seed):
+			check(false, "A purchased class must leave the default hero draft available.")
+			break
+		if "bulwark" in run.data.offers:
+			saw_purchase_in_draft = true
+		else:
+			saw_purchase_outside_draft = true
+			check(not run.choose_preferred_hero("cinder_mage") and run.choose_preferred_hero("bulwark")
+				and run.data.hero == "bulwark" and run.data.phase == "relic",
+				"After a clear, direct selection may pick an owned class outside the current draft and must continue to relics.")
+		run.abandon_run()
+	check(saw_purchase_in_draft and saw_purchase_outside_draft, "The purchased class must join the seeded draft pool.")
+	if run.start_run(42):
+		# A save from before class unlocks may have already offered a class now locked for new runs.
+		run.data.offers[0] = "cinder_mage"
+		check(run.save() and run.load_save(path) and run.choose_hero("cinder_mage"),
+			"A saved hero draft may still choose a class it already offered before the progression update.")
+		check(run.load_save(path) and run.data.get("hero") == "cinder_mage"
+			and "cinder_mage" not in run.available_classes(),
+			"A saved party keeps its existing hero without unlocking their class on the profile.")
+	for suffix in ["", ".bak", ".tmp"]:
+		if FileAccess.file_exists(path + suffix):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
+
+
 func _check_hard_and_glass(path: String) -> void:
 	var run := FrontierRun.new()
 	check(not run.can_start("hard") and not run.can_start("easy", "glass"), "A fresh profile must lock both branches.")
@@ -391,6 +454,9 @@ func _check_hard_and_glass(path: String) -> void:
 			break
 		for hero: Dictionary in run.data.heroes:
 			check(hero.id not in run.data.offers, "Recruitment must exclude every current hero.")
+		var available := run.available_classes()
+		check(run.data.offers.size() == 3 and run.data.offers.all(func(id: String) -> bool: return id in available),
+			"Each Hard recruit draft must offer three choices from the available roster.")
 		run.choose_recruit(run.data.offers[0])
 		var restored := FrontierRun.new()
 		check(restored.load_save(path) and restored.choose_recruit_starter(ClassDecks.starter(restored.data.pending_recruit)), "Hard recruitment must resume from disk.")

@@ -4,6 +4,7 @@ const GameIcons = preload("res://scripts/game_icons.gd")
 
 signal purchase_requested(id: String)
 signal back_requested
+signal roster_requested
 
 const SKY = preload("res://assets/aether-sky.webp")
 const INK := Color("#0c1721")
@@ -115,6 +116,12 @@ func _build() -> void:
 	var title := _label("✦   The Aether Chart   ✦", 32, CREAM, true)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title_card.add_child(title)
+	var roster := _button("Class roster  ›", func(): roster_requested.emit(), false)
+	roster.name = "OpenClassRoster"
+	roster.custom_minimum_size = Vector2(144, 48)
+	roster.size_flags_vertical = SIZE_SHRINK_CENTER
+	roster.tooltip_text = "Inspect and unlock classes for future expeditions."
+	header.add_child(roster)
 	var currency := PanelContainer.new()
 	currency.custom_minimum_size = Vector2(156, 48)
 	currency.size_flags_vertical = SIZE_SHRINK_CENTER

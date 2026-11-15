@@ -8,6 +8,9 @@ const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const UniversalTileUpgrades = preload("res://scripts/universal_tile_upgrades.gd")
 const HEROES = ArenaSim.HERO_CLASSES
+const STARTING_CLASSES := ["warden", "hexwright", "apothecary", "starshot", "duelist"]
+const CLASS_UNLOCKS := {"bulwark": 6, "breaker": 6, "lancer": 8, "cantor": 8,
+	"rune_smith": 10, "wayfarer": 10, "cinder_mage": 12}
 const BASE_TILES := ["bash", "shot", "slam", "pull", "guard", "blink"]
 const STARTER_RELICS := ["pocket_bell", "copper_compass", "quartermasters_coin"]
 const BUILD_RELICS := ["towline_knot", "bridgeplate", "brass_metronome", "overflow_chalice", "stepped_gear", "mercy_seal"]
@@ -264,7 +267,7 @@ func start_run(seed_value := 0, difficulty := "easy", location := "brass") -> bo
 		"phase": "hero", "seed": run_seed, "difficulty": difficulty, "location": location, "segment": 1,
 		"hero": "", "heroes": [], "relics": [], "hp": hp, "max_hp": hp,
 		"gold": gold, "layers": layers, "node": layers[0][0], "visited": [layers[0][0].id],
-		"offers": _sample(HEROES.keys(), 3, run_seed, 11), "result": "", "marks_earned": 0,
+		"offers": _sample(available_classes(), 3, run_seed, 11), "result": "", "marks_earned": 0,
 		"midpoint_paid": false, "elite_relic_drafted": false, "node_notice": "",
 		"pilot_fights": [], "encounter_roster_version": PilotFormations.CURRENT_VERSION,
 	}
@@ -304,8 +307,23 @@ func can_start(difficulty: String, location := "brass") -> bool:
 func choose_hero(id: String) -> bool:
 	if data.get("phase") == "recruit":
 		return choose_recruit(id)
-	if not _is_offer("hero", id):
+	if not _is_offer("hero", id) or not HEROES.has(id):
 		return false
+	return _choose_starting_class(id)
+
+
+func can_choose_starter() -> bool:
+	return profile.medium_unlocked
+
+
+func choose_preferred_hero(id: String) -> bool:
+	if data.get("phase") != "hero" or not can_choose_starter() or id not in available_classes():
+		return false
+	return _choose_starting_class(id)
+
+
+func _choose_starting_class(id: String) -> bool:
+	var before := data.duplicate(true)
 	data.hero = id
 	data.heroes.append({"id": id, "hp": data.hp, "max_hp": data.max_hp})
 	data.phase = "relic"
@@ -320,8 +338,7 @@ func choose_hero(id: String) -> bool:
 		combat_classics.append("wayfarers_pin")
 	var combat_draft := _sample(BUILD_RELICS, 2, int(data.seed), 22) + _sample(combat_classics, 1, int(data.seed), 23)
 	data.build_relic_offers = _sample(combat_draft, 3, int(data.seed), 24)
-	save()
-	return true
+	return _save_reward(before)
 
 
 func build_relic_offers() -> Array:
@@ -761,7 +778,7 @@ func choose_boss_relic(id: String) -> bool:
 
 
 func _start_recruitment() -> void:
-	var classes := HEROES.keys()
+	var classes := available_classes()
 	for hero: Dictionary in data.heroes:
 		classes.erase(hero.id)
 	data.phase = "recruit"
@@ -1355,18 +1372,44 @@ func abandon_run() -> bool:
 
 
 func buy_meta(id: String) -> bool:
-	if not data.is_empty() or not META_NODES.has(id) or id in profile.meta:
+	if not META_NODES.has(id):
 		return false
 	var node: Dictionary = META_NODES[id]
-	if int(profile.marks) < int(node.cost):
-		return false
 	for prerequisite: String in node.requires:
 		if prerequisite not in profile.meta:
 			return false
-	profile.marks -= node.cost
+	return _buy_unlock(id, node.cost)
+
+
+func available_classes() -> Array:
+	return HEROES.keys().filter(func(id: String) -> bool:
+		return id in STARTING_CLASSES or _class_unlock_id(id) in profile.meta
+	)
+
+
+func class_unlock_cost(id: String) -> int:
+	return 0 if id in STARTING_CLASSES else int(CLASS_UNLOCKS.get(id, -1))
+
+
+func buy_class(id: String) -> bool:
+	var cost := class_unlock_cost(id)
+	return cost > 0 and _buy_unlock(_class_unlock_id(id), cost)
+
+
+func _class_unlock_id(id: String) -> String:
+	return "class_unlock_" + id
+
+
+func _buy_unlock(id: String, cost: int) -> bool:
+	if not data.is_empty() or id in profile.meta or int(profile.marks) < cost:
+		return false
+	profile.marks -= cost
 	profile.meta.append(id)
-	save()
-	return true
+	if save():
+		return true
+	profile.meta.pop_back()
+	profile.marks += cost
+	return false
 
 
 func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Array:

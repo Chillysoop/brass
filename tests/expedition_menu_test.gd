@@ -37,6 +37,7 @@ func _run() -> void:
 		await _check_moonwreck_entry()
 		await _check_glass_hard_entry()
 		await _check_enchantment_reward()
+		await _check_class_roster()
 	game.queue_free()
 	await process_frame
 	for suffix in ["", ".tmp", ".bak"]:
@@ -77,6 +78,8 @@ func _check_navigation() -> void:
 	_check(game.run.data.get("seed") == TEST_SEED, "The optional seed must reach the run model.")
 	if game.run.data.get("phase") != "hero":
 		return
+	_check(game.frontier_screen.find_child("ChooseStarterFromRoster", true, false) == null,
+		"The first expedition starts with a three-class draft.")
 	await _press_text(game.frontier_screen, "Choose")
 	_check(game.run.data.get("phase") == "relic", "Choosing a hero advances the draft.")
 	await _press_text(game.frontier_screen, "Save & title")
@@ -335,7 +338,7 @@ func _check_enchantment_reward() -> void:
 	await _press_named(chart, "UnlockUpgrade")
 	_check("enchantments" in run.profile.meta and int(run.profile.marks) == before - 8,
 		"Unlocking enchantments from the chart spends eight Aether Marks.")
-	if not (run.start_run(42, "easy", "brass") and run.choose_hero("warden") and run.choose_relic("pocket_bell")
+	if not (run.start_run(42, "easy", "brass") and run.choose_preferred_hero("warden") and run.choose_relic("pocket_bell")
 		and run.choose_starter("bash") and run.finish_combat(true, 80)):
 		_check(false, "Prepare the opening Brass fight reward with enchantments unlocked.")
 		return
@@ -385,6 +388,42 @@ func _check_timeline_enchantment_move() -> bool:
 		"Removing an enchantment leaves it available to equip again.")
 	await _press_named(game.storage_screen, "EnchantSelected")
 	return true
+
+
+func _check_class_roster() -> void:
+	var run: FrontierRun = game.run
+	_check(run.abandon_run(), "Close the active run before unlocking a class.")
+	run.profile.marks = 20
+	game.run_show_chart()
+	await _press_named(chart, "OpenClassRoster")
+	var roster := game.frontier_screen.find_child("ClassRosterMenu", true, false) as Control
+	_check(roster != null and roster.is_visible_in_tree(), "Open the class roster from the Aether Chart.")
+	if roster == null or not roster.is_visible_in_tree():
+		return
+	await _press_named(roster, "ClassRoster_breaker")
+	await _press_named(roster, "UnlockClass")
+	var restored := FrontierRun.new()
+	_check(restored.load_save(save_path) and "breaker" in restored.available_classes()
+		and int(restored.profile.marks) == 14 and "wayfarer" not in restored.available_classes(),
+		"The purchase adds only Breaker and spends six Aether Marks on disk.")
+	await _press_named(roster, "BackFromClassRoster")
+	_check(chart.is_visible_in_tree(), "Back from the class roster returns to the Aether Chart.")
+	_check(run.start_run(TEST_SEED), "Start an expedition with Breaker unlocked.")
+	var draft: Array = run.data.offers.duplicate()
+	game.run_return()
+	await _press_named(game.frontier_screen, "ChooseStarterFromRoster")
+	await _press_named(roster, "ClassRoster_wayfarer")
+	var choose := roster.find_child("ChooseStarterClass", true, false) as Button
+	_check(choose != null and choose.disabled and run.data.offers == draft,
+		"Locked classes can be inspected but cannot be picked from the starter roster.")
+	await _press_named(roster, "BackFromClassRoster")
+	_check(run.data.phase == "hero" and run.data.offers == draft and not roster.is_visible_in_tree(),
+		"Returning to Draft Three preserves the seeded choices.")
+	await _press_named(game.frontier_screen, "ChooseStarterFromRoster")
+	await _press_named(roster, "ClassRoster_breaker")
+	await _press_named(roster, "ChooseStarterClass")
+	_check(run.data.phase == "relic" and run.data.hero == "breaker",
+		"Choosing an unlocked class directly enters the normal relic draft.")
 
 
 func _press_text(parent: Control, prefix: String) -> void:

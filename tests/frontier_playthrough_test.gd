@@ -87,6 +87,12 @@ func _run() -> void:
 	_check(restored.start_run(42) and int(restored.data.max_hp) == 108, "Bought HP upgrade applies to the next run.")
 	var easy_hp: int = run.data.hp
 	_check(restored.abandon_run(), "Close the new test run.")
+	# These seeded build routes exercise the later campaign with an established roster.
+	for id: String in FrontierRun.HEROES:
+		var cost := restored.class_unlock_cost(id)
+		if cost > 0:
+			restored.profile.marks += cost
+			_check(restored.buy_class(id), "Unlock %s for the later campaign fixtures." % id)
 	var medium: Dictionary = _medium_playthrough(game)
 	_check(game.run.finish_run(), "Close the Medium victory recap.")
 	var glass_fights := _new_route_playthrough(game, "easy", "glass")

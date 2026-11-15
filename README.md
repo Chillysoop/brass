@@ -22,6 +22,8 @@ Open **Battle review** after a fight to inspect activations, misses, relic bonus
 
 Defeat the Tollkeeper on Easy to bank Aether Marks and unlock **Medium**. Open the **Aether Chart** from the title or after a run to inspect prerequisites and spend Marks on permanent upgrades between expeditions.
 
+Warden, Hexwright, Apothecary, Starshot, and Duelist are available from the start. In **Aether Chart → Class roster**, spend Marks between expeditions to unlock the other seven classes for future hero and recruit drafts. After your first Brass Frontier clear, **Choose from roster** on the opening draft lets you pick any class you have unlocked. Starter relic and tile drafts follow either choice.
+
 Unlock **Tile Enchantments** on the Aether Chart after **Gravity Hook**. New Brass Frontier expeditions then offer one enchantment after the opening combat reward. **Guarded** adds 5 Guard when its tile fires, **Longshot** gives a ranged attack 100 more reach, and **Splash** lets a single-target hit deal 35% of its base damage to one nearby enemy. Select a tile with **Tile storage** open to attach or move your enchantment between fights. The badge marks the tile carrying it. Compatible forge upgrades keep the enchantment. After a discard or an incompatible upgrade, you can attach it to another tile.
 
 Combine any three identical tiles below Legendary to choose between two upgrades at the next rarity. Touching copies offer a combine on the timeline or in storage. For copies spread across rows or timelines, select one with **Tile storage** open and choose **Combine 3**. A combat reward can count as the third copy for its hero using their timeline and shared storage. This works even when the reward tile itself would not fit.

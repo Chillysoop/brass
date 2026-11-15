@@ -4,6 +4,7 @@ const FrontierRun = preload("res://scripts/frontier_run.gd")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ExpeditionMenu = preload("res://scripts/expedition_menu.gd")
 const AetherChartMenu = preload("res://scripts/aether_chart_menu.gd")
+const ClassRosterMenu = preload("res://scripts/class_roster_menu.gd")
 const GameIcons = preload("res://scripts/game_icons.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
 const INK := Color("#101820")
@@ -95,6 +96,8 @@ var _top_actions: HBoxContainer
 var _bottom_actions: HBoxContainer
 var _expedition_menu: ExpeditionMenu
 var _aether_chart: AetherChartMenu
+var _class_roster: ClassRosterMenu
+var _choosing_starter := false
 var _display_font: SystemFont
 
 
@@ -117,12 +120,21 @@ func configure(host: Control) -> void:
 	_aether_chart.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
 	_aether_chart.purchase_requested.connect(_buy_chart_node)
 	_aether_chart.back_requested.connect(_host.run_menu)
+	_aether_chart.roster_requested.connect(func(): render(_run, "roster"))
+	_class_roster = ClassRosterMenu.new()
+	_class_roster.name = "ClassRosterMenu"
+	add_child(_class_roster)
+	_class_roster.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
+	_class_roster.purchase_requested.connect(_buy_roster_class)
+	_class_roster.starter_requested.connect(_pick_starter_class)
+	_class_roster.deck_requested.connect(_show_class_deck)
+	_class_roster.back_requested.connect(_close_class_roster)
 
 
 func render(model, page_override: String = "") -> void:
 	_run = model
 	for child in get_children():
-		if child in [_expedition_menu, _aether_chart]:
+		if child in [_expedition_menu, _aether_chart, _class_roster]:
 			child.hide()
 			continue
 		remove_child(child)
@@ -136,6 +148,11 @@ func render(model, page_override: String = "") -> void:
 	if phase == "chart":
 		_aether_chart.show()
 		_chart()
+		return
+	if phase in ["roster", "starter_roster"]:
+		_choosing_starter = phase == "starter_roster"
+		_class_roster.show()
+		_render_class_roster()
 		return
 	_shell(phase)
 	match phase:
@@ -233,6 +250,10 @@ func _draft(phase: String) -> void:
 	_page_title(title, subtitle)
 	var cards := _cards_row()
 	var offers: Array = _run.data.get("offers", [])
+	if phase == "hero" and _run.can_choose_starter():
+		var roster := _button("Choose from roster", func(): render(_run, "starter_roster"))
+		roster.name = "ChooseStarterFromRoster"
+		_footer_actions().add_child(roster)
 	if phase == "relic" and not _run.build_relic_offers().is_empty():
 		var switch := _button("Classic relics", func(): _toggle_relic_draft(cards))
 		switch.name = "RelicDraftSwitch"
@@ -1079,6 +1100,36 @@ func _chart() -> void:
 func _buy_chart_node(id: String) -> void:
 	if _run.buy_meta(id):
 		_chart()
+
+
+func _render_class_roster() -> void:
+	var available: Array = _run.available_classes()
+	var entries: Array[Dictionary] = []
+	for id: String in FrontierRun.HEROES:
+		var hero: Dictionary = FrontierRun.HEROES[id]
+		entries.append({"id": id, "label": hero.label, "description": hero.description,
+			"cost": _run.class_unlock_cost(id), "owned": id in available})
+	if _choosing_starter:
+		_class_roster.render_picker(entries)
+	else:
+		_class_roster.render(entries, int(_run.profile.marks), _run.data.is_empty())
+
+
+func _buy_roster_class(id: String) -> void:
+	if not _choosing_starter and _run.buy_class(id):
+		_render_class_roster()
+
+
+func _pick_starter_class(id: String) -> void:
+	if _choosing_starter and _run.choose_preferred_hero(id):
+		_host.run_return()
+
+
+func _close_class_roster() -> void:
+	if _choosing_starter:
+		_host.run_return()
+	else:
+		render(_run, "chart")
 
 
 func _page_title(title: String, subtitle: String) -> void:
