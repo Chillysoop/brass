@@ -36,6 +36,7 @@ func _run() -> void:
 		await _check_crown_entry()
 		await _check_moonwreck_entry()
 		await _check_glass_hard_entry()
+		await _check_enchantment_reward()
 	game.queue_free()
 	await process_frame
 	for suffix in ["", ".tmp", ".bak"]:
@@ -313,6 +314,77 @@ func _check_glass_hard_entry() -> void:
 	await _press_named(menu, "Difficulty_hard")
 	_check(game.run.data.get("phase") == "hero" and game.run.data.get("location") == "glass"
 		and game.run.data.get("difficulty") == "hard", "Glass Hard should start from the expedition menu after its unlock.")
+
+
+func _check_enchantment_reward() -> void:
+	var run: FrontierRun = game.run
+	_check(run.abandon_run(), "Close the Glass expedition before spending Aether Marks.")
+	run.profile.marks = 30
+	game.run_show_chart()
+	await _press_named(chart, "enchantments")
+	var details := chart.find_child("SelectedUpgrade", true, false) as Label
+	_check(details != null and details.text == "Tile Enchantments", "The Aether Chart shows the enchantment unlock.")
+	var unlock := chart.find_child("UnlockUpgrade", true, false) as Button
+	_check(unlock != null and unlock.disabled, "Tile Enchantments requires Gravity Hook.")
+	await _press_named(chart, "stout_start")
+	await _press_named(chart, "UnlockUpgrade")
+	await _press_named(chart, "curated_cache")
+	await _press_named(chart, "UnlockUpgrade")
+	await _press_named(chart, "enchantments")
+	var before := int(run.profile.marks)
+	await _press_named(chart, "UnlockUpgrade")
+	_check("enchantments" in run.profile.meta and int(run.profile.marks) == before - 8,
+		"Unlocking enchantments from the chart spends eight Aether Marks.")
+	if not (run.start_run(42, "easy", "brass") and run.choose_hero("warden") and run.choose_relic("pocket_bell")
+		and run.choose_starter("bash") and run.finish_combat(true, 80)):
+		_check(false, "Prepare the opening Brass fight reward with enchantments unlocked.")
+		return
+	game.run_return()
+	await _press_named(game.frontier_screen, "RewardTile_" + str(run.data.offers[0]))
+	await _press_named(game.frontier_screen, "Continue")
+	_check(run.data.phase == "enchantment", "The enchantment draft follows the opening tile reward.")
+	if run.data.phase != "enchantment":
+		return
+	var advance := game.frontier_screen.find_child("Continue", true, false) as Button
+	_check(advance != null and advance.disabled, "Continue waits for an enchantment selection.")
+	await _press_named(game.frontier_screen, "Enchantment_guarded")
+	await _press_named(game.frontier_screen, "Continue")
+	_check(game.storage_screen.is_visible_in_tree() and run.active_enchantment() == "guarded",
+		"Claiming Guarded opens Tile storage to equip it.")
+	if not game.storage_screen.is_visible_in_tree():
+		return
+	var start := int(game.lanes[0][0].start)
+	var tile_card: Control = game.tile_cards[0][start]
+	_click(tile_card.get_child(0) as Button, "the timeline Bash")
+	await _press_named(game.storage_screen, "EnchantSelected")
+	var badge: Node = game.arena_screen.find_child("TileEnchantmentBadge", true, false)
+	_check(badge != null and badge.get_meta("enchantment", "") == "guarded",
+		"An enchanted timeline tile shows its badge.")
+	if not await _check_timeline_enchantment_move():
+		return
+	var restored := FrontierRun.new()
+	_check(restored.load_save(save_path) and restored.active_enchantment() == "guarded"
+		and restored.loadout.lanes[0][1].get("enchantment", "") == "guarded",
+		"The chosen enchantment and attached tile persist together.")
+
+
+func _check_timeline_enchantment_move() -> bool:
+	if game.lanes[0].size() != 2:
+		_check(false, "The opening reward supplies a second tile for moving an enchantment.")
+		return false
+	var first: Dictionary = game.lanes[0][0]
+	var second: Dictionary = game.lanes[0][1]
+	var tile_card: Control = game.tile_cards[0][second.start]
+	await process_frame
+	_click(tile_card.get_child(0) as Button, "the second timeline tile")
+	await _press_text(game.storage_screen, "Move to selected")
+	_check(not first.has("enchantment") and second.get("enchantment", "") == "guarded",
+		"Moving Guarded attaches it only to the newly selected tile.")
+	await _press_text(game.storage_screen, "Remove enchantment")
+	_check(not second.has("enchantment") and game.run.active_enchantment() == "guarded",
+		"Removing an enchantment leaves it available to equip again.")
+	await _press_named(game.storage_screen, "EnchantSelected")
+	return true
 
 
 func _press_text(parent: Control, prefix: String) -> void:

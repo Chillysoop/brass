@@ -7,6 +7,7 @@ const ForgeScreen = preload("res://scripts/forge_screen.gd")
 const BattleReview = preload("res://scripts/battle_review.gd")
 const GameIcons = preload("res://scripts/game_icons.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
+const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const FrontierScreen = preload("res://scripts/frontier_screen.gd")
 const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
@@ -56,6 +57,7 @@ var arena_screen: MarginContainer
 var storage_screen: Control
 var forge_screen: Control
 var storage_button: Button
+var enchantment_button: Button
 var relic_strip: HBoxContainer
 var relic_badges: Dictionary = {}
 var relic_pulses: Dictionary = {}
@@ -227,6 +229,9 @@ func _build() -> void:
 	relic_strip = HBoxContainer.new()
 	relic_strip.add_theme_constant_override("separation", 5)
 	sequence_bar.add_child(relic_strip)
+	enchantment_button = _button("", _toggle_storage)
+	enchantment_button.name = "OpenEnchantment"
+	sequence_bar.add_child(enchantment_button)
 	sequence_bar.add_child(storage_button)
 	lane_stack = VBoxContainer.new()
 	lane_stack.add_theme_constant_override("separation", 5)
@@ -397,6 +402,12 @@ func _update_controls() -> void:
 	camp_button.visible = camp_forge
 	fixture_picker.disabled = state != "setup"
 	storage_button.disabled = state != "setup"
+	var enchantment := TileEnchantments.info(_active_enchantment())
+	enchantment_button.visible = state == "setup" and not enchantment.is_empty()
+	if enchantment_button.visible:
+		enchantment_button.text = enchantment.label
+		enchantment_button.tooltip_text = enchantment.description + "\nAssign or move this enchantment in Tile storage."
+		GameIcons.decorate(enchantment_button, enchantment.icon, 18)
 	var reviewing := battle_review.visible
 	speed_picker.visible = not reviewing and (not campaign or (encounter_setup and state != "finished"))
 	review_button.visible = state == "finished" and not reviewing
@@ -1066,6 +1077,7 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	name_button.disabled = state != "setup"
 	card.add_child(name_button)
 	_add_tile_badges(name_button, tile, _lane_hero_class(lane_index))
+	_add_enchantment_badge(name_button, item)
 	if tile.damage > 0:
 		var amount := _label(str(int(tile.damage)), 12, CREAM)
 		amount.name = "TileDamage"
@@ -1083,7 +1095,7 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	var choose := func(rule: String):
 		item.target = rule
 		_save_loadout()
-		var new_preview: Dictionary = sim.target_for(lane_index, item.id, item.target)
+		var new_preview: Dictionary = sim.target_for(lane_index, item.id, item.target, item.get("enchantment", ""))
 		name_button.tooltip_text = _tile_tooltip(lane_index, item, tile)
 		setup_hint.text = "%s · %s" % [tile.label, new_preview.get("name", "No eligible target")]
 	var target_group := ButtonGroup.new()
@@ -1144,6 +1156,13 @@ func _add_tile_badges(button: Button, tile: Dictionary, class_id: String) -> voi
 		hero_badge.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 4)
 		hero_badge.offset_top = 3
 
+func _add_enchantment_badge(button: Button, item: Dictionary) -> void:
+	if item.has("enchantment"):
+		var badge := GameIcons.enchantment_badge(item.enchantment, 15)
+		button.add_child(badge)
+		badge.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP, Control.PRESET_MODE_MINSIZE)
+		badge.offset_top = 2
+
 func _target_buttons(rules: Array, current: String, choose: Callable, all := false, group: ButtonGroup = null) -> HBoxContainer:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 2)
@@ -1177,16 +1196,20 @@ func _target_buttons(rules: Array, current: String, choose: Callable, all := fal
 func _tile_tooltip(lane_index: int, item: Dictionary, tile: Dictionary) -> String:
 	var available_rules: Array = sim.target_rules(item.id)
 	var rule: String = item.target if item.target in available_rules else available_rules[0]
-	var preview: Dictionary = sim.target_for(lane_index, item.id, rule)
+	var preview: Dictionary = sim.target_for(lane_index, item.id, rule, item.get("enchantment", ""))
 	var owner := _lane_hero_class(lane_index)
 	var origin := GameIcons.tile_origin(item.id, tile)
 	var identity := "Equipped by %s" % sim.units[lane_index].name
 	if not origin.is_empty() and origin != owner:
 		identity += " · %s signature" % GameIcons.hero_label(origin)
-	return "%s · %s · %s\n%s\n%s\nFires on beat %d · %s" % [
+	var tooltip := "%s · %s · %s\n%s\n%s\nFires on beat %d · %s" % [
 		tile.label, GameIcons.rarity_name(tile), GameIcons.tile_stats(tile), identity, tile.description,
 		item.start + tile.width, preview.get("name", "No target in range at setup")
 	]
+	var enchantment := TileEnchantments.info(item.get("enchantment", ""))
+	if not enchantment.is_empty():
+		tooltip += "\n%s · %s" % [enchantment.label, enchantment.description]
+	return tooltip
 
 
 func _lane_hero_class(lane: int) -> String:
@@ -1366,15 +1389,16 @@ func _place(payload: Dictionary, lane_index: int, start: int, nudge := false) ->
 		return
 	var valid: Array = sim.target_rules(payload.id)
 	var target: String = defaults[lane_index] if defaults[lane_index] in valid else valid[0]
+	var entry := _entry(payload.id, start, target)
 	if payload.has("lane"):
-		var original := _take_tile(payload)
-		if original.is_empty():
+		entry = _take_tile(payload)
+		if entry.is_empty():
 			return
-		target = original.target
+		entry.start = start
 	else:
 		suppressed_combines.erase(payload.id)
 	_apply_nudge(lanes[lane_index], plan)
-	lanes[lane_index].append(_entry(payload.id, start, target))
+	lanes[lane_index].append(entry)
 	lanes[lane_index].sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
 	selected.clear()
 	_rebuild_loadout()
@@ -1433,7 +1457,58 @@ func _render_storage() -> void:
 		for offer in _combine_offers(storage_rows[row]):
 			offer.row = row
 			all_offers.append(offer)
-	storage_screen.render(storage_rows, selected, all_offers, camp_forge, not _selected_combine_copies().is_empty())
+	storage_screen.render(storage_rows, selected, all_offers, camp_forge, not _selected_combine_copies().is_empty(),
+		_enchantment_controls())
+
+func _active_enchantment() -> String:
+	return run.active_enchantment() if campaign or not retry_options.is_empty() else ""
+
+func _selected_tile() -> Dictionary:
+	if not selected.has("lane"):
+		return {}
+	var items: Array = storage_rows[selected.row] if selected.has("row") else lanes[selected.lane]
+	for item: Dictionary in items:
+		if item.start == selected.start and item.id == selected.id:
+			return item
+	return {}
+
+func _enchantment_host() -> Dictionary:
+	for items: Array in lanes + storage_rows:
+		for item: Dictionary in items:
+			if item.has("enchantment"):
+				return item
+	return {}
+
+func _enchantment_controls() -> Dictionary:
+	var id := _active_enchantment()
+	if id.is_empty():
+		return {}
+	var host := _enchantment_host()
+	var item := _selected_tile()
+	var eligible := TileEnchantments.is_eligible(id, tile_spec(item.get("id", "")), item.get("id", ""))
+	var caption := "Enchant selected" if host.is_empty() else "Move to selected"
+	if not host.is_empty() and is_same(host, item):
+		caption = "Remove enchantment"
+	return {"id": id, "host": tile_spec(host.get("id", "")).get("label", ""), "eligible": eligible, "button": caption}
+
+func storage_enchant_selected() -> void:
+	if state != "setup" or not storage_screen.visible:
+		return
+	var id := _active_enchantment()
+	var item := _selected_tile()
+	if not TileEnchantments.is_eligible(id, tile_spec(item.get("id", "")), item.get("id", "")):
+		return
+	var previous := _enchantment_host()
+	previous.erase("enchantment")
+	if not is_same(previous, item):
+		item.enchantment = id
+	if not _save_loadout():
+		item.erase("enchantment")
+		if not previous.is_empty():
+			previous.enchantment = id
+		storage_screen.show_message(run.save_error)
+		return
+	_rebuild_loadout()
 
 func storage_pick(row: int, item: Dictionary) -> void:
 	var payload := {"id": item.id, "lane": -1, "row": row, "start": item.start}
@@ -1456,16 +1531,16 @@ func storage_place(row: int, start: int, payload: Dictionary, nudge := false) ->
 		storage_screen.show_message("That tile needs a clear span in one row.")
 		return
 	var valid: Array = ArenaSim.TILES[payload.id].targets
-	var target: String = valid[0]
+	var entry := _entry(payload.id, start, valid[0])
 	if payload.has("lane"):
-		var original := _take_tile(payload)
-		if original.is_empty():
+		entry = _take_tile(payload)
+		if entry.is_empty():
 			return
-		target = original.target
+		entry.start = start
 	else:
 		suppressed_combines.erase(payload.id)
 	_apply_nudge(storage_rows[row], plan)
-	storage_rows[row].append(_entry(payload.id, start, target))
+	storage_rows[row].append(entry)
 	storage_rows[row].sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
 	selected.clear()
 	_rebuild_loadout()
@@ -1591,14 +1666,16 @@ func forge_choose(id: String) -> void:
 		return
 	if ArenaSim.TILES[id].width > offer.width:
 		return
-	var target := ""
-	for index in range(items.size() - 1, -1, -1):
-		var item: Dictionary = items[index]
-		if item.start >= offer.start and item.start < offer.start + offer.width:
-			target = item.target
-			items.remove_at(index)
-	items.append(_entry(id, offer.start, _forge_target(id, target)))
-	items.sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
+	var copies := []
+	var source_width: int = ArenaSim.TILES[offer.id].width
+	for start: int in range(offer.start, offer.start + offer.width, source_width):
+		var copy := {"lane": pending_forge.lane, "id": offer.id, "start": start}
+		if pending_forge.row >= 0:
+			copy.row = pending_forge.row
+		copies.append(copy)
+	var target := _combine_target(lanes, storage_rows, copies, copies[0], id)
+	if not TilePacking.apply_combination(lanes, storage_rows, copies, copies[0], id, target):
+		return
 	suppressed_combines.erase(id)
 	selected.clear()
 	_save_loadout()
@@ -1679,10 +1756,11 @@ func _start_sim() -> void:
 	else:
 		sim.start(lanes, fixture)
 
-func _save_loadout() -> void:
+func _save_loadout() -> bool:
 	if campaign:
 		run.loadout = {"lanes": lanes, "storage": storage_rows, "defaults": defaults, "suppressed": suppressed_combines}
-		run.save()
+		return run.save()
+	return true
 
 func _show_frontier(page := "") -> void:
 	_close_review()
@@ -1753,6 +1831,10 @@ func run_rest_forge() -> void:
 	camp_forge = true
 	run_show_arena()
 
+func run_open_enchantment_loadout() -> void:
+	run_show_arena()
+	_open_storage()
+
 func run_mystery_forge() -> void:
 	if run.data.get("phase") == "event" and run.mystery_kind() == "traveling_smith":
 		run_rest_forge()
@@ -1801,6 +1883,7 @@ func _commit_camp_forge(id: String) -> void:
 		if item.start == source.start and item.id == source.id:
 			item.id = id
 			item.target = _forge_target(id, item.target)
+			TileEnchantments.keep_if_eligible(item, tile_spec(id))
 			suppressed_combines.erase(id)
 			pending_forge.clear()
 			run.rest("forge")

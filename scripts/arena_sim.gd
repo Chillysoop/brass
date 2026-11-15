@@ -7,6 +7,7 @@ const GlassPilotEnemies = preload("res://scripts/glass_pilot_enemies.gd")
 const MoonPilotEnemies = preload("res://scripts/moon_pilot_enemies.gd")
 const BrassVarietyEnemies = preload("res://scripts/brass_variety_enemies.gd")
 const CrownVarietyEnemies = preload("res://scripts/crown_variety_enemies.gd")
+const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 const PILOT_ENEMY_SCRIPTS := {
 	"brass": BrassVarietyEnemies, "glass": GlassPilotEnemies,
 	"crown": CrownVarietyEnemies, "moonwreck": MoonPilotEnemies,
@@ -914,7 +915,7 @@ func step() -> Array[Dictionary]:
 	return _events
 
 
-func target_for(lane: int, tile_id: String, rule: String) -> Dictionary:
+func target_for(lane: int, tile_id: String, rule: String, enchantment := "") -> Dictionary:
 	if not TILES.has(tile_id) or lane < 0 or lane >= _lanes.size():
 		return {}
 	var actor: Dictionary = units[lane]
@@ -925,7 +926,8 @@ func target_for(lane: int, tile_id: String, rule: String) -> Dictionary:
 		if _arsenal_tiles.has(tile_id):
 			return _arsenal_support_target(actor, tile)
 		return _guard_recipient(actor, tile)
-	var target := _select(actor, rule, tile.range)
+	var eligible := TileEnchantments.is_eligible(enchantment, tile, tile_id)
+	var target := _select(actor, rule, _tile_reach(tile, enchantment if eligible else ""))
 	return actor if target.is_empty() and tile.get("family") == "guard" else target
 
 
@@ -969,8 +971,16 @@ func _valid_tiles(tiles: Array) -> Array:
 		var rule: String = tile.get("target", "nearest")
 		if rule not in target_rules(id):
 			rule = spec.targets[0]
-		validated.append({"id": id, "start": start_beat, "end": end_beat, "target": rule})
+		var enchantment: String = tile.get("enchantment", "")
+		if not TileEnchantments.is_eligible(enchantment, spec, id):
+			enchantment = ""
+		validated.append({"id": id, "start": start_beat, "end": end_beat, "target": rule,
+			"enchantment": enchantment, "reach": _tile_reach(spec, enchantment)})
 	return validated
+
+
+func _tile_reach(spec: Dictionary, enchantment: String) -> float:
+	return float(spec.range) + (TileEnchantments.RANGE_BONUS if enchantment == "longshot" else 0.0)
 
 
 func _move_units() -> void:
@@ -1191,6 +1201,8 @@ func _activate_lanes() -> void:
 				"lane": lane, "tile": tile.id, "start": tile.start, "actor": actor.id, "hero": actor.name, "rule": tile.target,
 				"status": "landed", "reason": "", "target": "", "target_name": "", "damage": 0, "guard": 0,
 			}
+			if not tile.enchantment.is_empty():
+				_activation["enchantment"] = tile.enchantment
 			activations.append(_activation)
 			if actor.hp <= 0:
 				_activation.status = "unavailable"
@@ -1198,7 +1210,8 @@ func _activate_lanes() -> void:
 			else:
 				var origin: Vector2 = actor.pos
 				var first_event := _events.size()
-				_cast(actor, tile.id, tile.target)
+				_cast(actor, tile.id, tile.target, tile.reach)
+				_apply_enchantment(actor, tile)
 				_apply_bastion_medal(actor, tile.id)
 				_add_tile_visual_cue(actor, tile.id, origin, first_event)
 				if actor.get("class") == "rune_smith" and TILES[tile.id].width >= 3:
@@ -1206,7 +1219,41 @@ func _activate_lanes() -> void:
 				if _activation.status == "landed":
 					_prime_rune_charge(actor, tile.id)
 					_activation.reason = (_activation_result(_activation) + " " + str(_activation.reason)).strip_edges()
+				elif not tile.enchantment.is_empty():
+					var notes: Array = _activation.get("effect_details", [])
+					_activation.reason = (str(_activation.reason) + " " + " ".join(notes)).strip_edges()
 			_activation = {}
+
+
+func _apply_enchantment(actor: Dictionary, tile: Dictionary) -> void:
+	match tile.enchantment:
+		"guarded":
+			if actor.hp <= 0:
+				return
+			var amount := int(TileEnchantments.GUARD_AMOUNT)
+			var gain := mini(amount, MAX_GUARD - int(actor.guard))
+			_guard_from_tile(actor, actor, amount, tile.id)
+			var effect := "Guarded granted %d Guard." % gain if gain > 0 else "Guarded fired at full Guard."
+			_activation.get_or_add("effect_details", []).append(effect)
+		"longshot":
+			_activation.get_or_add("effect_details", []).append("Longshot extended reach to %d." % roundi(tile.reach))
+		"splash":
+			if not _activation.get("primary_hit", false):
+				return
+			var target := _find_unit(_activation.target)
+			if target.is_empty():
+				return
+			var neighbors := _splash_neighbors(actor, target, TileEnchantments.SPLASH_RADIUS)
+			if neighbors.is_empty():
+				return
+			_sort_by_distance(neighbors, target.pos)
+			var enemy: Dictionary = neighbors[0]
+			var previous_hp: int = enemy.hp
+			var damage := maxi(1, roundi(TILES[tile.id].damage * TileEnchantments.SPLASH_RATIO))
+			_damage(actor, enemy, damage, tile.id, true)
+			var dealt: int = previous_hp - enemy.hp
+			var effect := "Splash dealt %d damage to %s." % [dealt, enemy.name] if dealt > 0 else "%s blocked Splash." % enemy.name
+			_activation.get_or_add("effect_details", []).append(effect)
 
 
 func _add_tile_visual_cue(actor: Dictionary, tile_id: String, origin: Vector2, first_event: int) -> void:
@@ -1234,8 +1281,10 @@ func _add_tile_visual_cue(actor: Dictionary, tile_id: String, origin: Vector2, f
 	})
 
 
-func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
+func _cast(actor: Dictionary, tile_id: String, rule: String, reach := -1.0) -> void:
 	var tile: Dictionary = TILES[tile_id]
+	if reach < 0.0:
+		reach = tile.range
 	var arsenal := _arsenal_tiles.has(tile_id)
 	if arsenal and tile.damage == 0:
 		var recipient := _arsenal_support_target(actor, tile)
@@ -1243,9 +1292,9 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 		_apply_arsenal_support(actor, recipient, tile_id, tile)
 		return
 	if tile.get("family") == "guard":
-		_cast_guard(actor, tile_id, tile, rule)
+		_cast_guard(actor, tile_id, tile, rule, reach)
 		return
-	var target := _select_attack_target(actor, tile_id, rule)
+	var target := _select_attack_target(actor, tile_id, rule, reach)
 	if target.is_empty():
 		var out_of_range := _select(actor, rule)
 		if not out_of_range.is_empty():
@@ -1253,7 +1302,7 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 			_emit("miss", "%s: %s was out of range." % [actor.name, tile.label], actor, out_of_range, tile_id)
 			if not _activation.is_empty():
 				var position: Vector2 = actor.pos
-				_activation.reason = "%s was out of range (%d away, %d reach)." % [out_of_range.name, roundi(position.distance_to(out_of_range.pos)), int(tile.range)]
+				_activation.reason = "%s was out of range (%d away, %d reach)." % [out_of_range.name, roundi(position.distance_to(out_of_range.pos)), roundi(reach)]
 		elif not _activation.is_empty():
 			_activation.status = "miss"
 			_activation.reason = "No eligible enemy remained when the tile finished."
@@ -1313,17 +1362,16 @@ func _cast(actor: Dictionary, tile_id: String, rule: String) -> void:
 		_warden_guard(actor, tile_id)
 
 
-func _select_attack_target(actor: Dictionary, tile_id: String, rule: String) -> Dictionary:
-	var tile: Dictionary = TILES[tile_id]
+func _select_attack_target(actor: Dictionary, tile_id: String, rule: String, reach: float) -> Dictionary:
 	if actor.has("afterimage") and can_trigger_afterimage(tile_id):
 		var echo: Dictionary = actor.afterimage
 		actor.erase("afterimage")
-		var target := _select(actor, rule, tile.range, echo.position)
+		var target := _select(actor, rule, reach, echo.position)
 		if not target.is_empty():
 			_activation["attack_origin"] = echo.position
 			_relic_proc("afterimage", "Afterimage", 0, actor, target, echo.source, echo.beat, "Struck from the Blink departure point", echo.position)
 			return target
-	return _select(actor, rule, tile.range)
+	return _select(actor, rule, reach)
 
 
 func _attack_origin(actor: Dictionary) -> Vector2:
@@ -1619,22 +1667,30 @@ func _distance_bonus(actor: Dictionary, target: Dictionary, tile: Dictionary) ->
 func _apply_splash(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
 	if not tile.has("splash"):
 		return
-	var center: Vector2 = target.pos
-	var neighbors := _enemies_in_area(actor, center, tile.splash)
-	neighbors.erase(target)
+	var neighbors := _splash_neighbors(actor, target, tile.splash)
 	if tile.has("splash_targets"):
-		neighbors.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
-			var first := center.distance_squared_to(a.pos)
-			var second := center.distance_squared_to(b.pos)
-			return a.id < b.id if first == second else first < second)
+		_sort_by_distance(neighbors, target.pos)
 		neighbors.resize(mini(neighbors.size(), tile.splash_targets))
 	for enemy: Dictionary in neighbors:
 		_damage(actor, enemy, tile.splash_damage, tile_id)
 
 
-func _cast_guard(actor: Dictionary, tile_id: String, tile: Dictionary, rule: String) -> void:
+func _splash_neighbors(actor: Dictionary, target: Dictionary, radius: float) -> Array[Dictionary]:
+	var neighbors := _enemies_in_area(actor, target.pos, radius)
+	neighbors.erase(target)
+	return neighbors
+
+
+func _sort_by_distance(units_in_range: Array[Dictionary], center: Vector2) -> void:
+	units_in_range.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var first := center.distance_squared_to(a.pos)
+		var second := center.distance_squared_to(b.pos)
+		return a.id < b.id if first == second else first < second)
+
+
+func _cast_guard(actor: Dictionary, tile_id: String, tile: Dictionary, rule: String, reach: float) -> void:
 	if tile.has("guard_bonus_cap"):
-		var target := _select_attack_target(actor, tile_id, rule)
+		var target := _select_attack_target(actor, tile_id, rule, reach)
 		_review_activation_target(actor if target.is_empty() else target)
 		if not target.is_empty():
 			_prepare_siege_fuse(actor, target, tile_id)
@@ -2727,22 +2783,23 @@ func _heal_guard_overflow(actor: Dictionary, tile_id: String, excess: int) -> vo
 	_relic_proc("overflow_chalice", "Overflow Chalice", healed, actor, recipient, TILES[tile_id].label, _activation.beat, effect)
 
 
-func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String) -> void:
+func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String, enchantment_splash := false) -> void:
 	if target.hp <= 0:
 		return
 	if TILES.has(tile_id):
-		amount = _class_attack_damage(actor, target, amount)
-		if not _activation.is_empty() and actor.side == "hero" and target.side == "enemy":
-			amount += _consume_arsenal_mark(actor, target, tile_id)
-			amount += _consume_cantor_mark(actor, target, tile_id)
-			amount += _consume_ranged_followup(actor, target, tile_id)
-			amount += _lance_hit_bonus(actor, target, tile_id)
-			amount += _consume_rune_charge(actor, target, tile_id)
-			amount += _needle_attack_bonus(actor, target, tile_id)
-			amount += _relic_attack_bonus(actor, target)
-			if tile_id == _activation.tile and actor.id == _activation.actor and amount > 0:
-				amount += _timeline_relic_bonus(actor, target, tile_id)
-			_apply_barrage_rack(actor, target, tile_id)
+		if not enchantment_splash:
+			amount = _class_attack_damage(actor, target, amount)
+			if not _activation.is_empty() and actor.side == "hero" and target.side == "enemy":
+				amount += _consume_arsenal_mark(actor, target, tile_id)
+				amount += _consume_cantor_mark(actor, target, tile_id)
+				amount += _consume_ranged_followup(actor, target, tile_id)
+				amount += _lance_hit_bonus(actor, target, tile_id)
+				amount += _consume_rune_charge(actor, target, tile_id)
+				amount += _needle_attack_bonus(actor, target, tile_id)
+				amount += _relic_attack_bonus(actor, target)
+				if tile_id == _activation.tile and actor.id == _activation.actor and amount > 0:
+					amount += _timeline_relic_bonus(actor, target, tile_id)
+				_apply_barrage_rack(actor, target, tile_id)
 		if target.get("marshal_plated", false) and actor.side == "hero":
 			amount = _marshal_damage(actor, target, amount)
 		elif target.get("prism_warded", false) and actor.side == "hero":
@@ -2779,7 +2836,9 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 	var dealt := mini(amount - blocked, target.hp)
 	target.hp -= dealt
 	var action: String = TILES[tile_id].label if TILES.has(tile_id) else "Strike"
-	if tile_id == "cinder_mage":
+	if enchantment_splash:
+		action = "Splash"
+	elif tile_id == "cinder_mage":
 		action = "Burn"
 	elif tile_id == "breaker":
 		action = "Collision"
@@ -2791,14 +2850,15 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 	if dealt > 0 and target.hp > 0 and actor.side == "hero" and not str(target.intent).is_empty() \
 			and target.get("intent_attack_id") == TOLLKEEPER_REPAIR_CUE:
 		_cancel_tollkeeper_repair(target, _find_unit(target.intent), "tollkeeper_repair_interrupted", "A hit interrupts the drone's repair.")
-	if dealt > 0 and target.hp > 0 and actor.side == "hero" and _activation.get("tile") == tile_id and _activation.get("actor") == actor.id:
+	if not enchantment_splash and dealt > 0 and target.hp > 0 and actor.side == "hero" \
+			and _activation.get("tile") == tile_id and _activation.get("actor") == actor.id:
 		var pilot: Variant = PILOT_ENEMY_SCRIPTS.get(target.get("pilot_region", ""))
 		if pilot != null:
 			pilot.on_tile_hit(self, actor, target, dealt, tile_id, _activation.order)
 	if actor.side == "enemy" and target.side == "hero" and target.has("bastion_ward"):
 		_release_bastion_ward(target, blocked)
 	if target.hp == 0:
-		if not _activation.is_empty() and actor.side == "hero" and target.side == "enemy":
+		if not enchantment_splash and not _activation.is_empty() and actor.side == "hero" and target.side == "enemy":
 			_prime_duel_followup(actor, target, tile_id)
 		target.velocity = Vector2.ZERO
 		target.impulse = Vector2.ZERO
@@ -3406,6 +3466,8 @@ func _emit(kind: String, message: String, actor: Dictionary = {}, target: Dictio
 				_activation.reason = message.get_slice(": ", 1)
 			"hit":
 				_activation.damage += amount
+				if _activation.get("enchantment") == "splash" and target.id == _activation.target:
+					_activation["primary_hit"] = true
 			"guard":
 				_activation.guard += amount
 				if actor.id != target.id and TILES[tile_id].has("ally_guard"):

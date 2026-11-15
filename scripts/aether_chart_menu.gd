@@ -25,6 +25,7 @@ const POINTS := {
 	"shot_artifice": Vector2(0.48, 0.81),
 	"guard_artifice": Vector2(0.16, 0.59),
 	"navigation": Vector2(0.83, 0.78),
+	"enchantments": Vector2(0.12, 0.10),
 }
 const ART_KEYS := {"shot_artifice": "shot", "guard_artifice": "guard", "navigation": "route"}
 

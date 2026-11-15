@@ -2,6 +2,7 @@ extends RefCounted
 
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
+const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 
 const GLASS_PILOT_ART := {
 	"glass_mirrorback": Rect2i(11, 22, 386, 373),
@@ -102,6 +103,7 @@ const RARITY_COLORS := {
 	"epic": Color("#cf9dff"), "legendary": Color("#ffc86d")
 }
 const RARITIES := ["common", "uncommon", "rare", "epic", "legendary"]
+const ENCHANTMENT_COLORS := {"guarded": Color("#7de4cf"), "longshot": Color("#f0ce90"), "splash": Color("#f0a48c")}
 
 
 static func tile(id: String, spec: Dictionary) -> String:
@@ -229,3 +231,56 @@ static func tile_stats(spec: Dictionary) -> String:
 
 static func rarity_pips(spec: Dictionary) -> String:
 	return "•".repeat(maxi(1, RARITIES.find(spec.get("rarity", "common")) + 1))
+
+
+static func enchantment_color(id: String) -> Color:
+	return ENCHANTMENT_COLORS.get(id, Color("#9ddbd1"))
+
+
+static func enchantment_badge(id: String, extent := 18) -> PanelContainer:
+	var badge := PanelContainer.new()
+	badge.name = "TileEnchantmentBadge"
+	badge.set_meta("enchantment", id)
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.custom_minimum_size = Vector2.ONE * extent
+	badge.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+	badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	var spec := TileEnchantments.info(id)
+	badge.visible = not spec.is_empty()
+	if spec.is_empty():
+		return badge
+	badge.tooltip_text = "%s · %s" % [spec.label, spec.description]
+	var accent := enchantment_color(id)
+	var frame := StyleBoxFlat.new()
+	frame.bg_color = Color("#101e29")
+	frame.border_color = accent.darkened(0.20)
+	frame.set_border_width_all(1)
+	frame.set_corner_radius_all(4)
+	badge.add_theme_stylebox_override("panel", frame)
+	var glyph := Control.new()
+	glyph.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	glyph.draw.connect(func(): _draw_enchantment_glyph(glyph, id, accent))
+	glyph.resized.connect(glyph.queue_redraw)
+	badge.add_child(glyph)
+	return badge
+
+
+static func _draw_enchantment_glyph(glyph: Control, id: String, color: Color) -> void:
+	var center := glyph.size * 0.5
+	var scale_factor := minf(glyph.size.x, glyph.size.y) / 14.0
+	var stroke := maxf(1.0, 1.5 * scale_factor)
+	match id:
+		"guarded":
+			var points := PackedVector2Array()
+			for offset: Vector2 in [Vector2(-4, -3), Vector2(0, -5), Vector2(4, -3), Vector2(4, 1), Vector2(0, 5), Vector2(-4, 1), Vector2(-4, -3)]:
+				points.append(center + offset * scale_factor)
+			glyph.draw_polyline(points, color, stroke, true)
+		"longshot":
+			var tip := center + Vector2(5, 0) * scale_factor
+			glyph.draw_line(center + Vector2(-5, 0) * scale_factor, tip, color, stroke, true)
+			glyph.draw_line(center + Vector2(1, -4) * scale_factor, tip, color, stroke, true)
+			glyph.draw_line(center + Vector2(1, 4) * scale_factor, tip, color, stroke, true)
+		"splash":
+			glyph.draw_circle(center + Vector2(-3, 1) * scale_factor, 2.4 * scale_factor, color, true, -1, true)
+			glyph.draw_circle(center + Vector2(2, -4) * scale_factor, 1.6 * scale_factor, color, true, -1, true)
+			glyph.draw_circle(center + Vector2(4, 2) * scale_factor, 1.5 * scale_factor, color, true, -1, true)

@@ -24,6 +24,7 @@ func _run() -> void:
 	game.set_physics_process(false)
 	game.run.load_save(save_path)
 	await _check_reward_combine(game)
+	await _check_enchanted_tile_movement(game)
 	await _check_distributed_storage(game)
 	game.queue_free()
 	await process_frame
@@ -33,7 +34,7 @@ func _run() -> void:
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Tile upgrade paths, upgraded combat, split storage, and reward combine with save and resume passed.")
+		print("Tile upgrade paths, upgraded combat, enchantment storage, and reward combine with save and resume passed.")
 	quit(0 if failures.is_empty() else 1)
 
 
@@ -110,6 +111,8 @@ func _check_reward_combine(game: Control) -> void:
 	run.loadout.lanes[1] = [_tile(source, 0, "lowest_hp")]
 	run.loadout.storage = [[_tile(source, 0), _tile("slam", 4)],
 		[_tile("slam", 0), _tile("slam", 4)], [_tile("slam", 0), _tile("slam", 4)]]
+	run.data.enchantment = "guarded"
+	run.loadout.storage[0][0].enchantment = "guarded"
 	run.data.node = {"id": "tile-upgrade-patrol", "row": FrontierRun.NODES_PER_SEGMENT,
 		"column": 0, "type": "battle", "label": "Upgrade test patrol", "next": []}
 	run.data.phase = "combat"
@@ -157,8 +160,34 @@ func _check_reward_combine(game: Control) -> void:
 		and run.loadout.lanes[1] == before.lanes[1],
 		"Confirming consumes exactly the reward recipient's and shared storage copies.")
 	_check(run.load_save(save_path) and run.reward_lane() == 1 and run.data.offers == next_hero_offers
-		and run.loadout.lanes[0].any(func(tile: Dictionary): return tile.id == choice),
-		"The chosen upgrade and next hero's draft survive a second reload.")
+		and run.loadout.lanes[0].any(func(tile: Dictionary): return tile.id == choice and tile.get("enchantment") == "guarded"),
+		"The chosen upgrade inherits the consumed attachment. It and the next hero's draft survive a second reload.")
+
+
+func _check_enchanted_tile_movement(game: Control) -> void:
+	var run: FrontierRun = game.run
+	if run.loadout.lanes.is_empty():
+		return
+	run.data.phase = "map"
+	run.data.enchantment = "splash"
+	run.loadout.lanes[0] = [_tile("shot", 0), _tile("shot", 2), _tile("shot", 4)]
+	run.loadout.lanes[0][0].enchantment = "splash"
+	run.loadout.storage = [[], [], []]
+	game.run_open_enchantment_loadout()
+	var from_lane := {"id": "shot", "lane": 0, "start": 0}
+	game.storage_place(0, 0, from_lane, true)
+	_check(game.storage_rows[0].size() == 1 and game.storage_rows[0][0].get("enchantment") == "splash",
+		"Moving an enchanted tile to storage keeps its attachment.")
+	var from_storage := {"id": "shot", "lane": -1, "row": 0, "start": 0}
+	game._place(from_storage, 0, 0, true)
+	_check(game.lanes[0].size() == 3 and game.lanes[0][0].get("enchantment") == "splash",
+		"Moving an enchanted tile back to the same beat keeps its attachment.")
+	game._offer_combine(-1, 0, 0, true)
+	game.forge_choose("split_shot")
+	_check(game.lanes[0].size() == 1 and game.lanes[0][0].id == "split_shot"
+		and not game.lanes[0][0].has("enchantment") and run.active_enchantment() == "splash",
+		"An incompatible upgrade returns the enchantment to the player's available enchantments.")
+	await process_frame
 
 
 func _check_distributed_storage(game: Control) -> void:

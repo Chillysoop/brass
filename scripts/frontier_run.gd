@@ -4,6 +4,7 @@ const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
 const PilotFormations = preload("res://scripts/pilot_formations.gd")
+const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const UniversalTileUpgrades = preload("res://scripts/universal_tile_upgrades.gd")
 const HEROES = ArenaSim.HERO_CLASSES
@@ -46,6 +47,7 @@ const META_NODES := {
 	"shot_artifice": {"label": "Marksman's Arsenal", "description": "Upgrade a single Shot tile at camp and find Shot upgrades in rewards and shops.", "cost": 14, "requires": ["purse"]},
 	"guard_artifice": {"label": "Bastion Workshop", "description": "Upgrade a single Guard tile at camp and find Guard upgrades in rewards and shops.", "cost": 14, "requires": ["stout_start"]},
 	"navigation": {"label": "Pathfinder's Chart", "description": "Find wagers, relic brokers, and optional elite bounties at mystery nodes.", "cost": 12, "requires": ["purse"]},
+	"enchantments": {"label": "Tile Enchantments", "description": "Draft a movable enchantment after the opening fight in future Brass Frontier expeditions.", "cost": 8, "requires": ["curated_cache"]},
 }
 const TILE_RARITIES := ["common", "uncommon", "rare", "epic", "legendary"]
 const NODE_LABELS := {
@@ -952,9 +954,33 @@ func reward(id: String) -> bool:
 			_start_recruitment()
 		return _save_reward(before)
 	else:
-		data.phase = "map"
+		var draft_enchantment: bool = data.location == "brass" and data.node.type == "opening" \
+			and "enchantments" in profile.meta and not data.has("enchantment")
+		data.phase = "enchantment" if draft_enchantment else "map"
 	data.offers = []
 	return _save_reward(before)
+
+
+func enchantment_offers() -> Array:
+	var offers: Array = []
+	if data.get("phase") == "enchantment":
+		for id: String in TileEnchantments.IDS:
+			offers.append(TileEnchantments.info(id).duplicate())
+	return offers
+
+
+func choose_enchantment(id: String) -> bool:
+	if data.get("phase") != "enchantment" or (id != "skip" and id not in TileEnchantments.IDS):
+		return false
+	var before := data.duplicate(true)
+	data.enchantment = "" if id == "skip" else id
+	data.phase = "map"
+	return _save_reward(before)
+
+
+func active_enchantment() -> String:
+	var id: String = data.get("enchantment", "")
+	return id if id in TileEnchantments.IDS else ""
 
 
 func _save_reward(before: Dictionary) -> bool:
@@ -1136,8 +1162,10 @@ func choose_mystery_upgrade(source: Dictionary, upgrade: String) -> bool:
 			continue
 		var before := data.duplicate(true)
 		var target: String = item.target
+		var enchantment: String = item.get("enchantment", "")
 		var targets: Array = ArenaSim.TILES[upgrade].targets
 		item.id = upgrade
+		TileEnchantments.keep_if_eligible(item, ArenaSim.TILES[upgrade])
 		if target not in targets and (target not in ArenaSim.CROWN_TARGET_RULES or "nearest" not in targets):
 			item.target = targets[0]
 		var was_suppressed: bool = loadout.suppressed.erase(upgrade)
@@ -1148,6 +1176,8 @@ func choose_mystery_upgrade(source: Dictionary, upgrade: String) -> bool:
 			return true
 		item.id = source_id
 		item.target = target
+		if not enchantment.is_empty():
+			item.enchantment = enchantment
 		if was_suppressed:
 			loadout.suppressed[upgrade] = true
 		return false

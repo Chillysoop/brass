@@ -297,6 +297,9 @@ func _show_tile_badges(event: Dictionary) -> void:
 	var class_id := GameIcons.hero_class_for_label(event.get("hero", ""))
 	if not class_id.is_empty():
 		_tile_badges.add_child(GameIcons.hero_badge(class_id, false))
+	var enchantment: String = event.get("enchantment", "")
+	if not enchantment.is_empty():
+		_tile_badges.add_child(GameIcons.enchantment_badge(enchantment))
 
 
 func _event_caption(event: Dictionary) -> String:

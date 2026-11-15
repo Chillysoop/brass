@@ -2,6 +2,7 @@ extends Control
 
 const GameIcons = preload("res://scripts/game_icons.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
+const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 
 const COLUMNS := TilePacking.STORAGE_COLUMNS
 const ROWS := TilePacking.STORAGE_ROWS
@@ -28,6 +29,10 @@ var _send: Button
 var _discard: Button
 var _forge: Button
 var _combine: Button
+var _enchantment_row: HBoxContainer
+var _enchantment_icon: TextureRect
+var _enchantment_label: Label
+var _enchant: Button
 var _selected: Dictionary = {}
 var _preview: Control
 var _preview_row: Control
@@ -42,7 +47,8 @@ func configure(host: Control) -> void:
 		_build()
 
 
-func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can_combine := false) -> void:
+func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can_combine := false,
+		enchantment := {}) -> void:
 	var focus := get_viewport().gui_get_focus_owner()
 	_focused_cell = focus.get_meta("storage_cell", Vector2i(-1, -1)) if is_instance_valid(focus) else Vector2i(-1, -1)
 	_selected = selected.duplicate()
@@ -60,8 +66,17 @@ func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can
 	_forge.visible = camp
 	_forge.disabled = not _selected.has("lane")
 	_combine.visible = can_combine
+	_enchantment_row.visible = not enchantment.is_empty()
+	if _enchantment_row.visible:
+		var info := TileEnchantments.info(enchantment.id)
+		_enchantment_icon.texture = GameIcons.icon(info.icon)
+		_enchantment_label.text = "%s · %s" % [info.label, "Unequipped" if enchantment.host.is_empty() else enchantment.host]
+		_enchantment_label.tooltip_text = info.description
+		_enchant.text = enchantment.button
+		_enchant.disabled = not enchantment.eligible
+		_enchant.tooltip_text = info.description if enchantment.eligible else "Select a compatible tile in storage or on the timeline.\n" + info.description
 	if _selected.is_empty():
-		show_message("Drag between storage and the timeline.")
+		show_message("Select a tile to enchant." if _enchantment_row.visible else "Drag between storage and the timeline.")
 	else:
 		var tile: Dictionary = _host.tile_spec(_selected.id)
 		show_message("%s selected" % tile.get("label", _selected.id))
@@ -102,6 +117,24 @@ func _build() -> void:
 	_board = VBoxContainer.new()
 	_board.add_theme_constant_override("separation", 4)
 	layout.add_child(_board)
+	_enchantment_row = HBoxContainer.new()
+	_enchantment_row.add_theme_constant_override("separation", 8)
+	layout.add_child(_enchantment_row)
+	_enchantment_icon = TextureRect.new()
+	_enchantment_icon.custom_minimum_size = Vector2(20, 20)
+	_enchantment_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_enchantment_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_enchantment_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_enchantment_row.add_child(_enchantment_icon)
+	_enchantment_label = _label("", 14, TEAL)
+	_enchantment_label.mouse_filter = Control.MOUSE_FILTER_STOP
+	_enchantment_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_enchantment_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_enchantment_row.add_child(_enchantment_label)
+	_enchant = _button("Enchant selected", func(): _host.storage_enchant_selected())
+	_enchant.name = "EnchantSelected"
+	_enchantment_row.add_child(_enchant)
+	_enchantment_row.hide()
 
 	var footer := HBoxContainer.new()
 	footer.add_theme_constant_override("separation", 12)
@@ -191,6 +224,9 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 		ownership += " · %s signature" % GameIcons.hero_label(origin)
 	card.tooltip_text = "%s · %s · %s\n%s\n%s" % [name, GameIcons.rarity_name(tile), GameIcons.tile_stats(tile),
 		ownership, tile.get("description", "")]
+	var enchantment := TileEnchantments.info(item.get("enchantment", ""))
+	if not enchantment.is_empty():
+		card.tooltip_text += "\n%s · %s" % [enchantment.label, enchantment.description]
 	var rarity := GameIcons.rarity(tile)
 	for mode: String in ["normal", "hover", "pressed"]:
 		var fill := STORED.lightened(0.16) if mode == "hover" else STORED
@@ -215,6 +251,11 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 		card.add_child(hero_badge)
 		hero_badge.set_anchors_and_offsets_preset(Control.PRESET_TOP_RIGHT, Control.PRESET_MODE_MINSIZE, 4)
 		hero_badge.offset_top = 3
+	if not enchantment.is_empty():
+		var badge := GameIcons.enchantment_badge(enchantment.id, 15)
+		card.add_child(badge)
+		badge.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP, Control.PRESET_MODE_MINSIZE)
+		badge.offset_top = 2
 	if damage > 0:
 		var amount := _label(str(damage), 12, CREAM)
 		amount.name = "TileDamage"

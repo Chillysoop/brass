@@ -144,6 +144,7 @@ func render(model, page_override: String = "") -> void:
 		"combat": _combat()
 		"reward": _reward()
 		"boss_relic": _boss_relic_draft()
+		"enchantment": _enchantment_draft()
 		"shop": _shop()
 		"event": _event()
 		"rest": _rest()
@@ -753,6 +754,49 @@ func _claim_boss_relic(id: String) -> void:
 		_host.run_return()
 
 
+func _enchantment_draft() -> void:
+	_page_title("Choose an enchantment", "Equip it on one compatible tile. You can move it between battles or save it for a later tile.")
+	var cards := _cards_row()
+	var selected := {"id": ""}
+	var advance := _continue(func(): _claim_enchantment(selected.id))
+	advance.disabled = true
+	var group := ButtonGroup.new()
+	for offer: Dictionary in _run.enchantment_offers():
+		var id: String = offer.id
+		var tone := GameIcons.enchantment_color(id)
+		var card := _choice(cards, offer.label, offer.description, "Select", func():
+			selected.id = id
+			advance.disabled = false
+		)
+		var panel := card.get_parent() as PanelContainer
+		panel.size_flags_vertical = SIZE_SHRINK_CENTER
+		panel.custom_minimum_size.y = 320
+		panel.add_theme_stylebox_override("panel", _box(PANEL, tone.darkened(0.50), 9, 18))
+		var button: Button = card.get_child(card.get_child_count() - 1)
+		button.name = "Enchantment_" + id
+		button.toggle_mode = true
+		button.button_group = group
+		button.toggled.connect(func(pressed: bool):
+			panel.add_theme_stylebox_override("panel", _box(PANEL, tone if pressed else tone.darkened(0.50), 9, 18))
+		)
+		_add_card_icon(card, offer.icon, tone)
+		if panel.get_index() == 0:
+			button.grab_focus()
+	var skip := _button("Skip enchantment", func(): _claim_enchantment("skip"))
+	skip.name = "SkipEnchantment"
+	_footer_actions().add_child(skip)
+
+
+func _claim_enchantment(id: String) -> void:
+	if _run.choose_enchantment(id):
+		if id == "skip":
+			_host.run_return()
+		else:
+			_host.run_open_enchantment_loadout()
+	elif not _run.save_error.is_empty():
+		_host.run_return()
+
+
 func _claim_reward(id: String, notice: Label) -> void:
 	if _host.run_claim_reward(id):
 		_host.run_return()
@@ -1025,7 +1069,8 @@ func _chart() -> void:
 				"stout_start": "Starting health", "purse": "Starting gold",
 				"curated_cache": "Tile unlock", "relic_archive": "Relic unlock",
 				"blink_artifice": "Camp and reward unlock", "wayfarers_pin": "Relic unlock", "navigation": "Event unlock",
-				"shot_artifice": "Camp and reward unlock", "guard_artifice": "Camp and reward unlock"
+				"shot_artifice": "Camp and reward unlock", "guard_artifice": "Camp and reward unlock",
+				"enchantments": "Reward unlock"
 			}.get(id, "Upgrade")
 		})
 	_aether_chart.render(int(_run.profile.get("marks", 0)), entries, _run.data.is_empty())

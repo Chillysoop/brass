@@ -1,6 +1,7 @@
 extends RefCounted
 
 const ArenaSim = preload("res://scripts/arena_sim.gd")
+const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 const STORAGE_COLUMNS := 8
 const STORAGE_ROWS := 3
 
@@ -129,6 +130,7 @@ static func apply_combination(lanes: Array, storage: Array, copies: Array, desti
 	if not _combine_fits(lanes, storage, copies, destination, upgrade):
 		return false
 	var removals := []
+	var enchantment := ""
 	for copy: Dictionary in copies:
 		var items := _combine_row(lanes, storage, copy)
 		var index := items.find_custom(func(item: Dictionary): return item.start == copy.start and item.id == copy.id)
@@ -137,11 +139,16 @@ static func apply_combination(lanes: Array, storage: Array, copies: Array, desti
 		var item: Dictionary = items[index]
 		if removals.any(func(removal: Dictionary): return is_same(removal.item, item)):
 			return false
+		if item.has("enchantment"):
+			enchantment = item.enchantment
 		removals.append({"items": items, "item": item})
 	for removal: Dictionary in removals:
 		removal.items.erase(removal.item)
 	var items := _combine_row(lanes, storage, destination)
-	items.append({"id": upgrade, "start": int(destination.start), "target": target})
+	var entry := {"id": upgrade, "start": int(destination.start), "target": target}
+	if TileEnchantments.is_eligible(enchantment, ArenaSim.TILES[upgrade], upgrade):
+		entry.enchantment = enchantment
+	items.append(entry)
 	items.sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
 	return true
 
