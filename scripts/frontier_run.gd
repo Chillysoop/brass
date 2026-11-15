@@ -5,6 +5,8 @@ const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
 const PilotFormations = preload("res://scripts/pilot_formations.gd")
 const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
+const ClassMasteries = preload("res://scripts/class_masteries.gd")
+const RecruitLoadouts = preload("res://scripts/recruit_loadouts.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const UniversalTileUpgrades = preload("res://scripts/universal_tile_upgrades.gd")
 const HEROES = ArenaSim.HERO_CLASSES
@@ -142,6 +144,7 @@ const NAVIGATION_EVENTS := ["Broker's Table", "Salvage Permit", "Bounty Board"]
 const LOCATION_LABELS := {"brass": "Brass Frontier", "glass": "Glass Foundry", "crown": "Crown Relay", "moonwreck": "Moonwreck Docks"}
 const BOSS_LABELS := {
 	"tollkeeper": "The Tollkeeper", "gilded_marshal": "The Gilded Marshal",
+	"brass_bellmaker": "The Bellmaker",
 	"iron_regent": "The Iron Regent", "crucible_twins": "The Crucible Twins", "prism_warden": "The Prism Warden",
 	"tempered_colossus": "The Tempered Colossus",
 	"relay_captain": "The Relay Captain", "relay_marshal": "The Relay Marshal", "crown_regent": "The Crown Regent",
@@ -151,6 +154,7 @@ const TOLLKEEPER_VARIANTS := {
 	"solo": {"title": "The Tollkeeper", "description": "The Tollkeeper fights alone. Its strikes get stronger when it rallies at half health."},
 	"repair_drone": {"title": "The Tollkeeper + Repair Drone", "description": "The drone repairs the Tollkeeper from nearby. Separate them, interrupt the drone during a repair, or destroy it."},
 }
+const BELLMAKER_SCOUT := "Alternates a close bell shockwave and a long shot at the marked spot. Push it away to escape the ring, move off the mark, or time Guard."
 const BRASS_BOSSES := ["tollkeeper", "gilded_marshal", "iron_regent"]
 const GLASS_BOSSES := ["crucible_twins", "prism_warden", "tempered_colossus"]
 const CROWN_BOSSES := ["relay_captain", "relay_marshal", "crown_regent"]
@@ -162,7 +166,7 @@ const DEFAULT_PROFILE := {
 	"glass_hard_cleared": false, "crown_easy_unlocked": false, "crown_medium_unlocked": false,
 	"crown_hard_unlocked": false, "crown_hard_cleared": false,
 	"moonwreck_easy_unlocked": false, "moonwreck_medium_unlocked": false,
-	"moonwreck_hard_unlocked": false, "moonwreck_hard_cleared": false, "meta": [],
+	"moonwreck_hard_unlocked": false, "moonwreck_hard_cleared": false, "meta": [], "mastered_classes": [],
 }
 const NODES_PER_SEGMENT := 7
 const VERSION := 1
@@ -345,6 +349,33 @@ func build_relic_offers() -> Array:
 	return data.get("build_relic_offers", []) if data.get("phase") == "relic" else []
 
 
+func mastery_offers() -> Array:
+	var phase: String = data.get("phase", "")
+	if phase not in ["relic", "starter", "recruit_starter"]:
+		return []
+	var class_id: String = data.get("pending_recruit", "") if phase == "recruit_starter" else data.hero
+	return ClassMasteries.options(class_id) if class_id in profile.mastered_classes else []
+
+
+func selected_mastery() -> String:
+	if data.get("phase") == "recruit_starter":
+		return data.get("pending_recruit_mastery", "")
+	var heroes: Array = data.get("heroes", [])
+	return "" if heroes.is_empty() else heroes[0].get("mastery", "")
+
+
+func choose_mastery(id: String) -> bool:
+	var offers := mastery_offers()
+	if offers.is_empty() or (not id.is_empty() and not offers.any(func(offer: Dictionary): return offer.id == id)):
+		return false
+	var before := data.duplicate(true)
+	if data.phase == "recruit_starter":
+		data.pending_recruit_mastery = id
+	else:
+		data.heroes[0].mastery = id
+	return _save_reward(before)
+
+
 func choose_relic(id: String) -> bool:
 	if not _is_offer("relic", id) and id not in build_relic_offers():
 		return false
@@ -376,6 +407,7 @@ func choose_recruit(id: String) -> bool:
 		return false
 	data.pending_recruit = id
 	data.phase = "recruit_starter"
+	data.recruit_loadouts = true
 	data.offers = _starter_offers(id, _node_salt(93))
 	save()
 	return true
@@ -384,18 +416,50 @@ func choose_recruit(id: String) -> bool:
 func choose_recruit_starter(id: String) -> bool:
 	if not _is_offer("recruit_starter", id):
 		return false
+	return _equip_recruit([id])
+
+
+func recruit_loadout_offers() -> Array:
+	if data.get("phase") != "recruit_starter" or not data.get("recruit_loadouts", false):
+		return []
+	return RecruitLoadouts.choices(data.pending_recruit)
+
+
+func choose_recruit_loadout(id: String) -> bool:
+	for offer: Dictionary in recruit_loadout_offers():
+		if offer.id == id:
+			return _equip_recruit(offer.tiles)
+	return false
+
+
+func _equip_recruit(tiles: Array) -> bool:
 	var max_hp: int = data.max_hp
 	var recruit: String = data.pending_recruit
-	data.heroes.append({"id": recruit, "hp": max_hp, "max_hp": max_hp})
+	var before := data.duplicate(true)
+	var before_loadout := loadout.duplicate(true)
+	var member := {"id": recruit, "hp": max_hp, "max_hp": max_hp}
+	if not str(data.get("pending_recruit_mastery", "")).is_empty():
+		member.mastery = data.pending_recruit_mastery
+	data.heroes.append(member)
 	data.erase("pending_recruit")
-	loadout.lanes.append(_starter_lane(id))
+	data.erase("pending_recruit_mastery")
+	data.erase("recruit_loadouts")
+	var lane := []
+	var beat := 0
+	for id: String in tiles:
+		var spec: Dictionary = ArenaSim.TILES[id]
+		lane.append({"id": id, "start": beat, "target": spec.targets[0]})
+		beat += int(spec.width)
+	loadout.lanes.append(lane)
 	loadout.defaults.append("nearest")
 	data.segment = data.heroes.size()
 	data.phase = "map"
 	data.offers = []
 	data.node_notice = "%s joins the expedition." % HEROES[recruit].label
-	save()
-	return true
+	if _save_reward(before):
+		return true
+	loadout = before_loadout
+	return false
 
 
 func _starter_lane(id: String) -> Array:
@@ -480,6 +544,19 @@ func tollkeeper_preview() -> Dictionary:
 	return preview
 
 
+func first_boss_preview() -> Dictionary:
+	var layers: Array = data.get("layers", [])
+	if data.get("location") != "brass" or int(data.get("segment", 0)) != 1 or layers.size() < NODES_PER_SEGMENT:
+		return {}
+	var boss: Dictionary = layers[NODES_PER_SEGMENT - 1][0]
+	if boss.get("boss_id") == "brass_bellmaker":
+		return {"id": boss.id, "title": boss.label, "description": BELLMAKER_SCOUT}
+	var variant := _tollkeeper_variant(boss)
+	var preview: Dictionary = TOLLKEEPER_VARIANTS[variant].duplicate()
+	preview.id = boss.id
+	return preview
+
+
 func _is_easy_tollkeeper(node: Dictionary) -> bool:
 	return data.get("location") == "brass" and data.get("difficulty") == "easy" and node.get("boss_id") == "tollkeeper"
 
@@ -493,7 +570,10 @@ func _encounter_for(node: Dictionary, segment: int) -> Dictionary:
 	var kind: String = node.get("encounter_override", node.type)
 	var roster: Array = []
 	for hero: Dictionary in data.heroes:
-		roster.append({"id": hero.id, "hero": hero.id, "hp": int(hero.hp), "max_hp": int(hero.max_hp)})
+		var member := {"id": hero.id, "hero": hero.id, "hp": int(hero.hp), "max_hp": int(hero.max_hp)}
+		if hero.has("mastery"):
+			member.mastery = hero.mastery
+		roster.append(member)
 	var options := {
 		"encounter": kind, "kind": kind, "id": node.id,
 		"seed": int(data.seed) ^ _node_salt(71, node), "hero": data.hero, "hp": int(data.hp),
@@ -841,6 +921,12 @@ func _resolve_boss() -> void:
 		data.node_notice = "%s fell. Choose %s and draft a %s hero." % [data.node.label, reward_copy, rank]
 		return
 	data.result = "victory"
+	var new_masteries := []
+	for hero: Dictionary in data.heroes:
+		if hero.id not in profile.mastered_classes:
+			profile.mastered_classes.append(hero.id)
+			new_masteries.append(hero.id)
+	data.new_masteries = new_masteries
 	if data.location == "moonwreck" and data.difficulty == "hard":
 		var first_clear := not bool(profile.moonwreck_hard_cleared)
 		_grant_marks(50 if first_clear else 35)
@@ -908,7 +994,7 @@ func _resolve_boss() -> void:
 
 func _has_boss_relic_draft() -> bool:
 	return data.location == "brass" and data.difficulty in ["medium", "hard"] and data.segment == 1 \
-		and data.node.get("boss_id", "") == "tollkeeper"
+		and data.node.get("boss_id", "") in ["tollkeeper", "brass_bellmaker"]
 
 
 func reward_lane() -> int:
@@ -1455,12 +1541,15 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 	var layers: Array = [[_node("opening", opening, 0, 1)]]
 	var used_events: Array[String] = []
 	_append_layers(layers, first_leg, labels, rng, used_events)
+	var first_boss: String = bosses[0]
 	var tollkeeper_variant := ""
 	if location == "brass":
 		_add_build_mystery(layers, seed_value)
-		if difficulty == "easy":
+		if _rng(seed_value, 487).randi_range(0, 3) == 0:
+			first_boss = "brass_bellmaker"
+		elif difficulty == "easy":
 			tollkeeper_variant = "repair_drone" if _rng(seed_value, 421).randi_range(0, 1) == 1 else "solo"
-	_append_boss(layers, bosses[0], tollkeeper_variant)
+	_append_boss(layers, first_boss, tollkeeper_variant)
 	var segments: int = SEGMENT_COUNTS[difficulty]
 	for segment in range(1, segments):
 		var gate := "Upper Gate Patrol" if segment == 1 else "Regent's Outer Guard"

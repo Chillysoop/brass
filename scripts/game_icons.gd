@@ -24,14 +24,16 @@ const MOON_PILOT_ART := {
 	"chain_warden": Rect2i(888, 476, 433, 380),
 	"wreck_bell": Rect2i(1387, 466, 364, 388),
 }
+const MANIFOLD_ART := Rect2i(737, 375, 333, 305)
 const BRASS_VARIETY_ART := {
+	"brass_bellmaker": MANIFOLD_ART,
 	"brass_runner": Rect2i(49, 38, 282, 291),
 	"brass_riveter": Rect2i(400, 69, 259, 252),
 	"brass_shieldwright": Rect2i(745, 22, 297, 312),
 	"brass_linksmith": Rect2i(1110, 21, 303, 309),
 	"brass_springjack": Rect2i(23, 383, 333, 287),
 	"brass_rivet_hound": Rect2i(379, 426, 327, 228),
-	"brass_manifold": Rect2i(737, 375, 333, 305),
+	"brass_manifold": MANIFOLD_ART,
 	"brass_sparkbow": Rect2i(1110, 375, 315, 321),
 	"brass_magnetar": Rect2i(26, 738, 328, 307),
 	"brass_grounder": Rect2i(397, 733, 310, 324),

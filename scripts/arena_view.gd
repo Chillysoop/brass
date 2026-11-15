@@ -381,7 +381,7 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	var model_height := 132.0
 	if art_key in ["tempered_colossus", "crown_regent", "wreckmaster", "tidekeeper", "drowned_admiral"]:
 		model_height = 218.0
-	elif art_key in ["marshal", "regent", "glass_twin", "prism_warden", "relay_captain", "relay_marshal"]:
+	elif art_key in ["marshal", "regent", "glass_twin", "prism_warden", "relay_captain", "relay_marshal", "brass_bellmaker"]:
 		model_height = 191.0
 	elif art_key == "clockwork":
 		model_height = 154.0
@@ -434,6 +434,8 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 			tint = Color("#ffc391")
 		elif unit.get("crown_role") == "relay_right":
 			tint = RIGHT_RELAY_COLOR.lerp(Color.WHITE, 0.32)
+		elif art_key == "brass_bellmaker":
+			tint = Color("#ffd5a9")
 		draw_texture_rect(texture, Rect2(-width * 0.5, -art_height, width, art_height), false, tint.lerp(GOLD, flash * 0.6))
 		draw_set_transform(Vector2.ZERO)
 	else:
@@ -649,7 +651,12 @@ func _draw_intents(field: Rect2) -> void:
 		if unit.has("blast_center"):
 			var radius: Vector2 = float(unit.blast_radius) * field.size / WORLD_SIZE
 			var center := _project(unit.blast_center, field)
-			if special == "crown_chorister":
+			if special == "bellmaker_shot":
+				_draw_sweep_warning(center, radius, Color("#f8bd91"))
+				var notch := minf(radius.x, radius.y) * 0.34
+				for direction: Vector2 in [Vector2.UP, Vector2.DOWN, Vector2.LEFT, Vector2.RIGHT]:
+					draw_line(center + direction * notch * 0.38, center + direction * notch, Color("#ffe0b0"), 2.0, true)
+			elif special == "crown_chorister":
 				_draw_sweep_warning(center, radius, RELAY_SHIELD_COLOR)
 			else:
 				_draw_sweep_warning(center, radius)
@@ -663,7 +670,11 @@ func _draw_intents(field: Rect2) -> void:
 			draw_arc(start, 24.0, 0.0, TAU, 32, Color(RELAY_SHIELD_COLOR, flicker), 3.0, true)
 			continue
 		if unit.has("pilot_ring_radius"):
-			_draw_sweep_warning(start, float(unit.pilot_ring_radius) * field.size / WORLD_SIZE)
+			var radius: Vector2 = float(unit.pilot_ring_radius) * field.size / WORLD_SIZE
+			if special == "bellmaker_ring":
+				_draw_sweep_warning(start, radius, GOLD)
+			else:
+				_draw_sweep_warning(start, radius)
 			continue
 		if unit.has("pilot_aim_point"):
 			var origin: Vector2 = unit.pos

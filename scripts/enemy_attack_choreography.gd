@@ -29,6 +29,8 @@ const MOVES := {
 	"regent_sweep": ["spin", "rust", "gold", 3, 1.50, 1.72, 4],
 
 	# Brass Frontier.
+	"bellmaker_ring": ["burst", "gold", "copper", 3, 1.45, 1.48, 5],
+	"bellmaker_shot": ["mine", "ember", "ivory", 3, 1.22, 1.30, 4],
 	"tollkeeper_drone": ["thrust", "mend", "gold", 1, 0.85, 0.72, 2],
 	"tollkeeper_repair": ["heal", "mend", "gold", 2, 1.06, 0.95, 3],
 	"brass_runner": ["slash", "copper", "white", 1, 0.76, 0.70, 1],

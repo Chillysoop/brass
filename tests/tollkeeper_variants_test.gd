@@ -15,11 +15,13 @@ func _run() -> void:
 	var game = Arena.instantiate()
 	root.add_child(game)
 	await process_frame
-	await _check_route(game, 1, "solo")
-	await _check_route(game, 4, "repair_drone")
+	var seeds := _tollkeeper_seeds()
+	_check(seeds.size() == 2, "Both Tollkeeper forms must still appear across nearby Easy seeds.")
+	for variant: String in seeds:
+		await _check_route(game, seeds[variant], variant)
 	game.queue_free()
 	await process_frame
-	for seed_value in [1, 4]:
+	for seed_value in seeds.values():
 		for suffix in ["", ".tmp", ".bak"]:
 			var path := "%s-%d.json%s" % [save_prefix, seed_value, suffix]
 			if FileAccess.file_exists(path):
@@ -29,6 +31,16 @@ func _run() -> void:
 	if failures.is_empty():
 		print("Both Tollkeeper fights matched their early map preview, saved encounter, and Easy clear rewards.")
 	quit(0 if failures.is_empty() else 1)
+
+
+func _tollkeeper_seeds() -> Dictionary:
+	var run := FrontierRun.new()
+	var seeds := {}
+	for seed_value in range(1, 33):
+		var boss: Dictionary = run._make_map(seed_value).back()[0]
+		if boss.boss_id == "tollkeeper" and not seeds.has(boss.boss_variant):
+			seeds[boss.boss_variant] = seed_value
+	return seeds
 
 
 func _check_route(game: Control, seed_value: int, variant: String) -> void:

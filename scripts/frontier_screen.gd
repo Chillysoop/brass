@@ -7,6 +7,7 @@ const AetherChartMenu = preload("res://scripts/aether_chart_menu.gd")
 const ClassRosterMenu = preload("res://scripts/class_roster_menu.gd")
 const GameIcons = preload("res://scripts/game_icons.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
+const ClassMasteries = preload("res://scripts/class_masteries.gd")
 const INK := Color("#101820")
 const PANEL := Color("#182632")
 const PANEL_DARK := Color("#111f2a")
@@ -157,6 +158,7 @@ func render(model, page_override: String = "") -> void:
 	_shell(phase)
 	match phase:
 		"hero", "relic", "starter", "recruit", "recruit_starter": _draft(phase)
+		"masteries": _masteries_page()
 		"map": _map()
 		"combat": _combat()
 		"reward": _reward()
@@ -247,7 +249,15 @@ func _draft(phase: String) -> void:
 	}.get(phase, "")
 	if phase in ["starter", "recruit_starter"]:
 		subtitle = _hero_name(_run.data.get("pending_recruit", _run.data.get("hero", "")))
+	var boss: Dictionary = _run.first_boss_preview() if phase == "hero" else {}
+	if not boss.is_empty():
+		subtitle = "Act I boss · " + boss.title
 	_page_title(title, subtitle)
+	if not boss.is_empty():
+		var scout: Label = _layout.get_child(_layout.get_child_count() - 1)
+		scout.name = "OpeningBossScout"
+		scout.mouse_filter = MOUSE_FILTER_STOP
+		scout.tooltip_text = boss.description
 	var cards := _cards_row()
 	var offers: Array = _run.data.get("offers", [])
 	if phase == "hero" and _run.can_choose_starter():
@@ -259,7 +269,74 @@ func _draft(phase: String) -> void:
 		switch.name = "RelicDraftSwitch"
 		_footer_actions().add_child(switch)
 		offers = _run.build_relic_offers()
-	_add_draft_cards(cards, offers, phase)
+	var loadouts: Array = _run.recruit_loadout_offers()
+	if loadouts.is_empty():
+		_add_draft_cards(cards, offers, phase)
+	else:
+		_add_recruit_loadouts(cards, loadouts)
+	var masteries: Array = _run.mastery_offers()
+	if not masteries.is_empty():
+		var active := ClassMasteries.info(_run.selected_mastery())
+		var mastery := _button("Class mastery" if active.is_empty() else active.label, func(): render(_run, "masteries"))
+		mastery.name = "ChooseClassMastery"
+		mastery.tooltip_text = "Choose an optional bonus for this expedition." if active.is_empty() else active.description
+		GameIcons.decorate(mastery, "elite", 17)
+		_footer_actions().add_child(mastery)
+
+
+func _add_recruit_loadouts(cards: HBoxContainer, offers: Array) -> void:
+	for offer: Dictionary in offers:
+		var card := _panel_stack(cards, Vector2(0, 290), true)
+		card.get_parent().size_flags_vertical = SIZE_SHRINK_CENTER
+		card.add_child(_label(offer.label, 27, CREAM, true))
+		var pitch := _label(offer.description, 17, MUTED)
+		pitch.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		card.add_child(pitch)
+		for id: String in offer.tiles:
+			var spec: Dictionary = ArenaSim.TILES[id]
+			var row := HBoxContainer.new()
+			row.add_theme_constant_override("separation", 12)
+			card.add_child(row)
+			var icon := GameIcons.icon(GameIcons.tile(id, spec))
+			if icon:
+				row.add_child(_icon_view(icon, 42))
+			var tile := VBoxContainer.new()
+			tile.size_flags_horizontal = SIZE_EXPAND_FILL
+			row.add_child(tile)
+			tile.add_child(_label("%s  ·  %s" % [spec.label, GameIcons.tile_stats(spec)], 17, CREAM))
+			var copy := _label(spec.description, 14, MUTED)
+			copy.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			tile.add_child(copy)
+		var pick := _button("Choose loadout", func():
+			_run.choose_recruit_loadout(offer.id)
+			_host.run_return(), true)
+		pick.name = "RecruitLoadout_" + offer.id
+		card.add_child(pick)
+
+
+func _masteries_page() -> void:
+	var class_id: String = _run.data.get("pending_recruit", _run.data.hero)
+	_page_title(_hero_name(class_id) + " mastery", "Add one bonus to your class passive for this expedition.")
+	var cards := _cards_row()
+	var active: String = _run.selected_mastery()
+	for mastery: Dictionary in _run.mastery_offers():
+		var card := _choice(cards, mastery.label, mastery.description, "Equipped" if mastery.id == active else "Equip mastery",
+			func(): _pick_mastery(mastery.id))
+		var choice := card.get_child(card.get_child_count() - 1) as Button
+		choice.name = "MasteryOption_" + mastery.id
+		card.get_parent().size_flags_vertical = SIZE_SHRINK_CENTER
+		_add_card_icon(card, mastery.get("icon", "elite"))
+	var footer := _footer_actions()
+	if not active.is_empty():
+		var remove := _button("Remove mastery", func(): _pick_mastery(""))
+		remove.name = "NoClassMastery"
+		footer.add_child(remove)
+	footer.add_child(_button("Back to draft", _host.run_return))
+
+
+func _pick_mastery(id: String) -> void:
+	_run.choose_mastery(id)
+	_host.run_return()
 
 
 func _toggle_relic_draft(cards: HBoxContainer) -> void:
@@ -381,12 +458,12 @@ func _map() -> void:
 	var elite_detail := _label("", 15, CREAM)
 	elite_detail.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	elite_detail.hide()
-	var tollkeeper: Dictionary = _run.tollkeeper_preview()
-	var map := _map_board(elite_detail, tollkeeper)
+	var first_boss: Dictionary = _run.first_boss_preview()
+	var map := _map_board(elite_detail, first_boss)
 	region.add_child(map)
 	var sidebar := _panel_stack(region, Vector2(270, 0))
-	if not tollkeeper.is_empty():
-		_add_tollkeeper_scout(sidebar, tollkeeper)
+	if not first_boss.is_empty():
+		_add_boss_scout(sidebar, first_boss)
 	var relic_names := PackedStringArray()
 	for id: String in _run.data.get("relics", []):
 		relic_names.append(FrontierRun.RELICS.get(id, {}).get("label", id.capitalize()))
@@ -410,7 +487,7 @@ func _map() -> void:
 	_footer_actions().add_child(_button("Manage tiles", func(): _host.run_show_arena()))
 
 
-func _add_tollkeeper_scout(sidebar: VBoxContainer, brief: Dictionary) -> void:
+func _add_boss_scout(sidebar: VBoxContainer, brief: Dictionary) -> void:
 	var scout := PanelContainer.new()
 	scout.name = "TollkeeperScout"
 	scout.add_theme_stylebox_override("panel", _box(PANEL_DARK, GOLD.darkened(0.28), 8, 12))
@@ -435,7 +512,7 @@ func _add_tollkeeper_scout(sidebar: VBoxContainer, brief: Dictionary) -> void:
 	content.add_child(hint)
 
 
-func _map_board(elite_detail: Label, tollkeeper: Dictionary) -> Control:
+func _map_board(elite_detail: Label, first_boss: Dictionary) -> Control:
 	var map_art: String = MAP_ART.get(_run.data.get("location", "brass"), MAP_ART.brass)
 	var board := _board(Vector2(655, 500), map_art)
 	var layers: Array = _run.data.get("layers", [])
@@ -482,9 +559,9 @@ func _map_board(elite_detail: Label, tollkeeper: Dictionary) -> Control:
 		button.disabled = not reachable
 		button.add_theme_font_size_override("font_size", 14)
 		button.tooltip_text = "%s · %s%s" % [label, TYPE_NAMES.get(type, type.capitalize()), " · completed" if past else (" · reachable" if reachable else " · unavailable")]
-		if type == "boss" and node.get("boss_id") == "tollkeeper" and not tollkeeper.is_empty():
-			button.name = "TollkeeperBossNode"
-			button.tooltip_text = "%s\n%s" % [tollkeeper.title, tollkeeper.description]
+		if type == "boss" and node.id == first_boss.get("id"):
+			button.name = "TollkeeperBossNode" if node.get("boss_id") == "tollkeeper" else "BellmakerBossNode"
+			button.tooltip_text = "%s\n%s" % [first_boss.title, first_boss.description]
 		if reachable and type == "elite":
 			var preview := _elite_preview_copy(node)
 			if not preview.is_empty():
@@ -1007,6 +1084,11 @@ func _result() -> void:
 		var legacy_trophy: String = _run.data.get("trophy", "")
 		if trophies.is_empty() and ArenaSim.TILES.has(legacy_trophy):
 			detail += "\nVictory reward  ·  " + ArenaSim.TILES[legacy_trophy].label
+		var mastered := PackedStringArray()
+		for id: String in _run.data.get("new_masteries", []):
+			mastered.append(_hero_name(id))
+		if not mastered.is_empty():
+			detail += "\nMasteries unlocked · " + ", ".join(mastered)
 	detail += "\n+%d Aether Marks this run." % int(_run.data.get("marks_earned", 0))
 	detail += "\n%d Aether Marks available." % int(_run.profile.get("marks", 0))
 	_choice(cards, "Victory" if victory else "Defeat", detail, "", Callable())

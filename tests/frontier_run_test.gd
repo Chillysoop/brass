@@ -139,9 +139,10 @@ func _initialize() -> void:
 	quit(0 if failures.is_empty() else 1)
 
 
-func _check_map(layers: Array, segments := 1, final_boss := "tollkeeper") -> void:
+func _check_map(layers: Array, segments := 1, final_boss := "") -> void:
 	check(layers.size() == 7 * segments and layers[0][0].type == "opening", "Each segment must have seven rows.")
-	check(layers.back()[0].boss_id == final_boss, "The final boss must match the location and difficulty.")
+	var allowed := ["tollkeeper", "brass_bellmaker"] if final_boss.is_empty() else [final_boss]
+	check(layers.back()[0].boss_id in allowed, "The final boss must match the location and difficulty.")
 	var reachable: Array = [layers[0][0].id]
 	var types: Dictionary = {}
 	for index in range(layers.size()):
@@ -177,6 +178,12 @@ func _with_gate_link(layers: Array, gate_id: String) -> Array:
 	var route := layers.duplicate(true)
 	route.back()[0].next.append(gate_id)
 	return route
+
+
+func _expect_party_masteries(profile: Dictionary, heroes: Array) -> void:
+	for hero: Dictionary in heroes:
+		if hero.id not in profile.mastered_classes:
+			profile.mastered_classes.append(hero.id)
 
 
 func _check_glass_hard_leg(layers: Array) -> void:
@@ -522,6 +529,7 @@ func _check_glass_hard(path: String) -> void:
 				"Defeating the Tempered Colossus must begin the final Legendary recap.")
 			before.marks += 54
 			before.glass_hard_cleared = true
+			_expect_party_masteries(before, encounter.heroes)
 			check(run.profile == before, "First Glass Hard clear must award 54 marks and record mastery without changing unlocks.")
 			check(not run.finish_combat(true, remaining), "The Colossus payout must not be applied twice.")
 			check(_finish_rewards(run, run.data.offers[0]) and run.data.phase == "result", "The Colossus trophy must open the recap.")
@@ -665,6 +673,7 @@ func _check_crown_hard(path: String) -> void:
 				"The Crown Regent must begin the final Legendary recap.")
 			before.marks += 54
 			before.crown_hard_cleared = true
+			_expect_party_masteries(before, encounter.heroes)
 			check(run.profile == before, "The first Crown Hard clear must grant 54 marks and record mastery without opening new gates.")
 			check(not run.finish_combat(true, remaining), "The Regent's payout must not be applied twice.")
 			check(_finish_rewards(run, run.data.offers[0]) and run.data.phase == "result", "The Regent's trophy must open the recap.")
@@ -773,6 +782,7 @@ func _check_moonwreck_medium(path: String) -> void:
 	check(restored.finish_combat(true, [42, 71]), "Resolve the Tidekeeper's first clear.")
 	before.marks += 34
 	before.moonwreck_hard_unlocked = true
+	_expect_party_masteries(before, restored.data.heroes)
 	check(restored.profile == before and restored.can_start("hard", "moonwreck"),
 		"The first Tidekeeper clear must pay 34 marks and open only the Hard route.")
 	check(not restored.finish_combat(true, [42, 71]) and _finish_rewards(restored, restored.data.offers[0]) and restored.finish_run(),
@@ -815,6 +825,7 @@ func _check_moonwreck_hard(path: String) -> void:
 			check(run.is_final_boss() and run.data.result == "victory", "The Drowned Admiral must begin the final recap.")
 			before.marks += 54
 			before.moonwreck_hard_cleared = true
+			_expect_party_masteries(before, encounter.heroes)
 			check(run.profile == before, "The first Moonwreck Hard clear must grant 54 marks and record mastery.")
 			check(not run.finish_combat(true, remaining), "The Drowned Admiral's payout must not be applied twice.")
 			check(_finish_rewards(run, run.data.offers[0]) and run.data.phase == "result", "The Drowned Admiral's trophy must open the recap.")

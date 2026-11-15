@@ -1,7 +1,17 @@
 extends RefCounted
 
 
+const BELLMAKER_RING := "bellmaker_ring"
+const BELLMAKER_SHOT := "bellmaker_shot"
+
 const ENEMIES := {
+	"brass_bellmaker": {
+		"name": "The Bellmaker", "art": "brass_bellmaker", "special": "brass_bellmaker",
+		"hp": 298, "radius": 42.0, "speed": 78.0, "spacing": 124.0, "reach": 510.0,
+		"damage": 16, "first": 118, "cooldown": 110, "windup": 51,
+		"displacement": 0.76, "ring_radius": 163.0, "shot_radius": 58.0, "shot_windup": 66,
+		"hint": "Alternates a bell shockwave and a shot at the marked spot. Push it away, move off the mark, or time Guard.",
+	},
 	"brass_runner": {
 		"name": "Wire Runner", "art": "brass_runner", "special": "brass_runner",
 		"hp": 28, "radius": 20.0, "speed": 116.0, "spacing": 86.0, "reach": 115.0,
@@ -82,6 +92,8 @@ static func begin(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary
 	var position: Vector2 = enemy.pos
 	var message := "%s winds up." % enemy.name
 	match move:
+		"brass_bellmaker":
+			return _begin_bellmaker(sim, enemy, target, attack)
 		"brass_shieldwright":
 			if enemy.get("shieldwright_braced", false) or int(enemy.guard) > 18:
 				enemy.erase("shieldwright_braced")
@@ -129,6 +141,9 @@ static func begin(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary
 
 static func resolve(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary, move: String) -> void:
 	match move:
+		BELLMAKER_RING, BELLMAKER_SHOT:
+			_resolve_bellmaker(sim, enemy, target, attack, move)
+			return
 		"brass_shieldwright":
 			enemy["shieldwright_braced"] = true
 			sim._guard(enemy, attack.guard_amount, move)
@@ -211,6 +226,56 @@ static func on_tile_hit(sim, attacker: Dictionary, enemy: Dictionary, amount: in
 static func _within_reach(enemy: Dictionary, target: Dictionary, reach: float) -> bool:
 	var origin: Vector2 = enemy.pos
 	return origin.distance_squared_to(target.pos) <= reach * reach
+
+
+static func _begin_bellmaker(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary) -> bool:
+	if not _within_reach(enemy, target, attack.reach):
+		return false
+	var shot: bool = enemy.get("bellmaker_next_shot", false)
+	var move := BELLMAKER_SHOT if shot else BELLMAKER_RING
+	var message: String
+	if shot:
+		enemy["blast_center"] = target.pos
+		enemy["blast_radius"] = attack.shot_radius
+		message = "The Bellmaker marks a spot for its shot. Move off the mark or time Guard."
+	else:
+		enemy["pilot_ring_radius"] = attack.ring_radius
+		message = "The Bellmaker winds up a shockwave. Stay outside the ring or time Guard."
+	enemy["bellmaker_next_shot"] = not shot
+	enemy["special_intent"] = move
+	sim._start_enemy_intent(enemy, target.id, sim.tick + int(attack.shot_windup if shot else attack.windup), move)
+	sim._emit("intent", message, enemy, target, move)
+	sim._review_boss_event("start", move, message, enemy, target)
+	return true
+
+
+static func _resolve_bellmaker(sim, enemy: Dictionary, target: Dictionary, attack: Dictionary, move: String) -> void:
+	var shot := move == BELLMAKER_SHOT
+	var center: Vector2 = enemy.blast_center if shot else enemy.pos
+	var radius: float = attack.shot_radius if shot else attack.ring_radius
+	enemy.erase("blast_center")
+	enemy.erase("blast_radius")
+	enemy.erase("pilot_ring_radius")
+	if not shot:
+		sim._emit("bell_ring", "The Bellmaker rings the bell.", enemy, enemy, move, roundi(radius))
+	var victims: Array = sim._enemies_in_area(enemy, center, radius)
+	var attack_name := "marked shot" if shot else "shockwave"
+	if victims.is_empty():
+		var message := "The crew cleared the marked spot." if shot else "The crew stayed out of the shockwave."
+		sim._emit("miss", message, enemy, target, move, 0, enemy.pos, center)
+		sim._review_boss_event("success", move, message, enemy, target, "miss")
+		return
+	var hit_hp := false
+	for hero: Dictionary in victims:
+		var previous_hp: int = hero.hp
+		sim._damage(enemy, hero, int(attack.damage) + (-2 if shot else 3), move)
+		hit_hp = hit_hp or hero.hp < previous_hp
+	if hit_hp:
+		var advice := "Move off the mark" if shot else "Stay at range or push it away during windup"
+		var message := "The %s hit. %s, or move Guard earlier." % [attack_name, advice]
+		sim._review_boss_event("miss", move, message, enemy, target, "hit")
+	else:
+		sim._review_boss_event("success", move, "The %s did no HP damage." % attack_name, enemy, target, "hit")
 
 
 static func _guard_ally(units: Array, enemy: Dictionary, reach: float) -> Dictionary:

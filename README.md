@@ -6,11 +6,11 @@ The Windows playtest includes Easy, Medium, and Hard expeditions in Brass Fronti
 
 From the title screen, choose **New Expedition**, select **Brass Frontier**, and start on **Easy** to draft a hero, relic, and starting tile. You can enter an optional seed on the difficulty screen. Win the opening fight, pick rewards, then travel a seeded route through battles, elites, shops, events, and a rest site. Health, relics, gold, and tile layouts carry between stops. The game saves between fights and after loadout changes. **Continue** picks up from the saved checkpoint.
 
-Each class has 18 Commons and eight Uncommons in its combat reward deck. Use **View class deck** on a hero or recruit card to inspect each tile and the class's signature Uncommon. After combat, choose or skip a tile for each hero in party order. Tiles go to that hero's timeline when space allows, then to shared storage. The expedition saves after each pick. Recruits enter with one starter tile after the current party takes its boss rewards.
+Each class has 18 Commons and eight Uncommons in its combat reward deck. Use **View class deck** on a hero or recruit card to inspect each tile and the class's signature Uncommon. After combat, choose or skip a tile for each hero in party order. Tiles go to that hero's timeline when space allows, then to shared storage. The expedition saves after each pick. After the party takes its boss rewards, choose one of two starting loadouts for the new recruit. Each gives them their class starter and a second tile.
 
 Each new Brass Frontier expedition has one of three optional rewards at an Act I mystery node, including on Easy. **Salvage Bench** copies a Common you own. **Traveling Smith** upgrades an eligible tile for free. **Class Cache** offers an Uncommon from your hero's deck after you choose a category.
 
-On a new Brass Frontier Easy route, check the map to see whether the Tollkeeper is fighting alone or with a Repair Drone. Push or pull them apart to break repair range, hit the drone during its windup, or destroy it first.
+New Brass Frontier expeditions reveal their first boss during the hero draft. The Bellmaker alternates a close shockwave and a shot at the position it marked during its windup. Check the map scout for counters. On Easy, the Tollkeeper may fight alone or with a Repair Drone. Separate them, hit the drone during its windup, or destroy it first.
 
 Enemies fill a charge gauge above their heads before an attack. Tiles show damage and fire on their right edge. Each hero's timeline shows a portrait, live health, and targeting buttons. The left and right arrows select nearest and farthest. The solid and hollow hearts select highest and lowest HP. The **All** buttons apply the same rule to compatible tiles on the lane.
 
@@ -23,6 +23,8 @@ Open **Battle review** after a fight to inspect activations, misses, relic bonus
 Defeat the Tollkeeper on Easy to bank Aether Marks and unlock **Medium**. Open the **Aether Chart** from the title or after a run to inspect prerequisites and spend Marks on permanent upgrades between expeditions.
 
 Warden, Hexwright, Apothecary, Starshot, and Duelist are available from the start. In **Aether Chart → Class roster**, spend Marks between expeditions to unlock the other seven classes for future hero and recruit drafts. After your first Brass Frontier clear, **Choose from roster** on the opening draft lets you pick any class you have unlocked. Starter relic and tile drafts follow either choice.
+
+Clearing an expedition unlocks two **Class mastery** options for each hero in your party. In a later run, choose one while equipping that class. It adds a bonus alongside the original passive, and the gold star next to the hero's name shows the active mastery.
 
 Unlock **Tile Enchantments** on the Aether Chart after **Gravity Hook**. New Brass Frontier expeditions then offer one enchantment after the opening combat reward. **Guarded** adds 5 Guard when its tile fires, **Longshot** gives a ranged attack 100 more reach, and **Splash** lets a single-target hit deal 35% of its base damage to one nearby enemy. Select a tile with **Tile storage** open to attach or move your enchantment between fights. The badge marks the tile carrying it. Compatible forge upgrades keep the enchantment. After a discard or an incompatible upgrade, you can attach it to another tile.
 

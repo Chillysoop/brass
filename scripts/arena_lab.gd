@@ -975,6 +975,12 @@ func _build_lane(lane_index: int) -> void:
 	if not class_id.is_empty():
 		name_row.add_child(GameIcons.hero_badge(class_id))
 	name_row.add_child(hero_name)
+	var mastery: Dictionary = hero.get("mastery", {})
+	if not mastery.is_empty():
+		var badge := _label("✦", 13, GOLD)
+		badge.mouse_filter = Control.MOUSE_FILTER_STOP
+		badge.tooltip_text = "%s · %s" % [mastery.label, mastery.description]
+		name_row.add_child(badge)
 	var health := ProgressBar.new()
 	health.show_percentage = false
 	health.max_value = hero.max_hp
