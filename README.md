@@ -8,6 +8,8 @@ From the title screen, choose **New Expedition**, select **Brass Frontier**, and
 
 Each class has 18 Commons and eight Uncommons in its combat reward deck. Use **View class deck** on a hero or recruit card to inspect each tile and the class's signature Uncommon. After combat, choose or skip a tile for each hero in party order. Tiles go to that hero's timeline when space allows, then to shared storage. The expedition saves after each pick. Recruits enter with one starter tile after the current party takes its boss rewards.
 
+Each new Brass Frontier expedition has one of three optional rewards at an Act I mystery node, including on Easy. **Salvage Bench** copies a Common you own. **Traveling Smith** upgrades an eligible tile for free. **Class Cache** offers an Uncommon from your hero's deck after you choose a category.
+
 Enemies fill a charge gauge above their heads before an attack. Tiles show damage and fire on their right edge. Each hero's timeline shows a portrait, live health, and targeting buttons. The left and right arrows select nearest and farthest. The solid and hollow hearts select highest and lowest HP. The **All** buttons apply the same rule to compatible tiles on the lane.
 
 Attacks have a ready pose and a release effect that follows their actual timing. Bash lunges, Slam drives down into a ripple, Shot recoils, Pull draws a tether, and Blink leaves a trail between its start and landing point. Tile upgrades vary the effect. Enemy windups and impacts distinguish moves such as charges, volleys, shields, and heals.

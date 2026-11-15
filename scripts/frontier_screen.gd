@@ -544,8 +544,13 @@ func _reward() -> void:
 	var final_boss: bool = boss and _run.is_final_boss()
 	var title := "Choose a trophy" if final_boss else ("Legendary reward" if boss else "Choose a reward")
 	var milestone := ""
+	var mystery: String = _run.mystery_kind()
 	if boss:
 		milestone = str(_run.data.get("node_notice", "")) if final_boss else "Leg %d cleared" % _leg_number()
+	elif mystery == "salvage_bench":
+		title = "Copy a Common tile"
+	elif mystery == "class_cache":
+		title = "Choose a class Uncommon"
 	var lane: int = _run.reward_lane()
 	var party := _party()
 	var owner := _reward_owner(lane, party)
@@ -554,13 +559,22 @@ func _reward() -> void:
 		_reward_heading(title, milestone, hero_id)
 	else:
 		_page_title(title, milestone)
-	var cards := _cards_row()
+	var offers: Array = _run.data.get("offers", [])
+	var wrapping: VBoxContainer
+	var cards: HBoxContainer
+	if mystery == "salvage_bench" and offers.size() > 4:
+		wrapping = _scrolling_card_rows()
+	else:
+		cards = _cards_row()
 	var notice := _notice()
 	var selected := {"id": ""}
 	var advance := _continue(func(): _claim_reward(selected.id, notice))
 	advance.disabled = true
 	var group := ButtonGroup.new()
-	for id: String in _run.data.get("offers", []):
+	for index in range(offers.size()):
+		if wrapping != null and index % 3 == 0:
+			cards = _cards_row(wrapping)
+		var id: String = offers[index]
 		var tile: Dictionary = ArenaSim.TILES[id]
 		var hint: String = _run.reward_hint(id)
 		if _host.run_can_combine_reward(id):
@@ -791,6 +805,10 @@ func _buy_tile(id: String, notice: Label) -> void:
 
 
 func _event() -> void:
+	var mystery: String = _run.mystery_kind()
+	if not mystery.is_empty():
+		_mystery_event(mystery)
+		return
 	_page_title(_run.data.get("node", {}).get("label", "Roadside encounter"), _run.event_text())
 	var cards := _cards_row()
 	var options: Array = _run.event_options()
@@ -798,6 +816,60 @@ func _event() -> void:
 		var unavailable: bool = not _run.event_option_available(index)
 		_choice(cards, str(options[index]), "", "Choose", func(): _pick_event(index), unavailable)
 	_continue(_leave, "Leave this encounter.")
+
+
+func _mystery_event(kind: String) -> void:
+	match kind:
+		"salvage_bench":
+			_page_title("Salvage Bench", "Make one copy of a Common tile you own.")
+			var available: bool = not _run.mystery_salvage_tiles().is_empty()
+			var body := "Use the copy on your timeline or combine it with two you already own." if available else "You have no Common tiles to copy yet."
+			_single_mystery_card("Copy a tile", body, "Browse tiles", "MysterySalvageOpen", _begin_mystery_salvage, available)
+		"traveling_smith":
+			_page_title("Traveling Smith", "Upgrade one tile for free.")
+			var available := _has_smith_tile()
+			var body := "Choose a tile from your timeline or storage and pick either forge branch." if available else "The smith has no upgrades for your current tiles."
+			_single_mystery_card("One-tier upgrade", body, "Open forge", "MysterySmithOpen", func(): _host.run_mystery_forge(), available)
+		"class_cache":
+			_page_title("Class Cache", "Pick a category to find an Uncommon tile from your class deck.")
+			var cards := _cards_row()
+			var icons := {"damage": "battle", "support": "guard", "movement": "teleport"}
+			for category: Dictionary in _run.mystery_cache_categories():
+				var id: String = category.id
+				var card := _choice(cards, category.label, category.description, "Browse tiles", func():
+					_run.mystery_choose_cache_category(id)
+					_host.run_return()
+				)
+				card.get_child(card.get_child_count() - 1).name = "MysteryCategory_" + id
+				_add_card_icon(card, icons[id])
+	var leave := _continue(_leave)
+	leave.text = "Leave"
+	leave.name = "LeaveMystery"
+
+
+func _single_mystery_card(title: String, body: String, label: String, button_name: String, chosen: Callable, available: bool) -> void:
+	var row := _cards_row()
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	var card := _choice(row, title, body, label, chosen, not available)
+	var panel := card.get_parent() as PanelContainer
+	panel.custom_minimum_size = Vector2(520, 320)
+	panel.size_flags_horizontal = SIZE_SHRINK_CENTER
+	panel.size_flags_vertical = SIZE_SHRINK_CENTER
+	card.get_child(card.get_child_count() - 1).name = button_name
+	_add_card_icon(card, "forge")
+
+
+func _begin_mystery_salvage() -> void:
+	_run.mystery_begin_salvage()
+	_host.run_return()
+
+
+func _has_smith_tile() -> bool:
+	for row: Array in _run.loadout.lanes + _run.loadout.storage:
+		for tile: Dictionary in row:
+			if not _run.mystery_smith_options(tile.id).is_empty():
+				return true
+	return false
 
 
 func _pick_event(index: int) -> void:
@@ -955,6 +1027,19 @@ func _cards_row(parent: Control = null) -> HBoxContainer:
 		parent = _layout
 	parent.add_child(row)
 	return row
+
+
+func _scrolling_card_rows() -> VBoxContainer:
+	var scroll := ScrollContainer.new()
+	scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	scroll.follow_focus = true
+	scroll.size_flags_vertical = SIZE_EXPAND_FILL
+	_layout.add_child(scroll)
+	var rows := VBoxContainer.new()
+	rows.size_flags_horizontal = SIZE_EXPAND_FILL
+	rows.add_theme_constant_override("separation", 15)
+	scroll.add_child(rows)
+	return rows
 
 
 func _continue(chosen: Callable, tooltip := "") -> Button:

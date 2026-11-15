@@ -125,6 +125,14 @@ const EVENT_KINDS := {
 	"Lifeboat Clinic": "infirmary", "Pearl Diver's Bench": "lenswright", "Storm-Tossed Crate": "prism_cache",
 	"Broker's Table": "wager", "Salvage Permit": "permit", "Bounty Board": "bounty",
 }
+const BUILD_MYSTERIES := {
+	"Salvage Bench": "salvage_bench", "Traveling Smith": "traveling_smith", "Class Cache": "class_cache",
+}
+const CACHE_CATEGORIES := {
+	"damage": {"label": "Damage", "description": "Strike or shoot an enemy."},
+	"support": {"label": "Guard and healing", "description": "Grant Guard or restore HP."},
+	"movement": {"label": "Movement", "description": "Move your hero or displace an enemy."},
+}
 const NAVIGATION_EVENTS := ["Broker's Table", "Salvage Permit", "Bounty Board"]
 const LOCATION_LABELS := {"brass": "Brass Frontier", "glass": "Glass Foundry", "crown": "Crown Relay", "moonwreck": "Moonwreck Docks"}
 const BOSS_LABELS := {
@@ -871,7 +879,7 @@ func reward_position() -> int:
 
 
 func reward_skip_gold() -> int:
-	if data.get("phase") != "reward" or data.node.type == "boss" or data.get("reward_gold_paid", false):
+	if data.get("phase") != "reward" or data.node.type == "boss" or not mystery_kind().is_empty() or data.get("reward_gold_paid", false):
 		return 0
 	return 6 + (3 if "quartermasters_coin" in data.relics else 0)
 
@@ -997,8 +1005,132 @@ func rest(action: String) -> bool:
 	return leave_node()
 
 
+func mystery_kind() -> String:
+	var node: Dictionary = data.get("node", {})
+	var row := int(node.get("row", -1))
+	if data.get("location") != "brass" or node.get("type") != "event" or row < 1 or row >= NODES_PER_SEGMENT - 1:
+		return ""
+	return BUILD_MYSTERIES.get(node.get("label", ""), "")
+
+
+func mystery_salvage_tiles() -> Array:
+	var offers: Array[String] = []
+	if data.get("phase") != "event" or mystery_kind() != "salvage_bench":
+		return offers
+	for row: Array in _reward_inventory(0):
+		for tile: Dictionary in row:
+			if ArenaSim.TILES[tile.id].rarity == "common" and tile.id not in offers:
+				offers.append(tile.id)
+	offers.sort_custom(func(a: String, b: String): return ArenaSim.TILES[a].label < ArenaSim.TILES[b].label)
+	return offers
+
+
+func mystery_begin_salvage() -> bool:
+	return _begin_mystery_reward(mystery_salvage_tiles())
+
+
+func mystery_cache_categories() -> Array:
+	var categories: Array[Dictionary] = []
+	if data.get("phase") != "event" or mystery_kind() != "class_cache":
+		return categories
+	for id: String in CACHE_CATEGORIES:
+		if not _mystery_cache_pool(id).is_empty():
+			var info: Dictionary = CACHE_CATEGORIES[id]
+			categories.append({"id": id, "label": info.label, "description": info.description})
+	return categories
+
+
+func mystery_choose_cache_category(id: String) -> bool:
+	if data.get("phase") != "event" or mystery_kind() != "class_cache" or not CACHE_CATEGORIES.has(id):
+		return false
+	var pool := _mystery_cache_pool(id)
+	var salt := 196 + CACHE_CATEGORIES.keys().find(id)
+	return _begin_mystery_reward(_sample(pool, mini(pool.size(), 3), int(data.seed), _node_salt(salt)))
+
+
+func _mystery_cache_pool(category: String) -> Array:
+	return ClassDecks.uncommon(data.hero).filter(func(id: String): return _cache_tile_matches(id, category))
+
+
+func _cache_tile_matches(id: String, category: String) -> bool:
+	var tile: Dictionary = ArenaSim.TILES[id]
+	match category:
+		"damage":
+			return int(tile.damage) > 0
+		"support":
+			return tile.has("guard") or tile.has("ally_guard") or tile.has("bastion_party_guard") or tile.has("heal")
+		"movement":
+			return tile.has("push") or tile.has("pull") or tile.has("retreat") or tile.has("sweep_push_radius") \
+				or tile.get("charge", false) or ArenaSim.is_blink_tile(id)
+	return false
+
+
+func _begin_mystery_reward(offers: Array) -> bool:
+	if offers.is_empty():
+		return false
+	var before := data.duplicate(true)
+	var inventory := _reward_inventory(0)
+	var hints := {}
+	for id: String in offers:
+		if _count_matching_tiles(inventory, func(tile_id: String): return tile_id == id) > 0:
+			hints[id] = _copy_reward_hint(id, inventory)
+	data.phase = "reward"
+	data.reward_lane = 0
+	data.reward_remaining = []
+	data.reward_gold_paid = false
+	_activate_reward_draft({"offers": offers, "hints": hints})
+	return _save_reward(before)
+
+
+func mystery_smith_options(id: String) -> Array:
+	if data.get("phase") != "event" or mystery_kind() != "traveling_smith":
+		return []
+	var family: String = ArenaSim.TILES.get(id, {}).get("family", "")
+	return TilePacking.next_options(id) if forge_family_available(family) else []
+
+
+func choose_mystery_upgrade(source: Dictionary, upgrade: String) -> bool:
+	var source_id: String = source.get("id", "")
+	if upgrade not in mystery_smith_options(source_id):
+		return false
+	var stored := source.has("row")
+	var rows: Array = loadout.storage if stored else loadout.lanes
+	var row := int(source.get("row" if stored else "lane", -1))
+	if row < 0 or row >= rows.size():
+		return false
+	var items: Array = rows[row]
+	var capacity := TilePacking.STORAGE_COLUMNS if stored else ArenaSim.BEATS
+	var start := int(source.get("start", -1))
+	if not TilePacking.can_place(items, upgrade, start, capacity, start):
+		return false
+	for item: Dictionary in items:
+		if item.id != source_id or item.start != start:
+			continue
+		var before := data.duplicate(true)
+		var target: String = item.target
+		var targets: Array = ArenaSim.TILES[upgrade].targets
+		item.id = upgrade
+		if target not in targets and (target not in ArenaSim.CROWN_TARGET_RULES or "nearest" not in targets):
+			item.target = targets[0]
+		var was_suppressed: bool = loadout.suppressed.erase(upgrade)
+		data.phase = "map"
+		data.offers = []
+		data.node_notice = "%s upgraded to %s." % [ArenaSim.TILES[source_id].label, ArenaSim.TILES[upgrade].label]
+		if _save_reward(before):
+			return true
+		item.id = source_id
+		item.target = target
+		if was_suppressed:
+			loadout.suppressed[upgrade] = true
+		return false
+	return false
+
+
 func event_text() -> String:
 	match data.get("node", {}).get("label"):
+		"Salvage Bench": return "Copy a Common tile from your timeline or storage."
+		"Traveling Smith": return "Upgrade one eligible tile to the next rarity for free."
+		"Class Cache": return "Pick a category, then choose an Uncommon from your hero's deck."
 		"Jammed Crane": return "A jammed lift holds a salvage crate above the roadway. The crew offers a cut if you walk away."
 		"Loaded Beacon": return "A beacon is drawing a nearby clockwork patrol. Its keeper can disarm it for a fee."
 		"Relay Auction": return "A relay broker will exchange your first relic for a choice of Rare tiles."
@@ -1027,6 +1159,8 @@ func event_text() -> String:
 
 
 func event_options() -> Array:
+	if not mystery_kind().is_empty():
+		return ["Leave encounter"]
 	match EVENT_KINDS.get(data.get("node", {}).get("label", "")):
 		"salvage":
 			var attempt := "Free the casting" if data.location == "glass" else "Free the crate"
@@ -1049,6 +1183,8 @@ func event_option_available(index: int) -> bool:
 		return false
 	if index == 0:
 		return true
+	if not mystery_kind().is_empty():
+		return false
 	var kind: String = EVENT_KINDS.get(data.node.label, "")
 	match kind:
 		"trade": return not data.relics.is_empty()
@@ -1062,6 +1198,8 @@ func event_option_available(index: int) -> bool:
 func event_choice(index: int) -> bool:
 	if not event_option_available(index):
 		return false
+	if not mystery_kind().is_empty():
+		return leave_node()
 	var kind: String = EVENT_KINDS.get(data.node.label, "")
 	data.phase = "map"
 	match kind:
@@ -1216,6 +1354,8 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 	var layers: Array = [[_node("opening", opening, 0, 1)]]
 	var used_events: Array[String] = []
 	_append_layers(layers, first_leg, labels, rng, used_events)
+	if location == "brass":
+		_add_build_mystery(layers, seed_value)
 	_append_boss(layers, bosses[0])
 	var segments: int = SEGMENT_COUNTS[difficulty]
 	for segment in range(1, segments):
@@ -1278,7 +1418,7 @@ func _add_navigation_events(layers: Array, seed_value: int, seed_salt: int) -> v
 	var sites: Array = []
 	for layer: Array in layers:
 		for node: Dictionary in layer:
-			if node.type == "event":
+			if node.type == "event" and not BUILD_MYSTERIES.has(node.label):
 				sites.append(node)
 	if sites.is_empty():
 		return
@@ -1288,6 +1428,18 @@ func _add_navigation_events(layers: Array, seed_value: int, seed_salt: int) -> v
 	var labels := _sample(NAVIGATION_EVENTS, count, seed_value, seed_salt + 402)
 	for index in range(count):
 		sites[index].label = labels[index]
+
+
+func _add_build_mystery(first_leg: Array, seed_value: int) -> void:
+	var sites: Array[Dictionary] = []
+	for layer: Array in first_leg:
+		for node: Dictionary in layer:
+			if node.type == "event":
+				sites.append(node)
+	var rng := _rng(seed_value, 419)
+	var variants := BUILD_MYSTERIES.keys()
+	var node := sites[rng.randi_range(0, sites.size() - 1)]
+	node.label = variants[rng.randi_range(0, variants.size() - 1)]
 
 
 func _append_boss(layers: Array, id: String) -> void:

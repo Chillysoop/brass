@@ -250,6 +250,7 @@ func _build() -> void:
 	tray.add_child(reset_button)
 	tray.add_child(return_button)
 	camp_button = _button("Forge selected", _open_camp_forge)
+	camp_button.name = "ForgeSelected"
 	tray.add_child(camp_button)
 	setup_hint = _label("", 14, MUTED)
 	setup_hint.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -387,7 +388,7 @@ func _physics_process(_delta: float) -> void:
 func _update_controls() -> void:
 	action.text = {"setup": "Start battle", "running": "Pause", "paused": "Resume", "finished": "Edit loadout"}[state]
 	if campaign and (state == "finished" or not encounter_setup):
-		action.text = "Continue"
+		action.text = "Back to smith" if _traveling_smith_forge() else "Continue"
 	action.visible = true
 	reset_button.visible = not campaign
 	fixture_picker.visible = not campaign and retry_options.is_empty()
@@ -411,6 +412,8 @@ func _update_controls() -> void:
 	match state:
 		"setup":
 			status.text = "PRE-FIGHT SETUP" if not campaign or encounter_setup else "MANAGE TILES"
+			if _traveling_smith_forge():
+				status.text = "TRAVELING SMITH"
 			if not retry_options.is_empty():
 				status.text = "PRACTICE · " + battle_name
 		"finished":
@@ -776,7 +779,8 @@ func _rebuild_loadout() -> void:
 		_drag_source(button, payload)
 		palette.add_child(button)
 	if camp_forge:
-		setup_hint.text = "Select an upgradeable tile, then choose Forge selected."
+		setup_hint.text = "Select a tile to upgrade for free, then choose Forge selected." if _traveling_smith_forge() \
+			else "Select an upgradeable tile, then choose Forge selected."
 	else:
 		setup_hint.text = "Drag tiles to slide neighbors aside. Tiles fire at their right edge."
 	if storage_screen.visible:
@@ -1749,8 +1753,16 @@ func run_rest_forge() -> void:
 	camp_forge = true
 	run_show_arena()
 
+func run_mystery_forge() -> void:
+	if run.data.get("phase") == "event" and run.mystery_kind() == "traveling_smith":
+		run_rest_forge()
+
+func _traveling_smith_forge() -> bool:
+	return camp_forge and run.data.get("phase") == "event" and run.mystery_kind() == "traveling_smith"
+
 func _open_camp_forge() -> void:
-	if not camp_forge or run.data.get("phase") != "rest":
+	var smith := _traveling_smith_forge()
+	if not camp_forge or (run.data.get("phase") != "rest" and not smith):
 		return
 	var id: String = selected.get("id", "")
 	if not selected.has("lane") or TilePacking.next_options(id).is_empty():
@@ -1761,6 +1773,9 @@ func _open_camp_forge() -> void:
 		var unlock: Dictionary = FrontierRun.META_NODES[FrontierRun.FORGE_UNLOCKS[family]]
 		_show_inventory_message("Unlock %s in the Aether Chart." % unlock.label)
 		return
+	if smith and run.mystery_smith_options(id).is_empty():
+		_show_inventory_message("Choose a tile the smith can upgrade.")
+		return
 	pending_forge = {"camp": selected.duplicate(), "storage_open": storage_screen.visible}
 	arena_screen.hide()
 	storage_screen.hide()
@@ -1768,6 +1783,12 @@ func _open_camp_forge() -> void:
 
 func _commit_camp_forge(id: String) -> void:
 	var source: Dictionary = pending_forge.camp
+	if _traveling_smith_forge():
+		if run.choose_mystery_upgrade(source, id):
+			run_return()
+		else:
+			forge_screen.show_error(run.save_error if not run.save_error.is_empty() else "This tile cannot use that upgrade. Make room or choose another tile.")
+		return
 	if run.data.get("phase") != "rest" or not _forge_family_available(source.id) or id not in TilePacking.next_options(source.id):
 		return
 	var stored: bool = source.has("row")
