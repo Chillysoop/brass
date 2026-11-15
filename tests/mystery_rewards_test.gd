@@ -137,7 +137,8 @@ func _claim_salvage(game: Control) -> String:
 	if not await _press(game.frontier_screen, "MysterySalvageOpen"):
 		return ""
 	_check(run.data.offers == ["bash"], "Salvage offers only the owned Common tile, with duplicate IDs collapsed.")
-	if not await _press(game.frontier_screen, "RewardTile_bash") or not await _press(game.frontier_screen, "Continue"):
+	_check(game.frontier_screen.find_child("RerollReward", true, false) == null, "Mystery tile choices cannot be rerolled for gold.")
+	if not await _press(game.frontier_screen, "RewardTile_bash"):
 		return ""
 	if not _check(game.forge_screen.visible and run.load_save(run.save_path), "The copied Bash opens and saves a three-copy forge choice."):
 		return ""
@@ -183,7 +184,7 @@ func _claim_cache(game: Control) -> String:
 	_check(run.load_save(run.save_path) and run.data.offers == offers, "The chosen cache category and offers survive reload.")
 	game.run_resume()
 	var pick: String = offers[0]
-	if not await _press(game.frontier_screen, "RewardTile_" + pick) or not await _press(game.frontier_screen, "Continue"):
+	if not await _press(game.frontier_screen, "RewardTile_" + pick):
 		return ""
 	var ids: Array = run.loadout.lanes[0].map(func(tile: Dictionary): return tile.id)
 	_check(ids == ["bash", "bash", pick], "The Class Cache equips the chosen Uncommon beside the two owned copies.")

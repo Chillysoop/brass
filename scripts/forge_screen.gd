@@ -2,6 +2,7 @@ extends Control
 
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const GameIcons = preload("res://scripts/game_icons.gd")
+const TileKeywords = preload("res://scripts/tile_keywords.gd")
 const INK := Color("#101820")
 const PANEL := Color("#192732")
 const EDGE := Color("#3c505b")
@@ -28,7 +29,7 @@ var _columns: HBoxContainer
 var _links: Control
 var _detail_name: Label
 var _detail_stats: Label
-var _detail_description: Label
+var _detail_description: RichTextLabel
 var _confirm: Button
 var _keep_reward: Button
 var _save_reward: Button
@@ -64,7 +65,7 @@ func open(source_id: String, copies := 3, reward := false, can_keep_reward := fa
 	_keep_reward.visible = reward
 	_keep_reward.disabled = not can_keep_reward
 	_keep_reward.tooltip_text = "No room for the original tile." if not can_keep_reward else "Claim the tile without combining."
-	_save_reward.visible = reward
+	_save_reward.visible = reward or _host.campaign
 	_error.hide()
 	for child in _columns.get_children():
 		_columns.remove_child(child)
@@ -104,13 +105,13 @@ func _build() -> void:
 
 	var header := HBoxContainer.new()
 	layout.add_child(header)
-	_title = _label("Tile forge", 34, GOLD)
-	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(_title)
-	_save_reward = _button("Save & title", func(): _host.run_menu())
+	_save_reward = _button("Save & title", _host.run_save_title)
 	_save_reward.name = "SaveRewardCombine"
 	_save_reward.custom_minimum_size = Vector2(112, 40)
 	header.add_child(_save_reward)
+	_title = _label("Tile forge", 34, GOLD)
+	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(_title)
 	var back := _button("Back", func(): _host.forge_close())
 	back.name = "BackFromForge"
 	back.custom_minimum_size = Vector2(100, 40)
@@ -170,8 +171,7 @@ func _build() -> void:
 	_detail_stats = _label("", 15, TEAL)
 	_detail_stats.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	copy.add_child(_detail_stats)
-	_detail_description = _label("", 16, MUTED)
-	_detail_description.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_detail_description = TileKeywords.description("", 16, MUTED)
 	copy.add_child(_detail_description)
 
 	var actions := VBoxContainer.new()
@@ -224,7 +224,8 @@ func _add_tier(tier: int) -> void:
 		card.add_theme_color_override("font_color", CREAM)
 		card.add_theme_color_override("font_hover_color", CREAM)
 		card.add_theme_color_override("font_pressed_color", CREAM)
-		card.tooltip_text = "%s · %s\n%s" % [GameIcons.rarity_name(tile), GameIcons.tile_stats(tile), tile.description]
+		var detail_copy: String = "%s\n%s" % [GameIcons.tile_stats(tile), tile.description]
+		card.tooltip_text = TileKeywords.with_definitions("%s · %s" % [GameIcons.rarity_name(tile), detail_copy], detail_copy)
 		var focus := _box(Color.TRANSPARENT, CREAM, 2)
 		focus.draw_center = false
 		card.add_theme_stylebox_override("focus", focus)
@@ -273,7 +274,7 @@ func _inspect(id: String) -> void:
 	_detail_name.text = tile.label
 	_detail_stats.text = "  ·  ".join(stats)
 	_detail_stats.add_theme_color_override("font_color", GameIcons.rarity(tile))
-	_detail_description.text = tile.description
+	TileKeywords.set_description(_detail_description, tile.description)
 	_confirm.disabled = not can_choose or not fits
 	var prompt := "Combine into " if _is_combine else "Upgrade to "
 	_confirm.text = prompt + tile.label if can_choose else "Choose a next-tier tile"

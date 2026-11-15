@@ -29,7 +29,7 @@ func _run() -> void:
 			"combat":
 				game.run_show_arena()
 				_check(game.timeline_intro.visible == (battles == 0), "Teach the timeline in the first opening battle only.")
-				_check(not game.victory_badge.visible, "The victory cue stays hidden during setup.")
+				_check(not game.result_banner.visible, "The result stays hidden during setup.")
 				if battles == 0:
 					game._place({"id": "bash", "lane": 0, "start": 0}, 0, 1)
 					_check(game.lanes[0][0].start == 1 and "beat 3" in game.setup_hint.text,
@@ -43,7 +43,7 @@ func _run() -> void:
 					if game.state == "finished":
 						break
 				_check(game.sim.outcome == "victory", "Win %s (%d HP)" % [run.data.node.label, run.data.hp])
-				_check(game.victory_badge.visible and not game.timeline_intro.visible,
+				_check(game.result_banner.visible and game.result_text.text == "VICTORY" and not game.timeline_intro.visible,
 					"A win shows the victory cue and retires the opening lesson.")
 				if battles == 0:
 					var resumed := FrontierRun.new()
@@ -52,7 +52,7 @@ func _run() -> void:
 				battles += 1
 				if game.sim.outcome != "victory":
 					break
-				game._action()
+				game._complete_result_animation()
 			"reward":
 				_pick_elite_relic(run)
 				var id: String = run.data.offers[0]
@@ -208,7 +208,7 @@ func _medium_playthrough(game: Control) -> Dictionary:
 				if run.is_final_boss():
 					_check(game.sim.trace.any(func(event: Dictionary): return event.tile == "marshal_shattered"),
 						"The two timelines should open and shatter the Marshal's armor during the test clear.")
-				game._action()
+				game._complete_result_animation()
 			"reward":
 				_pick_elite_relic(run)
 				while run.data.phase == "reward":
@@ -392,7 +392,7 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String,
 					_check(combo.map(func(event: Dictionary): return event.tile) ==
 						["admiral_unanchored", "admiral_reversed", "admiral_interrupted"] and combo[-1].amount == 1,
 						"Bash, Pull, and Bash from the three timelines should cancel the first Undertow Sweep.")
-				game._action()
+				game._complete_result_animation()
 			"reward":
 				_pick_elite_relic(run)
 				var priorities := ["dawn_bastion", "event_horizon", "bulwark_charge", "shield_ram", "hook_bash", "bash", "shot", "slam"]

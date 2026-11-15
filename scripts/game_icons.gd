@@ -149,6 +149,40 @@ static func decorate(button: Button, key: String, size: int) -> void:
 	button.add_theme_constant_override("h_separation", 7)
 
 
+static func lock_badge(parent: Control, extent: float) -> Control:
+	var badge := Control.new()
+	badge.name = "LockBadge"
+	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.draw.connect(func(): draw_lock(badge, badge.size * 0.5, minf(extent, minf(badge.size.x, badge.size.y))))
+	badge.resized.connect(badge.queue_redraw)
+	parent.add_child(badge)
+	badge.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	return badge
+
+
+static func draw_lock(canvas: Control, center: Vector2, extent: float, framed := true) -> void:
+	if extent <= 0.0:
+		return
+	var scale := extent / 56.0
+	var ink := Color("#14212b")
+	var bronze := Color("#c68f51")
+	var brass := Color("#f1ce8e")
+	if framed:
+		canvas.draw_circle(center + Vector2(0, 2) * scale, 28 * scale, Color("#0b121bdb"), true, -1, true)
+		canvas.draw_circle(center, 26 * scale, ink, true, -1, true)
+		canvas.draw_circle(center, 26 * scale, bronze, false, 1.5 * scale, true)
+	var shackle := center + Vector2(0, -5) * scale
+	canvas.draw_arc(shackle, 9.0 * scale, PI, TAU, 24, brass, 4.5 * scale, true)
+	for side: float in [-9.0, 9.0]:
+		canvas.draw_line(shackle + Vector2(side, 0) * scale, shackle + Vector2(side, 7) * scale, brass, 4.5 * scale, true)
+	var body := Rect2(center + Vector2(-15, -3) * scale, Vector2(30, 21) * scale)
+	canvas.draw_rect(body.grow(scale), ink)
+	canvas.draw_rect(body, bronze)
+	canvas.draw_rect(Rect2(body.position, Vector2(body.size.x, 15 * scale)), brass)
+	canvas.draw_circle(center + Vector2(0, 5) * scale, 3.2 * scale, ink, true, -1, true)
+	canvas.draw_rect(Rect2(center + Vector2(-1.6, 6) * scale, Vector2(3.2, 5.2) * scale), ink)
+
+
 static func portrait(class_id: String) -> String:
 	return HERO_ART.get(class_id, "warden")
 

@@ -125,7 +125,6 @@ func _check_reward_combine(game: Control) -> void:
 	var next_hero_offers: Array = run.data.reward_remaining[0].offers.duplicate()
 	game.run_return()
 	await _click(game.frontier_screen, "RewardTile_" + source)
-	await _click(game.frontier_screen, "Continue")
 	_check(game.forge_screen.visible and game.forge_screen._source_id == source
 		and run.reward_lane() == 0 and run.loadout == before,
 		"A third copy can open the upgrade picker with no room for the original tile.")
@@ -139,7 +138,6 @@ func _check_reward_combine(game: Control) -> void:
 	_check(not game.forge_screen.visible and run.reward_lane() == 0 and source in run.data.offers and run.loadout == before,
 		"Backing out keeps the source reward available and consumes nothing.")
 	await _click(game.frontier_screen, "RewardTile_" + source)
-	await _click(game.frontier_screen, "Continue")
 	await _click(game.forge_screen, "SaveRewardCombine")
 	_check(game.frontier_screen.visible and not game.forge_screen.visible,
 		"Save and title exits the upgrade picker while preserving the reward.")
@@ -251,7 +249,6 @@ func _check_alternate_copies(game: Control) -> void:
 		return
 	game.run_return()
 	await _click(game.frontier_screen, "RewardTile_" + source)
-	await _click(game.frontier_screen, "Continue")
 	if not _check(game.forge_screen.visible and game.forge_screen._keep_reward.disabled,
 		"A full inventory can use a reward with two matching copies that free room for a wider upgrade."):
 		return

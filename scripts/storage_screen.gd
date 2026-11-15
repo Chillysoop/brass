@@ -3,10 +3,10 @@ extends Control
 const GameIcons = preload("res://scripts/game_icons.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
+const TileKeywords = preload("res://scripts/tile_keywords.gd")
 
 const COLUMNS := TilePacking.STORAGE_COLUMNS
 const ROWS := TilePacking.STORAGE_ROWS
-const TILE_HEIGHT := 42.0
 const COMBINE_HEIGHT := 29.0
 const INK := Color("#101820")
 const PANEL := Color("#192732")
@@ -22,7 +22,11 @@ const SELECTED := Color("#50462f")
 const GOLD_DARK := Color("#493823")
 
 var _host: Control
+var _frame: PanelContainer
+var _grid: ScrollContainer
 var _board: VBoxContainer
+var _rows: Array[Control] = []
+var _tile_row_size := Vector2.ZERO
 var _status: Label
 var _capacity: Label
 var _send: Button
@@ -47,12 +51,23 @@ func configure(host: Control) -> void:
 		_build()
 
 
+func set_tile_size(beat_pitch: float, row_height: float) -> void:
+	_tile_row_size = Vector2(COLUMNS * beat_pitch, row_height)
+	_board.custom_minimum_size.x = _tile_row_size.x
+	for row: Control in _rows:
+		row.get_parent().custom_minimum_size.y = row_height
+		row.size = _tile_row_size
+	_fit_grid.call_deferred()
+
+
 func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can_combine := false,
 		enchantment := {}) -> void:
 	var focus := get_viewport().gui_get_focus_owner()
+	var scroll_top := _grid.scroll_vertical
 	_focused_cell = focus.get_meta("storage_cell", Vector2i(-1, -1)) if is_instance_valid(focus) else Vector2i(-1, -1)
 	_selected = selected.duplicate()
 	_end_drag()
+	_rows.clear()
 	for child in _board.get_children():
 		_board.remove_child(child)
 		child.queue_free()
@@ -80,6 +95,8 @@ func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can
 	else:
 		var tile: Dictionary = _host.tile_spec(_selected.id)
 		show_message("%s selected" % tile.get("label", _selected.id))
+	_fit_grid.call_deferred()
+	_grid.set_deferred("scroll_vertical", scroll_top)
 
 
 func show_message(message: String) -> void:
@@ -94,13 +111,13 @@ func _build() -> void:
 	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	add_child(stage)
 	stage.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	var frame := PanelContainer.new()
-	frame.custom_minimum_size.x = 740
-	frame.add_theme_stylebox_override("panel", _box(PANEL, GOLD_DARK, 12))
-	stage.add_child(frame)
+	_frame = PanelContainer.new()
+	_frame.custom_minimum_size.x = 740
+	_frame.add_theme_stylebox_override("panel", _box(PANEL, GOLD_DARK, 12))
+	stage.add_child(_frame)
 	var layout := VBoxContainer.new()
 	layout.add_theme_constant_override("separation", 5)
-	frame.add_child(layout)
+	_frame.add_child(layout)
 
 	var header := HBoxContainer.new()
 	header.add_theme_constant_override("separation", 12)
@@ -114,9 +131,14 @@ func _build() -> void:
 	var close := _button("Close", func(): _host.storage_close())
 	close.name = "CloseStorage"
 	header.add_child(close)
+	_grid = ScrollContainer.new()
+	_grid.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_grid.follow_focus = true
+	layout.add_child(_grid)
 	_board = VBoxContainer.new()
+	_board.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_board.add_theme_constant_override("separation", 4)
-	layout.add_child(_board)
+	_grid.add_child(_board)
 	_enchantment_row = HBoxContainer.new()
 	_enchantment_row.add_theme_constant_override("separation", 8)
 	layout.add_child(_enchantment_row)
@@ -159,6 +181,15 @@ func _build() -> void:
 	_combine.tooltip_text = "Combine three matching copies from your timelines or storage."
 	_combine.hide()
 	footer.add_child(_combine)
+	resized.connect(_fit_grid)
+
+
+func _fit_grid() -> void:
+	var chrome_height := _frame.get_combined_minimum_size().y - _grid.get_combined_minimum_size().y
+	var board_height := _board.get_combined_minimum_size().y
+	var grid_height := minf(board_height, maxf(_tile_row_size.y, floorf(size.y - chrome_height - 4.0)))
+	var scrollbar_width := _grid.get_v_scroll_bar().get_combined_minimum_size().x if grid_height < board_height else 0.0
+	_grid.custom_minimum_size = Vector2(ceilf(_tile_row_size.x + scrollbar_width), grid_height)
 
 
 func _build_row(row_index: int, tiles: Array, offers: Array) -> int:
@@ -173,10 +204,16 @@ func _build_row(row_index: int, tiles: Array, offers: Array) -> int:
 			offer_strip.custom_minimum_size.y = COMBINE_HEIGHT
 			_build_offer(offer_strip, row_index, offer)
 
+	# Containers round their child widths. Keep the tile pitch exact inside the reserved row.
+	var row_space := Control.new()
+	row_space.custom_minimum_size.y = _tile_row_size.y
+	row_space.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	band.add_child(row_space)
 	var row := Control.new()
-	row.custom_minimum_size.y = TILE_HEIGHT
 	row.mouse_filter = Control.MOUSE_FILTER_PASS
-	band.add_child(row)
+	row_space.add_child(row)
+	row.size = _tile_row_size
+	_rows.append(row)
 	_drop_target(row, row, row_index, tiles)
 	var occupied := PackedByteArray()
 	occupied.resize(COLUMNS)
@@ -222,11 +259,13 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 	var ownership := "Shared storage"
 	if not origin.is_empty():
 		ownership += " · %s signature" % GameIcons.hero_label(origin)
-	card.tooltip_text = "%s · %s · %s\n%s\n%s" % [name, GameIcons.rarity_name(tile), GameIcons.tile_stats(tile),
-		ownership, tile.get("description", "")]
+	var copy: String = tile.get("description", "")
+	card.tooltip_text = "%s · %s · %s\n%s\n%s" % [name, GameIcons.rarity_name(tile), GameIcons.tile_stats(tile), ownership, copy]
 	var enchantment := TileEnchantments.info(item.get("enchantment", ""))
 	if not enchantment.is_empty():
 		card.tooltip_text += "\n%s · %s" % [enchantment.label, enchantment.description]
+		copy += "\n" + enchantment.description
+	card.tooltip_text = TileKeywords.with_definitions(card.tooltip_text, GameIcons.tile_stats(tile) + "\n" + copy)
 	var rarity := GameIcons.rarity(tile)
 	for mode: String in ["normal", "hover", "pressed"]:
 		var fill := STORED.lightened(0.16) if mode == "hover" else STORED
@@ -242,7 +281,7 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 		if damage > 0:
 			box.content_margin_right = 25
 		card.add_theme_stylebox_override(mode, box)
-	_span(row, card, int(item.start), width)
+	_span(row, card, int(item.start), width, true)
 	var rarity_badge := GameIcons.rarity_badge(tile, true)
 	card.add_child(rarity_badge)
 	rarity_badge.position = Vector2(6, 3)
@@ -307,13 +346,13 @@ func _build_offer(strip: Control, row_index: int, offer: Dictionary) -> void:
 	_span(strip, wrapper, start, width)
 
 
-func _span(parent: Control, control: Control, start: int, width: int) -> void:
+func _span(parent: Control, control: Control, start: int, width: int, tile := false) -> void:
 	parent.add_child(control)
 	control.anchor_left = float(start) / COLUMNS
 	control.anchor_right = float(start + width) / COLUMNS
 	control.anchor_bottom = 1.0
 	control.offset_left = 2.0
-	control.offset_right = -2.0
+	control.offset_right = 0.0 if tile else -2.0
 	control.offset_top = 1.0
 	control.offset_bottom = -1.0
 
@@ -375,7 +414,7 @@ func _show_preview(row: Control, tiles: Array, start: int, incoming: Dictionary,
 	_preview_row = row
 	if plan.is_empty():
 		_preview = _preview_card("No room", Color(RUST, 0.25), RUST)
-		_span(row, _preview, start, incoming.width)
+		_span(row, _preview, start, incoming.width, true)
 		return
 
 	var backdrop := ColorRect.new()
@@ -395,10 +434,10 @@ func _show_preview(row: Control, tiles: Array, start: int, incoming: Dictionary,
 		for column in range(position, position + int(tile.width)):
 			occupied[column] = 1
 		var accent := GOLD if position != item.start else TEAL
-		_span(backdrop, _preview_card(tile.label, STORED, accent), position, tile.width)
+		_span(backdrop, _preview_card(tile.label, STORED, accent), position, tile.width, true)
 	for column in range(start, start + int(incoming.width)):
 		occupied[column] = 1
-	_span(backdrop, _preview_card(incoming.label, SELECTED, GOLD), start, incoming.width)
+	_span(backdrop, _preview_card(incoming.label, SELECTED, GOLD), start, incoming.width, true)
 	for column in range(COLUMNS):
 		if occupied[column] == 0:
 			_span(backdrop, _preview_card("", EMPTY, EDGE), column, 1)

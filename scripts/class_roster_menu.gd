@@ -29,6 +29,7 @@ var _heading: Label
 var _counter: Label
 var _currency: Label
 var _portrait: TextureRect
+var _portrait_lock: Control
 var _title: Label
 var _status: Label
 var _copy: Label
@@ -169,6 +170,7 @@ func _build_details(body: HBoxContainer) -> void:
 	stack.add_child(frame)
 	_portrait = _portrait_view(Vector2(150, 150))
 	frame.add_child(_portrait)
+	_portrait_lock = GameIcons.lock_badge(_portrait, 90.0)
 	_title = _label("", 29, CREAM, true)
 	_title.name = "SelectedClassName"
 	stack.add_child(_title)
@@ -214,6 +216,8 @@ func _add_card(entry: Dictionary) -> void:
 	face.modulate = Color.WHITE if entry.owned else Color("#a1a2aa")
 	face.size_flags_vertical = SIZE_EXPAND_FILL
 	layout.add_child(face)
+	if not entry.owned:
+		GameIcons.lock_badge(face, 43.0)
 	var title := _label(entry.label, 18, CREAM, true)
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	layout.add_child(title)
@@ -235,6 +239,7 @@ func _select(id: String) -> void:
 	var entry: Dictionary = _entries[id]
 	_portrait.texture = _portrait_for(id)
 	_portrait.modulate = Color.WHITE if entry.owned else Color("#b9b7c2")
+	_portrait_lock.visible = not entry.owned
 	_title.text = entry.label
 	_status.text = _state(entry)
 	_status.add_theme_color_override("font_color", TEAL if entry.owned else BRASS)

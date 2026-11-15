@@ -587,21 +587,27 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 		var tiles: Array = hero_lanes[lane] if lane < hero_lanes.size() else []
 		_lanes.append(_valid_tiles(tiles, unit.get("mastery", {})))
 		var ranged_damage := 0
-		var has_precision := false
+		var ranged_reach := INF
+		var has_precision: bool = unit.get("class") == "starshot"
 		var has_close_attack := false
 		for tile: Dictionary in _lanes[lane]:
 			var spec: Dictionary = TILES[tile.id]
-			if is_ranged_tile(tile.id):
+			var ranged := is_ranged_tile(tile.id)
+			if ranged:
 				ranged_damage += int(spec.damage)
+				if spec.damage > 0:
+					ranged_reach = minf(ranged_reach, tile.reach)
 			has_precision = has_precision or spec.has("distance_bonus") or spec.has("ranged_followup_bonus")
 			has_close_attack = has_close_attack or (spec.damage > 0
-				and (spec.range < PRECISION_SPACING or spec.get("blink_strike", false)))
+				and (not ranged or tile.reach < PRECISION_SPACING or spec.get("blink_strike", false)))
 			if spec.has("lance_travel_bonus"):
 				unit["lance_travel"] = 0.0
 		unit["ranged_damage"] = ranged_damage
-		if has_precision and not has_close_attack:
-			unit.preferred_range = maxf(unit.preferred_range, PRECISION_SPACING)
-			unit["precision_spacing"] = true
+		if not has_close_attack and is_finite(ranged_reach):
+			# Keep space without drifting beyond the shortest equipped shot.
+			var spacing := PRECISION_SPACING if has_precision else minf(ranged_reach * 0.65, PRECISION_SPACING)
+			unit.preferred_range = maxf(unit.preferred_range, minf(spacing, ranged_reach - 24.0))
+			unit["ranged_standoff"] = true
 
 
 func _start_campaign(options: Dictionary) -> void:
@@ -1028,6 +1034,7 @@ func _unit(id: String, unit_name: String, side: String, lane: int, position: Vec
 		"id": id, "name": unit_name, "side": side, "lane": lane, "pos": position, "prev_pos": position,
 		"hp": health, "max_hp": health, "guard": 0, "radius": radius, "velocity": Vector2.ZERO,
 		"impulse": Vector2.ZERO, "speed": speed, "preferred_range": preferred_range, "last_bash_loop": -1,
+		"facing": 1.0 if side == "hero" else -1.0,
 		"intent": "", "intent_tick": 0, "next_attack": 112 if id == "scout" else 146
 	}
 
@@ -1082,6 +1089,13 @@ func _move_units() -> void:
 			next_positions.append(position)
 			continue
 		var focus := _select(unit, _movement_target_rule(unit))
+		var attack_target := _find_unit(unit.intent) if unit.intent != "" else {}
+		var facing_target: Dictionary = attack_target if attack_target.get("side") != unit.side \
+			and attack_target.get("hp", 0) > 0 else focus
+		if not facing_target.is_empty():
+			var facing_offset: float = facing_target.pos.x - position.x
+			if absf(facing_offset) > 8.0:
+				unit.facing = signf(facing_offset)
 		var drive := Vector2.ZERO
 		var repair_partner := _find_unit(unit.repair_partner) if unit.has("repair_partner") else {}
 		if unit.intent == "" and repair_partner.get("hp", 0) > 0:
@@ -1098,7 +1112,7 @@ func _move_units() -> void:
 			if tick < unit.get("tar_slow_until", 0):
 				speed *= 0.65
 			var margin: float = distance - unit.preferred_range
-			var retreat_speed := minf(55.0, speed) if unit.get("precision_spacing", false) else 0.0
+			var retreat_speed := minf(55.0, speed) if unit.get("ranged_standoff", false) else 0.0
 			drive = offset.normalized() * clampf(margin * 4.0, -retreat_speed, speed)
 		var impulse: Vector2 = unit.impulse
 		if unit.has("lance_travel") and impulse.is_zero_approx() and not drive.is_zero_approx():

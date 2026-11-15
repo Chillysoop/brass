@@ -5,6 +5,7 @@ const ArenaSim = preload("res://scripts/arena_sim.gd")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const GameIcons = preload("res://scripts/game_icons.gd")
+const TileKeywords = preload("res://scripts/tile_keywords.gd")
 
 var failures: Array[String] = []
 
@@ -103,6 +104,8 @@ func _run() -> void:
 	_check(lab.state == "setup" and lab.lanes == original, "Reset should return to setup and retain the edited layout.")
 	lab._load_fixture("solo")
 	_check(lab.lanes.size() == 1, "Solo setup should switch to one lane.")
+	await _check_storage_tile_geometry(lab)
+	await _check_keyword_hints()
 	await _check_storage_popup(lab)
 	_check_forge(lab)
 	_check_blink_forge(lab)
@@ -339,6 +342,59 @@ func _check_pause_visuals(lab: Control) -> void:
 	lab.arena._process(0.8)
 	_check(lab.arena._attack_casts.is_empty() and lab.arena._effects.is_empty(),
 		"After resuming, the shot animation and hit feedback should finish normally.")
+
+
+func _check_storage_tile_geometry(lab: Control) -> void:
+	lab._load_fixture("duo")
+	lab.lanes = [
+		[lab._entry("event_horizon", 0, "nearest"), lab._entry("star_piercer", 6, "nearest")],
+		[lab._entry("slam", 0, "nearest"), lab._entry("volley", 4, "nearest"),
+		lab._entry("guard", 7, "self"), lab._entry("jab", 9, "nearest")],
+	]
+	lab.storage_rows = [
+		[lab._entry("event_horizon", 0, "nearest"), lab._entry("guard", 6, "self")],
+		[lab._entry("star_piercer", 0, "nearest"), lab._entry("volley", 5, "nearest")],
+		[lab._entry("slam", 0, "nearest"), lab._entry("jab", 4, "nearest")],
+	]
+	lab._rebuild_loadout()
+	lab._open_storage()
+	var original_edge := lab.offset_right
+	var previous_width := 0.0
+	for right_edge: float in [original_edge, original_edge + 121.0]:
+		lab.offset_right = right_edge
+		await process_frame
+		await process_frame
+		var sequence_sizes := {}
+		for cards: Dictionary in lab.tile_cards:
+			for card: Control in cards.values():
+				sequence_sizes[card.get_meta("tile").id] = card.size
+		var width: float = sequence_sizes.event_horizon.x
+		_check(width > previous_width, "The second layout should widen the timeline tiles.")
+		previous_width = width
+		for row: int in range(lab.storage_rows.size()):
+			for item: Dictionary in lab.storage_rows[row]:
+				var name := "StoredTile_%s_%d_%d" % [item.id, row, item.start]
+				var tile := lab.storage_screen.find_child(name, true, false) as Control
+				_check(tile != null and tile.size.is_equal_approx(sequence_sizes[item.id]),
+					"A stored %s should have the same dimensions as its timeline tile after resizing." % item.id)
+	lab.offset_right = original_edge
+	lab.storage_close()
+
+
+func _check_keyword_hints() -> void:
+	var copy := "Gain 10 Guard. Mark the first target."
+	var description := TileKeywords.description(copy, 16, Color.WHITE)
+	root.add_child(description)
+	description.size = Vector2(420, 40)
+	await process_frame
+	var hovered := PackedStringArray()
+	for x: int in range(300):
+		var hint := description.get_tooltip(Vector2(x, 8))
+		if not hint.is_empty() and hint not in hovered:
+			hovered.append(hint)
+	_check(description.get_parsed_text() == copy and hovered.size() == 2,
+		"Guard and Mark should expose separate hover definitions without changing the displayed copy.")
+	description.queue_free()
 
 
 func _check_storage_popup(lab: Control) -> void:

@@ -285,8 +285,6 @@ func _check_medium_rewards(game: Control) -> void:
 	_check_reward_tile_identity(game.frontier_screen, first_offers, lead)
 	var first_tile: String = first_offers[0]
 	await _click(game.frontier_screen, "RewardTile_" + first_tile)
-	_check_reward_tile_identity(game.frontier_screen, [first_tile], lead)
-	await _click(game.frontier_screen, "Continue")
 	_check(run.data.phase == "reward" and run.reward_position() == 1 and run.reward_lane() == 1
 		and run.loadout.lanes[0].size() == 1 and run.loadout.lanes[0][0].id == first_tile
 		and run.loadout.lanes[1].is_empty(), "Claiming the lead's tile equips it in their own lane and advances to the recruit.")
@@ -297,7 +295,7 @@ func _check_medium_rewards(game: Control) -> void:
 	_check(second_offers.size() == 3 and first_offers != second_offers and lead_signature not in second_offers,
 		"The recruit sees three separate choices without copying the lead's signature.")
 
-	# Reload from disk between the two button presses.
+	# Reload from disk between the two heroes' reward claims.
 	_check(run.load_save(save_path) and run.reward_count() == 2 and run.reward_position() == 1
 		and run.data.offers == second_offers and run.loadout.lanes[0].size() == 1,
 		"Resuming midway must retain the recruit's exact cards and the lead's recorded claim.")
@@ -430,7 +428,6 @@ func _descendant_buttons(node: Node) -> Array[String]:
 
 func _claim_from_screen(page: Control, id: String) -> void:
 	await _click(page, "RewardTile_" + id)
-	await _click(page, "Continue")
 
 
 func _click(page: Control, node_name: String) -> void:

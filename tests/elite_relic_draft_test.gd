@@ -197,8 +197,7 @@ func _check_reward_screen() -> void:
 		"Resuming a won elite must restore the exact pending draft.")
 	game.run_return()
 	await process_frame
-	var advance := _button(game.frontier_screen, "Continue")
-	_check(advance != null and advance.disabled, "Elite Continue must wait for a relic selection.")
+	_check(_button(game.frontier_screen, "RerollReward") == null, "The elite relic offer cannot be rerolled for gold.")
 	var afterimage: Dictionary = {}
 	for offer: Dictionary in draft:
 		_check(_button(game.frontier_screen, "EliteRelic_" + str(offer.id)) != null,
@@ -213,11 +212,8 @@ func _check_reward_screen() -> void:
 	_check(ArenaSim.TILES.get(companion, {}).get("family") == "blink",
 		"A Bash-only build needs a Blink-family tile to use Afterimage.")
 	await _click(game.frontier_screen, "EliteRelic_afterimage")
-	_check(advance != null and not advance.disabled and "afterimage" not in run.data.relics,
-		"Selecting a relic should enable Continue before the relic is committed.")
-	await _click(game.frontier_screen, "Continue")
 	_check(run.elite_relic_offers().is_empty() and run.data.relics.count("afterimage") == 1,
-		"Continuing should grant exactly one relic and open the tile panel.")
+		"One relic selection should grant exactly one relic and open the tile panel.")
 	_check(run.data.offers.size() == 3 and companion in run.data.offers and preview.tile in run.data.offers,
 		"The companion and advertised tile must coexist among three tile choices.")
 	_check(restored.load_save(save_path) and restored.elite_relic_offers().is_empty()
@@ -225,7 +221,6 @@ func _check_reward_screen() -> void:
 		"Resuming between the relic and tile steps must preserve the chosen relic and offers.")
 	_check(not run.choose_elite_relic("siege_fuse"), "The player cannot claim another relic once the draft is complete.")
 	await _click(game.frontier_screen, "RewardTile_" + companion)
-	await _click(game.frontier_screen, "Continue")
 	_check(run.data.phase == "map" and run.loadout.lanes[0].any(func(item: Dictionary): return item.id == companion),
 		"Claiming the companion must put it in inventory and return to the route.")
 	var next := _reach_elite(run, elites[1])

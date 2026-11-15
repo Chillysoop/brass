@@ -33,7 +33,7 @@ func _run() -> void:
 	for failure: String in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Bellmaker preview, first-clear mastery, and recruit loadout progression passed.")
+		print("Bellmaker setup, first-clear mastery, and recruit loadout progression passed.")
 	quit(0 if failures.is_empty() else 1)
 
 
@@ -45,9 +45,8 @@ func _check_bellmaker_unlock(game: Control) -> String:
 	game.run_return()
 	await process_frame
 	var opening := game.frontier_screen.find_child("OpeningBossScout", true, false) as Label
-	_check(first_preview.get("title") == "The Bellmaker" and opening != null and opening.visible
-		and opening.text.contains("The Bellmaker") and opening.tooltip_text == first_preview.description,
-		"The opening draft reveals the seeded Bellmaker and describes its attacks.")
+	_check(first_preview.get("title") == "The Bellmaker" and opening == null,
+		"The seeded Bellmaker assignment is kept without adding an opening draft preview.")
 	var hero_id: String = run.data.offers.front()
 	if not _check(run.choose_hero(hero_id) and run.mastery_offers().is_empty()
 		and not run.choose_mastery("anchor_ward") and _finish_opening(run),
@@ -56,18 +55,15 @@ func _check_bellmaker_unlock(game: Control) -> String:
 	_stage_boss_on_map(run)
 	game.run_return()
 	await process_frame
-	var route := game.frontier_screen.find_child("TollkeeperScoutTitle", true, false) as Label
-	_check(route != null and route.visible and route.text == first_preview.title,
-		"The map shows the same boss as the opening scout.")
+	var route := game.frontier_screen.find_child("BellmakerBossNode", true, false) as Button
+	_check(route != null and route.visible and route.text.contains("Bellmaker"),
+		"The map labels the Bellmaker's boss node.")
 	if not _press(game.frontier_screen, "BellmakerBossNode"):
 		return ""
 	await process_frame
-	_check(run.encounter().get("boss_id") == "brass_bellmaker", "The boss node must launch the announced encounter.")
-	if not _press(game.frontier_screen, "Continue"):
-		return ""
-	await process_frame
-	_check(game.sim.units.any(func(unit: Dictionary): return unit.get("attack_id") == "brass_bellmaker"),
-		"The actual expedition arena spawns the Bellmaker.")
+	_check(run.encounter().get("boss_id") == "brass_bellmaker" and game.campaign and game.encounter_setup
+		and game.sim.units.any(func(unit: Dictionary): return unit.get("attack_id") == "brass_bellmaker"),
+		"Choosing the boss node opens the arena with the Bellmaker ready to fight.")
 	if not _check(run.finish_combat(false, 0) and run.profile.mastered_classes.is_empty() and run.finish_run(),
 		"Defeat cannot earn a class mastery."):
 		return ""

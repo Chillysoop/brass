@@ -29,7 +29,7 @@ func _run() -> void:
 	for failure: String in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Both Tollkeeper fights matched their early map preview, saved encounter, and Easy clear rewards.")
+		print("Both Tollkeeper fights matched the saved encounter and Easy clear rewards.")
 	quit(0 if failures.is_empty() else 1)
 
 
@@ -52,17 +52,15 @@ func _check_route(game: Control, seed_value: int, variant: String) -> void:
 		and run.finish_combat(true, 90) and run.reward("skip"), "Reach the first map for seed %d." % seed_value):
 		return
 	var preview := run.tollkeeper_preview()
-	if not _check(preview.get("variant") == variant, "Show the seeded boss before any route choice."):
+	if not _check(preview.get("variant") == variant, "Keep the seeded boss before any route choice."):
 		return
 	game.run_resume()
 	await process_frame
 	var title := game.frontier_screen.find_child("TollkeeperScoutTitle", true, false) as Label
 	var hint := game.frontier_screen.find_child("TollkeeperScoutHint", true, false) as Label
 	var node := game.frontier_screen.find_child("TollkeeperBossNode", true, false) as Button
-	_check(title != null and title.is_visible_in_tree() and title.text == preview.title
-		and hint != null and hint.text == preview.description
-		and node != null and preview.title in node.tooltip_text,
-		"The visible map preview and boss node must show the same encounter and hint.")
+	_check(title == null and hint == null and node != null and node.text.contains("Tollkeeper"),
+		"The map retains the Tollkeeper route node and leaves attack details to the arena.")
 	if not _check(_reach_boss(run), "Travel to the Tollkeeper using the seeded route."):
 		return
 	var actual := run.encounter()
@@ -70,9 +68,10 @@ func _check_route(game: Control, seed_value: int, variant: String) -> void:
 		"Both variants keep the final Tollkeeper identity and pass the saved version into combat.")
 	_check(run.load_save(path) and run.encounter() == actual and run.tollkeeper_preview() == preview,
 		"Save and resume must keep the predicted fight.")
-	game.run_show_arena()
+	game.run_resume()
 	var drones: Array = game.sim.units.filter(func(unit: Dictionary): return unit.get("sprite") == "tollkeeper_drone")
-	_check(drones.size() == (1 if variant == "repair_drone" else 0), "Opening the encounter must load the actual previewed lineup.")
+	_check(game.campaign and game.encounter_setup and drones.size() == (1 if variant == "repair_drone" else 0),
+		"Resuming opens the arena with the saved Tollkeeper lineup.")
 	if variant == "repair_drone":
 		_check(game.arena._textures.get("tollkeeper_drone") is Texture2D, "The drone's in-game sprite is available.")
 	var marks: int = run.profile.marks

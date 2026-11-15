@@ -176,7 +176,6 @@ var _reinforcement_warning: Dictionary = {}
 var location := "brass"
 var _textures: Dictionary = {}
 var _positions: Dictionary = {}
-var _facing: Dictionary = {}
 var _effects: Array[Dictionary] = []
 var _attack_casts: Array[Dictionary] = []
 var _actor_casts: Dictionary = {}
@@ -222,7 +221,6 @@ func reset_view(units_data: Array, lanes: Array = [], reinforcement: Dictionary 
 				"profile": _hero_profile(entry.id)})
 		_hero_clips.append(clips)
 	_positions.clear()
-	_facing.clear()
 	_animation_time = 0.0
 	for unit in units:
 		_positions[unit.id] = unit.pos
@@ -304,9 +302,6 @@ func _process(delta: float) -> void:
 			changed = true
 		else:
 			_positions[unit.id] = position
-		var velocity: Vector2 = unit.get("velocity", Vector2.ZERO)
-		if absf(velocity.x) > 18.0:
-			_facing[unit.id] = signf(velocity.x)
 	for index in range(_effects.size() - 1, -1, -1):
 		var effect := _effects[index]
 		effect.age += delta
@@ -389,6 +384,15 @@ func _draw_arena(board: Rect2) -> void:
 			draw_line(start, start + Vector2(7.0 + index * 1.7, 1.0), Color("#ae8354"), 1.0, true)
 	draw_rect(board, FRAME, false, 2.0)
 
+func _sprite_facing(unit: Dictionary, cast: Dictionary) -> float:
+	if not cast.is_empty():
+		var direction: Vector2 = cast.to - cast.get("strike_from", cast.from)
+		if absf(direction.x) > 8.0:
+			for target: Dictionary in units:
+				if target.id == cast.target and target.side != unit.side:
+					return signf(direction.x)
+	return unit.get("facing", 1.0 if unit.side == "hero" else -1.0)
+
 
 func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	var friendly: bool = unit.side == "hero"
@@ -418,7 +422,6 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	elif art_key == "tollkeeper_drone":
 		model_height = 108.0
 	var art_height := maxf(39.0, unit_scale * model_height)
-	var facing := float(_facing.get(unit.id, 1.0 if friendly else -1.0))
 	var velocity: Vector2 = unit.get("velocity", Vector2.ZERO)
 	var motion := minf(velocity.length() / 100.0, 1.0)
 	var stride := _animation_time * 16.0 + float(unit.lane)
@@ -427,19 +430,12 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	var cast: Dictionary = _actor_casts.get(unit.id, {})
 	var prepare := _windup_details(unit)
 	var acting := not cast.is_empty() and float(cast.age) < 0.18
+	var facing := _sprite_facing(unit, cast if acting else {})
 	var pose := Vector4.ZERO
 	if acting:
-		var direction: Vector2 = cast.to - cast.from
-		if absf(direction.x) > 8.0:
-			facing = signf(direction.x)
 		var follow_through := pow(1.0 - float(cast.age) / 0.18, 1.7)
 		pose = AttackAnimation.pose(cast.profile, follow_through, facing, true)
 	elif not prepare.is_empty():
-		if not friendly:
-			for target: Dictionary in units:
-				if target.id == unit.intent and absf(target.pos.x - unit.pos.x) > 8.0:
-					facing = signf(target.pos.x - unit.pos.x)
-					break
 		pose = AttackAnimation.pose(prepare.profile, smoothstep(0.04, 1.0, prepare.charge), facing, false)
 	bounce += Vector2(pose.x, pose.y) * art_height
 	lean += pose.z

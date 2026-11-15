@@ -57,12 +57,16 @@ func _check_navigation() -> void:
 	_check_disabled(menu, "Region_glass", "Locked")
 	_check_disabled(menu, "Region_crown", "Locked")
 	_check_disabled(menu, "Region_moonwreck", "Locked")
+	_check(menu.find_children("LockBadge", "Control", true, false).size() == 3,
+		"The three locked regions each show an art overlay lock.")
 	await _press_named(menu, "Back")
 	await _press_named(menu, "NewExpedition")
 	await _press_named(menu, "Region_brass")
 	_check(game.run.data.is_empty(), "Selecting a region must open difficulty selection before creating a run.")
 	_check_disabled(menu, "Difficulty_medium", "Locked")
 	_check_disabled(menu, "Difficulty_hard", "Locked")
+	_check(menu.find_children("LockBadge", "Control", true, false).size() == 2,
+		"Only the locked difficulties show art overlay locks.")
 	var seed := menu.find_child("RunSeed", true, false) as LineEdit
 	_check(seed != null, "Difficulty selection exposes the optional run seed.")
 	if seed != null:
@@ -171,8 +175,9 @@ func _check_practice_retry() -> void:
 	_check(run.choose_hero(run.data.offers.front()) and run.choose_relic(run.data.offers.front())
 		and run.choose_starter(run.data.offers.front()), "Draft the party for a practice retry.")
 	game.run_return()
-	await _press_named(game.frontier_screen, "Continue")
-	_check(game.campaign and game.encounter_setup, "Continue on the battle preview should open the arena.")
+	await process_frame
+	_check(game.campaign and game.encounter_setup and game.state == "setup" and game.arena_screen.is_visible_in_tree(),
+		"Resuming a combat checkpoint opens battle setup directly.")
 	var original: Dictionary = run.loadout.duplicate(true)
 	var formation: Array = game.sim.units.duplicate(true)
 	game._action()
@@ -183,6 +188,7 @@ func _check_practice_retry() -> void:
 	_check(game.state == "finished", "The expedition fight must finish before practice retry.")
 	var resolved: Dictionary = run.data.duplicate(true)
 	var profile: Dictionary = run.profile.duplicate(true)
+	game._complete_result_animation()
 	game._open_review()
 	await _press_text(game.battle_review, "Retry in Practice")
 	_check(game.state == "setup" and not game.campaign and not game.fixture_picker.visible,
@@ -200,12 +206,8 @@ func _check_practice_retry() -> void:
 	await _press_text(game.arena_screen, "Back to expedition")
 	_check(game.frontier_screen.visible and run.data == resolved, "Leaving practice restores the actual expedition checkpoint.")
 	if resolved.phase == "reward":
-		var advance := game.frontier_screen.find_child("Continue", true, false) as Button
-		_check(advance != null and advance.disabled, "Reward Continue waits for a tile selection.")
-		await _press_text(game.frontier_screen, "Select")
-		_check(not advance.disabled and run.data.phase == "reward", "Selecting a reward should enable Continue without claiming it.")
-		await _press_named(game.frontier_screen, "Continue")
-		_check(run.data.phase == "map", "Continue should claim the reward and return to the route.")
+		await _press_named(game.frontier_screen, "RewardTile_" + str(run.data.offers.front()))
+		_check(run.data.phase == "map", "One reward selection claims the tile and returns to the route.")
 	run.abandon_run()
 
 
@@ -344,14 +346,10 @@ func _check_enchantment_reward() -> void:
 		return
 	game.run_return()
 	await _press_named(game.frontier_screen, "RewardTile_" + str(run.data.offers[0]))
-	await _press_named(game.frontier_screen, "Continue")
 	_check(run.data.phase == "enchantment", "The enchantment draft follows the opening tile reward.")
 	if run.data.phase != "enchantment":
 		return
-	var advance := game.frontier_screen.find_child("Continue", true, false) as Button
-	_check(advance != null and advance.disabled, "Continue waits for an enchantment selection.")
 	await _press_named(game.frontier_screen, "Enchantment_guarded")
-	await _press_named(game.frontier_screen, "Continue")
 	_check(game.storage_screen.is_visible_in_tree() and run.active_enchantment() == "guarded",
 		"Claiming Guarded opens Tile storage to equip it.")
 	if not game.storage_screen.is_visible_in_tree():

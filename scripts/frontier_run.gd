@@ -267,7 +267,10 @@ func _valid_save_run(record: Dictionary, inventory: Dictionary) -> bool:
 			if not HEROES.has(record.get("pending_recruit")):
 				return false
 		"shop":
-			if not record.get("shop_healed") is bool:
+			var stock: Variant = record.get("shop_stock", record.get("offers"))
+			if not record.get("shop_healed") is bool or not stock is Array:
+				return false
+			if not stock.all(func(id: Variant) -> bool: return id is String and ArenaSim.TILES.has(id)):
 				return false
 		"result":
 			if record.get("result") not in ["victory", "defeat"]:
@@ -625,6 +628,7 @@ func choose_node(id: String) -> bool:
 	data.erase("reward_placement")
 	data.erase("reward_hints")
 	data.erase("shop_class_offers")
+	data.erase("shop_stock")
 	var midpoint := floori(float(data.layers.size() - 1) / 2.0)
 	if not data.midpoint_paid and int(selected.row) >= midpoint:
 		data.midpoint_paid = true
@@ -635,6 +639,7 @@ func choose_node(id: String) -> bool:
 			data.offers = _shop_tiles()
 			if "guild_ledger" in data.relics:
 				_add_class_shop_offers()
+			data.shop_stock = data.offers.duplicate()
 			data.shop_healed = false
 			var available := _available_relics()
 			data.shop_relic = "" if available.is_empty() else _sample(available, 1, int(data.seed), _node_salt(52))[0]
@@ -1150,9 +1155,60 @@ func reward_position() -> int:
 
 
 func reward_skip_gold() -> int:
-	if data.get("phase") != "reward" or data.node.type == "boss" or not mystery_kind().is_empty() or data.get("reward_gold_paid", false):
+	if data.get("phase") != "reward" or is_final_boss() or not mystery_kind().is_empty() or data.get("reward_gold_paid", false):
 		return 0
 	return 6 + (3 if "quartermasters_coin" in data.relics else 0)
+
+
+func has_combat_reward() -> bool:
+	if data.get("phase") != "reward":
+		return false
+	var node: Dictionary = data.node
+	return node.get("encounter_override", node.type) in ["opening", "battle", "elite", "boss"]
+
+
+func reward_reroll_price() -> int:
+	if not has_combat_reward() or not elite_relic_offers().is_empty() or data.has("reward_combine") \
+		or data.offers.size() != 3:
+		return 0
+	var count := _act_rerolls()
+	return 5 << mini(count, 50)
+
+
+func _act_rerolls() -> int:
+	return int(data.get("reward_rerolls", 0)) if int(data.get("reroll_act", 0)) == int(data.segment) else 0
+
+
+func reroll_reward() -> bool:
+	var price := reward_reroll_price()
+	if price == 0 or int(data.gold) < price:
+		return false
+	var lane := maxi(0, reward_lane())
+	var hero: String = data.heroes[lane].id
+	var rows := _reward_inventory(lane)
+	var count := _act_rerolls()
+	var rng := _rng(int(data.seed), _node_salt(421 + lane * 1069 + count * 719))
+	var replacements: Array[String] = []
+	var hints := {}
+	for id: String in data.offers:
+		var tier := TILE_RARITIES.find(ArenaSim.TILES[id].rarity)
+		var pool := _class_reward_pool(hero, tier, rows)
+		var fresh := pool.filter(func(tile: String): return tile not in data.offers and tile not in replacements)
+		if fresh.is_empty():
+			fresh = pool.filter(func(tile: String): return tile != id and tile not in replacements)
+		if fresh.is_empty():
+			return false
+		var replacement: String = fresh[rng.randi_range(0, fresh.size() - 1)]
+		replacements.append(replacement)
+		var hint := _copy_reward_hint(replacement, rows)
+		if not hint.is_empty():
+			hints[replacement] = hint
+	var before := data.duplicate(true)
+	data.gold -= price
+	data.reroll_act = data.segment
+	data.reward_rerolls = count + 1
+	_activate_reward_draft({"offers": replacements, "hints": hints})
+	return _save_run_change(before)
 
 
 func current_reward_placement() -> Dictionary:
@@ -1262,13 +1318,25 @@ func shop_price(id: String) -> int:
 	return 18 + 3 * (int(tile.width) - 2) + rarity_price
 
 
+func shop_stock() -> Array:
+	if data.get("phase") != "shop":
+		return []
+	return data.get("shop_stock", data.offers)
+
+
+func shop_tile_purchased(id: String) -> bool:
+	return id in shop_stock() and not _is_offer("shop", id)
+
+
 func shop_class_offer_owner(id: String) -> String:
-	if not _is_offer("shop", id):
+	if id not in shop_stock():
 		return ""
 	return data.get("shop_class_offers", {}).get(id, "")
 
 
 func shop_class_offer_lane(id: String) -> int:
+	if not _is_offer("shop", id):
+		return -1
 	var owner := shop_class_offer_owner(id)
 	if owner.is_empty():
 		return -1
@@ -1279,6 +1347,8 @@ func shop_buy(id: String, placement := {}) -> bool:
 	if not _is_offer("shop", id) or int(data.gold) < shop_price(id):
 		return false
 	var before := data.duplicate(true)
+	if not data.has("shop_stock"):
+		data.shop_stock = data.offers.duplicate()
 	data.gold -= shop_price(id)
 	data.offers.erase(id)
 	if not placement.is_empty():
@@ -2077,6 +2147,8 @@ func _add_early_build_offers(directions: Array, held: Dictionary, opening: bool,
 
 func _copy_reward_hint(id: String, rows: Array) -> String:
 	var copies := _count_matching_tiles(rows, func(tile_id: String): return tile_id == id)
+	if copies == 0:
+		return ""
 	if copies == 2 and not TilePacking.next_options(id).is_empty():
 		return "Third copy"
 	return "Owned copy"

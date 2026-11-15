@@ -52,12 +52,55 @@ func _run() -> void:
 	view.reset_view(sim.units, lanes)
 	_expect(view._attack_casts.is_empty() and view._actor_casts.is_empty() and view._windups.is_empty(),
 		"Reset must clear the old attack effects and windups.")
+	_check_ranged_standoff(view)
 	view.queue_free()
 	for failure: String in _failures:
 		printerr(failure)
 	if _failures.is_empty():
 		print("All %d tile animation profiles and exact-edge arena playback passed." % ArenaSim.TILES.size())
 	quit(0 if _failures.is_empty() else 1)
+
+
+func _check_ranged_standoff(view: ArenaView) -> void:
+	var starshot := _range_fixture("starshot", [{"id": "rivet_bolt", "start": 0}, {"id": "guard", "start": 2}])
+	var hero: Dictionary = starshot.units[0]
+	var enemy: Dictionary = starshot.units[1]
+	starshot.step()
+	view.present(starshot.units, [], starshot.tick)
+	_expect(hero.velocity.x < 0.0 and view._sprite_facing(hero, {}) > 0.0,
+		"A ranged hero backs away while facing a threat on the right.")
+	for tick in range(2 * ArenaSim.TICKS_PER_BEAT - 1):
+		starshot.step()
+	_expect(starshot.activations.size() == 1 and starshot.activations[0].damage == 16
+		and hero.pos.distance_to(enemy.pos) > 200.0,
+		"Starshot fires an ordinary Rivet Bolt from far enough away for the class passive.")
+	enemy.pos = hero.pos - Vector2(175.0, 0.0)
+	starshot.step()
+	view.present(starshot.units, [], starshot.tick)
+	_expect(hero.velocity.x > 0.0 and view._sprite_facing(hero, {}) < 0.0,
+		"A ranged hero also backs away while facing a threat on the left.")
+
+	var short_ranged := _range_fixture("warden", [{"id": "snap_shot", "start": 0}])
+	for tick in range(ArenaSim.TICKS_PER_BEAT):
+		short_ranged.step()
+	_expect(short_ranged.activations.size() == 1 and short_ranged.activations[0].damage == 6
+		and short_ranged.units[0].pos.distance_to(short_ranged.units[1].pos) > 185.0,
+		"A shorter ranged build from another class does not charge into melee.")
+
+	var mixed := _range_fixture("starshot", [{"id": "bash", "start": 0}, {"id": "shot", "start": 2}])
+	for tick in range(4 * ArenaSim.TICKS_PER_BEAT):
+		mixed.step()
+	_expect(mixed.activations.size() == 2 and mixed.activations[0].damage > 0 and mixed.activations[1].damage > 0,
+		"A mixed lane still closes far enough to use its melee attack and then lands its shot.")
+
+
+func _range_fixture(hero_id: String, lane: Array) -> ArenaSim:
+	var sim := ArenaSim.new()
+	sim.start([lane], "solo", {"encounter": "opening", "hero": hero_id})
+	sim.units[1].pos = sim.units[0].pos + Vector2(175.0, 0.0)
+	sim.units[1].speed = 0.0
+	sim.units[1].next_attack = 99999
+	return sim
 
 
 func _expect(ok: bool, message: String) -> void:

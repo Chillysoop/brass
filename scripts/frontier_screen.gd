@@ -8,6 +8,7 @@ const ClassRosterMenu = preload("res://scripts/class_roster_menu.gd")
 const GameIcons = preload("res://scripts/game_icons.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
 const ClassMasteries = preload("res://scripts/class_masteries.gd")
+const TileKeywords = preload("res://scripts/tile_keywords.gd")
 const INK := Color("#101820")
 const PANEL := Color("#182632")
 const PANEL_DARK := Color("#111f2a")
@@ -106,6 +107,7 @@ var _aether_chart: AetherChartMenu
 var _class_roster: ClassRosterMenu
 var _choosing_starter := false
 var _display_font: SystemFont
+var _battle_overlay := false
 
 
 func configure(host: Control) -> void:
@@ -138,8 +140,9 @@ func configure(host: Control) -> void:
 	_class_roster.back_requested.connect(_close_class_roster)
 
 
-func render(model, page_override: String = "") -> void:
+func render(model, page_override: String = "", battle_overlay := false) -> void:
 	_run = model
+	_battle_overlay = battle_overlay
 	for child in get_children():
 		if child in [_expedition_menu, _aether_chart, _class_roster]:
 			child.hide()
@@ -166,7 +169,6 @@ func render(model, page_override: String = "") -> void:
 		"hero", "relic", "starter", "recruit", "recruit_starter": _draft(phase)
 		"masteries": _masteries_page()
 		"map": _map()
-		"combat": _combat()
 		"reward": _reward()
 		"boss_relic": _boss_relic_draft()
 		"enchantment": _enchantment_draft()
@@ -175,20 +177,15 @@ func render(model, page_override: String = "") -> void:
 		"rest": _rest()
 		"result": _result()
 	if phase != "result":
-		var footer := _footer_actions()
-		var save_title := _button("Save & title", _host.run_save_title)
-		save_title.name = "SaveTitle"
-		footer.add_child(save_title)
-		footer.move_child(save_title, 0)
 		if phase == "map":
-			_reward_placement_banner(footer)
+			_reward_placement_banner(_footer_actions())
 	_layout.modulate.a = 0.70
 	create_tween().tween_property(_layout, "modulate:a", 1.0, 0.16)
 
 
 func _shell(phase: String) -> void:
 	var base := ColorRect.new()
-	base.color = INK
+	base.color = Color(INK, 0.88) if _battle_overlay else INK
 	base.mouse_filter = MOUSE_FILTER_IGNORE
 	add_child(base)
 	base.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
@@ -196,21 +193,31 @@ func _shell(phase: String) -> void:
 	add_child(margin)
 	margin.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
 	for side in ["left", "right"]:
-		margin.add_theme_constant_override("margin_" + side, 37)
+		margin.add_theme_constant_override("margin_" + side, 14 if _battle_overlay else 37)
 	for side in ["top", "bottom"]:
-		margin.add_theme_constant_override("margin_" + side, 25)
+		margin.add_theme_constant_override("margin_" + side, 6 if _battle_overlay else 25)
 	_layout = VBoxContainer.new()
 	_bottom_actions = null
-	_layout.add_theme_constant_override("separation", 13)
+	_layout.add_theme_constant_override("separation", 5 if _battle_overlay else 13)
 	margin.add_child(_layout)
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 10)
 	_layout.add_child(bar)
-	var title := _label("BRASS & AETHER", 19, GOLD)
+	if not _battle_overlay and phase != "result":
+		var save_title := _button("Save & title", _host.run_save_title)
+		save_title.name = "SaveTitle"
+		bar.add_child(save_title)
+	if _battle_overlay:
+		_reward_placement_banner(bar)
+	var title := _label(_run.save_error if _battle_overlay else "BRASS & AETHER",
+		15 if _battle_overlay else 19, RUST if _battle_overlay else GOLD)
 	title.size_flags_horizontal = SIZE_EXPAND_FILL
+	if _battle_overlay:
+		title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		title.tooltip_text = title.text
 	bar.add_child(title)
 	if phase != "result":
-		for member: Dictionary in _party():
+		for member: Dictionary in ([] if _battle_overlay else _party()):
 			var member_id: String = member.get("id", "")
 			var hp_text := "%d / %d HP" % [int(member.hp), int(member.max_hp)]
 			if not member_id.is_empty():
@@ -220,9 +227,9 @@ func _shell(phase: String) -> void:
 	_top_actions = HBoxContainer.new()
 	_top_actions.add_theme_constant_override("separation", 8)
 	bar.add_child(_top_actions)
-	if phase != "map":
+	if phase != "map" and not _battle_overlay:
 		_reward_placement_banner(_layout)
-	if not _run.save_error.is_empty():
+	if not _battle_overlay and not _run.save_error.is_empty():
 		_layout.add_child(_label(_run.save_error, 15, RUST))
 
 
@@ -296,15 +303,7 @@ func _draft(phase: String) -> void:
 	var loadouts: Array = _run.recruit_loadout_offers()
 	if not loadouts.is_empty():
 		subtitle += " · All heroes share the same clock."
-	var boss: Dictionary = _run.first_boss_preview() if phase == "hero" else {}
-	if not boss.is_empty():
-		subtitle = "Act I boss · %s\n%s" % [boss.title, boss.description]
 	_page_title(title, subtitle)
-	if not boss.is_empty():
-		var scout: Label = _layout.get_child(_layout.get_child_count() - 1)
-		scout.name = "OpeningBossScout"
-		scout.mouse_filter = MOUSE_FILTER_STOP
-		scout.tooltip_text = boss.description
 	var cards := _cards_row()
 	var offers: Array = _run.data.get("offers", [])
 	if phase == "hero" and _run.can_choose_starter():
@@ -352,9 +351,7 @@ func _add_recruit_loadouts(cards: HBoxContainer, offers: Array) -> void:
 			tile.size_flags_horizontal = SIZE_EXPAND_FILL
 			row.add_child(tile)
 			tile.add_child(_label("%s  ·  %s" % [spec.label, GameIcons.tile_stats(spec)], 17, CREAM))
-			var copy := _label(spec.description, 14, MUTED)
-			copy.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			tile.add_child(copy)
+			tile.add_child(TileKeywords.description(spec.description, 14, MUTED))
 			var firing_beat := _label("Beat %d" % beat, 15, TEAL)
 			firing_beat.name = "RecruitTileBeat_" + id
 			firing_beat.size_flags_vertical = SIZE_SHRINK_BEGIN
@@ -447,8 +444,7 @@ func _show_class_deck(hero_id: String) -> void:
 	var common: Array = ClassDecks.common(hero_id)
 	var uncommon: Array = ClassDecks.uncommon(hero_id)
 	var signature: String = ClassDecks.signature(hero_id)
-	var details := _label("", 15, CREAM)
-	details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var details := TileKeywords.description("", 15, CREAM)
 	details.custom_minimum_size = Vector2(640, 42)
 	for pool in [common, uncommon]:
 		var rarity_spec: Dictionary = ArenaSim.TILES[pool[0]]
@@ -472,7 +468,8 @@ func _show_class_deck(hero_id: String) -> void:
 			tile.custom_minimum_size.y = 30
 			tile.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 			tile.size_flags_horizontal = SIZE_EXPAND_FILL
-			tile.tooltip_text = "%s · %s\n%s" % [_hero_name(hero_id), GameIcons.rarity_name(spec), spec.description]
+			var tooltip: String = "%s · %s\n%s" % [_hero_name(hero_id), GameIcons.rarity_name(spec), spec.description]
+			tile.tooltip_text = TileKeywords.with_definitions(tooltip, GameIcons.tile_stats(spec) + "\n" + spec.description)
 			tile.mouse_default_cursor_shape = CURSOR_POINTING_HAND
 			GameIcons.decorate(tile, GameIcons.tile(tile_id, spec), 18)
 			var fill := PANEL.lerp(GameIcons.rarity(spec), 0.16 if tile_id == signature else 0.07)
@@ -482,9 +479,9 @@ func _show_class_deck(hero_id: String) -> void:
 			var detail_copy := "%s · %s" % [spec.label, spec.description]
 			if tile_id == signature:
 				detail_copy = "%s signature · %s" % [_hero_name(hero_id), detail_copy]
-				details.text = detail_copy
-			tile.pressed.connect(func(): details.text = detail_copy)
-			tile.focus_entered.connect(func(): details.text = detail_copy)
+				TileKeywords.set_description(details, detail_copy)
+			tile.pressed.connect(func(): TileKeywords.set_description(details, detail_copy))
+			tile.focus_entered.connect(func(): TileKeywords.set_description(details, detail_copy))
 			grid.add_child(tile)
 	deck.add_child(details)
 	deck.add_child(_label("Combine 3 matching tiles to choose an upgrade.", 15, MUTED))
@@ -507,8 +504,7 @@ func _map() -> void:
 	region.add_theme_constant_override("separation", 15)
 	region.size_flags_vertical = SIZE_EXPAND_FILL
 	_layout.add_child(region)
-	var first_boss: Dictionary = _run.first_boss_preview()
-	region.add_child(_map_board(first_boss))
+	region.add_child(_map_board())
 	var sidebar := _panel_stack(region, Vector2(270, 0))
 	var scroll := ScrollContainer.new()
 	scroll.name = "RouteDetails"
@@ -519,8 +515,6 @@ func _map() -> void:
 	details.size_flags_horizontal = SIZE_EXPAND_FILL
 	details.add_theme_constant_override("separation", 13)
 	scroll.add_child(details)
-	if not first_boss.is_empty():
-		_add_boss_scout(details, first_boss)
 	var relic_names := PackedStringArray()
 	for id: String in _run.data.get("relics", []):
 		relic_names.append(FrontierRun.RELICS.get(id, {}).get("label", id.capitalize()))
@@ -550,32 +544,7 @@ func _map() -> void:
 	footer.add_child(_button("Manage tiles", func(): _host.run_show_arena()))
 
 
-func _add_boss_scout(sidebar: VBoxContainer, brief: Dictionary) -> void:
-	var scout := PanelContainer.new()
-	scout.name = "TollkeeperScout"
-	scout.add_theme_stylebox_override("panel", _box(PANEL_DARK, GOLD.darkened(0.28), 8, 12))
-	sidebar.add_child(scout)
-	var content := VBoxContainer.new()
-	content.add_theme_constant_override("separation", 6)
-	scout.add_child(content)
-	var heading := HBoxContainer.new()
-	heading.add_theme_constant_override("separation", 8)
-	content.add_child(heading)
-	var icon := GameIcons.icon("boss")
-	if icon:
-		heading.add_child(_icon_view(icon, 20))
-	heading.add_child(_label("Act I boss", 15, GOLD))
-	var title := _label(brief.title, 20, CREAM, true)
-	title.name = "TollkeeperScoutTitle"
-	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	content.add_child(title)
-	var hint := _label(brief.description, 14, TEAL)
-	hint.name = "TollkeeperScoutHint"
-	hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	content.add_child(hint)
-
-
-func _map_board(first_boss: Dictionary) -> Control:
+func _map_board() -> Control:
 	var map_art: String = MAP_ART.get(_run.data.get("location", "brass"), MAP_ART.brass)
 	var board := _board(Vector2.ZERO, map_art)
 	board.name = "ExpeditionMapBoard"
@@ -630,10 +599,9 @@ func _map_board(first_boss: Dictionary) -> Control:
 		button.disabled = not reachable
 		button.add_theme_font_size_override("font_size", 14)
 		button.tooltip_text = "%s · %s%s" % [label, TYPE_NAMES.get(type, type.capitalize()), " · completed" if past else (" · reachable" if reachable else " · unavailable")]
-		if type == "boss" and node.id == first_boss.get("id"):
+		if type == "boss":
 			button.name = {"tollkeeper": "TollkeeperBossNode", "brass_bellmaker": "BellmakerBossNode",
 				"crucible_twins": "CrucibleTwinsBossNode", "glass_refraction_engine": "RefractionEngineBossNode"}.get(node.boss_id, "FirstBossNode")
-			button.tooltip_text = "%s\n%s" % [first_boss.title, first_boss.description]
 		if node.has("reinforcement_beat"):
 			button.name = "ReinforcementNode"
 			button.text = "Wave %d · %s" % [int(node.reinforcement_beat), button.text]
@@ -684,72 +652,19 @@ func _refresh_after_choice(advanced: bool) -> void:
 		_host.run_return()
 
 
-func _combat() -> void:
-	var node: Dictionary = _run.data.get("node", {})
-	var type: String = node.get("encounter_override", node.get("type", "battle"))
-	var boss_id: String = node.get("boss_id", "")
-	var tollkeeper: Dictionary = _run.tollkeeper_preview() if boss_id == "tollkeeper" else {}
-	var caption := "%s  ·  %s" % [TYPE_NAMES.get(type, "Battle"), _route_caption()]
-	if type == "elite" and _run.will_draft_elite_relic():
-		caption += "  ·  Relic draft"
-	_page_title(tollkeeper.get("title", node.get("label", "Opening battle")), caption)
-	var region := _cards_row()
-	var brief: Dictionary = BOSS_BRIEFS.get(boss_id, {})
-	var hint: String = brief.get("hint", "")
-	if _run.data.get("difficulty", "") == "medium":
-		hint = brief.get("medium_hint", hint)
-	var instruction: String = tollkeeper.get("description", hint)
-	_continue(func(): _host.run_show_arena())
-	var detail := _choice(region, "Boss counter" if not instruction.is_empty() else "", instruction, "", Callable())
-	if brief.has("portrait"):
-		_add_portrait(detail, brief.portrait)
-	else:
-		_add_enemy_preview(detail)
-
-
-func _add_enemy_preview(card: VBoxContainer) -> void:
-	var options: Dictionary = _run.encounter()
-	var formation := HBoxContainer.new()
-	formation.add_theme_constant_override("separation", 14)
-	card.add_child(formation)
-	card.move_child(formation, 0)
-	if not options.has("reinforcements"):
-		_add_formation_cards(formation, options)
-		return
-	var opening := _panel_stack(formation, Vector2.ZERO, true)
-	opening.add_child(_label("At the start", 16, GOLD))
-	_add_formation_cards(_cards_row(opening), options)
-	var incoming := _panel_stack(formation, Vector2.ZERO, true)
-	var arrival := _label("Reinforcements · beat %d" % int(options.reinforcement_beat), 16, TEAL)
-	arrival.name = "ReinforcementPreview"
-	incoming.add_child(arrival)
-	var wave := options.duplicate()
-	wave.formation = options.reinforcements
-	wave.erase("reinforcements")
-	wave.erase("reinforcement_beat")
-	_add_formation_cards(_cards_row(incoming), wave)
-
-
-func _add_formation_cards(formation: HBoxContainer, options: Dictionary) -> void:
-	var preview := ArenaSim.new()
-	preview.start(_run.loadout.lanes, "solo", options)
-	var shown := {}
-	for unit: Dictionary in preview.units:
-		if unit.side != "enemy" or shown.has(unit.name):
-			continue
-		shown[unit.name] = true
-		var enemy := _panel_stack(formation, Vector2.ZERO, true)
-		_add_portrait(enemy, unit.sprite)
-		enemy.add_child(_label(unit.name, 21, CREAM, true))
-		var attack_hint := _enemy_hint(unit)
-		if not attack_hint.is_empty():
-			var hint := _label(attack_hint, 15, MUTED)
-			hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			enemy.add_child(hint)
-
-
-func _enemy_hint(unit: Dictionary) -> String:
-	return unit.get("attack", {}).get("hint", ENEMY_HINTS.get(unit.sprite, ""))
+static func battle_enemy_hint(unit: Dictionary, difficulty: String) -> String:
+	var sprite: String = unit.sprite
+	match unit.get("attack_id", sprite):
+		"boss": return "Its strikes get stronger when it rallies at half health."
+		"tollkeeper_drone": return FrontierRun.TOLLKEEPER_VARIANTS.repair_drone.description
+		"brass_bellmaker": return FrontierRun.BELLMAKER_SCOUT
+		"ember_twin": return "Closes in on the hero with the lowest HP."
+	for brief: Dictionary in BOSS_BRIEFS.values():
+		if brief.portrait == sprite:
+			return brief.get("medium_hint", brief.hint) if difficulty == "medium" else brief.hint
+	var attack: Dictionary = unit.get("attack", {})
+	var fallback := "Attacks from range." if float(attack.get("reach", 0.0)) >= 340.0 else "Closes in to attack."
+	return attack.get("hint", ENEMY_HINTS.get(sprite, fallback))
 
 
 func _reward() -> void:
@@ -784,10 +699,6 @@ func _reward() -> void:
 	else:
 		cards = _cards_row()
 	var notice := _notice()
-	var selected := {"id": ""}
-	var advance := _continue(func(): _claim_reward(selected.id, notice))
-	advance.disabled = true
-	var group := ButtonGroup.new()
 	for index in range(offers.size()):
 		if wrapping != null and index % 3 == 0:
 			cards = _cards_row(wrapping)
@@ -798,28 +709,33 @@ func _reward() -> void:
 			hint = "Combine with 2 owned copies" if hint in ["", "Third copy", "Owned copy"] else "%s · Combine with 2 owned copies" % hint
 		if not owner.is_empty() and tile.get("base_tile", id) == ClassDecks.signature(owner):
 			hint = "Signature tile" if hint.is_empty() else "Signature tile · " + hint
-		var card := _choice(cards, tile.label, _tile_info(tile) + ("\n\n" + hint if not hint.is_empty() else ""), "Select", func():
-			selected.id = id
-			advance.disabled = false
-			notice.text = ""
-		)
+		var card := _choice(cards, tile.label, _tile_info(tile) + ("\n" + hint if not hint.is_empty() else ""),
+			"Select", func(): _claim_reward(id, notice))
 		var select_tile: Button = card.get_child(card.get_child_count() - 1)
 		select_tile.name = "RewardTile_" + id
-		select_tile.toggle_mode = true
-		select_tile.button_group = group
-		_add_tile_header(card, id, tile, owner)
-		var panel := card.get_parent() as PanelContainer
-		select_tile.toggled.connect(func(pressed: bool):
-			panel.add_theme_stylebox_override("panel", _tile_card_frame(tile, pressed))
-		)
-	_layout.add_child(notice)
+		_add_tile_header(card, id, tile, owner, _battle_overlay)
+	if not _battle_overlay:
+		_layout.add_child(notice)
 	var actions := _footer_actions()
+	if _battle_overlay:
+		notice.text = ""
+		notice.autowrap_mode = TextServer.AUTOWRAP_OFF
+		notice.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		notice.size_flags_horizontal = SIZE_EXPAND_FILL
+		actions.add_child(notice)
 	if not final_boss:
 		actions.add_child(_button("Manage tiles", func(): _host.run_show_arena()))
 	var bonus: int = _run.reward_skip_gold()
 	var skip := _button("Skip for +%d gold" % bonus if bonus > 0 else "Skip reward", func(): _claim_reward("skip", notice))
 	skip.name = "SkipReward"
 	actions.add_child(skip)
+	var price: int = _run.reward_reroll_price()
+	if price > 0:
+		var reroll := _button("Reroll · %d gold" % price, func(): _reroll_reward(notice))
+		reroll.name = "RerollReward"
+		reroll.disabled = int(_run.data.gold) < price
+		reroll.tooltip_text = "The price doubles each time you reroll in this act."
+		actions.add_child(reroll)
 
 
 func _reward_owner(lane: int, party: Array) -> String:
@@ -837,8 +753,8 @@ func _reward_heading(title: String, milestone: String, hero_id: String) -> void:
 	_layout.add_child(row)
 	var art := load("res://assets/%s.png" % GameIcons.portrait(hero_id)) as Texture2D
 	if art:
-		row.add_child(_icon_view(art, 54))
-	var hero := _label(_hero_name(hero_id), 34, CREAM, true)
+		row.add_child(_icon_view(art, 32 if _battle_overlay else 54))
+	var hero := _label(_hero_name(hero_id), 26 if _battle_overlay else 34, CREAM, true)
 	hero.name = "RewardHero"
 	row.add_child(hero)
 	var context := _label(title, 18, MUTED)
@@ -852,25 +768,21 @@ func _reward_heading(title: String, milestone: String, hero_id: String) -> void:
 		progress.size_flags_vertical = SIZE_SHRINK_CENTER
 		row.add_child(progress)
 	if not milestone.is_empty():
-		_layout.add_child(_label(milestone, 17, MUTED))
+		if _battle_overlay:
+			context.tooltip_text = milestone
+			context.mouse_filter = MOUSE_FILTER_STOP
+		else:
+			_layout.add_child(_label(milestone, 17, MUTED))
 
 
 func _elite_relic_draft(offers: Array) -> void:
 	_page_title("Choose an elite relic", "Tile reward follows.")
 	var cards := _cards_row()
-	var selected := {"id": ""}
-	var advance := _continue(func():
-		_refresh_after_choice(_run.choose_elite_relic(selected.id))
-	)
-	advance.disabled = true
-	var group := ButtonGroup.new()
 	for offer: Dictionary in offers:
 		var id: String = offer.id
 		var tone: Color = RELIC_DRAFT_TONES.get(id, GOLD)
-		var card := _relic_draft_card(cards, id, "EliteRelic_", group, func():
-			selected.id = id
-			advance.disabled = false
-		)
+		var card := _relic_draft_card(cards, id, "EliteRelic_",
+			func(): _refresh_after_choice(_run.choose_elite_relic(id)))
 		var select_relic: Button = card.get_child(card.get_child_count() - 1)
 		var role := _label(offer.role, 15, tone)
 		card.add_child(role)
@@ -890,43 +802,41 @@ func _elite_relic_draft(offers: Array) -> void:
 			var owner := _reward_owner(_run.reward_lane(), _party())
 			if not owner.is_empty():
 				support.add_child(GameIcons.hero_badge(owner))
-		_add_card_icon(card, GameIcons.relic(id), tone)
+		if _battle_overlay:
+			var art := GameIcons.icon(GameIcons.relic(id))
+			if art != null:
+				var portrait := _icon_view(art, 28)
+				var role_row := HBoxContainer.new()
+				card.add_child(role_row)
+				role_row.add_child(portrait)
+				role.reparent(role_row, false)
+				card.move_child(role_row, 0)
+		else:
+			_add_card_icon(card, GameIcons.relic(id), tone)
 
 
 func _boss_relic_draft() -> void:
 	_page_title("Choose a boss relic", "%s · Applies to the whole crew, including recruits." % _run.data.node.label)
 	var cards := _cards_row()
-	var selected := {"id": ""}
-	var advance := _continue(func(): _claim_boss_relic(selected.id))
-	advance.disabled = true
-	var group := ButtonGroup.new()
 	for offer: Dictionary in _run.boss_relic_offers():
 		var id: String = offer.id
-		var card := _relic_draft_card(cards, id, "BossRelic_", group, func():
-			selected.id = id
-			advance.disabled = false
-		)
+		var card := _relic_draft_card(cards, id, "BossRelic_", func(): _claim_boss_relic(id))
 		_add_card_icon(card, GameIcons.relic(id), RELIC_DRAFT_TONES.get(id, GOLD))
 	var skip := _button("Skip relic", func(): _claim_boss_relic("skip"))
 	skip.name = "SkipBossRelic"
 	_footer_actions().add_child(skip)
 
 
-func _relic_draft_card(cards: HBoxContainer, id: String, button_prefix: String, group: ButtonGroup, select: Callable) -> VBoxContainer:
+func _relic_draft_card(cards: HBoxContainer, id: String, button_prefix: String, select: Callable) -> VBoxContainer:
 	var spec: Dictionary = FrontierRun.RELICS[id]
 	var tone: Color = RELIC_DRAFT_TONES.get(id, GOLD)
 	var card := _choice(cards, spec.label, spec.description, "Select", select)
 	var panel := card.get_parent() as PanelContainer
-	panel.size_flags_vertical = SIZE_SHRINK_CENTER
-	panel.custom_minimum_size.y = 426
-	panel.add_theme_stylebox_override("panel", _box(PANEL, tone.darkened(0.50), 9, 18))
+	panel.size_flags_vertical = SIZE_FILL if _battle_overlay else SIZE_SHRINK_CENTER
+	panel.custom_minimum_size.y = 0 if _battle_overlay else 426
+	panel.add_theme_stylebox_override("panel", _box(PANEL, tone.darkened(0.50), 9, 12 if _battle_overlay else 18))
 	var button: Button = card.get_child(card.get_child_count() - 1)
 	button.name = button_prefix + id
-	button.toggle_mode = true
-	button.button_group = group
-	button.toggled.connect(func(pressed: bool):
-		panel.add_theme_stylebox_override("panel", _box(PANEL, tone if pressed else tone.darkened(0.50), 9, 18))
-	)
 	if panel.get_index() == 0:
 		button.grab_focus()
 	return card
@@ -939,28 +849,16 @@ func _claim_boss_relic(id: String) -> void:
 func _enchantment_draft() -> void:
 	_page_title("Choose an enchantment", "Equip it on one compatible tile. You can move it between battles or save it for a later tile.")
 	var cards := _cards_row()
-	var selected := {"id": ""}
-	var advance := _continue(func(): _claim_enchantment(selected.id))
-	advance.disabled = true
-	var group := ButtonGroup.new()
 	for offer: Dictionary in _run.enchantment_offers():
 		var id: String = offer.id
 		var tone := GameIcons.enchantment_color(id)
-		var card := _choice(cards, offer.label, offer.description, "Select", func():
-			selected.id = id
-			advance.disabled = false
-		)
+		var card := _choice(cards, offer.label, offer.description, "Select", func(): _claim_enchantment(id))
 		var panel := card.get_parent() as PanelContainer
 		panel.size_flags_vertical = SIZE_SHRINK_CENTER
 		panel.custom_minimum_size.y = 320
 		panel.add_theme_stylebox_override("panel", _box(PANEL, tone.darkened(0.50), 9, 18))
 		var button: Button = card.get_child(card.get_child_count() - 1)
 		button.name = "Enchantment_" + id
-		button.toggle_mode = true
-		button.button_group = group
-		button.toggled.connect(func(pressed: bool):
-			panel.add_theme_stylebox_override("panel", _box(PANEL, tone if pressed else tone.darkened(0.50), 9, 18))
-		)
 		_add_card_icon(card, offer.icon, tone)
 		if panel.get_index() == 0:
 			button.grab_focus()
@@ -984,12 +882,21 @@ func _claim_reward(id: String, notice: Label) -> void:
 		_host.run_return()
 	else:
 		notice.text = _run.save_error if not _run.save_error.is_empty() else "No room for this tile. Manage tiles to free a continuous span."
+		notice.tooltip_text = notice.text
+
+
+func _reroll_reward(notice: Label) -> void:
+	if _run.reroll_reward():
+		_host.run_return()
+	else:
+		notice.text = _run.save_error if not _run.save_error.is_empty() else "No new selection is available for this reward."
+		notice.tooltip_text = notice.text
 
 
 func _shop() -> void:
 	_page_title(_run.data.get("node", {}).get("label", "Relay Market"), "")
 	var notice := _notice()
-	var offers: Array = _run.data.get("offers", [])
+	var offers: Array = _run.shop_stock()
 	var ledger_owners := {}
 	for id: String in offers:
 		var owner: String = _run.shop_class_offer_owner(id)
@@ -1016,13 +923,16 @@ func _shop() -> void:
 	for id: String in offers:
 		var tile: Dictionary = ArenaSim.TILES[id]
 		var price: int = _run.shop_price(id)
+		var purchased: bool = _run.shop_tile_purchased(id)
 		var owner: String = ledger_owners.get(id, "")
 		var row := cards if owner.is_empty() else ledger_cards
-		var card := _choice(row, tile.label, _tile_info(tile), "Buy · %d gold" % price, func(): _buy_tile(id, notice), int(_run.data.get("gold", 0)) < price)
+		var caption := "Purchased" if purchased else "Buy · %d gold" % price
+		var unavailable := purchased or int(_run.data.get("gold", 0)) < price
+		var card := _choice(row, tile.label, _tile_info(tile), caption, func(): _buy_tile(id, notice), unavailable)
 		var purchase: Button = card.get_child(card.get_child_count() - 1)
 		purchase.name = "ShopTile_" + id
+		var panel := card.get_parent() as PanelContainer
 		if ledger_cards != null:
-			var panel := card.get_parent() as PanelContainer
 			panel.custom_minimum_size.y = 0
 			card.add_theme_constant_override("separation", 8)
 			card.get_child(0).add_theme_font_size_override("font_size", 22)
@@ -1030,6 +940,9 @@ func _shop() -> void:
 			_add_tile_header(card, id, tile, owner, true)
 		else:
 			_add_tile_header(card, id, tile)
+		if purchased:
+			panel.add_theme_stylebox_override("panel", _box(Color("#1b242b"), Color("#56636a"), 9, 12 if ledger_cards != null else 18))
+			card.modulate = Color("#a9afb4")
 	if offers.is_empty():
 		cards.add_child(_label("No tiles left.", 20, MUTED))
 	_layout.add_child(notice)
@@ -1299,7 +1212,7 @@ func _close_class_roster() -> void:
 
 
 func _page_title(title: String, subtitle: String) -> void:
-	_layout.add_child(_label(title, 44, CREAM, true))
+	_layout.add_child(_label(title, 27 if _battle_overlay else 44, CREAM, true))
 	if subtitle.is_empty():
 		return
 	var text := _label(subtitle, 17, MUTED)
@@ -1355,13 +1268,25 @@ func _footer_actions() -> HBoxContainer:
 
 
 func _choice(parent: Control, name: String, body: String, cta: String, chosen: Callable, disabled := false) -> VBoxContainer:
-	var card := _panel_stack(parent, Vector2(0, 280), true)
+	var card := _panel_stack(parent, Vector2(0, 0 if _battle_overlay else 280), true)
+	if _battle_overlay:
+		card.add_theme_constant_override("separation", 5)
 	if not name.is_empty():
-		var title := _label(name, 27, CREAM, true)
+		var title := _label(name, 22 if _battle_overlay else 27, CREAM, true)
 		title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 		card.add_child(title)
-	var details := _label(body, 17, MUTED)
-	details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	var details: Control
+	if _battle_overlay:
+		var scrollable := TileKeywords.description(body, 15, MUTED)
+		scrollable.fit_content = false
+		scrollable.scroll_active = true
+		scrollable.custom_minimum_size.y = 28
+		details = scrollable
+	else:
+		var copy := _label(body, 17, MUTED)
+		copy.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		details = copy
+	details.name = "ChoiceDetails"
 	details.size_flags_vertical = SIZE_EXPAND_FILL
 	card.add_child(details)
 	if not cta.is_empty():
@@ -1376,6 +1301,16 @@ func _tile_info(tile: Dictionary) -> String:
 
 
 func _add_tile_header(card: VBoxContainer, id: String, spec: Dictionary, owner := "", compact := false) -> void:
+	var copy := card.get_node_or_null("ChoiceDetails") as Label
+	if copy != null:
+		var details := TileKeywords.description(copy.text, copy.get_theme_font_size("font_size"), copy.get_theme_color("font_color"))
+		details.name = copy.name
+		details.size_flags_vertical = copy.size_flags_vertical
+		var position := copy.get_index()
+		card.remove_child(copy)
+		copy.queue_free()
+		card.add_child(details)
+		card.move_child(details, position)
 	var panel := card.get_parent() as PanelContainer
 	var color := GameIcons.rarity(spec)
 	panel.add_theme_stylebox_override("panel", _tile_card_frame(spec, false, 12 if compact else 18))
@@ -1395,7 +1330,7 @@ func _add_tile_header(card: VBoxContainer, id: String, spec: Dictionary, owner :
 	var origin := GameIcons.tile_origin(id, spec)
 	var class_id := owner if not owner.is_empty() else origin
 	if not class_id.is_empty():
-		row.add_child(GameIcons.hero_badge(class_id, false))
+		row.add_child(GameIcons.hero_badge(class_id, _battle_overlay))
 		panel.tooltip_text = "%s signature" % _hero_name(origin) if owner.is_empty() else _hero_name(owner)
 		if not owner.is_empty() and not origin.is_empty() and origin != owner:
 			panel.tooltip_text += " · %s signature" % _hero_name(origin)
@@ -1516,14 +1451,15 @@ func _label(value: String, points: int, color: Color, display := false) -> Label
 func _button(title: String, activate: Callable, primary := false) -> Button:
 	var button := Button.new()
 	button.text = title
-	button.custom_minimum_size.y = 41
+	button.custom_minimum_size.y = 33 if _battle_overlay else 41
 	button.pressed.connect(activate)
 	var fill := Color("#60492d") if primary else PANEL_DARK
 	var border := GOLD if primary else EDGE
-	button.add_theme_stylebox_override("normal", _box(fill, border, 6, 12))
-	button.add_theme_stylebox_override("hover", _box(fill.lightened(0.12), GOLD, 6, 12))
-	button.add_theme_stylebox_override("pressed", _box(fill.darkened(0.14), GOLD, 6, 12))
-	button.add_theme_stylebox_override("disabled", _box(PANEL_DARK, EDGE, 6, 12))
+	var inset := 7 if _battle_overlay else 12
+	button.add_theme_stylebox_override("normal", _box(fill, border, 6, inset))
+	button.add_theme_stylebox_override("hover", _box(fill.lightened(0.12), GOLD, 6, inset))
+	button.add_theme_stylebox_override("pressed", _box(fill.darkened(0.14), GOLD, 6, inset))
+	button.add_theme_stylebox_override("disabled", _box(PANEL_DARK, EDGE, 6, inset))
 	button.add_theme_color_override("font_color", CREAM)
 	button.add_theme_color_override("font_disabled_color", MUTED.darkened(0.18))
 	return button

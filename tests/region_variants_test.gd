@@ -46,9 +46,8 @@ func _check_opening(game: Control, run: FrontierRun) -> void:
 	game.run_return()
 	await process_frame
 	var scout := game.frontier_screen.find_child("OpeningBossScout", true, false) as Label
-	_check(preview.get("title") == "The Refraction Engine" and scout != null and scout.is_visible_in_tree()
-		and scout.text.contains(preview.title) and scout.tooltip_text == preview.description,
-		"The opening draft announces the alternate Glass boss and how to face its attack.")
+	_check(preview.get("title") == "The Refraction Engine" and scout == null,
+		"The seeded alternate Glass boss remains assigned without an opening scout panel.")
 	var repeat := FrontierRun.new()
 	repeat.load_save(save_path + ".repeat")
 	repeat.profile.glass_easy_unlocked = true
@@ -84,18 +83,14 @@ func _check_reinforcement_fight(game: Control, run: FrontierRun) -> bool:
 	if not _check(not opening.is_empty() and incoming.size() == 1 and arrival == int(destination.reinforcement_beat)
 		and opening + incoming == stored, "The encounter divides a saved formation into its opening crew and one later arrival."):
 		return false
-	var preview := game.frontier_screen.find_child("ReinforcementPreview", true, false) as Label
-	_check(preview != null and preview.is_visible_in_tree() and preview.text.contains("beat %d" % arrival),
-		"The battle briefing exposes the arrival beat separately from the starting formation.")
+	_check(game.campaign and game.encounter_setup and game.arena_screen.is_visible_in_tree(),
+		"Choosing the reinforcement node opens battle setup directly.")
 	_check(run.encounter() == options and run.data.node.pilot_formation == stored,
-		"Generating a briefing repeatedly does not consume any of the stored formation.")
+		"Reading the encounter repeatedly does not consume any of the stored formation.")
 	if not _check(run.load_save(save_path) and run.encounter() == options and run.data.node.pilot_formation == stored,
 		"Reloading a battle checkpoint preserves both parts of the formation and arrival beat."):
 		return false
 	game.run_return()
-	await process_frame
-	if not _press(game.frontier_screen, "Continue"):
-		return false
 	await process_frame
 	var sim: ArenaSim = game.sim
 	_check(sim.pending_reinforcement().get("beat") == arrival and _enemies(sim) == _formation_ids(opening),
@@ -120,8 +115,8 @@ func _check_boss(game: Control, run: FrontierRun) -> void:
 	game.run_return()
 	await process_frame
 	var button := game.frontier_screen.find_child("RefractionEngineBossNode", true, false) as Button
-	_check(button != null and button.tooltip_text.contains(run.first_boss_preview().description),
-		"The Glass map's final boss matches the opening scout and keeps its counter advice.")
+	_check(button != null and button.text.contains("Refraction Engine"),
+		"The Glass map keeps the assigned Refraction Engine boss node.")
 	if not _press(game.frontier_screen, "RefractionEngineBossNode"):
 		return
 	await process_frame
@@ -130,10 +125,8 @@ func _check_boss(game: Control, run: FrontierRun) -> void:
 		return
 	game.run_return()
 	await process_frame
-	if not _press(game.frontier_screen, "Continue"):
-		return
-	await process_frame
-	_check(_enemies(game.sim) == [REFRACTION_ENGINE], "The battle launches the announced Engine instead of the Crucible Twins.")
+	_check(game.campaign and game.encounter_setup and _enemies(game.sim) == [REFRACTION_ENGINE],
+		"Resuming opens the Refraction Engine battle directly.")
 	var before := int(run.profile.marks)
 	_check(run.finish_combat(true, 65) and run.profile.glass_medium_unlocked and int(run.profile.marks) == before + 19
 		and run.reward("skip") and run.data.result == "victory", "The alternate boss pays the normal Glass Easy clear reward and opens Medium.")

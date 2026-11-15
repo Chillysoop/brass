@@ -155,7 +155,14 @@ func _build() -> void:
 	chart_stack.add_child(legend)
 	legend.add_child(_label("●  Unlocked", 14, TEAL))
 	legend.add_child(_label("◇  Available", 14, BRASS))
-	legend.add_child(_label("○  Locked", 14, LOCKED))
+	var locked_key := HBoxContainer.new()
+	locked_key.add_theme_constant_override("separation", 3)
+	legend.add_child(locked_key)
+	var lock_icon := Control.new()
+	lock_icon.custom_minimum_size = Vector2(21, 20)
+	lock_icon.draw.connect(func(): GameIcons.draw_lock(lock_icon, lock_icon.size * 0.5, 22, false))
+	locked_key.add_child(lock_icon)
+	locked_key.add_child(_label("Locked", 14, LOCKED))
 	_build_details(region)
 
 
@@ -334,7 +341,8 @@ func _draw_graph() -> void:
 		var accent := _state_color(entry)
 		var marker: Button = _buttons[id]
 		var focused := marker.has_focus() or marker.is_hovered()
-		_draw_medallion(_graph, point, 35.0, accent, id, id == _selected or focused)
+		var icon := id if entry.available or entry.purchased else "lock"
+		_draw_medallion(_graph, point, 35.0, accent, icon, id == _selected or focused)
 		if entry.purchased:
 			_graph.draw_circle(point + Vector2(26, -24), 6, TEAL, true, -1, true)
 		var title: String = entry.label
@@ -360,7 +368,8 @@ func _draw_detail_icon() -> void:
 	if not entry.is_empty():
 		var center := _detail_icon.size * 0.5
 		_detail_icon.draw_arc(center, 60, 0, TAU, 84, Color(BRONZE, 0.4), 1.0, true)
-		_draw_medallion(_detail_icon, center, 48.0, _state_color(entry), _selected, true)
+		var icon := _selected if entry.available or entry.purchased else "lock"
+		_draw_medallion(_detail_icon, center, 48.0, _state_color(entry), icon, true)
 
 
 func _draw_medallion(canvas: Control, center: Vector2, radius: float, accent: Color, icon: String, highlighted: bool) -> void:
@@ -377,6 +386,9 @@ func _draw_medallion(canvas: Control, center: Vector2, radius: float, accent: Co
 
 
 func _draw_icon(canvas: Control, center: Vector2, scale_factor: float, icon: String, accent: Color) -> void:
+	if icon == "lock":
+		GameIcons.draw_lock(canvas, center, 56.0 * scale_factor, false)
+		return
 	var texture: Texture2D = _icon_textures.get(icon)
 	if texture != null:
 		var extent := Vector2.ONE * (42.0 * scale_factor)

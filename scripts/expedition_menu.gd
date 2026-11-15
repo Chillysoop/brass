@@ -428,6 +428,8 @@ func _art_frame(parent: VBoxContainer, file: String, fallback: String, active: b
 	parent.add_child(panel)
 	var stretch := TextureRect.STRETCH_KEEP_ASPECT_COVERED if portrait else TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	_image(panel, file, fallback, tint, stretch)
+	if not active:
+		GameIcons.lock_badge(panel, 104.0 if portrait else 86.0)
 	var edge := Panel.new()
 	edge.mouse_filter = MOUSE_FILTER_IGNORE
 	panel.add_child(edge)

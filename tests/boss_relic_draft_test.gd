@@ -65,16 +65,10 @@ func _check_draft_and_shop(game: Control) -> void:
 	var ledger := game.frontier_screen.find_child("BossRelic_guild_ledger", true, false) as Button
 	if ledger == null:
 		return
-	ledger.button_pressed = true
 	ledger.pressed.emit()
 	await process_frame
-	var proceed := game.frontier_screen.find_child("Continue", true, false) as Button
-	if not _check(proceed != null and not proceed.disabled, "Selecting a relic enables Continue."):
-		return
-	proceed.pressed.emit()
-	await process_frame
 	if not _check(run.data.phase == "recruit" and run.data.relics.count("guild_ledger") == 1 and run.profile.marks == marks
-		and not run.choose_boss_relic("bastion_medal"), "The claim adds a single relic and preserves the boss payout."):
+		and not run.choose_boss_relic("bastion_medal"), "One relic selection advances to recruitment and preserves the boss payout."):
 		return
 	var persisted := FrontierRun.new()
 	_check(persisted.load_save(save_path) and persisted.data.phase == "recruit" and persisted.data.relics == run.data.relics,
@@ -88,7 +82,7 @@ func _check_draft_and_shop(game: Control) -> void:
 		if not _check(_enter_shop(branch), "Both branches must reach an Act II shop."):
 			return
 	var ordinary_stock: Array = control.data.offers
-	var ledger_stock: Array = run.data.offers
+	var ledger_stock: Array = run.data.offers.duplicate()
 	_check(run.data.gold == control.data.gold, "Guild Ledger keeps the gold from skipped combat rewards.")
 	_check(run.data.node.id == control.data.node.id and ledger_stock.slice(0, ordinary_stock.size()) == ordinary_stock,
 		"The Guild Ledger adds stock to the same shop without replacing its normal offers.")
@@ -112,6 +106,7 @@ func _check_draft_and_shop(game: Control) -> void:
 		return
 	var price := run.shop_price(recruit_tile)
 	var gold: int = run.data.gold
+	var card_slot := purchase.get_parent().get_parent().get_index()
 	var lead_tiles: Array = run.loadout.lanes[0].duplicate(true)
 	var recruit_tiles: int = run.loadout.lanes[1].size()
 	purchase.pressed.emit()
@@ -123,6 +118,10 @@ func _check_draft_and_shop(game: Control) -> void:
 	var receipt := game.frontier_screen.find_child("RewardPlacement", true, false) as Label
 	_check(receipt != null and receipt.text == "%s added to %s’s timeline" % [ArenaSim.TILES[recruit_tile].label, FrontierRun.HEROES[recruit].label],
 		"The shop confirms which hero received the purchased tile.")
+	purchase = game.frontier_screen.find_child("ShopTile_" + recruit_tile, true, false) as Button
+	_check(purchase != null and purchase.disabled and purchase.text == "Purchased"
+		and purchase.get_parent().get_parent().get_index() == card_slot and run.shop_stock() == ledger_stock,
+		"The purchased Ledger tile should stay in its original stock slot.")
 	await _check_storage_purchase(game, ordinary_stock[0])
 
 
@@ -155,6 +154,9 @@ func _check_storage_purchase(game: Control, id: String) -> void:
 		"The shop keeps the purchased tile's exact location after reloading.")
 	game.run_resume()
 	await process_frame
+	var sold := game.frontier_screen.find_child("ShopTile_" + id, true, false) as Button
+	_check(sold != null and sold.disabled and sold.text == "Purchased",
+		"The completed purchase remains visible and disabled after reload.")
 	var open := game.frontier_screen.find_child("OpenRewardStorage", true, false) as Button
 	if not _check(open != null and open.is_visible_in_tree(), "A stored market purchase shows the storage shortcut."):
 		return
