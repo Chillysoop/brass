@@ -59,6 +59,7 @@ func _initialize() -> void:
 	_check_activation_review()
 	_check_boss_review()
 	_check_new_forge_families()
+	_check_mobility()
 	if _failures.is_empty():
 		print("Arena simulation checks passed (duo %d ticks, solo %d ticks)." % [first.tick, solo.tick])
 	else:
@@ -68,6 +69,66 @@ func _initialize() -> void:
 		for event in first.trace.slice(0, 20):
 			print(event)
 	quit(0 if _failures.is_empty() else 1)
+
+
+func _check_mobility() -> void:
+	var melee := ArenaSim.new()
+	melee.start([[{"id": "bash", "start": 0}]], "solo", {"hero": "lancer"})
+	var lancer: Dictionary = melee.units[0]
+	var recruit: Dictionary = melee.units[1]
+	lancer.pos = Vector2(150.0, 255.0)
+	recruit.pos = Vector2(800.0, 255.0)
+	var start: Vector2 = lancer.pos
+	lancer.lance_travel = 0.0
+	melee.step()
+	_check(lancer.velocity.x > lancer.speed * 1.40 and -recruit.velocity.x > recruit.speed * 1.40,
+		"An unoccupied battlefield should let both heroes and normal enemies sprint toward each other.")
+	_check(is_equal_approx(lancer.travel, start.distance_to(lancer.pos))
+		and is_equal_approx(lancer.lance_travel, lancer.travel),
+		"Lancer mobility should count the distance actually covered.")
+	var walked: float = lancer.travel
+	lancer.impulse = Vector2(-300.0, 0.0)
+	melee.step()
+	_check(lancer.travel == walked and lancer.lance_travel == walked,
+		"Knockback should not charge Lancer's travel effects.")
+	lancer.impulse = Vector2.ZERO
+	recruit.pos = lancer.pos + Vector2(108.0, 0.0)
+	melee.step()
+	_check(0.0 < lancer.velocity.x and lancer.velocity.x < lancer.speed,
+		"The sprint should settle into a controlled approach before attack spacing.")
+
+	var boss := ArenaSim.new()
+	boss.start([[{"id": "bash", "start": 0}]], "solo", {"encounter": "boss"})
+	boss.units[0].pos = Vector2(150.0, 255.0)
+	boss.units[1].pos = Vector2(800.0, 255.0)
+	boss.step()
+	_check(is_equal_approx(boss.units[1].velocity.length(), boss.units[1].speed),
+		"Scripted boss pursuit should keep its established speed.")
+
+	var ranged := ArenaSim.new()
+	ranged.start([[{"id": "rivet_bolt", "start": 0}]], "solo", {"hero": "starshot"})
+	var starshot: Dictionary = ranged.units[0]
+	var threat: Dictionary = ranged.units[1]
+	var wall: float = ArenaSim.WALL_MARGIN + starshot.radius
+	starshot.pos = Vector2(wall, 260.0)
+	threat.pos = Vector2(wall + 145.0, 272.0)
+	threat.speed = 0.0
+	var initial_separation: float = starshot.pos.distance_to(threat.pos)
+	ranged.step()
+	_check(starshot.velocity.y < -70.0 and starshot.facing == 1.0,
+		"A cornered ranged hero should strafe away along the wall while facing the threat.")
+	for _step in range(2 * ArenaSim.TICKS_PER_BEAT - 2):
+		ranged.step()
+	_check(ranged.activations.is_empty(), "Moving around the wall should preserve the tile edge timing.")
+	ranged.step()
+	_check(ranged.activations.size() == 1 and ranged.activations[0].damage > 0
+		and starshot.pos.distance_to(threat.pos) > initial_separation + 14.0,
+		"Wall steering should create space without delaying the ranged attack.")
+	starshot.pos = Vector2(wall, wall)
+	threat.pos = starshot.pos + Vector2(25.0, 130.0)
+	ranged.step()
+	_check(starshot.velocity.x > 70.0 and is_zero_approx(starshot.velocity.y),
+		"In a corner the ranged hero should take the clearer of both wall routes.")
 
 
 func _check_tile_edges() -> void:

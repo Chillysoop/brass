@@ -2,6 +2,7 @@ extends SceneTree
 
 const Arena := preload("res://arena.tscn")
 const FrontierRun := preload("res://scripts/frontier_run.gd")
+const GameIcons := preload("res://scripts/game_icons.gd")
 
 var failures: Array[String] = []
 var save_prefix := "user://tollkeeper-variants-%d" % Time.get_ticks_usec()
@@ -73,7 +74,8 @@ func _check_route(game: Control, seed_value: int, variant: String) -> void:
 	_check(game.campaign and game.encounter_setup and drones.size() == (1 if variant == "repair_drone" else 0),
 		"Resuming opens the arena with the saved Tollkeeper lineup.")
 	if variant == "repair_drone":
-		_check(game.arena._textures.get("tollkeeper_drone") is Texture2D, "The drone's in-game sprite is available.")
+		_check(drones.size() == 1 and GameIcons.enemy_art(drones[0].sprite) != null,
+			"The restored drone resolves to its in-game sprite.")
 	var marks: int = run.profile.marks
 	_check(run.finish_combat(true, 66) and run.profile.medium_unlocked and run.profile.marks == marks + 19
 		and run.reward("skip") and run.data.phase == "result", "Both fights grant the normal Easy clear and open Medium.")

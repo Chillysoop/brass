@@ -8,8 +8,8 @@ var failures: Array[String] = []
 
 func _initialize() -> void:
 	var guarded := _fixture("blink", "guarded", 9)
-	guarded.units[2].pos = Vector2(720, 200)
-	guarded.units[3].pos = Vector2(720, 375)
+	guarded.units[2].pos = Vector2(820, 200)
+	guarded.units[3].pos = Vector2(820, 375)
 	_step_to(guarded, ArenaSim.LOOP_TICKS - 1)
 	_check(guarded.units[0].guard == 0, "Guarded fired before the right edge.")
 	guarded.step()

@@ -1,10 +1,12 @@
 extends Control
 
 const GameIcons = preload("res://scripts/game_icons.gd")
+const CombatIcons = preload("res://scripts/combat_icons.gd")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const AttackAnimation = preload("res://scripts/attack_animation.gd")
 const HeroChoreography = preload("res://scripts/hero_attack_choreography.gd")
 const EnemyChoreography = preload("res://scripts/enemy_attack_choreography.gd")
+const CombatSpritePose = preload("res://scripts/combat_sprite_pose.gd")
 const WORLD_SIZE := Vector2(1000.0, 520.0)
 const MAX_CASTS := 48
 const INK := Color("#182126")
@@ -20,37 +22,8 @@ const RIGHT_RELAY_COLOR := Color("#e7b3ff")
 const DOCK_WINCH_COLOR := Color("#e6c193")
 const REPAIR_COLOR := Color("#a9e5bd")
 const ARENA_TEXTURES := {"glass": "glass_arena", "crown": "crown_arena", "moonwreck": "moonwreck_arena"}
-const SPRITE_PATHS := {
+const ARENA_PATHS := {
 	"arena": "res://assets/arena.webp",
-	"warden": "res://assets/warden.png",
-	"hexwright": "res://assets/hexwright.png",
-	"marksman": "res://assets/marksman.png",
-	"apothecary": "res://assets/apothecary.png",
-	"duelist": "res://assets/duelist.png",
-	"runesmith": "res://assets/runesmith.png",
-	"brass_sapper": "res://assets/brass_sapper.png",
-	"glass_duelist": "res://assets/glass_duelist.png",
-	"crown_mender": "res://assets/crown_mender.png",
-	"dock_corsair": "res://assets/dock_corsair.png",
-	"clockwork": "res://assets/clockwork.png",
-	"tollkeeper_drone": "res://assets/tollkeeper-repair-drone.png",
-	"scout": "res://assets/scout.png",
-	"marshal": "res://assets/marshal.png",
-	"regent": "res://assets/regent.png",
-	"glass_hunter": "res://assets/glass_hunter.png",
-	"glass_skirmisher": "res://assets/glass_skirmisher.png",
-	"glass_twin": "res://assets/glass_twin.png",
-	"prism_warden": "res://assets/prism_warden.png",
-	"tempered_colossus": "res://assets/tempered_colossus.png",
-	"relay_guard": "res://assets/relay_guard.png",
-	"relay_captain": "res://assets/relay_captain.png",
-	"relay_marshal": "res://assets/relay_marshal.png",
-	"crown_regent": "res://assets/crown_regent.png",
-	"dock_winch": "res://assets/dock_winch.png",
-	"dock_bruiser": "res://assets/dock_bruiser.png",
-	"wreckmaster": "res://assets/wreckmaster.png",
-	"tidekeeper": "res://assets/tidekeeper.png",
-	"drowned_admiral": "res://assets/drowned_admiral.png",
 	"glass_arena": "res://assets/glass-arena.webp",
 	"crown_arena": "res://assets/crown-arena.webp",
 	"moonwreck_arena": "res://assets/moonwreck-arena.webp",
@@ -84,6 +57,7 @@ const EFFECT_LENGTHS := {
 	"switchback_lens": 0.36,
 	"longshot_prism": 0.38,
 	"retreat": 0.30,
+	"charge": 0.36,
 	"mark": 0.36,
 	"mark_spent": 0.32,
 	"guard_break": 0.34,
@@ -118,7 +92,7 @@ const EFFECT_LENGTHS := {
 	"fuse_disarmed": 0.55,
 	"haste": 0.42,
 }
-const MARK_COLOR := Color("#e4adff")
+const MARK_COLOR := CombatIcons.PALETTE["mark"]
 const SIGNATURE_WINDUP_LABELS := {
 	"recruit": "SPRING WINDUP", "bruiser": "SHOVE", "veteran": "SABER SWING", "boss": "TOLL STRIKE",
 	"crown_page_advance": "ADVANCE", "relay_recruit": "BRACED", "relay_runner_press": "HEAVY WINDUP",
@@ -176,6 +150,10 @@ var _reinforcement_warning: Dictionary = {}
 var location := "brass"
 var _textures: Dictionary = {}
 var _positions: Dictionary = {}
+var _sprite_geometry: Dictionary = {}
+var _combat_sprites: Dictionary = {}
+var _gait_phases: Dictionary = {}
+var _gait_strengths: Dictionary = {}
 var _effects: Array[Dictionary] = []
 var _attack_casts: Array[Dictionary] = []
 var _actor_casts: Dictionary = {}
@@ -190,13 +168,10 @@ func _ready() -> void:
 	clip_contents = true
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	custom_minimum_size.y = maxf(custom_minimum_size.y, 250.0)
-	for key in SPRITE_PATHS:
-		var path: String = SPRITE_PATHS[key]
+	for key in ARENA_PATHS:
+		var path: String = ARENA_PATHS[key]
 		if ResourceLoader.exists(path, "Texture2D"):
 			_textures[key] = ResourceLoader.load(path, "Texture2D") as Texture2D
-	for frames: Dictionary in GameIcons.ENEMY_SHEETS.values():
-		for id: String in frames:
-			_textures[id] = GameIcons.pilot_enemy_art(id)
 	resized.connect(queue_redraw)
 
 
@@ -221,6 +196,9 @@ func reset_view(units_data: Array, lanes: Array = [], reinforcement: Dictionary 
 				"profile": _hero_profile(entry.id)})
 		_hero_clips.append(clips)
 	_positions.clear()
+	_combat_sprites.clear()
+	_gait_phases.clear()
+	_gait_strengths.clear()
 	_animation_time = 0.0
 	for unit in units:
 		_positions[unit.id] = unit.pos
@@ -297,11 +275,15 @@ func _process(delta: float) -> void:
 	for unit in units:
 		var position: Vector2 = unit.pos
 		var previous: Vector2 = _positions.get(unit.id, position)
+		var traveled := Vector2.ZERO
 		if previous.distance_squared_to(position) > 0.005:
-			_positions[unit.id] = previous.lerp(position, blend)
+			var displayed := previous.lerp(position, blend)
+			traveled = displayed - previous
+			_positions[unit.id] = displayed
 			changed = true
 		else:
 			_positions[unit.id] = position
+		_update_gait(unit, traveled, delta)
 	for index in range(_effects.size() - 1, -1, -1):
 		var effect := _effects[index]
 		effect.age += delta
@@ -318,6 +300,20 @@ func _process(delta: float) -> void:
 		changed = true
 	if changed or _has_animated_warning():
 		queue_redraw()
+
+
+func _update_gait(unit: Dictionary, traveled: Vector2, delta: float) -> void:
+	var drive: Vector2 = unit.get("drive_velocity", Vector2.ZERO)
+	var driven := maxf(0.0, traveled.dot(drive.normalized()))
+	if driven <= 0.01:
+		_gait_strengths[unit.id] = 0.0
+		return
+	var phase: float = _gait_phases.get(unit.id, float(posmod(hash(unit.id), 627)) * 0.01)
+	var facing: float = unit.get("facing", 1.0 if unit.side == "hero" else -1.0)
+	var direction := -1.0 if drive.x * facing < -6.0 else 1.0
+	var stride_length := maxf(34.0, float(unit.radius) * 1.8)
+	_gait_phases[unit.id] = fposmod(phase + TAU * driven * direction / stride_length, TAU)
+	_gait_strengths[unit.id] = minf(1.0, minf(drive.length(), driven / maxf(delta, 0.0001)) / 76.0)
 
 
 func _draw() -> void:
@@ -394,24 +390,30 @@ func _sprite_facing(unit: Dictionary, cast: Dictionary) -> float:
 	return unit.get("facing", 1.0 if unit.side == "hero" else -1.0)
 
 
+func _combat_sprite(id: String, key: String, texture: Texture2D, friendly: bool) -> CombatSpritePose:
+	if not _combat_sprites.has(id):
+		if not _sprite_geometry.has(key):
+			_sprite_geometry[key] = CombatSpritePose.geometry(texture, 1.0 if friendly else -1.0)
+		_combat_sprites[id] = CombatSpritePose.new(_sprite_geometry[key])
+	return _combat_sprites[id]
+
+
 func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	var friendly: bool = unit.side == "hero"
 	var accent := HERO_COLOR if friendly else ENEMY_COLOR
 	if friendly and location == "glass":
 		accent = Color("#c4fff0")
 	var art_key := String(unit.get("sprite", unit.id))
+	var hero_class := ""
 	if friendly:
-		art_key = unit.get("sprite", GameIcons.portrait(unit.get("class", "warden")))
-	var texture: Texture2D = _textures.get(art_key)
-	if texture == null and friendly:
-		texture = _textures.get("warden")
-	if texture == null and art_key == "marshal":
-		texture = _textures.get("clockwork")
+		hero_class = unit.get("class", art_key)
+		art_key = GameIcons.portrait(hero_class)
+	var texture: Texture2D = GameIcons.hero_art(hero_class) if friendly else GameIcons.enemy_art(art_key)
 	var radius := maxf(8.0, float(unit.radius) * unit_scale)
 	var model_height := 132.0
 	if art_key in ["tempered_colossus", "crown_regent", "wreckmaster", "tidekeeper", "drowned_admiral"]:
 		model_height = 218.0
-	elif art_key in ["marshal", "regent", "glass_twin", "prism_warden", "relay_captain", "relay_marshal", "brass_bellmaker", "brass_tollkeeper", "glass_refraction_engine"]:
+	elif art_key in ["marshal", "regent", "glass_twin", "ember_twin", "prism_warden", "relay_captain", "relay_marshal", "brass_bellmaker", "brass_tollkeeper", "glass_refraction_engine"]:
 		model_height = 191.0
 	elif art_key == "brass_captain":
 		model_height = 161.0
@@ -422,21 +424,26 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	elif art_key == "tollkeeper_drone":
 		model_height = 108.0
 	var art_height := maxf(39.0, unit_scale * model_height)
-	var velocity: Vector2 = unit.get("velocity", Vector2.ZERO)
-	var motion := minf(velocity.length() / 100.0, 1.0)
-	var stride := _animation_time * 16.0 + float(unit.lane)
-	var bounce := Vector2(0.0, -absf(sin(stride)) * motion * 3.0)
+	var motion: float = _gait_strengths.get(unit.id, 0.0)
+	var stride: float = _gait_phases.get(unit.id, 0.0)
+	var bounce := Vector2(0.0, -absf(sin(stride)) * motion * 1.7)
 	var lean := sin(stride) * motion * 0.022
 	var cast: Dictionary = _actor_casts.get(unit.id, {})
 	var prepare := _windup_details(unit)
 	var acting := not cast.is_empty() and float(cast.age) < 0.18
 	var facing := _sprite_facing(unit, cast if acting else {})
 	var pose := Vector4.ZERO
+	var brace := 0.0
+	var arm_swing := sin(stride) * motion * 0.19
+	var arms := Vector3(-arm_swing, arm_swing, 0.0)
 	if acting:
-		var follow_through := pow(1.0 - float(cast.age) / 0.18, 1.7)
-		pose = AttackAnimation.pose(cast.profile, follow_through, facing, true)
+		brace = pow(1.0 - float(cast.age) / 0.18, 1.7)
+		pose = AttackAnimation.pose(cast.profile, brace, facing, true)
+		arms = CombatSpritePose.arm_pose(cast.profile, brace, true)
 	elif not prepare.is_empty():
-		pose = AttackAnimation.pose(prepare.profile, smoothstep(0.04, 1.0, prepare.charge), facing, false)
+		brace = smoothstep(0.04, 1.0, prepare.charge)
+		pose = AttackAnimation.pose(prepare.profile, brace, facing, false)
+		arms = CombatSpritePose.arm_pose(prepare.profile, brace, false)
 	bounce += Vector2(pose.x, pose.y) * art_height
 	lean += pose.z
 	var flash := 0.0
@@ -452,19 +459,11 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 			lean += hit_direction.x * recoil * 0.08
 	_draw_ellipse(point + Vector2(1.5, 2.0), Vector2(radius * 1.2, radius * 0.36), Color(0.1, 0.09, 0.08, 0.43))
 	if texture:
-		var width := art_height * texture.get_size().aspect()
 		var flip := 1.0 if (facing > 0.0) == friendly else -1.0
 		draw_set_transform(point + bounce, lean, Vector2(flip * (1.0 - pose.w * 0.67), 1.0 + pose.w))
-		var tint := GOLD.lightened(0.35) if art_key == "marshal" and not _textures.has("marshal") else Color.WHITE
-		if unit.name == "Crucible Twin · Ember":
-			tint = Color("#ffc391")
-		elif unit.get("crown_role") == "relay_right":
-			tint = RIGHT_RELAY_COLOR.lerp(Color.WHITE, 0.32)
-		elif art_key == "brass_bellmaker":
-			tint = Color("#ffd5a9")
-		elif art_key == "glass_refraction_engine":
-			tint = Color("#a2eaff")
-		draw_texture_rect(texture, Rect2(-width * 0.5, -art_height, width, art_height), false, tint.lerp(GOLD, flash * 0.6))
+		var tint := RIGHT_RELAY_COLOR.lerp(Color.WHITE, 0.32) if unit.get("crown_role") == "relay_right" else Color.WHITE
+		_combat_sprite(unit.id, art_key, texture, friendly).draw(self, art_height,
+			CombatSpritePose.leg_pose(stride, motion * (1.0 - brace * 0.75), brace), arms, tint.lerp(GOLD, flash * 0.6))
 		draw_set_transform(Vector2.ZERO)
 	else:
 		var body_center := point + bounce - Vector2(0.0, art_height * 0.37)
@@ -486,7 +485,8 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	if int(unit.get("crown_oathbrace_until", 0)) > combat_tick:
 		draw_line(bar.position + Vector2(0.0, -2.0), bar.position + Vector2(bar.size.x, -2.0), RELAY_SHIELD_COLOR, 2.0, true)
 	elif float(unit.get("guard", 0)) > 0.0:
-		draw_line(bar.position + Vector2(0.0, -2.0), bar.position + Vector2(bar.size.x, -2.0), GOLD, 2.0, true)
+		draw_line(bar.position + Vector2(0.0, -2.0), bar.position + Vector2(bar.size.x, -2.0), CombatIcons.PALETTE["guard"], 2.0, true)
+	_draw_status_badges(unit, bar)
 	var stacks: int = unit.get("furnace_heat", unit.get("flywheel_momentum", 0))
 	for index in range(stacks):
 		var pip := Vector2(bar.end.x + 5.0 + index * 6.0, bar.get_center().y)
@@ -499,6 +499,7 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		draw_rect(gauge.grow(1), INK)
 		draw_rect(gauge, REPAIR_COLOR.darkened(0.76) if repairing else Color("#593b29"))
 		draw_rect(Rect2(gauge.position, Vector2(gauge.size.x * charge, gauge.size.y)), REPAIR_COLOR if repairing else GOLD.lerp(ENEMY_COLOR, charge * charge))
+		_draw_status_badge("heal" if repairing else "windup", Vector2(gauge.position.x - 8.0, gauge.get_center().y))
 		if repairing:
 			_draw_centered("REPAIRING", bar.get_center() - Vector2(0.0, 9.0), 13, REPAIR_COLOR)
 		var special: String = unit.get("special_intent", "")
@@ -517,11 +518,6 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 				draw_circle(pip, 2.3, HERO_COLOR if index < progress_count else GOLD, true, -1.0, true)
 	if int(unit.get("tar_slow_until", 0)) > combat_tick:
 		draw_arc(point, radius, 0.0, PI, 16, Color("#be915d"), 2.0, true)
-	if int(unit.get("arsenal_mark", {}).get("expires", -1)) >= combat_tick or int(unit.get("crown_spotter_until", 0)) > combat_tick:
-		var center := bar.position + Vector2(-8.0, 2.5)
-		var diamond := PackedVector2Array([center + Vector2(0, -5), center + Vector2(4, 0),
-			center + Vector2(0, 5), center + Vector2(-4, 0)])
-		draw_colored_polygon(diamond, MARK_COLOR)
 	if unit.get("marshal_plated", false):
 		var exposed_until := int(unit.get("marshal_exposed_until", 0))
 		var exposed := exposed_until > 0
@@ -586,6 +582,30 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		_draw_centered("WINCH PULL", bar.get_center() - Vector2(0.0, 9.0), 13, DOCK_WINCH_COLOR)
 
 
+func _draw_status_badges(unit: Dictionary, bar: Rect2) -> void:
+	var badges: Array[String] = ["health"]
+	if int(unit.get("guard", 0)) > 0 or int(unit.get("crown_oathbrace_until", 0)) > combat_tick:
+		badges.append("guard")
+	if int(unit.get("burn_left", 0)) > 0 or not unit.get("ember_burns", {}).is_empty():
+		badges.append("burn")
+	if int(unit.get("arsenal_mark", {}).get("expires", -1)) >= combat_tick \
+			or int(unit.get("cantor_mark", {}).get("expires", -1)) >= combat_tick \
+			or int(unit.get("crown_spotter_until", 0)) > combat_tick:
+		badges.append("mark")
+	if int(unit.get("haste_until", 0)) > combat_tick:
+		badges.append("haste")
+	if int(unit.get("tar_slow_until", 0)) > combat_tick:
+		badges.append("slow")
+	for index in range(badges.size()):
+		var center := Vector2(bar.position.x - 8.0 - index * 11.0, bar.get_center().y)
+		_draw_status_badge(badges[index], center)
+
+
+func _draw_status_badge(id: String, center: Vector2, tint := Color.TRANSPARENT) -> void:
+	draw_circle(center, 5.5, Color(INK, 0.93), true, -1.0, true)
+	CombatIcons.draw(self, id, center, 10.0, tint)
+
+
 func _hero_profile(id: String) -> Dictionary:
 	if not _hero_profiles.has(id):
 		_hero_profiles[id] = HeroChoreography.profile(id, ArenaSim.TILES.get(id, {}))
@@ -642,12 +662,7 @@ func _draw_combo_ring(point: Vector2, radius: float, steps: int, completed: int)
 		draw_arc(point, radius, start, start + angle - 0.18, 18, color, 3.0, true)
 
 func _draw_shield_mark(center: Vector2, color: Color) -> void:
-	var points := PackedVector2Array([
-		center + Vector2(-4, -4), center + Vector2(4, -4), center + Vector2(4, 0),
-		center + Vector2(0, 5), center + Vector2(-4, 0), center + Vector2(-4, -4)
-	])
-	draw_colored_polygon(points, Color(INK, 0.9))
-	draw_polyline(points, color, 1.5, true)
+	_draw_status_badge("guard", center, color)
 
 
 func _draw_relay_links(field: Rect2) -> void:
@@ -945,8 +960,16 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			for index in range(5):
 				var ray := Vector2.RIGHT.rotated(index * TAU / 5.0 + progress * 1.7)
 				draw_circle(to_point + ray * (8.0 + progress * 27.0), 2.2 * opacity, Color(TELEPORT_COLOR, opacity), true, -1.0, true)
-		"retreat":
-			_draw_arrow(from_point, to_point, Color(HERO_COLOR, opacity))
+		"charge", "retreat":
+			var accent := GOLD if kind == "charge" else HERO_COLOR
+			var direction := from_point.direction_to(to_point)
+			var cross := direction.orthogonal()
+			for streak in range(3):
+				var offset := cross * float(streak - 1) * 6.0 - Vector2(0, 12)
+				var start := from_point.lerp(to_point, 0.11 * streak + progress * 0.42)
+				var finish := start.move_toward(to_point, minf(72.0, from_point.distance_to(to_point) * 0.40))
+				draw_line(start + offset, finish + offset, Color(accent, opacity * 0.75), 2.4, true)
+			_draw_ellipse(to_point, Vector2(8.0 + progress * 18.0, 4.0 + progress * 8.0), Color(accent, opacity * 0.20))
 		"ranged_followup_ready", "lance_return_ready":
 			var center := to_point - Vector2(0.0, 16.0)
 			var radius := lerpf(21.0, 8.0, progress)
@@ -1057,7 +1080,7 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 
 func _draw_feedback(effect: Dictionary, field: Rect2) -> void:
 	var kind: String = effect.kind
-	if kind not in ["hit", "miss", "wreckmaster_slam_miss", "repair_heal"] and not FLOATING_CUES.has(kind):
+	if kind not in ["hit", "miss", "wreckmaster_slam_miss", "guard", "heal", "repair_heal"] and not FLOATING_CUES.has(kind):
 		return
 	var from_drone := kind in ["repair_interrupted", "repair_separated"]
 	var point := _project(effect.from if from_drone else effect.to, field)
@@ -1065,23 +1088,38 @@ func _draw_feedback(effect: Dictionary, field: Rect2) -> void:
 	var opacity := 1.0 - progress
 	var label := "MISS"
 	var color := WHITE
-	if kind == "wreckmaster_slam_miss":
-		label = "SLAM MISSED"
-	if kind == "repair_heal":
-		label = "+%d HP" % effect.amount
-		color = REPAIR_COLOR
+	var glyph := ""
+	var shift := 0.0
 	if FLOATING_CUES.has(kind):
 		label = FLOATING_CUES[kind]
 		color = REPAIR_COLOR if from_drone else RELAY_SHIELD_COLOR
-	if kind == "hit":
-		color = GOLD if String(effect.actor).begins_with("hero") else ENEMY_COLOR.lightened(0.19)
-		label = str(effect.amount)
-		var impact := point - Vector2(0.0, 16.0)
-		for index in range(4):
-			var ray := Vector2.RIGHT.rotated(index * TAU / 4.0 + 0.7)
-			draw_line(impact + ray * (4.0 + progress * 8.0), impact + ray * (10.0 + progress * 11.0), Color(color, opacity), 2.0, true)
+	match kind:
+		"wreckmaster_slam_miss":
+			label = "SLAM MISSED"
+		"guard", "heal", "repair_heal":
+			if effect.amount <= 0:
+				return
+			glyph = "guard" if kind == "guard" else "heal"
+			color = CombatIcons.PALETTE[glyph]
+			label = str(effect.amount) if effect.tile == "relay_absorb" else "+%d" % effect.amount
+			shift = -22.0 if kind == "guard" else 22.0
+		"hit":
+			glyph = "burn" if effect.tile == "cinder_mage" else "attack"
+			color = CombatIcons.PALETTE["burn"] if glyph == "burn" else (GOLD if String(effect.actor).begins_with("hero") else ENEMY_COLOR.lightened(0.19))
+			label = str(effect.amount)
+			var impact := point - Vector2(0.0, 16.0)
+			for index in range(4):
+				var ray := Vector2.RIGHT.rotated(index * TAU / 4.0 + 0.7)
+				draw_line(impact + ray * (4.0 + progress * 8.0), impact + ray * (10.0 + progress * 11.0), Color(color, opacity), 2.0, true)
 	var lift := 52.0 if kind == "marshal_plate_broken" else 24.0
-	_draw_centered(label, point - Vector2(0.0, lift + progress * 25.0), 15, Color(color, opacity))
+	var baseline := point + Vector2(shift, -lift - progress * 25.0)
+	if not glyph.is_empty():
+		var width := get_theme_default_font().get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 15).x
+		var center := baseline - Vector2(width * 0.5, 5.5)
+		draw_circle(center, 7.0, Color(INK, opacity * 0.93), true, -1.0, true)
+		CombatIcons.draw(self, glyph, center, 13.0, Color(color, opacity))
+		baseline.x += 7.5
+	_draw_centered(label, baseline, 15, Color(color, opacity))
 
 
 func _draw_arrow(from_point: Vector2, to_point: Vector2, color: Color) -> void:

@@ -6,6 +6,7 @@ const ExpeditionMenu = preload("res://scripts/expedition_menu.gd")
 const AetherChartMenu = preload("res://scripts/aether_chart_menu.gd")
 const ClassRosterMenu = preload("res://scripts/class_roster_menu.gd")
 const GameIcons = preload("res://scripts/game_icons.gd")
+const CombatIcons = preload("res://scripts/combat_icons.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
 const ClassMasteries = preload("res://scripts/class_masteries.gd")
 const TileKeywords = preload("res://scripts/tile_keywords.gd")
@@ -219,11 +220,15 @@ func _shell(phase: String) -> void:
 	if phase != "result":
 		for member: Dictionary in ([] if _battle_overlay else _party()):
 			var member_id: String = member.get("id", "")
-			var hp_text := "%d / %d HP" % [int(member.hp), int(member.max_hp)]
+			var hp_text := "%d/%d" % [int(member.hp), int(member.max_hp)]
+			var health := CombatIcons.stat("health", hp_text, 17)
 			if not member_id.is_empty():
-				hp_text = _hero_name(member_id) + "  " + hp_text
-			bar.add_child(_label(hp_text, 15, TEAL if int(member.hp) > 0 else RUST))
-		bar.add_child(_label("%d gold" % int(_run.data.get("gold", 0)), 15, GOLD))
+				health.add_child(GameIcons.hero_badge(member_id))
+				health.move_child(health.get_child(health.get_child_count() - 1), 0)
+				health.tooltip_text = "%s health: %s" % [_hero_name(member_id), hp_text]
+				health.accessibility_name = health.tooltip_text
+			bar.add_child(health)
+		bar.add_child(CombatIcons.stat("gold", str(int(_run.data.get("gold", 0)))))
 	_top_actions = HBoxContainer.new()
 	_top_actions.add_theme_constant_override("separation", 8)
 	bar.add_child(_top_actions)
@@ -350,9 +355,12 @@ func _add_recruit_loadouts(cards: HBoxContainer, offers: Array) -> void:
 			var tile := VBoxContainer.new()
 			tile.size_flags_horizontal = SIZE_EXPAND_FILL
 			row.add_child(tile)
-			tile.add_child(_label("%s  ·  %s" % [spec.label, GameIcons.tile_stats(spec)], 17, CREAM))
+			var title := _label(spec.label, 17, CREAM)
+			title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			tile.add_child(title)
+			tile.add_child(CombatIcons.tile_stats(spec, 14))
 			tile.add_child(TileKeywords.description(spec.description, 14, MUTED))
-			var firing_beat := _label("Beat %d" % beat, 15, TEAL)
+			var firing_beat := CombatIcons.stat("windup", str(beat), 16, "Fires on beat %d." % beat)
 			firing_beat.name = "RecruitTileBeat_" + id
 			firing_beat.size_flags_vertical = SIZE_SHRINK_BEGIN
 			row.add_child(firing_beat)
@@ -406,10 +414,10 @@ func _add_draft_cards(cards: HBoxContainer, offers: Array, phase: String) -> voi
 			"hero", "recruit": entry = FrontierRun.HEROES[id]
 			"relic": entry = FrontierRun.RELICS[id]
 			_: entry = ArenaSim.TILES[id]
-		var info := _tile_info(entry) if phase in ["starter", "recruit_starter"] else str(entry.get("description", ""))
+		var info := str(entry.get("description", ""))
 		var card := _choice(cards, entry.label, info, "Choose", func(): _pick_draft(phase, id))
 		if phase in ["hero", "recruit"]:
-			_add_portrait(card, GameIcons.portrait(id), 205)
+			_add_portrait(card, GameIcons.hero_art(id), 205)
 			var deck := _label(ClassDecks.summary(id), 15, TEAL)
 			deck.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 			card.add_child(deck)
@@ -444,6 +452,8 @@ func _show_class_deck(hero_id: String) -> void:
 	var common: Array = ClassDecks.common(hero_id)
 	var uncommon: Array = ClassDecks.uncommon(hero_id)
 	var signature: String = ClassDecks.signature(hero_id)
+	var summary := VBoxContainer.new()
+	summary.add_theme_constant_override("separation", 3)
 	var details := TileKeywords.description("", 15, CREAM)
 	details.custom_minimum_size = Vector2(640, 42)
 	for pool in [common, uncommon]:
@@ -464,12 +474,12 @@ func _show_class_deck(hero_id: String) -> void:
 		for tile_id: String in pool:
 			var spec: Dictionary = ArenaSim.TILES[tile_id]
 			var tile := Button.new()
-			tile.text = "%s  ·  %s" % [spec.label, GameIcons.tile_stats(spec).replace("damage", "dmg")]
+			tile.text = spec.label
 			tile.custom_minimum_size.y = 30
 			tile.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 			tile.size_flags_horizontal = SIZE_EXPAND_FILL
-			var tooltip: String = "%s · %s\n%s" % [_hero_name(hero_id), GameIcons.rarity_name(spec), spec.description]
-			tile.tooltip_text = TileKeywords.with_definitions(tooltip, GameIcons.tile_stats(spec) + "\n" + spec.description)
+			var tooltip: String = "%s · %s\n%s\n%s" % [_hero_name(hero_id), GameIcons.rarity_name(spec), GameIcons.tile_stats(spec), spec.description]
+			tile.tooltip_text = TileKeywords.with_definitions(tooltip, spec.description)
 			tile.mouse_default_cursor_shape = CURSOR_POINTING_HAND
 			GameIcons.decorate(tile, GameIcons.tile(tile_id, spec), 18)
 			var fill := PANEL.lerp(GameIcons.rarity(spec), 0.16 if tile_id == signature else 0.07)
@@ -479,13 +489,25 @@ func _show_class_deck(hero_id: String) -> void:
 			var detail_copy := "%s · %s" % [spec.label, spec.description]
 			if tile_id == signature:
 				detail_copy = "%s signature · %s" % [_hero_name(hero_id), detail_copy]
-				TileKeywords.set_description(details, detail_copy)
-			tile.pressed.connect(func(): TileKeywords.set_description(details, detail_copy))
-			tile.focus_entered.connect(func(): TileKeywords.set_description(details, detail_copy))
+				_show_deck_tile(summary, details, spec, detail_copy)
+			tile.pressed.connect(func(): _show_deck_tile(summary, details, spec, detail_copy))
+			tile.focus_entered.connect(func(): _show_deck_tile(summary, details, spec, detail_copy))
 			grid.add_child(tile)
-	deck.add_child(details)
+	summary.add_child(details)
+	deck.add_child(summary)
 	deck.add_child(_label("Combine 3 matching tiles to choose an upgrade.", 15, MUTED))
 	dialog.popup_centered(Vector2i(1030, 530))
+
+
+func _show_deck_tile(summary: VBoxContainer, details: RichTextLabel, spec: Dictionary, copy: String) -> void:
+	var previous := summary.get_node_or_null("TileStats")
+	if previous != null:
+		summary.remove_child(previous)
+		previous.queue_free()
+	var stats := CombatIcons.tile_stats(spec, 15)
+	summary.add_child(stats)
+	summary.move_child(stats, 0)
+	TileKeywords.set_description(details, copy)
 
 
 func _pick_draft(phase: String, id: String) -> void:
@@ -709,7 +731,7 @@ func _reward() -> void:
 			hint = "Combine with 2 owned copies" if hint in ["", "Third copy", "Owned copy"] else "%s · Combine with 2 owned copies" % hint
 		if not owner.is_empty() and tile.get("base_tile", id) == ClassDecks.signature(owner):
 			hint = "Signature tile" if hint.is_empty() else "Signature tile · " + hint
-		var card := _choice(cards, tile.label, _tile_info(tile) + ("\n" + hint if not hint.is_empty() else ""),
+		var card := _choice(cards, tile.label, tile.description + ("\n" + hint if not hint.is_empty() else ""),
 			"Select", func(): _claim_reward(id, notice))
 		var select_tile: Button = card.get_child(card.get_child_count() - 1)
 		select_tile.name = "RewardTile_" + id
@@ -751,7 +773,7 @@ func _reward_heading(title: String, milestone: String, hero_id: String) -> void:
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 13)
 	_layout.add_child(row)
-	var art := load("res://assets/%s.png" % GameIcons.portrait(hero_id)) as Texture2D
+	var art := GameIcons.hero_art(hero_id)
 	if art:
 		row.add_child(_icon_view(art, 32 if _battle_overlay else 54))
 	var hero := _label(_hero_name(hero_id), 26 if _battle_overlay else 34, CREAM, true)
@@ -928,7 +950,7 @@ func _shop() -> void:
 		var row := cards if owner.is_empty() else ledger_cards
 		var caption := "Purchased" if purchased else "Buy · %d gold" % price
 		var unavailable := purchased or int(_run.data.get("gold", 0)) < price
-		var card := _choice(row, tile.label, _tile_info(tile), caption, func(): _buy_tile(id, notice), unavailable)
+		var card := _choice(row, tile.label, tile.description, caption, func(): _buy_tile(id, notice), unavailable)
 		var purchase: Button = card.get_child(card.get_child_count() - 1)
 		purchase.name = "ShopTile_" + id
 		var panel := card.get_parent() as PanelContainer
@@ -1296,21 +1318,29 @@ func _choice(parent: Control, name: String, body: String, cta: String, chosen: C
 	return card
 
 
-func _tile_info(tile: Dictionary) -> String:
-	return "%s\n%s" % [GameIcons.tile_stats(tile), tile.description]
-
-
 func _add_tile_header(card: VBoxContainer, id: String, spec: Dictionary, owner := "", compact := false) -> void:
-	var copy := card.get_node_or_null("ChoiceDetails") as Label
+	var description := card.get_node("ChoiceDetails") as Control
+	var copy := description as Label
 	if copy != null:
 		var details := TileKeywords.description(copy.text, copy.get_theme_font_size("font_size"), copy.get_theme_color("font_color"))
 		details.name = copy.name
-		details.size_flags_vertical = copy.size_flags_vertical
 		var position := copy.get_index()
 		card.remove_child(copy)
 		copy.queue_free()
 		card.add_child(details)
 		card.move_child(details, position)
+		description = details
+	var content := VBoxContainer.new()
+	content.add_theme_constant_override("separation", 3 if _battle_overlay else 7)
+	content.size_flags_vertical = SIZE_EXPAND_FILL
+	card.add_child(content)
+	card.move_child(content, description.get_index())
+	content.add_child(CombatIcons.tile_stats(spec, 14 if _battle_overlay else 16))
+	description.reparent(content, false)
+	description.size_flags_vertical = SIZE_EXPAND_FILL
+	if _battle_overlay:
+		content.custom_minimum_size.y = description.custom_minimum_size.y
+		description.custom_minimum_size.y = 0
 	var panel := card.get_parent() as PanelContainer
 	var color := GameIcons.rarity(spec)
 	panel.add_theme_stylebox_override("panel", _tile_card_frame(spec, false, 12 if compact else 18))
@@ -1374,14 +1404,9 @@ func _add_card_icon(card: VBoxContainer, key: String, accent := GOLD) -> void:
 	card.move_child(art, 0)
 
 
-func _add_portrait(card: VBoxContainer, id: String, height := 138) -> void:
-	var texture := GameIcons.pilot_enemy_art(id)
+func _add_portrait(card: VBoxContainer, texture: Texture2D, height: int) -> void:
 	if texture == null:
-		var asset := "tollkeeper-repair-drone" if id == "tollkeeper_drone" else id
-		var path := "res://assets/%s.png" % asset
-		if not ResourceLoader.exists(path, "Texture2D"):
-			return
-		texture = load(path) as Texture2D
+		return
 	var portrait := TextureRect.new()
 	portrait.texture = texture
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE

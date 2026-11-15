@@ -38,8 +38,8 @@ const SPECS := {
 	},
 	"retreat_shot": {
 		"label": "Retreat Shot", "width": 2, "range": 455.0, "damage": 11, "rarity": "common",
-		"ranged": true, "retreat": 72.0, "targets": ENEMY_TARGETS, "icon": "shot",
-		"description": "Fire, then back away from the target by up to 72.",
+		"ranged": true, "retreat": 125.0, "targets": ENEMY_TARGETS, "icon": "shot",
+		"description": "Fire, then dash away from the target by up to 125.",
 	},
 	"signal_flare": {
 		"label": "Signal Flare", "width": 2, "range": 545.0, "damage": 7, "rarity": "common",
@@ -91,15 +91,15 @@ const SPECS := {
 		"description": "Deal 13 damage to each other enemy within 147 range of the target.",
 	},
 	"shoulder_check": {
-		"label": "Shoulder Check", "width": 3, "range": 330.0, "damage": 19, "rarity": "uncommon",
+		"label": "Shoulder Check", "width": 3, "range": 425.0, "damage": 19, "rarity": "uncommon",
 		"charge": true, "push": 475.0, "guard": 6, "targets": ENEMY_TARGETS, "icon": "push",
 		"description": "Rush the target if the path is clear. Hit, push it away, and gain 6 Guard.",
 	},
 	"crossfire": {
 		"label": "Crossfire", "width": 3, "range": 460.0, "damage": 15, "rarity": "uncommon",
-		"ranged": true, "splash": 105.0, "splash_damage": 10, "retreat": 95.0,
+		"ranged": true, "splash": 105.0, "splash_damage": 10, "retreat": 150.0,
 		"targets": ENEMY_TARGETS, "icon": "area",
-		"description": "Deal 10 damage to each other enemy within 105 range of the target, then back away by up to 95.",
+		"description": "Deal 10 damage to each other enemy within 105 range of the target, then dash away by up to 150.",
 	},
 	"hook_sweep": {
 		"label": "Hook Sweep", "width": 3, "range": 345.0, "damage": 16, "rarity": "uncommon",

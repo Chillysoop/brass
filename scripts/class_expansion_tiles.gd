@@ -65,11 +65,11 @@ const SPECS := {
 	},
 	"slip_cut": {
 		"label": "Slip Cut", "width": 2, "range": 145.0, "damage": 13, "rarity": "common",
-		"retreat": 55.0, "targets": ENEMY_TARGETS, "icon": "battle",
-		"description": "Strike, then back away from the target by up to 55.",
+		"retreat": 92.0, "targets": ENEMY_TARGETS, "icon": "battle",
+		"description": "Strike, then dash away from the target by up to 92.",
 	},
 	"spur": {
-		"label": "Spur", "width": 2, "range": 235.0, "damage": 12, "rarity": "common",
+		"label": "Spur", "width": 2, "range": 325.0, "damage": 12, "rarity": "common",
 		"charge": true, "guard": 2, "targets": ENEMY_TARGETS, "icon": "battle",
 		"description": "Rush the target if the path is clear. Hit and gain 2 Guard.",
 	},
@@ -105,9 +105,9 @@ const SPECS := {
 		"description": "Strip up to 6 Guard before the hit. Deal 10 damage to every other enemy within 90 range of the target.",
 	},
 	"reverse_cut": {
-		"label": "Reverse Cut", "width": 2, "range": 190.0, "damage": 15, "rarity": "uncommon",
-		"charge": true, "retreat": 72.0, "targets": ENEMY_TARGETS, "icon": "battle",
-		"description": "Rush the target if the path is clear. Hit, then back away by up to 72.",
+		"label": "Reverse Cut", "width": 2, "range": 280.0, "damage": 15, "rarity": "uncommon",
+		"charge": true, "retreat": 126.0, "targets": ENEMY_TARGETS, "icon": "battle",
+		"description": "Rush the target if the path is clear. Hit, then dash away by up to 126.",
 	},
 	"flare_mortar": {
 		"label": "Flare Mortar", "width": 3, "range": 470.0, "damage": 14, "rarity": "uncommon",
@@ -137,11 +137,11 @@ const SPECS := {
 	},
 	"ghost_volley": {
 		"label": "Ghost Volley", "width": 3, "range": 470.0, "damage": 14, "rarity": "uncommon",
-		"ranged": true, "retreat": 95.0, "mark_bonus": 9, "mark_beats": 3, "targets": ENEMY_TARGETS, "icon": "shot",
-		"description": "Fire and back away by up to 95. The next tile to hit the target within 3 beats deals 9 extra damage.",
+		"ranged": true, "retreat": 150.0, "mark_bonus": 9, "mark_beats": 3, "targets": ENEMY_TARGETS, "icon": "shot",
+		"description": "Fire and dash away by up to 150. The next tile to hit the target within 3 beats deals 9 extra damage.",
 	},
 	"comet_charge": {
-		"label": "Comet Charge", "width": 3, "range": 410.0, "damage": 21, "rarity": "uncommon",
+		"label": "Comet Charge", "width": 3, "range": 540.0, "damage": 21, "rarity": "uncommon",
 		"charge": true, "push": 620.0, "windup_bonus": 8, "targets": ENEMY_TARGETS, "icon": "push",
 		"description": "Rush the target if the path is clear and knock it back. Deal 8 extra damage if it is winding up.",
 	},

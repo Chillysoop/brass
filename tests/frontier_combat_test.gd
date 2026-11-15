@@ -198,8 +198,8 @@ func _check_glass_targeting() -> void:
 	var sim := ArenaSim.new()
 	sim.start([[{"id": "shot", "start": 0}], [{"id": "bash", "start": 0}]], "duo",
 		{"location": "glass", "encounter": "boss", "heroes": [{"hero": "starshot"}, {"hero": "warden", "hp": 60}]})
-	_check(sim.units[2].get("sprite") == "glass_twin" and sim.units[3].get("sprite") == "glass_twin",
-		"Glass boss spawns both Crucible Twins")
+	_check(sim.units[2].get("sprite") == "glass_twin" and sim.units[3].get("sprite") == "ember_twin",
+		"Glass boss spawns both Crucible Twins with distinct sprites")
 	for tick in range(270):
 		sim.step()
 	var intents: Array = sim.trace.filter(func(event: Dictionary) -> bool: return event.kind == "intent")

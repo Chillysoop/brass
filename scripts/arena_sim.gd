@@ -27,6 +27,10 @@ const TICKS_PER_SECOND := 60
 const LOOP_TICKS := BEATS * TICKS_PER_BEAT
 const ARENA_SIZE := Vector2(1000, 520)
 const WALL_MARGIN := 26.0
+const PURSUIT_SPRINT_START := 125.0
+const PURSUIT_SPRINT_FULL := 255.0
+const PURSUIT_SPRINT_BONUS := 0.46
+const RETREAT_LOOKAHEAD := 52.0
 const IMPULSE_CAP := 1000.0
 const IMPULSE_DECAY := 1850.0
 const MARSHAL_SWEEP_EXTRA_REACH := 48.0
@@ -163,13 +167,13 @@ const CAMPAIGN_ENEMIES := {
 		"spacing": 122.0, "reach": 227.0, "damage": 38, "first": 110, "cooldown": 105, "windup": 49, "push": 415.0, "displacement": 0.7},
 	"regent": {"name": "The Iron Regent", "art": "regent", "hp": 1140, "radius": 51.0, "speed": 86.0,
 		"spacing": 118.0, "reach": 222.0, "damage": 43, "first": 114, "cooldown": 112, "windup": 54, "push": 380.0, "displacement": 0.6},
-	"glass_recruit": {"name": "Glass Apprentice", "art": "glass_hunter", "hp": 34, "radius": 24.0, "speed": 87.0,
+	"glass_recruit": {"name": "Glass Apprentice", "art": "glass_recruit", "hp": 34, "radius": 24.0, "speed": 87.0,
 		"spacing": 83.0, "reach": 131.0, "damage": 4, "first": 115, "cooldown": 173, "windup": 31, "target": "ranged_damage"},
 	"glass_hunter": {"name": "Glass Hunter", "art": "glass_hunter", "hp": 103, "radius": 24.0, "speed": 85.0,
 		"spacing": 131.0, "reach": 218.0, "damage": 11, "first": 118, "cooldown": 136, "windup": 33, "target": "ranged_damage"},
 	"glass_skirmisher": {"name": "Kiln Skirmisher", "art": "glass_skirmisher", "hp": 52, "radius": 18.0, "speed": 123.0,
 		"spacing": 85.0, "reach": 129.0, "damage": 7, "first": 132, "cooldown": 154, "windup": 24, "target": "lowest_hp"},
-	"glass_overseer": {"name": "Kiln Overseer", "art": "glass_hunter", "hp": 157, "radius": 33.0, "speed": 85.0,
+	"glass_overseer": {"name": "Kiln Overseer", "art": "glass_overseer", "hp": 157, "radius": 33.0, "speed": 85.0,
 		"spacing": 112.0, "reach": 202.0, "damage": 13, "first": 113, "cooldown": 122, "windup": 36, "target": "ranged_damage"},
 	"glass_duelist": {"name": "Kiln Duelist", "art": "glass_duelist", "hp": 59, "radius": 20.0, "speed": 107.0,
 		"spacing": 164.0, "reach": 255.0, "damage": 9, "first": 129, "cooldown": 149, "windup": 31,
@@ -177,7 +181,7 @@ const CAMPAIGN_ENEMIES := {
 	"glass_twin": {"name": "Crucible Twin · Glass", "art": "glass_twin", "hp": 139, "radius": 33.0, "speed": 89.0,
 		"spacing": 136.0, "reach": 215.0, "damage": 12, "first": 120, "cooldown": 139, "windup": 37, "target": "ranged_damage",
 		"twin": true, "displacement": 0.76},
-	"ember_twin": {"name": "Crucible Twin · Ember", "art": "glass_twin", "hp": 139, "radius": 33.0, "speed": 99.0,
+	"ember_twin": {"name": "Crucible Twin · Ember", "art": "ember_twin", "hp": 139, "radius": 33.0, "speed": 99.0,
 		"spacing": 91.0, "reach": 160.0, "damage": 13, "first": 146, "cooldown": 143, "windup": 32, "target": "lowest_hp",
 		"twin": true, "push": 210.0, "displacement": 0.76},
 	"prism_warden": {"name": "The Prism Warden", "art": "prism_warden", "hp": 870, "radius": 46.0, "speed": 98.0,
@@ -186,14 +190,14 @@ const CAMPAIGN_ENEMIES := {
 	"tempered_colossus": {"name": "The Tempered Colossus", "art": "tempered_colossus", "hp": 1220, "radius": 52.0, "speed": 86.0,
 		"spacing": 130.0, "reach": 232.0, "damage": 39, "first": 116, "cooldown": 117, "windup": 48,
 		"target": "ranged_damage", "push": 335.0, "displacement": 0.66},
-	"relay_recruit": {"name": "Relay Initiate", "art": "scout", "hp": 34, "radius": 21.0, "speed": 91.0,
+	"relay_recruit": {"name": "Relay Initiate", "art": "relay_recruit", "hp": 34, "radius": 21.0, "speed": 91.0,
 		"spacing": 83.0, "reach": 128.0, "damage": 4, "first": 118, "cooldown": 174, "windup": 30,
 		"windup_displacement": 0.45},
-	"relay_runner": {"name": "Relay Runner", "art": "scout", "hp": 59, "radius": 19.0, "speed": 101.0,
+	"relay_runner": {"name": "Relay Runner", "art": "relay_runner", "hp": 59, "radius": 19.0, "speed": 101.0,
 		"spacing": 88.0, "reach": 149.0, "damage": 8, "first": 124, "cooldown": 155, "windup": 27},
 	"relay_guard": {"name": "Relay Guard", "art": "relay_guard", "hp": 62, "radius": 25.0, "speed": 80.0,
 		"spacing": 105.0, "reach": 145.0, "damage": 4, "first": 150, "cooldown": 186, "windup": 33, "support": true},
-	"relay_lancer": {"name": "Crown Lancer", "art": "clockwork", "hp": 130, "radius": 31.0, "speed": 90.0,
+	"relay_lancer": {"name": "Crown Lancer", "art": "relay_lancer", "hp": 130, "radius": 31.0, "speed": 90.0,
 		"spacing": 105.0, "reach": 171.0, "damage": 11, "first": 120, "cooldown": 151, "windup": 33, "push": 215.0},
 	"crown_mender": {"name": "Relay Mender", "art": "crown_mender", "hp": 58, "radius": 24.0, "speed": 79.0,
 		"spacing": 160.0, "reach": 204.0, "damage": 6, "first": 138, "cooldown": 166, "windup": 35,
@@ -207,7 +211,7 @@ const CAMPAIGN_ENEMIES := {
 	"crown_regent": {"name": "The Crown Regent", "art": "crown_regent", "hp": 1100, "radius": 49.0, "speed": 90.0,
 		"spacing": 116.0, "reach": 220.0, "damage": 33, "first": 116, "cooldown": 115, "windup": 45, "push": 330.0,
 		"displacement": 0.72},
-	"dock_recruit": {"name": "Dockhand", "art": "dock_bruiser", "hp": 33, "radius": 22.0, "speed": 90.0,
+	"dock_recruit": {"name": "Dockhand", "art": "dock_recruit", "hp": 33, "radius": 22.0, "speed": 90.0,
 		"spacing": 85.0, "reach": 130.0, "damage": 4, "first": 118, "cooldown": 178, "windup": 29},
 	"dock_bruiser": {"name": "Dock Bruiser", "art": "dock_bruiser", "hp": 112, "radius": 31.0, "speed": 69.0,
 		"spacing": 92.0, "reach": 147.0, "damage": 10, "first": 130, "cooldown": 151, "windup": 32},
@@ -331,48 +335,48 @@ const CORE_TILES := {
 		"targets": ["self"], "description": "Give every living hero 20 guard. Your lowest-health hero gets 7 extra."
 	},
 	"blink": {
-		"label": "Blink", "width": 3, "range": 430.0, "damage": 8,
+		"label": "Blink", "width": 3, "range": 560.0, "damage": 8,
 		"family": "blink", "rarity": "common",
 		"targets": TARGET_RULES, "description": "Teleport behind an enemy and strike."
 	},
 	"phase_cut": {
-		"label": "Phase Cut", "width": 3, "range": 490.0, "damage": 25,
+		"label": "Phase Cut", "width": 3, "range": 620.0, "damage": 25,
 		"family": "blink", "rarity": "uncommon",
 		"targets": TARGET_RULES, "description": "Teleport behind an enemy and deal a heavier strike from longer range."
 	},
 	"ward_step": {
-		"label": "Ward Step", "width": 3, "range": 430.0, "damage": 19,
-		"family": "blink", "rarity": "uncommon", "retreat": 116.0, "guard": 10,
+		"label": "Ward Step", "width": 3, "range": 560.0, "damage": 19,
+		"family": "blink", "rarity": "uncommon", "retreat": 173.0, "guard": 10,
 		"targets": TARGET_RULES, "description": "Teleport away from the target and strike it. Gain 10 guard."
 	},
 	"rift_lunge": {
-		"label": "Rift Lunge", "width": 3, "range": 525.0, "damage": 29,
+		"label": "Rift Lunge", "width": 3, "range": 665.0, "damage": 29,
 		"family": "blink", "rarity": "rare", "push": 610.0,
 		"targets": TARGET_RULES, "description": "Teleport behind an enemy, then strike and knock it away from your landing point."
 	},
 	"mirror_step": {
-		"label": "Mirror Step", "width": 3, "range": 470.0, "damage": 23,
-		"family": "blink", "rarity": "rare", "retreat": 148.0, "guard": 13,
+		"label": "Mirror Step", "width": 3, "range": 600.0, "damage": 23,
+		"family": "blink", "rarity": "rare", "retreat": 216.0, "guard": 13,
 		"targets": TARGET_RULES, "description": "Teleport farther away from the target and strike it. Gain 13 guard."
 	},
 	"void_dance": {
-		"label": "Void Dance", "width": 4, "range": 555.0, "damage": 33,
+		"label": "Void Dance", "width": 4, "range": 710.0, "damage": 33,
 		"family": "blink", "rarity": "epic", "splash": 145.0,
 		"targets": TARGET_RULES, "description": "Teleport behind an enemy and strike it and other enemies near it."
 	},
 	"prism_stride": {
-		"label": "Prism Stride", "width": 4, "range": 500.0, "damage": 25,
-		"family": "blink", "rarity": "epic", "retreat": 170.0, "guard": 15, "guard_radius": 230.0,
+		"label": "Prism Stride", "width": 4, "range": 650.0, "damage": 25,
+		"family": "blink", "rarity": "epic", "retreat": 245.0, "guard": 15, "guard_radius": 305.0,
 		"targets": TARGET_RULES, "description": "Teleport away and strike the target. Give yourself and allies near your landing point 15 guard."
 	},
 	"starfall_step": {
-		"label": "Starfall Step", "width": 5, "range": 610.0, "damage": 39,
+		"label": "Starfall Step", "width": 5, "range": 790.0, "damage": 39,
 		"family": "blink", "rarity": "legendary", "splash": 185.0, "push": 790.0,
 		"targets": TARGET_RULES, "description": "Teleport behind an enemy. Strike and knock back every enemy near it, including the target."
 	},
 	"sanctuary_gate": {
-		"label": "Sanctuary Gate", "width": 5, "range": 565.0, "damage": 33,
-		"family": "blink", "rarity": "legendary", "retreat": 195.0, "guard": 21, "guard_radius": INF,
+		"label": "Sanctuary Gate", "width": 5, "range": 725.0, "damage": 33,
+		"family": "blink", "rarity": "legendary", "retreat": 280.0, "guard": 21, "guard_radius": INF,
 		"targets": TARGET_RULES, "description": "Teleport away and strike the target. Give every living ally 21 guard."
 	},
 	"slam": {
@@ -492,6 +496,7 @@ var _spent_timeline_relics: Dictionary = {}
 var _overflow_healed := 0
 var _twin_bell_hits: Dictionary = {}
 var _healed_tiles: Dictionary = {}
+var _enemy_pursuit_sprints := false
 
 
 static func _static_init() -> void:
@@ -565,6 +570,7 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 	_twin_bell_hits.clear()
 	_healed_tiles.clear()
 	_reinforcement_wave.clear()
+	_enemy_pursuit_sprints = not options.is_empty() and options.get("encounter") != "boss"
 	if not options.is_empty():
 		var reinforcements: Array = options.get("reinforcements", [])
 		if not reinforcements.is_empty() and not options.get("formation", []).is_empty() and options.get("encounter") != "boss":
@@ -574,12 +580,15 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 	elif fixture == "solo":
 		units.append(_unit("hero_1", "Warden", "hero", 0, Vector2(270, 270), 165, 23.0, 122.0, 92.0))
 		units.append(_unit("clockwork", "Clockwork", "enemy", -1, Vector2(715, 254), 273, 32.0, 75.0, 112.0))
+		units.back()["sprite"] = "clockwork"
 	else:
 		units.append(_unit("hero_1", "Hexwright", "hero", 0, Vector2(220, 228), 74, 20.0, 90.0, 225.0))
 		units[0]["sprite"] = "hexwright"
 		units.append(_unit("hero_2", "Warden", "hero", 1, Vector2(270, 302), 100, 23.0, 122.0, 96.0))
 		units.append(_unit("clockwork", "Clockwork", "enemy", -1, Vector2(720, 251), 265, 32.0, 68.0, 108.0))
+		units.back()["sprite"] = "clockwork"
 		units.append(_unit("scout", "Clockwork Scout", "enemy", -1, Vector2(490, 154), 49, 17.0, 40.0, 155.0))
+		units.back()["sprite"] = "scout"
 	for unit in units:
 		if unit.side != "hero":
 			break
@@ -1081,11 +1090,12 @@ func _tile_reach(tile_id: String, enchantment: String, mastery: Dictionary) -> f
 func _move_units() -> void:
 	const DELTA := 1.0 / TICKS_PER_SECOND
 	var next_positions: Array[Vector2] = []
-	var lance_steps := {}
+	var travel_steps := {}
 	for unit in units:
 		var position: Vector2 = unit.pos
 		unit.prev_pos = position
 		if unit.hp <= 0:
+			unit["drive_velocity"] = Vector2.ZERO
 			next_positions.append(position)
 			continue
 		var focus := _select(unit, _movement_target_rule(unit))
@@ -1104,27 +1114,18 @@ func _move_units() -> void:
 		elif unit.intent == "" and unit.get("attack", {}).get("support", false):
 			drive = _relay_support_drive(unit, focus)
 		elif not focus.is_empty() and unit.intent == "":
-			var offset: Vector2 = focus.pos - position
-			var distance := offset.length()
-			var speed: float = unit.speed
-			if tick < unit.get("haste_until", 0):
-				speed *= 1.42
-			if tick < unit.get("tar_slow_until", 0):
-				speed *= 0.65
-			var margin: float = distance - unit.preferred_range
-			var retreat_speed := minf(55.0, speed) if unit.get("ranged_standoff", false) else 0.0
-			drive = offset.normalized() * clampf(margin * 4.0, -retreat_speed, speed)
+			drive = _pursuit_drive(unit, focus)
 		var impulse: Vector2 = unit.impulse
-		if unit.has("lance_travel") and impulse.is_zero_approx() and not drive.is_zero_approx():
-			lance_steps[next_positions.size()] = drive * DELTA
+		unit["drive_velocity"] = drive
 		unit.velocity = drive + impulse
 		unit.impulse = impulse.move_toward(Vector2.ZERO, IMPULSE_DECAY * DELTA)
 		var candidate: Vector2 = position + unit.velocity * DELTA
 		var next := _bounded(candidate, unit.radius)
 		if unit.has("dock_wall_source"):
 			MoonPilotEnemies.resolve_wall_slam(self, unit, impulse, candidate, next)
-		if unit.get("class") == "lancer":
-			unit["travel"] = minf(80.0, unit.get("travel", 0.0) + position.distance_to(next))
+		if impulse.is_zero_approx() and not next.is_equal_approx(position) \
+				and (unit.get("class") == "lancer" or unit.has("lance_travel")):
+			travel_steps[next_positions.size()] = next - position
 		next_positions.append(next)
 	for i in range(units.size()):
 		if units[i].hp <= 0:
@@ -1145,12 +1146,59 @@ func _move_units() -> void:
 			next_positions[j] = _bounded(next_positions[j] + separation, units[j].radius)
 	for i in range(units.size()):
 		var unit: Dictionary = units[i]
-		if lance_steps.has(i):
-			var step: Vector2 = lance_steps[i]
+		if travel_steps.has(i):
+			var step: Vector2 = travel_steps[i]
 			var actual: Vector2 = next_positions[i] - unit.pos
 			var walked := clampf(actual.dot(step.normalized()), 0.0, step.length())
-			unit.lance_travel = minf(LANCE_TRAVEL_CAP, unit.lance_travel + walked)
+			if unit.has("lance_travel"):
+				unit.lance_travel = minf(LANCE_TRAVEL_CAP, unit.lance_travel + walked)
+			if unit.get("class") == "lancer":
+				unit["travel"] = minf(LANCE_TRAVEL_CAP, unit.get("travel", 0.0) + walked)
 		unit.pos = next_positions[i]
+
+
+func _pursuit_drive(unit: Dictionary, focus: Dictionary) -> Vector2:
+	var offset: Vector2 = focus.pos - unit.pos
+	var margin: float = offset.length() - unit.preferred_range
+	var speed: float = unit.speed
+	if tick < unit.get("haste_until", 0):
+		speed *= 1.42
+	if tick < unit.get("tar_slow_until", 0):
+		speed *= 0.65
+	var direction := offset.normalized()
+	if margin >= 0.0:
+		if unit.has("class") or (_enemy_pursuit_sprints and unit.side == "enemy"):
+			speed *= 1.0 + PURSUIT_SPRINT_BONUS * smoothstep(PURSUIT_SPRINT_START, PURSUIT_SPRINT_FULL, margin)
+		return direction * minf(margin * 4.0, speed)
+	if not unit.get("ranged_standoff", false):
+		return Vector2.ZERO
+	var retreat_speed := minf(-margin * 5.0, speed * 0.72)
+	return _retreat_direction(unit, focus.pos, -direction) * retreat_speed
+
+
+func _retreat_direction(unit: Dictionary, threat: Vector2, away: Vector2) -> Vector2:
+	var position: Vector2 = unit.pos
+	var lookahead := position + away * RETREAT_LOOKAHEAD
+	var bounded := _bounded(lookahead, unit.radius)
+	var available := bounded - position
+	if available.dot(away) >= RETREAT_LOOKAHEAD * 0.88:
+		return away
+	var directions: Array[Vector2] = []
+	if not is_equal_approx(lookahead.x, bounded.x):
+		directions.append_array([Vector2.DOWN, Vector2.UP])
+	if not is_equal_approx(lookahead.y, bounded.y):
+		directions.append_array([Vector2.RIGHT, Vector2.LEFT])
+	var best_direction := available.normalized()
+	var best_clearance := -INF
+	for direction: Vector2 in directions:
+		var endpoint := _bounded(position + direction * RETREAT_LOOKAHEAD, unit.radius)
+		if position.distance_squared_to(endpoint) < RETREAT_LOOKAHEAD * RETREAT_LOOKAHEAD * 0.25:
+			continue
+		var clearance := endpoint.distance_squared_to(threat)
+		if clearance > best_clearance:
+			best_direction = direction
+			best_clearance = clearance
+	return best_direction
 
 
 func _bounded(position: Vector2, radius: float) -> Vector2:
@@ -2088,19 +2136,20 @@ func _charge(actor: Dictionary, target: Dictionary, tile_id: String) -> bool:
 	var destination: Vector2 = target.pos
 	var direction := origin.direction_to(destination)
 	var clearance: float = actor.radius + target.radius + 18.0
-	if origin.distance_to(destination) <= clearance:
+	var distance := origin.distance_to(destination)
+	if distance <= clearance:
 		return true
-	var landing := _bounded(destination - direction * clearance, actor.radius)
-	for unit in units:
-		if unit.hp <= 0 or unit.id == actor.id:
+	# A body in the direct path can leave a clear approach to either flank.
+	var flank := acos(clearance / distance)
+	for angle in [0.0, flank * 0.5, -flank * 0.5, flank, -flank]:
+		var landing := _bounded(destination - direction.rotated(angle) * clearance, actor.radius)
+		if not _free_position(landing, actor) or not _slide_landing(actor, landing).is_equal_approx(landing):
 			continue
-		var closest := Geometry2D.get_closest_point_to_segment(unit.pos, origin, landing)
-		if closest.distance_to(unit.pos) < actor.radius + unit.radius + 5.0:
-			return false
-	actor.pos = landing
-	actor.impulse = Vector2.ZERO
-	_emit("charge", "%s charges toward %s." % [actor.name, target.name], actor, target, tile_id, 0, origin, landing)
-	return true
+		actor.pos = landing
+		actor.impulse = Vector2.ZERO
+		_emit("charge", "%s dashes toward %s." % [actor.name, target.name], actor, target, tile_id, 0, origin, landing)
+		return true
+	return false
 
 
 func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: String, offset: Vector2, force: float) -> bool:

@@ -228,9 +228,11 @@ func _check_medium_rewards(game: Control) -> void:
 	if dialog != null:
 		var names := _descendant_buttons(dialog)
 		var deck := ClassDecks.common(offered_class) + ClassDecks.uncommon(offered_class)
-		_check(deck.all(func(id: String): return names.any(func(label: String):
-			return label.begins_with(ArenaSim.TILES[id].label + " "))),
+		_check(deck.all(func(id: String): return ArenaSim.TILES[id].label in names),
 			"The deck inspector displays the class's Commons, Uncommons, and signature.")
+		var stats := dialog.find_child("TileStats", true, false)
+		_check(stats != null and stats.get_node_or_null("BeatStat/BeatIcon") != null,
+			"The selected deck tile shows its beat through the shared stat icon.")
 		dialog.confirmed.emit()
 		await process_frame
 	started = started and run.choose_hero(run.data.offers[0]) and run.choose_relic("pocket_bell")

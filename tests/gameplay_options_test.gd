@@ -150,8 +150,9 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 		var beat := 0
 		for id: String in kit.tiles:
 			beat += int(ArenaSim.TILES[id].width)
-			var label := button.get_parent().find_child("RecruitTileBeat_" + id, true, false) as Label
-			_check(label != null and label.is_visible_in_tree() and label.text == "Beat %d" % beat,
+			var stat := button.get_parent().find_child("RecruitTileBeat_" + id, true, false) as HBoxContainer
+			_check(stat != null and stat.is_visible_in_tree() and stat.get_node_or_null("WindupIcon") != null
+				and stat.tooltip_text == "Fires on beat %d." % beat,
 				"Each recruit tile shows its firing beat at the end of the tile.")
 	if not _press(game.frontier_screen, "RecruitLoadout_support"):
 		return

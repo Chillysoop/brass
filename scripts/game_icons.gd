@@ -4,9 +4,7 @@ const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
 const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 
-const FURNACE_KNIGHT_ART := Rect2i(1353, 450, 404, 411)
 const GLASS_PILOT_ART := {
-	"glass_refraction_engine": FURNACE_KNIGHT_ART,
 	"glass_mirrorback": Rect2i(11, 22, 386, 373),
 	"glass_annealer": Rect2i(464, 18, 376, 379),
 	"glass_lens_arbalist": Rect2i(906, 21, 392, 384),
@@ -14,7 +12,7 @@ const GLASS_PILOT_ART := {
 	"glass_shard_conductor": Rect2i(74, 435, 321, 425),
 	"glass_ash_siphon": Rect2i(467, 477, 368, 381),
 	"glass_quench_sentinel": Rect2i(881, 445, 426, 405),
-	"glass_furnace_knight": FURNACE_KNIGHT_ART,
+	"glass_furnace_knight": Rect2i(1353, 450, 404, 411),
 }
 const MOON_PILOT_ART := {
 	"powder_runner": Rect2i(83, 54, 289, 359),
@@ -26,16 +24,14 @@ const MOON_PILOT_ART := {
 	"chain_warden": Rect2i(888, 476, 433, 380),
 	"wreck_bell": Rect2i(1387, 466, 364, 388),
 }
-const MANIFOLD_ART := Rect2i(737, 375, 333, 305)
 const BRASS_VARIETY_ART := {
-	"brass_bellmaker": MANIFOLD_ART,
 	"brass_runner": Rect2i(49, 38, 282, 291),
 	"brass_riveter": Rect2i(400, 69, 259, 252),
 	"brass_shieldwright": Rect2i(745, 22, 297, 312),
 	"brass_linksmith": Rect2i(1110, 21, 303, 309),
 	"brass_springjack": Rect2i(23, 383, 333, 287),
 	"brass_rivet_hound": Rect2i(379, 426, 327, 228),
-	"brass_manifold": MANIFOLD_ART,
+	"brass_manifold": Rect2i(737, 375, 333, 305),
 	"brass_sparkbow": Rect2i(1110, 375, 315, 321),
 	"brass_magnetar": Rect2i(26, 738, 328, 307),
 	"brass_grounder": Rect2i(397, 733, 310, 324),
@@ -100,10 +96,10 @@ const TILE_ICONS := {"pull": "pull", "gravity_hook": "pull", "slam": "area", "me
 	"split_shot": "area", "volley": "area", "flak_burst": "area", "meteor_volley": "area",
 	"riposte": "battle", "counterwall": "battle", "iron_rebuke": "battle", "last_stand": "battle"}
 const HERO_ART := {
-	"warden": "warden", "bulwark": "warden", "hexwright": "hexwright", "wayfarer": "hexwright",
-	"breaker": "runesmith", "rune_smith": "runesmith", "cinder_mage": "runesmith",
-	"duelist": "duelist", "lancer": "duelist", "starshot": "marksman",
-	"cantor": "apothecary", "apothecary": "apothecary"
+	"warden": "warden", "bulwark": "bulwark", "hexwright": "hexwright", "wayfarer": "wayfarer",
+	"breaker": "breaker", "rune_smith": "runesmith", "cinder_mage": "cinder_mage",
+	"duelist": "duelist", "lancer": "lancer", "starshot": "marksman",
+	"cantor": "cantor", "apothecary": "apothecary"
 }
 const HERO_CODES := {
 	"warden": "WD", "bulwark": "BW", "breaker": "BR", "hexwright": "HX",
@@ -116,6 +112,9 @@ const RARITY_COLORS := {
 }
 const RARITIES := ["common", "uncommon", "rare", "epic", "legendary"]
 const ENCHANTMENT_COLORS := {"guarded": Color("#7de4cf"), "longshot": Color("#f0ce90"), "splash": Color("#f0a48c")}
+
+static var _enemy_textures: Dictionary = {}
+static var _hero_textures: Dictionary = {}
 
 
 static func tile(id: String, spec: Dictionary) -> String:
@@ -136,6 +135,25 @@ static func pilot_enemy_art(id: String) -> Texture2D:
 			sprite.filter_clip = true
 			return sprite
 	return null
+
+
+static func enemy_art(id: String) -> Texture2D:
+	if _enemy_textures.has(id):
+		return _enemy_textures[id]
+	var path := "res://assets/combatants/%s.png" % id
+	var texture: Texture2D
+	if ResourceLoader.exists(path, "Texture2D"):
+		texture = load(path) as Texture2D
+	else:
+		texture = pilot_enemy_art(id)
+		if texture == null:
+			var asset := "tollkeeper-repair-drone" if id == "tollkeeper_drone" else id
+			path = "res://assets/%s.png" % asset
+			if ResourceLoader.exists(path, "Texture2D"):
+				texture = load(path) as Texture2D
+	if texture != null:
+		_enemy_textures[id] = texture
+	return texture
 
 
 static func icon(key: String) -> Texture2D:
@@ -187,6 +205,17 @@ static func portrait(class_id: String) -> String:
 	return HERO_ART.get(class_id, "warden")
 
 
+static func hero_art(class_id: String) -> Texture2D:
+	var id := portrait(class_id)
+	if not _hero_textures.has(id):
+		var path := "res://assets/combatants/%s.png" % id
+		if not ResourceLoader.exists(path, "Texture2D"):
+			path = "res://assets/%s.png" % id
+		if ResourceLoader.exists(path, "Texture2D"):
+			_hero_textures[id] = load(path) as Texture2D
+	return _hero_textures.get(id)
+
+
 static func hero_label(class_id: String) -> String:
 	return ArenaSim.HERO_CLASSES.get(class_id, {}).get("label", "")
 
@@ -231,7 +260,7 @@ static func hero_badge(class_id: String, compact := true) -> PanelContainer:
 	badge.add_child(row)
 	if not compact and badge.visible:
 		var face := TextureRect.new()
-		face.texture = load("res://assets/%s.png" % portrait(class_id)) as Texture2D
+		face.texture = hero_art(class_id)
 		face.custom_minimum_size = Vector2(18, 18)
 		face.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		face.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED

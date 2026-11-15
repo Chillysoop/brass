@@ -2,6 +2,7 @@ extends Control
 
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const GameIcons = preload("res://scripts/game_icons.gd")
+const CombatIcons = preload("res://scripts/combat_icons.gd")
 const TileKeywords = preload("res://scripts/tile_keywords.gd")
 const INK := Color("#101820")
 const PANEL := Color("#192732")
@@ -9,7 +10,6 @@ const EDGE := Color("#3c505b")
 const GOLD := Color("#ecc482")
 const CREAM := Color("#f3e7d1")
 const MUTED := Color("#aababc")
-const TEAL := Color("#9ddbd1")
 const TARGETS := {
 	"nearest": "Nearest", "farthest": "Farthest", "lowest_hp": "Lowest HP",
 	"highest_hp": "Highest HP", "self": "Self"
@@ -28,7 +28,7 @@ var _owner_slot: HBoxContainer
 var _columns: HBoxContainer
 var _links: Control
 var _detail_name: Label
-var _detail_stats: Label
+var _detail_stats: HBoxContainer
 var _detail_description: RichTextLabel
 var _confirm: Button
 var _keep_reward: Button
@@ -168,8 +168,8 @@ func _build() -> void:
 	detail_row.add_child(copy)
 	_detail_name = _label("", 25, CREAM)
 	copy.add_child(_detail_name)
-	_detail_stats = _label("", 15, TEAL)
-	_detail_stats.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	_detail_stats = HBoxContainer.new()
+	_detail_stats.add_theme_constant_override("separation", 12)
 	copy.add_child(_detail_stats)
 	_detail_description = TileKeywords.description("", 16, MUTED)
 	copy.add_child(_detail_description)
@@ -216,7 +216,7 @@ func _add_tier(tier: int) -> void:
 	column.add_child(options)
 	for id: String in ids:
 		var tile: Dictionary = _host.tile_spec(id)
-		var card := _button("%s\n%s" % [tile.label, GameIcons.tile_stats(tile)], func(): _inspect(id))
+		var card := _button(tile.label, func(): _inspect(id))
 		GameIcons.decorate(card, GameIcons.tile(id, tile), 25)
 		card.custom_minimum_size.y = 88
 		card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
@@ -262,18 +262,23 @@ func _inspect(id: String) -> void:
 	var targeting := PackedStringArray()
 	for rule: String in tile.get("targets", []):
 		targeting.append(TARGETS.get(rule, rule.capitalize()))
-	var stats := PackedStringArray([rarity, GameIcons.tile_stats(tile)])
-	if not targeting.is_empty():
-		stats.append(", ".join(targeting))
 	var can_choose := id in _next_ids
 	var fits: bool = not can_choose or _host.forge_can_fit(id)
+	for child in _detail_stats.get_children():
+		_detail_stats.remove_child(child)
+		child.queue_free()
+	var tier := _label(rarity, 14, GameIcons.rarity(tile))
+	tier.mouse_filter = Control.MOUSE_FILTER_PASS
+	if not targeting.is_empty():
+		tier.tooltip_text = "Targeting: " + ", ".join(targeting)
+		tier.accessibility_name = rarity + ". " + tier.tooltip_text
+	_detail_stats.add_child(tier)
+	_detail_stats.add_child(CombatIcons.tile_stats(tile))
 	if can_choose and fits:
 		var beat: int = _host.forge_firing_beat(id)
 		if beat > 0:
-			stats.append("Fires on beat %d" % beat)
+			_detail_stats.add_child(CombatIcons.stat("windup", str(beat), 16, "Fires on beat %d." % beat))
 	_detail_name.text = tile.label
-	_detail_stats.text = "  ·  ".join(stats)
-	_detail_stats.add_theme_color_override("font_color", GameIcons.rarity(tile))
 	TileKeywords.set_description(_detail_description, tile.description)
 	_confirm.disabled = not can_choose or not fits
 	var prompt := "Combine into " if _is_combine else "Upgrade to "

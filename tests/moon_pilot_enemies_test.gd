@@ -140,7 +140,9 @@ func _check_tar_pitcher() -> void:
 	for sim in [unguarded, guarded]:
 		sim.units[0].speed = 120.0
 		sim.step()
-	_check(is_equal_approx(unguarded.units[0].pos.x - 300.0, 1.3) and is_equal_approx(guarded.units[0].pos.x - 300.0, 2.0),
+	var normal_travel: float = guarded.units[0].pos.x - 300.0
+	var slowed_travel: float = unguarded.units[0].pos.x - 300.0
+	_check(normal_travel > 0.0 and is_equal_approx(slowed_travel, normal_travel * 0.65),
 		"Tar should slow actual movement.")
 
 

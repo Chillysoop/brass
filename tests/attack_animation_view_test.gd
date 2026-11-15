@@ -3,6 +3,7 @@ extends SceneTree
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ArenaView = preload("res://scripts/arena_view.gd")
 const HeroChoreography = preload("res://scripts/hero_attack_choreography.gd")
+const CombatSpritePose = preload("res://scripts/combat_sprite_pose.gd")
 
 var _failures: Array[String] = []
 
@@ -53,6 +54,7 @@ func _run() -> void:
 	_expect(view._attack_casts.is_empty() and view._actor_casts.is_empty() and view._windups.is_empty(),
 		"Reset must clear the old attack effects and windups.")
 	_check_ranged_standoff(view)
+	_check_limb_pose(view)
 	view.queue_free()
 	for failure: String in _failures:
 		printerr(failure)
@@ -101,6 +103,46 @@ func _range_fixture(hero_id: String, lane: Array) -> ArenaSim:
 	sim.units[1].speed = 0.0
 	sim.units[1].next_attack = 99999
 	return sim
+
+
+func _check_limb_pose(view: ArenaView) -> void:
+	var geometry := CombatSpritePose.geometry(preload("res://assets/warden.png"), 1.0)
+	var sprite := CombatSpritePose.new(geometry)
+	var neutral: PackedVector2Array = geometry.points
+	sprite._update_vertices(CombatSpritePose.leg_pose(PI / 3.0, 1.0, 0.0), Vector3.ZERO)
+	var stride: PackedVector2Array = sprite._vertices.duplicate()
+	var front_leg_moved := false
+	var back_leg_moved := false
+	for i in range(stride.size()):
+		var shift := stride[i] - neutral[i]
+		front_leg_moved = front_leg_moved or shift.x > 0.05
+		back_leg_moved = back_leg_moved or shift.x < -0.05
+	_expect(front_leg_moved and back_leg_moved and stride[0].is_equal_approx(neutral[0]),
+		"The legs stride in opposite directions under a stable head.")
+
+	var strike := HeroChoreography.profile("slam", ArenaSim.TILES.slam)
+	sprite._update_vertices(Vector4.ZERO, CombatSpritePose.arm_pose(strike, 1.0, false))
+	var windup: PackedVector2Array = sprite._vertices.duplicate()
+	sprite._update_vertices(Vector4.ZERO, CombatSpritePose.arm_pose(strike, 1.0, true))
+	_expect(windup != sprite._vertices and sprite._vertices[-1].is_equal_approx(neutral[-1]),
+		"The leading arm moves between the windup and strike while the feet stay planted.")
+
+	var unit := {"id": "limb_test", "side": "hero", "radius": 24.0, "facing": 1.0,
+		"drive_velocity": Vector2(70.0, 0.0)}
+	view._gait_phases[unit.id] = PI
+	view._update_gait(unit, Vector2(2.0, 0.0), 1.0 / 60.0)
+	_expect(view._gait_phases[unit.id] > PI, "Forward movement advances the gait.")
+	unit.drive_velocity = Vector2(-70.0, 0.0)
+	view._update_gait(unit, Vector2(-2.0, 0.0), 1.0 / 60.0)
+	_expect(is_equal_approx(float(view._gait_phases[unit.id]), PI), "Backing away reverses the gait while facing forward.")
+	unit.drive_velocity = Vector2.ZERO
+	view._update_gait(unit, Vector2(13.0, 0.0), 1.0 / 60.0)
+	_expect(is_zero_approx(float(view._gait_strengths[unit.id]))
+		and is_equal_approx(float(view._gait_phases[unit.id]), PI), "Forced movement does not generate footsteps.")
+	view.playback_paused = true
+	view._process(0.25)
+	_expect(is_equal_approx(float(view._gait_phases[unit.id]), PI), "Pause freezes the gait.")
+	view.playback_paused = false
 
 
 func _expect(ok: bool, message: String) -> void:

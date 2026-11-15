@@ -9,6 +9,7 @@ var failures: Array[String] = []
 func _initialize() -> void:
 	_check_mark()
 	_check_retreat()
+	_check_travel_tiles()
 	_check_support()
 	_check_windup()
 	_check_class_attack_bonuses()
@@ -51,8 +52,31 @@ func _check_retreat() -> void:
 	var events := sim.trace.filter(func(event: Dictionary): return event.tile == "retreat_shot")
 	_check(events.size() == 2 and events[0].kind == "hit" and events[1].kind == "retreat"
 		and events[1].from == origin and events[1].to == hero.pos
-		and origin.distance_to(target) + 71.0 < target.distance_to(hero.pos),
+		and origin.distance_to(target) + 124.0 < target.distance_to(hero.pos),
 		"Retreat Shot must deal damage from the original point, then create distance.")
+
+
+func _check_travel_tiles() -> void:
+	var dash := _sim([[_tile("shoulder_check", 0)], []])
+	dash.units[0].pos = Vector2(200, 265)
+	dash.units[1].pos = Vector2(446, 265)
+	dash.units[2].pos = Vector2(520, 265)
+	_advance(dash, 3 * BEAT - 1)
+	_check(dash.units[0].pos == Vector2(200, 265), "Shoulder Check holds position before its firing beat.")
+	dash.step()
+	var charges := dash.trace.filter(func(event: Dictionary): return event.kind == "charge")
+	_check(charges.size() == 1 and charges[0].tick == 3 * BEAT
+		and absf(dash.units[0].pos.y - 265.0) > 40.0 and dash.units[0].pos.x > 450.0
+		and dash.activations[-1].damage == ArenaSim.TILES.shoulder_check.damage,
+		"Shoulder Check finds a clear angle around the blocking ally and hits on the tile edge.")
+	var blink := _sim([[_tile("blink", 0)]])
+	blink.units[0].pos = Vector2(190, 265)
+	blink.units[1].pos = Vector2(705, 265)
+	_advance(blink, 3 * BEAT)
+	var teleports := blink.trace.filter(func(event: Dictionary): return event.kind == "teleport")
+	_check(teleports.size() == 1 and teleports[0].tick == 3 * BEAT
+		and blink.units[0].pos.x > blink.units[1].pos.x and blink.units[0].pos.x > 750.0,
+		"Blink crosses more than half the arena and lands behind its target on the tile edge.")
 
 
 func _check_support() -> void:

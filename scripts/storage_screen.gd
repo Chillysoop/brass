@@ -1,6 +1,7 @@
 extends Control
 
 const GameIcons = preload("res://scripts/game_icons.gd")
+const CombatIcons = preload("res://scripts/combat_icons.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 const TileKeywords = preload("res://scripts/tile_keywords.gd")
@@ -246,7 +247,7 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 	var name := String(tile.get("label", item.id))
 	var caption: String = tile.get("short_label", name)
 	var width: int = tile.width
-	var damage := int(tile.get("damage", 0))
+	var metric := CombatIcons.tile_corner_stat(tile)
 	var card := _button(caption, func(): _host.storage_pick(row_index, item))
 	card.name = "StoredTile_%s_%d_%d" % [item.id, row_index, item.start]
 	card.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -278,7 +279,7 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 		if width == 1:
 			box.content_margin_left = 4
 			box.content_margin_right = 4
-		if damage > 0:
+		if not metric.is_empty():
 			box.content_margin_right = 25
 		card.add_theme_stylebox_override(mode, box)
 	_span(row, card, int(item.start), width, true)
@@ -295,17 +296,7 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 		card.add_child(badge)
 		badge.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP, Control.PRESET_MODE_MINSIZE)
 		badge.offset_top = 2
-	if damage > 0:
-		var amount := _label(str(damage), 12, CREAM)
-		amount.name = "TileDamage"
-		amount.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		card.add_child(amount)
-		amount.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
-		amount.offset_left = -26
-		amount.offset_right = -6
-		amount.offset_top = -21
-		amount.offset_bottom = -4
+	CombatIcons.add_tile_corner(card, metric)
 	_keep_cell_focus(card, row_index, item.start)
 	_drop_target(card, row, row_index, tiles, payload)
 

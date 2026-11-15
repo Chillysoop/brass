@@ -6,6 +6,7 @@ const StorageScreen = preload("res://scripts/storage_screen.gd")
 const ForgeScreen = preload("res://scripts/forge_screen.gd")
 const BattleReview = preload("res://scripts/battle_review.gd")
 const GameIcons = preload("res://scripts/game_icons.gd")
+const CombatIcons = preload("res://scripts/combat_icons.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 const TileKeywords = preload("res://scripts/tile_keywords.gd")
@@ -343,12 +344,7 @@ func _refresh_enemy_details() -> void:
 		card.add_child(body)
 		var heading := HBoxContainer.new()
 		body.add_child(heading)
-		var texture := GameIcons.pilot_enemy_art(unit.sprite)
-		if texture == null:
-			var asset: String = "tollkeeper-repair-drone" if unit.sprite == "tollkeeper_drone" else unit.sprite
-			var path := "res://assets/%s.png" % asset
-			if ResourceLoader.exists(path, "Texture2D"):
-				texture = load(path) as Texture2D
+		var texture := GameIcons.enemy_art(unit.sprite)
 		if texture != null:
 			var portrait := TextureRect.new()
 			portrait.texture = texture
@@ -1151,8 +1147,7 @@ func _build_lane(lane_index: int, row_height: int) -> void:
 	profile.add_theme_constant_override("separation", 6)
 	identity.add_child(profile)
 	var portrait := TextureRect.new()
-	var art: String = hero.get("sprite", GameIcons.portrait(hero.get("class", "warden")))
-	portrait.texture = load("res://assets/%s.png" % art) as Texture2D
+	portrait.texture = GameIcons.hero_art(class_id)
 	portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 	portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 	portrait.custom_minimum_size = Vector2(33, 33)
@@ -1177,14 +1172,21 @@ func _build_lane(lane_index: int, row_height: int) -> void:
 		badge.mouse_filter = Control.MOUSE_FILTER_STOP
 		badge.tooltip_text = "%s · %s" % [mastery.label, mastery.description]
 		name_row.add_child(badge)
+	var health_row := HBoxContainer.new()
+	health_row.add_theme_constant_override("separation", 3)
+	health_column.add_child(health_row)
+	health_row.add_child(CombatIcons.icon("health", 11))
 	var health := ProgressBar.new()
+	health.accessibility_name = "%s health" % hero.name
 	health.show_percentage = false
 	health.max_value = hero.max_hp
 	health.value = hero.hp
 	health.custom_minimum_size.y = 7
+	health.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	health.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	health.add_theme_stylebox_override("background", _box(INK, EDGE, 2))
 	health.add_theme_stylebox_override("fill", _box(Color("#368d72"), TEAL, 2))
-	health_column.add_child(health)
+	health_row.add_child(health)
 	lane_health.append(health)
 	if campaign and run.data.get("location", "brass") == "glass":
 		var ranged_damage := 0
@@ -1276,22 +1278,13 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	board.move_child(tile_back, card.get_index())
 	card.set_meta("tile_back", tile_back)
 	name_button.tooltip_text = _tile_tooltip(lane_index, item, tile)
-	_style_tile_button(name_button, tile, tint, active, 16, tile.width == 1, tile.damage > 0)
+	var metric := CombatIcons.tile_corner_stat(tile)
+	_style_tile_button(name_button, tile, tint, active, 16, tile.width == 1, not metric.is_empty())
 	name_button.disabled = state != "setup"
 	card.add_child(name_button)
 	_add_tile_badges(name_button, tile, _lane_hero_class(lane_index))
 	_add_enchantment_badge(name_button, item)
-	if tile.damage > 0:
-		var amount := _label(str(int(tile.damage)), 12, CREAM)
-		amount.name = "TileDamage"
-		amount.mouse_filter = Control.MOUSE_FILTER_IGNORE
-		amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-		name_button.add_child(amount)
-		amount.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_RIGHT)
-		amount.offset_left = -26
-		amount.offset_right = -6
-		amount.offset_top = -21
-		amount.offset_bottom = -4
+	CombatIcons.add_tile_corner(name_button, metric)
 	_drag_source(name_button, payload, board, lane_index, offer_height)
 	var available_rules: Array = sim.target_rules(item.id)
 	var current_rule: String = item.target if item.target in available_rules else available_rules[0]
@@ -1333,7 +1326,7 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 
 
 func _style_tile_button(button: Button, tile: Dictionary, tint: Color, active: bool,
-		badge_space := 0, compact := false, show_damage := false) -> void:
+		badge_space := 0, compact := false, show_stat := false) -> void:
 	var rarity := GameIcons.rarity(tile)
 	for mode: String in ["normal", "hover", "pressed", "disabled"]:
 		var fill := tint.lightened(0.12) if mode == "hover" else tint
@@ -1346,7 +1339,7 @@ func _style_tile_button(button: Button, tile: Dictionary, tint: Color, active: b
 		if compact:
 			box.content_margin_left = 5
 			box.content_margin_right = 5
-		if show_damage:
+		if show_stat:
 			box.content_margin_right = 25
 		button.add_theme_stylebox_override(mode, box)
 

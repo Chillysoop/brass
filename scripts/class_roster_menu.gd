@@ -283,7 +283,7 @@ func _confirm() -> void:
 
 func _portrait_for(id: String) -> Texture2D:
 	if not _portraits.has(id):
-		_portraits[id] = load("res://assets/%s.png" % GameIcons.portrait(id)) as Texture2D
+		_portraits[id] = GameIcons.hero_art(id)
 	return _portraits[id]
 
 
