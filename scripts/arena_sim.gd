@@ -23,6 +23,10 @@ const ARENA_SIZE := Vector2(1000, 520)
 const WALL_MARGIN := 26.0
 const IMPULSE_CAP := 1000.0
 const IMPULSE_DECAY := 1850.0
+const MARSHAL_SWEEP_EXTRA_REACH := 48.0
+const MARSHAL_MEDIUM_PLATE := 120
+const MARSHAL_MEDIUM_SWEEP_DAMAGE := 26
+const MARSHAL_WEATHERED_SWEEP_WEAR := 48
 const COLOSSUS_SWEEP_BEATS := 9
 const COLOSSUS_EXTRA_REACH := 110.0
 const RELAY_LINK_REACH := 115.0
@@ -62,6 +66,8 @@ const TOLLKEEPER_REPAIR_CUE := "tollkeeper_repair"
 const BOSS_REVIEW_STAGES := {
 	"tollkeeper_repair": "start", "tollkeeper_repair_interrupted": "success", "tollkeeper_repair_separated": "success",
 	"marshal_plate": "start", "marshal_exposed": "progress", "marshal_shattered": "success",
+	"marshal_plate_worn": "progress", "marshal_sweep_weathered": "progress",
+	"marshal_pressure_break": "success", "marshal_defense_break": "success",
 	"regent_seals": "start", "regent_seal_struck": "progress", "regent_shattered": "success",
 	"crucible_rally": "progress", "prism_ward": "start", "prism_exposed": "progress", "prism_shattered": "success",
 	"colossus_forging": "start", "colossus_displaced": "progress", "colossus_cracked": "progress", "colossus_shattered": "success",
@@ -669,6 +675,12 @@ func _start_campaign(options: Dictionary) -> void:
 					_add_campaign_enemy("regent", Vector2(647, y))
 				"gilded_marshal":
 					_add_campaign_enemy("marshal", Vector2(647, y), 0, 1.10 if difficulty == "hard" else 1.0, 1.06 if difficulty == "hard" else 1.0)
+					if difficulty == "medium":
+						var marshal: Dictionary = units.back()
+						marshal["marshal_plate_max_integrity"] = MARSHAL_MEDIUM_PLATE
+						marshal["marshal_plate_integrity"] = 0
+						marshal.attack.damage = 32
+						marshal.attack.cooldown = 126
 				_:
 					if boss_id == "tollkeeper" and difficulty == "easy" and segment == 1 and options.get("boss_variant") == "repair_drone":
 						_add_campaign_enemy("boss", Vector2(647, y), 0, 0.84, 0.94)
@@ -932,7 +944,10 @@ func step() -> Array[Dictionary]:
 		if exposure > 0 and tick > exposure:
 			unit.marshal_exposed_until = 0
 			if unit.hp > 0:
-				_review_boss_event("miss", "marshal_window_missed", "The Marshal's plating closed before another hero landed a hit. Move that hero's strike within three beats of the push or pull.", unit)
+				var message := "The Marshal's plating closed before another hero landed a hit. Move that hero's strike within three beats of the push or pull."
+				if unit.has("marshal_plate_integrity"):
+					message = "The team interrupt window closed. Earlier plate wear still counts."
+				_review_boss_event("miss", "marshal_window_missed", message, unit)
 		var prism_window: int = unit.get("prism_window_until", 0)
 		if prism_window > 0 and tick > prism_window:
 			unit.prism_window_until = 0
@@ -2239,6 +2254,9 @@ func _run_enemies() -> void:
 		elif enemy.get("marshal_plated", false):
 			action_id = "marshal_sweep"
 			message = "The Marshal charges a sweep. Push or pull it, then follow up with your other hero."
+			if enemy.has("marshal_plate_integrity"):
+				enemy["pilot_ring_radius"] = attack.reach + MARSHAL_SWEEP_EXTRA_REACH
+				message = "Gilded Sweep · %d damage inside the ring. Interrupt with your crew, block it with Guard, or move clear." % MARSHAL_MEDIUM_SWEEP_DAMAGE
 		elif enemy.get("regent_sealed", false):
 			action_id = "regent_sweep"
 			message = "The Regent charges a sweep. Land a hit from each hero within 4 beats to break its seals."
@@ -2262,7 +2280,7 @@ func _resolve_intent(enemy: Dictionary) -> void:
 	var origin: Vector2 = enemy.pos
 	var attack_id: String = enemy.get("intent_attack_id", enemy.get("special_intent", enemy.get("attack_id", enemy.id)))
 	var attack: Dictionary = enemy.get("attack", {})
-	if enemy.get("sprite") == "marshal":
+	if enemy.get("sprite") == "marshal" and not enemy.has("marshal_plate_integrity"):
 		attack_id = "marshal_sweep" if enemy.get("marshal_plated", false) else "marshal"
 	elif enemy.get("sprite") == "regent":
 		attack_id = "regent_sweep" if enemy.get("regent_sealed", false) else "regent"
@@ -2321,8 +2339,8 @@ func _enemy_sweep_radius(enemy: Dictionary, attack: Dictionary) -> float:
 		return attack.reach + 125.0
 	if enemy.get("colossus_stage", 0) > 0:
 		return enemy.colossus_sweep_radius
-	if enemy.get("marshal_plated", false):
-		return attack.reach + 48.0
+	if enemy.get("marshal_plated", false) and not enemy.has("marshal_plate_integrity"):
+		return attack.reach + MARSHAL_SWEEP_EXTRA_REACH
 	if enemy.get("regent_sealed", false):
 		return attack.reach + 70.0
 	return enemy.get("pilot_ring_radius", 0.0)
@@ -2390,8 +2408,11 @@ func _resolve_enemy_attack(enemy: Dictionary) -> void:
 	if enemy.get("sprite") == "prism_warden":
 		_prism_beam(enemy, intent, attack)
 		return
-	if enemy.get("marshal_plated", false):
-		_sweep(enemy, attack, 48.0, 5)
+	if enemy.has("marshal_plate_integrity") and enemy.get("intent_attack_id") == "marshal_sweep":
+		_resolve_medium_marshal_sweep(enemy, attack)
+		return
+	if enemy.get("marshal_plated", false) and not enemy.has("marshal_plate_integrity"):
+		_sweep(enemy, attack, MARSHAL_SWEEP_EXTRA_REACH, 5)
 		return
 	if enemy.get("regent_sealed", false):
 		_sweep(enemy, attack, 70.0, 2)
@@ -2540,6 +2561,35 @@ func _sweep(enemy: Dictionary, attack: Dictionary, extra_reach: float, bonus_dam
 			_displace("push", enemy, target, "enemy_attack", target.pos - enemy.pos, attack.push)
 	if affected.is_empty():
 		_emit("miss", "%s's sweep hits no one." % enemy.name, enemy, enemy, "enemy_attack")
+
+
+func _resolve_medium_marshal_sweep(enemy: Dictionary, attack: Dictionary) -> void:
+	var radius: float = enemy.get("pilot_ring_radius", attack.reach + MARSHAL_SWEEP_EXTRA_REACH)
+	enemy.erase("pilot_ring_radius")
+	var affected := _enemies_in_area(enemy, enemy.pos, radius)
+	var hp_lost := 0
+	for hero: Dictionary in affected:
+		var hp_before: int = hero.hp
+		_damage(enemy, hero, MARSHAL_MEDIUM_SWEEP_DAMAGE, "enemy_attack")
+		if hero.hp < hp_before:
+			hp_lost += hp_before - int(hero.hp)
+			if hero.hp > 0:
+				_displace("push", enemy, hero, "enemy_attack", hero.pos - enemy.pos, attack.push)
+	if affected.is_empty():
+		_emit("miss", "The heroes stay clear of Gilded Sweep.", enemy, enemy, "enemy_attack")
+	if hp_lost > 0:
+		var message := "Gilded Sweep costs the crew %d HP." % hp_lost
+		if enemy.marshal_plated:
+			message += " Fully guard or clear the ring to wear down the plating."
+		_review_boss_event("miss", "marshal_sweep_hit", message, enemy)
+		return
+	var response := "The crew stays clear of Gilded Sweep." if affected.is_empty() else "Guard absorbs Gilded Sweep without HP loss."
+	enemy.next_attack += TICKS_PER_BEAT
+	var wear := mini(int(enemy.marshal_plate_integrity), MARSHAL_WEATHERED_SWEEP_WEAR)
+	if wear > 0:
+		response += " The plating loses %d integrity." % wear
+	_emit("interrupt", response, enemy, enemy, "marshal_sweep_weathered", wear)
+	_wear_marshal_plate(enemy, enemy, wear, "defense")
 
 
 func _begin_winch_pull(enemy: Dictionary) -> bool:
@@ -3017,7 +3067,7 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 					amount += _timeline_relic_bonus(actor, target, tile_id)
 				_apply_barrage_rack(actor, target, tile_id)
 		if target.get("marshal_plated", false) and actor.side == "hero":
-			amount = _marshal_damage(actor, target, amount)
+			amount = _marshal_damage(actor, target, amount, extra_hit.is_empty())
 		elif target.get("prism_warded", false) and actor.side == "hero":
 			amount = _prism_damage(actor, target, amount)
 		elif target.get("regent_sealed", false) and actor.side == "hero":
@@ -3116,7 +3166,11 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		target["marshal_raised"] = true
 		target.marshal_plated = true
 		_guard(target, 18, "marshal_plate")
-		_emit("intent", "The Marshal raises its plating. Push or pull it, then strike with your other hero.", target, actor, "marshal_plate")
+		var message := "The Marshal raises its plating. Push or pull it, then strike with your other hero."
+		if target.has("marshal_plate_integrity"):
+			target.marshal_plate_integrity = target.marshal_plate_max_integrity
+			message = "The Marshal raises its plating. Team interrupts shatter it. Hits and sweeps without HP loss wear it down."
+		_emit("intent", message, target, actor, "marshal_plate")
 	elif target.get("sprite") == "prism_warden" and target.hp * 5 <= target.max_hp * 3 and not target.get("prism_raised", false):
 		target["prism_raised"] = true
 		target.prism_warded = true
@@ -3505,19 +3559,54 @@ func _prism_damage(actor: Dictionary, warden: Dictionary, amount: int) -> int:
 	return amount + 20
 
 
-func _marshal_damage(actor: Dictionary, marshal: Dictionary, amount: int) -> int:
-	if marshal.marshal_exposed_until == 0:
-		return maxi(1, roundi(amount * 0.62))
-	if marshal.marshal_opened_by == actor.id:
+func _marshal_damage(actor: Dictionary, marshal: Dictionary, amount: int, direct_hit: bool) -> int:
+	if marshal.marshal_exposed_until > 0 and marshal.marshal_opened_by != actor.id:
+		_break_marshal_plate(marshal)
+		marshal.intent = ""
+		marshal.next_attack = tick + TICKS_PER_BEAT * 5
+		if marshal.has("marshal_plate_integrity"):
+			marshal["marshal_last_break"] = "team"
+			marshal.erase("pilot_ring_radius")
+		_emit("interrupt", "%s shatters the Marshal's plating and staggers it!" % actor.name,
+			actor, marshal, "marshal_shattered")
+		return amount + 18
+	var reduced := maxi(1, roundi(amount * 0.62))
+	if direct_hit and amount > 0 and marshal.has("marshal_plate_integrity"):
+		if _wear_marshal_plate(actor, marshal, maxi(1, amount - reduced), "pressure"):
+			return amount
+	if marshal.marshal_exposed_until > 0:
 		return amount
+	return reduced
+
+
+func _wear_marshal_plate(actor: Dictionary, marshal: Dictionary, amount: int, approach: String) -> bool:
+	if amount <= 0 or not marshal.marshal_plated:
+		return false
+	marshal.marshal_plate_integrity = maxi(0, int(marshal.marshal_plate_integrity) - amount)
+	if marshal.marshal_plate_integrity > 0:
+		if approach == "pressure":
+			_emit("interrupt", "The hit wears down the plate. %d integrity remains." % marshal.marshal_plate_integrity,
+				actor, marshal, "marshal_plate_worn", amount)
+		return false
+	_break_marshal_plate(marshal)
+	marshal["marshal_last_break"] = approach
+	if approach == "pressure":
+		var message := "Sustained hits break the Marshal's plating."
+		if not str(marshal.intent).is_empty() and marshal.get("intent_attack_id") == "marshal_sweep":
+			message += " The charging sweep still releases."
+		_emit("interrupt", message, actor, marshal, "marshal_pressure_break", amount)
+	else:
+		_emit("interrupt", "Weathering the sweep breaks the Marshal's plating.",
+			actor, marshal, "marshal_defense_break", amount)
+	return true
+
+
+func _break_marshal_plate(marshal: Dictionary) -> void:
 	marshal.marshal_plated = false
 	marshal.marshal_exposed_until = 0
 	marshal.guard = 0
-	marshal.intent = ""
-	marshal.next_attack = tick + TICKS_PER_BEAT * 5
-	_emit("interrupt", "%s shatters the Marshal's plating and staggers it!" % actor.name,
-		actor, marshal, "marshal_shattered")
-	return amount + 18
+	if marshal.has("marshal_plate_integrity"):
+		marshal.marshal_plate_integrity = 0
 
 
 func _class_attack_damage(actor: Dictionary, target: Dictionary, amount: int) -> int:

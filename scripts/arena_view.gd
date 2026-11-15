@@ -351,6 +351,7 @@ func _draw() -> void:
 					AttackAnimation.draw_secondary_contact(self, cast.profile, start, end, progress, cast_size)
 	for effect in _effects:
 		_draw_feedback(effect, field)
+	_draw_marshal_cues(board)
 	if not _reinforcement_warning.is_empty():
 		_draw_reinforcement_countdown(board)
 
@@ -500,8 +501,14 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	if unit.get("marshal_plated", false):
 		var exposed: bool = int(unit.get("marshal_exposed_until", 0)) > 0
 		var plate_color := HERO_COLOR if exposed else GOLD
-		_draw_centered("ARMOR OPEN" if exposed else "PLATED", bar.get_center() - Vector2(0.0, 9.0), 14, plate_color)
-		draw_arc(point, radius * 1.4, 0.0, TAU, 32, Color(plate_color, 0.8), 2.0, true)
+		var label := "PLATED"
+		var remaining := 1.0
+		if unit.has("marshal_plate_max_integrity"):
+			remaining = float(unit.marshal_plate_integrity) / float(unit.marshal_plate_max_integrity)
+			label = "PLATE %d%%" % ceili(remaining * 100.0)
+			draw_arc(point, radius * 1.4, -PI * 0.5, TAU - PI * 0.5, 32, Color(GOLD, 0.24), 2.0, true)
+		_draw_centered("ARMOR OPEN" if exposed else label, bar.get_center() - Vector2(0.0, 9.0), 14, plate_color)
+		draw_arc(point, radius * 1.4, -PI * 0.5, TAU * remaining - PI * 0.5, 32, Color(plate_color, 0.8), 2.0, true)
 	if unit.get("regent_sealed", false):
 		var count: int = unit.get("regent_seals_left", 3)
 		var seal_color := HERO_COLOR if int(unit.get("regent_window_until", 0)) > 0 else GOLD
@@ -653,6 +660,19 @@ func _draw_colossus_stage(unit: Dictionary, point: Vector2, radius: float, bar: 
 		draw_arc(point, radius * 1.45, start_angle, start_angle + TAU / 3.0 - 0.18, 18, color, 3.0, true)
 
 
+func _draw_marshal_cues(board: Rect2) -> void:
+	for unit in units:
+		if not unit.has("marshal_plate_integrity") or unit.hp <= 0:
+			continue
+		var baseline := Vector2(board.get_center().x, board.position.y + 24.0)
+		if _windups.has(unit.id) and unit.get("intent_attack_id") == "marshal_sweep":
+			_draw_centered("GILDED SWEEP · %d DAMAGE · GUARD OR CLEAR THE RING" % ArenaSim.MARSHAL_MEDIUM_SWEEP_DAMAGE,
+				baseline, 14, GOLD)
+		elif unit.get("marshal_plated", false):
+			_draw_centered("DISPLACE + ALLY HIT  /  WEAR DOWN PLATE  /  WEATHER SWEEP", baseline, 14, GOLD)
+		break
+
+
 func _draw_intents(field: Rect2) -> void:
 	for unit in units:
 		var target_id: String = unit.get("intent", "")
@@ -686,6 +706,8 @@ func _draw_intents(field: Rect2) -> void:
 				_draw_sweep_warning(start, radius, GOLD)
 			elif special == "glass_refraction_discharge":
 				_draw_sweep_warning(start, radius, Color("#b9bfff"))
+			elif unit.get("intent_attack_id") == "marshal_sweep":
+				_draw_sweep_warning(start, radius, GOLD)
 			else:
 				_draw_sweep_warning(start, radius)
 			continue

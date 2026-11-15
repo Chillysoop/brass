@@ -8,6 +8,8 @@ From the title screen, choose **New Expedition**, select **Brass Frontier**, and
 
 Each class has 18 Commons and eight Uncommons in its combat reward deck. Use **View class deck** on a hero or recruit card to inspect each tile and the class's signature Uncommon. After combat, choose or skip a tile for each hero in party order. Tiles go to that hero's timeline when space allows, then to shared storage. The expedition saves after each pick. After the party takes its boss rewards, choose one of two starting loadouts for the new recruit. Each gives them their class starter and a second tile.
 
+In **Brass Frontier Medium**, the opening reward offers Warden a Guard or knockback direction, Hexwright a splash or protection direction, and Starshot a precision or mobile firing direction. Holding one of those tiles offers a complementary tile in a later Act I draft. You can still take other tiles and change direction as the run develops.
+
 Each new Brass Frontier expedition has one of three optional rewards at an Act I mystery node, including on Easy. **Salvage Bench** copies a Common you own. **Traveling Smith** upgrades an eligible tile for free. **Class Cache** offers an Uncommon from your hero's deck after you choose a category.
 
 New Brass Frontier expeditions reveal their first boss during the hero draft. The Bellmaker alternates a close shockwave and a shot at the position it marked during its windup. Check the map scout for counters. On Easy, the Tollkeeper may fight alone or with a Repair Drone. Separate them, hit the drone during its windup, or destroy it first.
@@ -46,7 +48,7 @@ Enemy encounters rotate from the opening fight onward in new expeditions. Each a
 
 One optional Act I battle in each region is marked **Wave** on the route map. A reinforcement arrives on beat 7 or 9 of the first loop. The encounter preview separates the starting enemy from the reinforcement, and the arena marks where and when the second enemy arrives.
 
-Medium starts solo. After the Act I boss, take a Legendary tile into your build and recruit a second hero. Both lanes fire on the same beat clock. Push or pull the Gilded Marshal to expose its armor, then land a hit with the other hero before it closes. Defeating the Marshal unlocks Brass Frontier Hard and Glass Foundry Easy. Each hero can take a Legendary trophy after the final boss.
+Medium starts solo. After the Act I boss, take a Legendary tile into your build and recruit a second hero. Both lanes fire on the same beat clock. Push or pull the Gilded Marshal, then hit with the other hero within three beats to shatter its plate and interrupt it. Direct hits also wear down the plating, as does getting the whole crew through a sweep without losing HP. Defeating the Marshal unlocks Brass Frontier Hard and Glass Foundry Easy. Each hero can take a Legendary trophy after the final boss.
 
 In Brass Frontier Medium and Hard, the Act I boss offers a relic draft after the Legendary pick. The Tollkeeper offers Signet, Bastion Medal, Guild Ledger, and **Repair Kit**, which can heal a hero after a full block. The Bellmaker offers **Clapper**, **Long Echo**, and **Resonant Plate** to reward support tiles, ranged attacks, and wide tiles respectively.
 

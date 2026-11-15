@@ -37,6 +37,7 @@ func _initialize() -> void:
 	_check_wayfarers_pin()
 	_check_enemy_variants()
 	_check_glass_targeting()
+	_check_medium_marshal_counters()
 	_check_prism_ward()
 	_check_tempered_colossus()
 	_check_crown_coordination()
@@ -622,6 +623,81 @@ func _check_admiral_combo() -> void:
 	cancels = sim.trace.filter(func(event: Dictionary) -> bool: return event.tile == "admiral_interrupted")
 	_check(cancels.size() == 1 and cancels[0].amount == 0 and cancels[0].actor == "hero_1",
 		"A lone survivor can cancel the Sweep with one push")
+
+
+func _check_medium_marshal_counters() -> void:
+	var options := {"location": "brass", "difficulty": "medium", "segment": 2, "encounter": "boss",
+		"boss_id": "gilded_marshal", "seed": 42, "heroes": [{"hero": "warden"}, {"hero": "starshot"}]}
+	var sim := ArenaSim.new()
+	sim.start([[], []], "duo", options)
+	var marshal: Dictionary = sim.units.back()
+	var lead: Dictionary = sim.units[0]
+	sim._damage(lead, marshal, 410, "shot")
+	_check(marshal.marshal_plate_integrity == ArenaSim.MARSHAL_MEDIUM_PLATE, "Marshal raises a full plate in Medium")
+	sim._damage(lead, marshal, 25, "shot", "Secondary impact")
+	_check(marshal.marshal_plate_integrity == ArenaSim.MARSHAL_MEDIUM_PLATE, "Secondary impacts do not wear down the plate")
+	sim._damage(lead, marshal, 25, "shot")
+	_check(marshal.marshal_plate_integrity == ArenaSim.MARSHAL_MEDIUM_PLATE - 9,
+		"Pressure wears the plate by damage lost to its mitigation")
+	lead.pos = marshal.pos - Vector2(100, 0)
+	_marshal_sweep(sim, marshal, lead)
+	marshal.marshal_plate_integrity = 9
+	sim._damage(lead, marshal, 25, "shot")
+	_check(marshal.get("marshal_last_break") == "pressure" and marshal.intent == lead.id,
+		"Pressure breaks the plate but leaves an announced sweep in place")
+	sim._resolve_intent(marshal)
+	_check(lead.hp == lead.max_hp - ArenaSim.MARSHAL_MEDIUM_SWEEP_DAMAGE
+		and sim.visual_cues.back().tile == "marshal_sweep", "The announced sweep keeps its damage and animation after a pressure break")
+
+	sim.start([[], []], "duo", options)
+	marshal = sim.units.back()
+	lead = sim.units[0]
+	var ally: Dictionary = sim.units[1]
+	sim._damage(lead, marshal, 410, "shot")
+	lead.pos = marshal.pos - Vector2(100, 0)
+	lead.guard = ArenaSim.MARSHAL_MEDIUM_SWEEP_DAMAGE - 1
+	_marshal_sweep(sim, marshal, lead)
+	sim._resolve_intent(marshal)
+	_check(lead.hp == lead.max_hp - 1 and marshal.marshal_plate_integrity == ArenaSim.MARSHAL_MEDIUM_PLATE,
+		"Any HP lost to the sweep prevents defense progress")
+	lead.impulse = Vector2.ZERO
+	lead.guard = ArenaSim.MARSHAL_MEDIUM_SWEEP_DAMAGE
+	_marshal_sweep(sim, marshal, lead)
+	sim._resolve_intent(marshal)
+	_check(lead.hp == lead.max_hp - 1 and lead.impulse == Vector2.ZERO and
+		marshal.marshal_plate_integrity == ArenaSim.MARSHAL_MEDIUM_PLATE - ArenaSim.MARSHAL_WEATHERED_SWEEP_WEAR,
+		"A fully blocked sweep cannot push the crew and wears down the plate")
+	lead.pos = marshal.pos - Vector2(300, 0)
+	for repeat in range(2):
+		_marshal_sweep(sim, marshal, lead)
+		sim._resolve_intent(marshal)
+	_check(marshal.get("marshal_last_break") == "defense" and marshal.marshal_plate_integrity == 0 and ally.hp == ally.max_hp,
+		"The crew can break the plate by clearing the ring")
+
+	for difficulty: String in ["medium", "hard"]:
+		options.difficulty = difficulty
+		sim.start([[], []], "duo", options)
+		marshal = sim.units.back()
+		lead = sim.units[0]
+		ally = sim.units[1]
+		sim._damage(lead, marshal, 410, "shot")
+		_marshal_sweep(sim, marshal, lead)
+		if difficulty == "hard":
+			_check(not marshal.has("marshal_plate_integrity") and marshal.attack.cooldown == 105,
+				"Hard keeps the original Marshal plating and attack rate")
+		sim._displace("push", lead, marshal, "bash", Vector2.RIGHT, 300.0)
+		sim._damage(lead, marshal, 25, "shot")
+		_check(marshal.marshal_plated and not str(marshal.intent).is_empty(), "The same hero cannot complete the team counter")
+		sim._damage(ally, marshal, 25, "shot")
+		_check(not marshal.marshal_plated and not marshal.has("pilot_ring_radius") and str(marshal.intent).is_empty()
+			and marshal.next_attack == sim.tick + ArenaSim.TICKS_PER_BEAT * 5
+			and _has_event(sim, "interrupt", "marshal_shattered"), "The second hero shatters armor and interrupts the sweep")
+
+
+func _marshal_sweep(sim: ArenaSim, marshal: Dictionary, target: Dictionary) -> void:
+	if marshal.has("marshal_plate_integrity"):
+		marshal["pilot_ring_radius"] = marshal.attack.reach + ArenaSim.MARSHAL_SWEEP_EXTRA_REACH
+	sim._start_enemy_intent(marshal, target.id, sim.tick + 1, "marshal_sweep")
 
 
 func _fight(hero: String, encounter: String, hp: int, tile_ids: Array, relics: Array) -> RefCounted:

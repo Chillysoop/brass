@@ -21,6 +21,20 @@ const BOSS_RELICS := {
 	"tollkeeper": ["tollkeeper_signet", "bastion_medal", "guild_ledger", "tollkeeper_repair_kit"],
 	"brass_bellmaker": ["bellmaker_clapper", "bellmaker_long_echo", "bellmaker_resonant_plate"],
 }
+const EARLY_BUILD_DIRECTIONS := {
+	"warden": [
+		{"label": "Guard and counter", "opening": "iron_arc", "followup": "iron_vow"},
+		{"label": "Timed knockback", "opening": "bellows_strike", "followup": "shove"},
+	],
+	"hexwright": [
+		{"label": "Cluster and splash", "opening": "shrapnel", "followup": "furnace_burst"},
+		{"label": "Isolate and protect", "opening": "rake", "followup": "line_guard"},
+	],
+	"starshot": [
+		{"label": "Long-range precision", "opening": "spark_shot", "followup": "signal_flare"},
+		{"label": "Mobile fire", "opening": "retreat_shot", "followup": "tap_bolt"},
+	],
+}
 const RELIC_STARTERS := {"towline_knot": "pull", "bridgeplate": "shield_ram"}
 const FORGE_UNLOCKS := {"blink": "blink_artifice", "shot": "shot_artifice", "guard": "guard_artifice"}
 const RELICS := {
@@ -1849,29 +1863,41 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 	var rewards: Array = []
 	var hints := {}
 	var hero_id: String = data.heroes[lane].id
+	var directions := _early_build_directions(lane, hero_id)
 	var salt := lane * 1069
 	var common := _class_reward_pool(hero_id, 0, rows)
 	var uncommon := _class_reward_pool(hero_id, 1, rows)
 	var rare := _class_reward_pool(hero_id, 2, rows)
 	var repeat_pool := common + uncommon + rare
+	var held := {}
 	for items: Array in rows:
 		for tile: Dictionary in items:
+			held[tile.id] = true
 			var rarity: String = ArenaSim.TILES[tile.id].get("rarity", "common")
 			if not _can_draft_owned_tile(tile.id, hero_id):
 				continue
 			if rarity != "legendary" and tile.id not in repeat_pool:
 				repeat_pool.append(tile.id)
 	var owned := _owned_reward(repeat_pool, 83 + salt, false, rows)
-	if not owned.is_empty():
+	var opening_pilot: bool = not directions.is_empty() and data.node.type == "opening"
+	var owned_hint := _copy_reward_hint(owned, rows) if not owned.is_empty() else ""
+	if not owned.is_empty() and (not opening_pilot or owned_hint == "Third copy"):
 		rewards.append(owned)
-		hints[owned] = _copy_reward_hint(owned, rows)
-	if lane == 0:
+		hints[owned] = owned_hint
+	if not directions.is_empty():
+		if not signature_offer.is_empty() and signature_offer not in rewards:
+			rewards.append(signature_offer)
+		_add_early_build_offers(directions, held, opening_pilot, rewards, hints)
+	if lane == 0 and rewards.size() < 3 and (directions.is_empty() or opening_pilot or rewards.size() < 2):
 		var bridge := _relic_bridge(rewards)
 		if not bridge.is_empty():
 			rewards.append(bridge.tile)
 			hints[bridge.tile] = bridge.hint
 	if not signature_offer.is_empty() and signature_offer not in rewards:
 		rewards.append(signature_offer)
+	if opening_pilot and rewards.size() < 3 and not owned.is_empty() and owned not in rewards:
+		rewards.append(owned)
+		hints[owned] = owned_hint
 	var rng := _rng(int(data.seed), _node_salt(84 + salt))
 	while rewards.size() < 3:
 		var roll := rng.randi_range(1, 100)
@@ -1886,8 +1912,36 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 			pool = common.duplicate()
 			for tile: String in rewards:
 				pool.erase(tile)
+		if not directions.is_empty():
+			var new_tiles := pool.filter(func(id: String): return not held.has(id))
+			if new_tiles.is_empty():
+				new_tiles = common.filter(func(id: String): return not held.has(id) and id not in rewards)
+			if not new_tiles.is_empty():
+				pool = new_tiles
 		rewards.append(pool[rng.randi_range(0, pool.size() - 1)])
 	return {"offers": _sample(rewards, 3, int(data.seed), _node_salt(85 + salt)), "hints": hints}
+
+
+func _early_build_directions(lane: int, hero_id: String) -> Array:
+	if lane != 0 or data.get("location") != "brass" or data.get("difficulty") != "medium" \
+		or data.get("segment", 1) != 1 or data.node.type not in ["opening", "battle"]:
+		return []
+	return EARLY_BUILD_DIRECTIONS.get(hero_id, [])
+
+
+func _add_early_build_offers(directions: Array, held: Dictionary, opening: bool, rewards: Array, hints: Dictionary) -> void:
+	for direction: Dictionary in directions:
+		if rewards.size() == 3:
+			break
+		if not opening and not held.has(direction.opening):
+			continue
+		var tile_id: String = direction.opening if opening else direction.followup
+		if held.has(tile_id) or tile_id in rewards:
+			continue
+		rewards.append(tile_id)
+		hints[tile_id] = direction.label
+		if not opening:
+			break
 
 
 func _copy_reward_hint(id: String, rows: Array) -> String:
