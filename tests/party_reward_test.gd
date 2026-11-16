@@ -30,6 +30,7 @@ func _run() -> void:
 	_check_starshot_opening_drafts()
 	_check_signature_elite_progression()
 	_check_signature_milestones()
+	_check_starshot_recruit_drafts()
 	await _check_medium_rewards(game)
 	game.queue_free()
 	await process_frame
@@ -250,6 +251,66 @@ func _check_signature_milestones() -> void:
 
 func _draft_offers_rare(run: FrontierRun, signature: String) -> bool:
 	return run.data.offers.any(func(id: String): return id in TilePacking.next_options(signature))
+
+
+func _check_starshot_recruit_drafts() -> void:
+	var run := FrontierRun.new()
+	run.load_save(save_path)
+	run.profile.medium_unlocked = true
+	var started := run.start_run(1, "medium")
+	run.data.offers = ["warden"]
+	started = started and run.choose_hero("warden") and run.choose_relic("pocket_bell") \
+		and run.choose_starter(ClassDecks.starter("warden")) and run.finish_combat(true, 100) and run.reward("skip")
+	_enter_boss(run, false)
+	started = started and run.finish_combat(true, 100) and run.reward("skip") and run.choose_boss_relic("skip")
+	run.data.offers = ["starshot"]
+	started = started and run.choose_recruit("starshot") and run.choose_recruit_loadout("assault")
+	_check(started and not run.data.has("starshot_recruit_specialty"), "A new Medium recruit starts without specialty history.")
+	if not started:
+		run.abandon_run()
+		return
+
+	# Keep two specialties eligible while testing ownership of a Common and an upgraded family.
+	var parallax_upgrade: String = TilePacking.next_options("parallax_shot")[0]
+	run.loadout.lanes[1].append(_signature_tile("backdraft_bolt", 4))
+	run.loadout.lanes[1].append(_signature_tile(parallax_upgrade, 6))
+	run.loadout.storage[0].append(_signature_tile("rivet_bolt", 0))
+	var eligible := ["retreat_shot", "spark_shot"]
+	var reached_gate := run.choose_node("7-1") and run.finish_combat(true, [100, 100]) and run.reward("skip")
+	_check(reached_gate and run.reward_lane() == 1, "A Medium Upper Gate win must open Starshot's recruit draft.")
+	if not reached_gate:
+		run.abandon_run()
+		return
+	var first: String = run.data.get("starshot_recruit_specialty", "")
+	_check(first in eligible and first in run.data.offers and run.data.offers.size() == 3,
+		"The Upper Gate draft reserves a class specialty from a family Starshot does not own.")
+	_check(_draft_offers_rare(run, ClassDecks.signature("starshot")) and "rivet_bolt" in run.data.offers \
+		and run.reward_hint("rivet_bolt") == "Third copy",
+		"The reserved specialty must fit beside Starshot's Rare signature and third-copy upgrade.")
+	var gate_offers: Array = run.data.offers.duplicate()
+	_check(run.load_save(save_path) and run.reward_lane() == 1 and run.data.offers == gate_offers \
+		and run.data.get("starshot_recruit_specialty") == first,
+		"Resuming a pending recruit draft must preserve its exact offers and specialty history.")
+
+	# Seed 1 allows an event and a shop between the gate and the second ordinary battle.
+	var reached_second := run.reward("skip") and run.choose_node("8-0") and run.event_choice(0) \
+		and run.choose_node("9-1") and run.leave_node() and run.choose_node("10-0") \
+		and run.finish_combat(true, [100, 100]) and run.reward("skip")
+	_check(reached_second and run.reward_lane() == 1, "Event and shop detours must still lead to the second recruit battle draft.")
+	if not reached_second:
+		run.abandon_run()
+		return
+	var second: String = run.data.get("starshot_recruit_specialty", "")
+	_check(second in eligible and second != first and second in run.data.offers,
+		"The second battle reserves a different unowned specialty even after the first one was skipped.")
+	_check("rivet_bolt" in run.data.offers and run.reward_hint("rivet_bolt") == "Third copy",
+		"The second battle also preserves an owned pair's upgrade opportunity.")
+	var reached_third := run.reward("skip") and run.choose_node("11-0") and run.finish_combat(true, [100, 100]) \
+		and run.reward("skip")
+	_check(reached_third and run.reward_lane() == 1 and run.data.offers.size() == 3 \
+		and run.data.get("starshot_recruit_specialty") == second,
+		"Later battle drafts are generated without reserving another Starshot specialty.")
+	run.abandon_run()
 
 
 func _check_medium_rewards(game: Control) -> void:

@@ -21,7 +21,7 @@ const BOSS_RELICS := {
 	"tollkeeper": ["tollkeeper_signet", "bastion_medal", "guild_ledger", "tollkeeper_repair_kit"],
 	"brass_bellmaker": ["bellmaker_clapper", "bellmaker_long_echo", "bellmaker_resonant_plate"],
 }
-const STARSHOT_OPENING_TILES := ["retreat_shot", "spark_shot", "backdraft_bolt", "parallax_shot"]
+const STARSHOT_SPECIALTIES := ["retreat_shot", "spark_shot", "backdraft_bolt", "parallax_shot"]
 const EARLY_BUILD_DIRECTIONS := {
 	"warden": [
 		{"label": "Guard and counter", "opening": "iron_arc", "followup": "iron_vow"},
@@ -716,7 +716,7 @@ func _starter_lane(id: String) -> Array:
 func _starter_offers(hero_id: String, salt: int, shared := "shot") -> Array:
 	var offers := ["bash", shared]
 	if _is_brass_easy_starshot(hero_id):
-		offers[0] = _sample(STARSHOT_OPENING_TILES, 1, int(data.seed), salt + 41)[0]
+		offers[0] = _sample(STARSHOT_SPECIALTIES, 1, int(data.seed), salt + 41)[0]
 	var signature: String = ClassDecks.starter(hero_id)
 	if signature not in offers:
 		offers.append(signature)
@@ -2251,7 +2251,8 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 	var starshot_opening: bool = starshot_pilot and data.node.type == "opening"
 	var fresh_battle_draft: bool = starshot_pilot and data.node.type == "battle" \
 		and _rng(int(data.seed), _node_salt(87 + salt)).randi_range(0, 1) == 0
-	var prefer_new_tiles := opening_pilot or starshot_opening or fresh_battle_draft
+	var recruit_draft := _early_starshot_recruit_draft(lane, hero_id)
+	var prefer_new_tiles := opening_pilot or starshot_opening or fresh_battle_draft or recruit_draft == 1
 	var owned_hint := _copy_reward_hint(owned, rows) if not owned.is_empty() else ""
 	if not owned.is_empty() and (not prefer_new_tiles or owned_hint == "Third copy"):
 		rewards.append(owned)
@@ -2272,8 +2273,10 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 		rewards.append(owned)
 		hints[owned] = owned_hint
 	if starshot_opening and rewards.size() < 3:
-		var candidates := STARSHOT_OPENING_TILES.filter(func(id: String): return id in common and not held.has(id) and id not in rewards)
+		var candidates := STARSHOT_SPECIALTIES.filter(func(id: String): return id in common and not held.has(id) and id not in rewards)
 		rewards.append_array(_sample(candidates, 1, int(data.seed), _node_salt(86 + salt)))
+	if recruit_draft >= 0 and rewards.size() < 3:
+		_reserve_starshot_recruit_specialty(held, rewards)
 	var rng := _rng(int(data.seed), _node_salt(84 + salt))
 	while rewards.size() < 3:
 		var roll := rng.randi_range(1, 100)
@@ -2297,6 +2300,32 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 				pool = new_tiles
 		rewards.append(pool[rng.randi_range(0, pool.size() - 1)])
 	return {"offers": _sample(rewards, 3, int(data.seed), _node_salt(85 + salt)), "hints": hints}
+
+
+func _early_starshot_recruit_draft(lane: int, hero_id: String) -> int:
+	if lane != 1 or hero_id != "starshot" or data.get("location") != "brass" or data.get("difficulty") != "medium" \
+		or data.node.type != "battle" or int(data.node.row) < NODES_PER_SEGMENT:
+		return -1
+	var prior_battles := 0
+	for layer: Array in data.layers.slice(NODES_PER_SEGMENT, int(data.node.row)):
+		if layer.any(func(node: Dictionary): return node.type == "battle" and node.id in data.visited):
+			prior_battles += 1
+			if prior_battles >= 2:
+				return -1
+	return prior_battles
+
+
+func _reserve_starshot_recruit_specialty(held: Dictionary, rewards: Array) -> void:
+	var held_families := {}
+	for id: String in held:
+		held_families[ArenaSim.TILES[id].get("family", id)] = true
+	var previous := str(data.get("starshot_recruit_specialty", ""))
+	var options := STARSHOT_SPECIALTIES.filter(func(id: String):
+		return id != previous and not held_families.has(id) and id not in rewards)
+	var choice := _sample(options, 1, int(data.seed), _node_salt(1155))
+	if not choice.is_empty():
+		rewards.append(choice[0])
+		data.starshot_recruit_specialty = choice[0]
 
 
 func _early_build_directions(lane: int, hero_id: String) -> Array:
