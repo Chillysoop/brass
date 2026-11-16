@@ -22,6 +22,7 @@ const FrontierScreen = preload("res://scripts/frontier_screen.gd")
 const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
 const ClassExpansionTiles = preload("res://scripts/class_expansion_tiles.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
+const ClassRelics = preload("res://scripts/class_relics.gd")
 const UniversalTileUpgrades = preload("res://scripts/universal_tile_upgrades.gd")
 const PRACTICE_TILES := ["pull", "bash", "guard", "shot", "blink", "slam"]
 const INK := Color("#101820")
@@ -802,7 +803,9 @@ func _rebuild_relic_strip() -> void:
 		child.queue_free()
 	relic_pulses.clear()
 	relic_badges.clear()
-	var equipped: Array = run.data.get("relics", []) if campaign else retry_options.get("relics", [])
+	var options: Dictionary = run.data if campaign else retry_options
+	var equipped: Array = options.get("relics", [])
+	var heroes: Array = options.get("heroes", [])
 	for id: String in equipped:
 		var relic: Dictionary = FrontierRun.RELICS.get(id, {})
 		if relic.is_empty():
@@ -813,8 +816,24 @@ func _rebuild_relic_strip() -> void:
 		badge.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
 		badge.custom_minimum_size = Vector2(28, 28)
 		badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		badge.tooltip_text = "%s\n%s" % [relic.label, relic.description]
-		badge.accessibility_name = relic.label
+		badge.mouse_filter = Control.MOUSE_FILTER_STOP
+		var owner := ClassRelics.owner(id)
+		var label: String = relic.label
+		if not owner.is_empty():
+			label += " · %s only" % GameIcons.hero_label(owner)
+			badge.name = "ClassRelicStatus_" + id
+			var lane := heroes.find_custom(func(hero: Dictionary): return hero.get("id", hero.get("hero")) == owner)
+			if lane >= 0:
+				var mark := ColorRect.new()
+				mark.color = CombatIcons.hero_color(lane)
+				mark.mouse_filter = Control.MOUSE_FILTER_IGNORE
+				badge.add_child(mark)
+				mark.set_anchors_and_offsets_preset(Control.PRESET_BOTTOM_WIDE)
+				mark.offset_left = 4
+				mark.offset_right = -4
+				mark.offset_top = -2
+		badge.tooltip_text = "%s\n%s" % [label, relic.description]
+		badge.accessibility_name = label
 		relic_strip.add_child(badge)
 		relic_badges[id] = badge
 

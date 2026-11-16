@@ -2,6 +2,7 @@ extends RefCounted
 
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
+const ClassRelics = preload("res://scripts/class_relics.gd")
 const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 const CombatIcons = preload("res://scripts/combat_icons.gd")
 
@@ -137,7 +138,7 @@ static func tile(id: String, spec: Dictionary) -> String:
 
 
 static func relic(id: String) -> String:
-	return RELIC_ICONS.get(id, "relic")
+	return RELIC_ICONS.get(id, ClassRelics.definition(id).get("icon", "relic"))
 
 
 static func relic_art(id: String) -> Texture2D:

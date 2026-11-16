@@ -4,6 +4,8 @@ const ArenaScene = preload("res://arena.tscn")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
+const ClassRelics = preload("res://scripts/class_relics.gd")
+const GameIcons = preload("res://scripts/game_icons.gd")
 const SOLO_RELIC_IDS := ["afterimage", "barrage_rack", "siege_fuse", "switchback_lens", "longshot_prism"]
 const ROLES := ["Fits your build", "Pivot", "Wildcard"]
 
@@ -166,8 +168,25 @@ func _check_later_party_draft() -> void:
 		"The party draft replaces the random relic and keeps the elite gold and Marks.")
 	var offers := run.elite_relic_offers().duplicate(true)
 	var ids := offers.map(func(offer: Dictionary): return offer.id)
-	_check(ids.size() == 3 and FrontierRun.PARTY_ELITE_RELICS.all(func(id: String): return id in ids),
-		"The three new party offers include Twin Bell, Guard Relay, and Flanking Standard.")
+	var class_offers := offers.filter(func(offer: Dictionary): return not offer.get("owner", "").is_empty())
+	var shared_offers := offers.filter(func(offer: Dictionary): return offer.get("owner", "").is_empty())
+	_check(ids.size() == 3 and shared_offers.size() == 2 and class_offers.size() == 1
+		and shared_offers.all(func(offer: Dictionary): return offer.id in FrontierRun.PARTY_ELITE_RELICS),
+		"The Act II party draft offers two shared relics and one class relic.")
+	if class_offers.size() != 1 or shared_offers.size() != 2:
+		game.queue_free()
+		return
+	var class_id: String = class_offers[0].id
+	var owner: String = class_offers[0].owner
+	var hero_name := GameIcons.hero_label(owner)
+	_check(ClassRelics.owner(class_id) == owner and run.data.heroes.any(func(hero: Dictionary):
+		return hero.id == owner and hero.hp > 0), "The class relic belongs to a surviving party member.")
+	var class_icons := {}
+	for id: String in ClassRelics.RELICS:
+		var art := GameIcons.relic_art(id)
+		_check(art != null and not class_icons.has(art.resource_path), "Load distinctive art for %s." % id)
+		if art != null:
+			class_icons[art.resource_path] = true
 	var tiles: Array = run.data.offers.duplicate()
 	var queued: Array = run.data.reward_remaining.duplicate(true)
 	_check(tiles.size() == 3 and queued.size() == 1 and queued[0].offers.size() == 3 and not run.reward("skip"),
@@ -181,16 +200,44 @@ func _check_later_party_draft() -> void:
 		var card := game.frontier_screen.find_child("RelicChoice_" + id, true, false) as Control
 		var portrait := card.find_child("RelicPortrait", true, false) as TextureRect if card != null else null
 		_check(portrait != null and portrait.texture != null, "Load the %s relic portrait in the party draft." % id)
-	await _click(game.frontier_screen, "EliteRelic_guard_relay")
-	_check(run.load_save(save_path) and not run.party_elite_relic_draft() and "guard_relay" in run.data.relics
-		and run.data.offers == tiles and run.data.reward_remaining == queued and not run.choose_elite_relic("twin_bell"),
-		"Choosing one relic opens the same tile picks and persists the selection on resume.")
+		var ownership := card.find_child("ClassRelicOwner", true, false) as Label if card != null else null
+		_check((ownership != null and ownership.text == hero_name + " only") if id == class_id else ownership == null,
+			"Identify the class restriction on the class relic card.")
+	var claim := _button(game.frontier_screen, "EliteRelic_" + class_id)
+	_check(claim != null and hero_name in claim.accessibility_name, "The accessible class relic action names its owner.")
+	await _click(game.frontier_screen, "EliteRelic_" + class_id)
+	_check(run.load_save(save_path) and not run.party_elite_relic_draft() and class_id in run.data.relics
+		and run.data.offers == tiles and run.data.reward_remaining == queued and not run.choose_elite_relic(shared_offers[0].id),
+		"Choosing the class relic opens the same tile picks and persists the selection on resume.")
 	_check(run.reward("skip") and run.reward("skip"), "Both party tile drafts can advance after the relic choice.")
 	run.data.phase = "combat"
+	game.run_show_arena()
+	await process_frame
+	var status := game.find_child("ClassRelicStatus_" + class_id, true, false) as TextureRect
+	_check(status != null and hero_name + " only" in status.tooltip_text and status.texture != null,
+		"The equipped class relic has an arena tooltip identifying its owner.")
+	_check_class_relic_effect(game.arena)
 	_check(run.finish_combat(true, [80, 80]) and run.elite_relic_offers().is_empty() and run.data.relics.size() == 4,
 		"After the party draft, the next elite grants a single relic through the usual drop.")
 	game.queue_free()
 	await process_frame
+
+
+func _check_class_relic_effect(view: Control) -> void:
+	var sim := ArenaSim.new()
+	var relic := ClassRelics.id_for("warden")
+	sim.start([[]], "solo", {"encounter": "opening", "hero": "warden", "class_relic": relic})
+	var hero: Dictionary = sim.units.front()
+	var enemy: Dictionary = sim.units.back()
+	view.reset_view(sim.units)
+	hero.guard = 8
+	sim._damage(enemy, hero, 4, "enemy_attack")
+	view.present(sim.units, sim._events, sim.tick)
+	var owns_cue := func(effect: Dictionary) -> bool:
+		return (effect.kind == "class_relic" and effect.tile == relic
+			and effect.actor == hero.id and effect.target == hero.id)
+	_check(view._effects.any(owns_cue),
+		"The Shield Rivet's real Guard trigger reaches its own arena cue on the Warden.")
 
 
 func _check_same_seed_battle(first: FrontierRun, second: FrontierRun, teleport: String, heavy: String) -> void:

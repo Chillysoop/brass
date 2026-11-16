@@ -4,6 +4,7 @@ const FrontierRun = preload("res://scripts/frontier_run.gd")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
+const ClassRelics = preload("res://scripts/class_relics.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 var failures: Array[String] = []
 
@@ -134,6 +135,7 @@ func _initialize() -> void:
 	check("gravity_hook" in resumed._normal_pool(), "Gravity Hook must stay eligible for future drafts.")
 	_check_medium(path)
 	_check_repairmaster_campaign()
+	_check_first_party_elite_class_relic()
 	_check_hard_and_glass(path)
 	_check_glass_hard(path)
 	_check_crown_easy(path)
@@ -386,6 +388,66 @@ func _check_repairmaster_campaign() -> void:
 		for suffix in ["", ".bak", ".tmp"]:
 			if FileAccess.file_exists(path + suffix):
 				DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
+
+
+func _check_first_party_elite_class_relic() -> void:
+	for hero: String in FrontierRun.HEROES:
+		var id := ClassRelics.id_for(hero)
+		check(ClassRelics.owner(id) == hero and FrontierRun.RELICS.has(id), "Every class has one named relic.")
+	var path := "user://frontier-class-relic-%d.json" % Time.get_ticks_usec()
+	var run := FrontierRun.new()
+	run.load_save(path)
+	run.profile.medium_unlocked = true
+	_exercise_first_party_elite_class_relic(run)
+	for suffix in ["", ".bak", ".tmp"]:
+		if FileAccess.file_exists(path + suffix):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
+
+
+func _exercise_first_party_elite_class_relic(run: FrontierRun) -> void:
+	var started := _equip_gate_starter(run, 42, "medium", "warden") and run.finish_combat(true, 90) and run.reward("skip")
+	check(started, "Join the route with a new lead before its first elite.")
+	if not started:
+		return
+	var first_boss_row := FrontierRun.NODES_PER_SEGMENT - 1
+	run.data.node = run.data.layers[first_boss_row - 1][0]
+	var recruited := run.choose_node(run.data.layers[first_boss_row][0].id) and _recruit_at_next_boss(run)
+	check(recruited and not run.data.elite_relic_drafted, "Enter Act II with a recruit and no previous elite reward.")
+	if not recruited:
+		return
+	var elite_row := FrontierRun.NODES_PER_SEGMENT + 3
+	var targets: Array = run.data.layers[elite_row].filter(func(node: Dictionary): return node.type == "elite")
+	check(targets.size() == 1, "Find the Act II elite in the seeded map.")
+	if targets.is_empty():
+		return
+	var elite: Dictionary = targets.front()
+	for approach: Dictionary in run.data.layers[elite_row - 1]:
+		if elite.id in approach.next:
+			run.data.node = approach
+			break
+	var drafted: bool = run.choose_node(elite.id) and run.finish_combat(true, [80, 75]) and run.party_elite_relic_draft()
+	var offers := run.elite_relic_offers().duplicate(true)
+	check(drafted and offers.size() == 3, "The first Act II elite presents a party draft even without an Act I elite.")
+	if not drafted or offers.size() != 3:
+		return
+	var class_offer: Dictionary = offers.back()
+	var owner := ClassRelics.owner(class_offer.id)
+	var signature := ClassDecks.signature(run.data.heroes[1].id)
+	check(not owner.is_empty() and class_offer.owner == owner and offers.slice(0, 2).all(func(offer: Dictionary):
+		return ClassRelics.owner(offer.id).is_empty()) and run.data.reward_remaining[0].offers.has(signature)
+		and ClassDecks.signature(run.data.hero) in run.data.offers, "Preserve both signature tiles behind two shared relics and one class relic.")
+	var saved_path := run.save_path
+	check(run.load_save(saved_path) and run.elite_relic_offers() == offers, "Resume the exact class relic and assigned hero.")
+	var chosen := run.choose_elite_relic(class_offer.id) and run.load_save(saved_path) and _finish_rewards(run, "skip")
+	check(chosen and class_offer.id in run.data.relics and run.data.party_elite_relic_drafted,
+		"Acquire one class relic and advance through both tile drafts.")
+	if not chosen:
+		return
+	var next_battles := run.available_nodes().filter(func(node: Dictionary): return node.type == "battle")
+	var advanced := not next_battles.is_empty() and run.choose_node(next_battles.front().id)
+	check(advanced and run.encounter().heroes.all(func(hero: Dictionary):
+		return hero.get("class_relic", "") == (class_offer.id if hero.id == owner else "")),
+		"Pass the saved class relic into combat on its owner only.")
 
 
 func _check_legacy_medium_unlocks() -> void:

@@ -73,6 +73,9 @@ const EFFECT_LENGTHS := {
 	"flanking_standard": 0.60,
 	"switchback_lens": 0.36,
 	"longshot_prism": 0.38,
+	"class_relic": 0.52,
+	"class_relic_ready": 0.52,
+	"class_relic_wave": 0.44,
 	"retreat": 0.46,
 	"charge": 0.50,
 	"mark": 0.36,
@@ -118,6 +121,12 @@ const SIGNATURE_WINDUP_LABELS := {
 }
 const RELIC_EFFECTS := ["afterimage", "barrage_rack", "siege_fuse", "stepped_gear", "twin_bell", "switchback_lens",
 	"longshot_prism", "guard_relay", "flanking_standard"]
+const CLASS_RELIC_GLYPHS := {
+	"warden_shield_rivet": "guard", "bulwark_watch_badge": "windup", "breaker_impact_pin": "push",
+	"hexwright_tow_hook": "pull", "wayfarer_glass_compass": "teleport", "lancer_trail_spur": "splash",
+	"cantor_echo_clasp": "haste", "apothecary_tonic_charm": "heal", "rune_smith_seal": "mark",
+	"starshot_sight_glass": "range", "cinder_mage_ember_locket": "burn", "duelist_second_point": "attack",
+}
 const ENCOUNTER_EFFECTS := {
 	"recruit_jammed": "spring_jam",
 	"tollkeeper_repair_interrupted": "repair_interrupted",
@@ -267,8 +276,11 @@ func present(units_data: Array, events: Array, tick := 0, attack_cues: Array = [
 		if tile == "relay_link_broken" and str(event.target).begins_with("crown_regent"):
 			continue
 		var kind: String = ENCOUNTER_EFFECTS.get(tile, event.get("kind", ""))
-		if kind == "relic_proc" and tile in RELIC_EFFECTS:
-			kind = tile
+		if kind == "relic_proc":
+			if tile in RELIC_EFFECTS:
+				kind = tile
+			elif CLASS_RELIC_GLYPHS.has(tile):
+				kind = "class_relic"
 		elif kind == "heal" and _is_repair_cue(tile):
 			kind = "repair_heal"
 		if not EFFECT_LENGTHS.has(kind):
@@ -1335,6 +1347,18 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			draw_line(from_point + height, to_point + height, Color(color, opacity * 0.38), 2.0, true)
 			for center: Vector2 in [from_point + height, to_point + height]:
 				draw_arc(center, lerpf(9.0, 25.0, progress), 0.0, TAU, 24, color, 2.5, true)
+		"class_relic_ready":
+			_draw_support_link(from_point, to_point, Color(CombatIcons.PALETTE.heal, opacity), "heal")
+		"class_relic_wave":
+			var extent := float(effect.get("radius", 0.0)) * field.size / WORLD_SIZE
+			var ring := extent * lerpf(0.26, 1.0, progress)
+			_draw_dashed_ellipse(from_point, ring, Color(INK, opacity * 0.75), 4.8)
+			_draw_dashed_ellipse(from_point, ring, Color(CombatIcons.PALETTE.splash, opacity), 2.5)
+		"class_relic":
+			var glyph: String = CLASS_RELIC_GLYPHS[effect.tile]
+			var tint := Color(CombatIcons.PALETTE[glyph], opacity)
+			var radius := lerpf(17.0, 32.0, progress)
+			_draw_ellipse(from_point, Vector2(radius, radius * 0.44), Color(tint, opacity * 0.24))
 		"switchback_lens":
 			var radius := lerpf(28.0, 13.0, progress)
 			for index in range(2):
@@ -1454,8 +1478,28 @@ func _draw_motion_chevron(tip: Vector2, direction: Vector2, length: float, light
 	draw_polyline(points, light, 2.8, true)
 
 
+func _draw_class_relic_feedback(effect: Dictionary, field: Rect2) -> void:
+	var glyph: String = CLASS_RELIC_GLYPHS.get(effect.tile, "")
+	if glyph.is_empty():
+		return
+	var progress := float(effect.age) / float(EFFECT_LENGTHS[effect.kind])
+	var opacity := 1.0 - smoothstep(0.46, 1.0, progress)
+	var ready: bool = effect.kind == "class_relic_ready"
+	var actor: String = effect.target if ready else effect.actor
+	var origin: Vector2 = effect.to if ready else effect.from
+	var center := _project(_positions.get(actor, origin), field) - Vector2(22.0, 17.0 + 12.0 * progress)
+	var tone := Color(CombatIcons.PALETTE[glyph], opacity)
+	var extent := lerpf(8.0, 10.0, smoothstep(0.0, 0.24, progress))
+	draw_circle(center, extent, Color(INK, opacity * 0.96), true, -1.0, true)
+	draw_circle(center, extent, tone, false, 1.15, true)
+	CombatIcons.draw(self, glyph, center, 13.0, tone)
+
+
 func _draw_feedback(effect: Dictionary, field: Rect2) -> void:
 	var kind: String = effect.kind
+	if kind in ["class_relic", "class_relic_ready"]:
+		_draw_class_relic_feedback(effect, field)
+		return
 	if kind == "flanking_standard":
 		_draw_flanking_arrows(effect, field, float(effect.age) / float(EFFECT_LENGTHS[kind]))
 		return

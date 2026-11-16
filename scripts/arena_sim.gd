@@ -14,6 +14,7 @@ const ApothecaryTiles = preload("res://scripts/apothecary_tiles.gd")
 const VanguardSpecialties = preload("res://scripts/vanguard_specialties.gd")
 const ArtificeSpecialties = preload("res://scripts/artifice_specialties.gd")
 const BrassRepairmaster = preload("res://scripts/brass_repairmaster.gd")
+const ClassRelicEffects = preload("res://scripts/class_relic_effects.gd")
 const PILOT_ENEMY_SCRIPTS := {
 	"brass": BrassVarietyEnemies, "glass": GlassPilotEnemies,
 	"crown": CrownVarietyEnemies, "moonwreck": MoonPilotEnemies,
@@ -687,6 +688,7 @@ func _start_campaign(options: Dictionary) -> void:
 		if not mastery.is_empty():
 			unit["mastery"] = mastery
 		unit["relics"] = relics
+		ClassRelicEffects.equip(unit, str(hero_options.get("class_relic", "")))
 		units.append(unit)
 
 	var rng := RandomNumberGenerator.new()
@@ -1838,6 +1840,8 @@ func _heal_from_tile(actor: Dictionary, recipient: Dictionary, tile_id: String, 
 	_healed_tiles[placement] = true
 	recipient.hp += gained
 	_emit("heal", "%s restores %d HP to %s." % [TILES[tile_id].label, gained, recipient.name], actor, recipient, tile_id, gained)
+	if actor.get("class_relic") == ClassRelicEffects.APOTHECARY:
+		ClassRelicEffects.on_tile_heal(self, actor, recipient, tile_id)
 	if _activation.get("enchantment") == "mending" and _activation.actor == actor.id and _activation.tile == tile_id:
 		_activation.get_or_add("mending_first_recipient", recipient.id)
 
@@ -2007,7 +2011,7 @@ func _apply_arsenal_mark(actor: Dictionary, target: Dictionary, tile_id: String,
 	var for_ally: bool = tile.get("ally_only_mark", false)
 	target["ally_mark" if for_ally else "arsenal_mark"] = {
 		"bonus": tile.mark_bonus, "expires": tick + tile.mark_beats * TICKS_PER_BEAT,
-		"order": _activation.order, "marker": actor.id,
+		"order": _activation.order, "marker": actor.id, "tile": tile_id,
 	}
 	var message := "%s marks %s for %d beats." % [tile.label, target.name, tile.mark_beats]
 	if for_ally:
@@ -2021,7 +2025,7 @@ func _apply_cantor_mark(actor: Dictionary, target: Dictionary, tile_id: String, 
 	var beats: int = tile.get("chorus_mark_beats", tile.get("chorus_guard_beats", 0))
 	target["cantor_mark"] = {
 		"marker": actor.id, "expires": tick + beats * TICKS_PER_BEAT,
-		"bonus": bonus, "guard": guard, "contributors": [],
+		"bonus": bonus, "guard": guard, "contributors": [], "tile": tile_id,
 	}
 	var message := "%s marks %s for %d beats. %s" % [tile.label, target.name, beats,
 		"The next hit from each of two other heroes gains damage." if bonus > 0
@@ -2222,7 +2226,10 @@ func _guard_allies(actor: Dictionary, tile_id: String, amount: int, radius: floa
 
 
 func _guard_from_tile(actor: Dictionary, recipient: Dictionary, amount: int, tile_id: String) -> void:
+	var previous_guard: int = recipient.guard
 	_guard(recipient, amount, tile_id, actor)
+	if recipient.guard > previous_guard and actor.get("class_relic") == ClassRelicEffects.BULWARK:
+		ClassRelicEffects.on_ally_guard(self, actor, recipient, tile_id)
 	if amount > 0 and not _activation.is_empty() and _has_relic(actor, "bastion_medal"):
 		_activation.get_or_add("bastion_recipients", {})[recipient.id] = recipient
 
@@ -2448,6 +2455,10 @@ func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: Str
 		_displace_tidekeeper(actor, target, kind)
 	elif target.get("admiral_phase", 0) >= 2 and actor.side == "hero" and force > 85.0:
 		_displace_admiral(actor, target, kind)
+	if moved and kind == "pull" and actor.get("class_relic") == ClassRelicEffects.HEXWRIGHT and target.side == "enemy":
+		ClassRelicEffects.on_pull(self, actor, target, tile_id)
+	if moved and kind == "push" and actor.get("class_relic") == ClassRelicEffects.BREAKER and target.side == "enemy":
+		ClassRelicEffects.on_push(self, actor, target, tile_id)
 	return moved
 
 
@@ -3346,6 +3357,8 @@ func _intercept_target(target: Dictionary) -> Dictionary:
 			continue
 		VanguardSpecialties.reinforce_intercept(self, ally)
 		_emit("intercept", "%s intercepts the attack on %s." % [ally.name, target.name], ally, target, "bulwark")
+		if ally.get("class_relic") == ClassRelicEffects.BULWARK:
+			ClassRelicEffects.on_intercept(self, ally, target)
 		return ally
 	return target
 
@@ -3468,26 +3481,40 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 	if target.hp <= 0:
 		return
 	var critical := false
+	var primary_tile: bool = extra_hit.is_empty() and actor.side == "hero" and target.side == "enemy" \
+		and _activation.get("actor") == actor.id and _activation.get("target") == target.id and _activation.get("tile") == tile_id
+	var trail_bonus := 0
 	if TILES.has(tile_id):
 		if extra_hit.is_empty():
+			var passive_rune_released: bool = actor.get("class_relic") == ClassRelicEffects.RUNE_SMITH \
+				and bool(actor.get("rune_charged", false))
 			amount += _mastery_hit(actor, target, tile_id)
 			amount = _class_attack_damage(actor, target, tile_id, amount)
 			if not _activation.is_empty() and actor.side == "hero" and target.side == "enemy":
-				if _activation.actor == actor.id and _activation.target == target.id and _activation.tile == tile_id:
+				if primary_tile:
 					ArtificeSpecialties.resolve_ally_echo(self, actor, target)
 				amount += _consume_arsenal_mark(actor, target, tile_id)
 				amount += _consume_cantor_mark(actor, target, tile_id)
 				amount += _consume_ranged_followup(actor, target, tile_id)
 				amount += _lance_hit_bonus(actor, target, tile_id)
-				amount += _consume_rune_charge(actor, target, tile_id)
+				var tile_rune_bonus := _consume_rune_charge(actor, target, tile_id)
+				amount += tile_rune_bonus
 				amount += _needle_attack_bonus(actor, target, tile_id)
 				amount += _relic_attack_bonus(actor, target)
 				if tile_id == _activation.tile and actor.id == _activation.actor and amount > 0:
 					amount += _timeline_relic_bonus(actor, target, tile_id)
+					if actor.get("class_relic") == ClassRelicEffects.RUNE_SMITH and (passive_rune_released or tile_rune_bonus > 0):
+						ClassRelicEffects.on_rune_released(self, actor, tile_id)
+				if primary_tile and amount > 0 and (actor.has("class_relic") or actor.has("class_tonic")):
+					amount += ClassRelicEffects.primary_bonus(self, actor, target, tile_id)
+					trail_bonus = ClassRelicEffects.trail_bonus(self, actor)
 				_apply_barrage_rack(actor, target, tile_id)
 			critical = amount > 0 and _roll_critical(actor, target, tile_id)
 			if critical:
 				amount = roundi(amount * CRITICAL_DAMAGE_MULTIPLIER)
+				if primary_tile and actor.get("class_relic") == ClassRelicEffects.STARSHOT:
+					amount += ClassRelicEffects.critical_bonus(self, actor, target, tile_id)
+			amount += trail_bonus
 		if target.get("marshal_plated", false) and actor.side == "hero":
 			amount = _marshal_damage(actor, target, amount, extra_hit.is_empty())
 		elif target.get("prism_warded", false) and actor.side == "hero":
@@ -3508,6 +3535,11 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 				amount -= prevented
 				_emit("guard", "The Crown shields block %d damage." % prevented,
 					_find_unit(target.relay_shield_sources[0]), target, "relay_absorb", prevented)
+	var burn_tile: String = source_details.get("source_tile", "")
+	var ember_bonus := 0
+	if tile_id == "cinder_mage" and actor.get("class_relic") == ClassRelicEffects.CINDER_MAGE:
+		ember_bonus = ClassRelicEffects.burn_bonus(self, actor, burn_tile)
+		amount += ember_bonus
 	if amount > 0 and actor.side == "enemy" and target.has("crown_spotter_until"):
 		amount += CrownVarietyEnemies.consume_spotter_mark(self, actor, target)
 	if actor.side == "hero" and target.has("crown_oathbrace_until"):
@@ -3553,6 +3585,10 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		impact_details["pierced_guard"] = pierced_guard
 	var strike_origin: Vector2 = source_details.get("strike_origin", _attack_origin(actor))
 	_emit("hit", hit_message, actor, target, tile_id, dealt, strike_origin, Vector2.INF, impact_details)
+	if blocked > 0 and actor.side == "enemy" and target.get("class_relic") == ClassRelicEffects.WARDEN:
+		ClassRelicEffects.on_guard_block(self, target, tile_id)
+	if source_details.has("echo_trigger") and actor.get("class_relic") == ClassRelicEffects.CANTOR:
+		ClassRelicEffects.on_mark_spent(self, actor.id, _find_unit(source_details.echo_trigger), _activation.get("tile", ""), tile_id)
 	if dealt > 0 and actor.side == "hero" and target.get("attack_id") in [BrassRepairmaster.BOSS_ID, BrassRepairmaster.DRONE_ID]:
 		BrassRepairmaster.on_damage(self, actor, target, dealt)
 	if pierced_guard > 0:
@@ -3634,6 +3670,10 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		target["regent_contributors"] = []
 		_guard(target, 22, "regent_seals")
 		_emit("intent", "The Regent raises three seals. Land a hit from each hero within 4 beats to break them.", target, actor, "regent_seals")
+	if trail_bonus > 0:
+		ClassRelicEffects.trail_wave(self, actor, target, tile_id)
+	if ember_bonus > 0:
+		ClassRelicEffects.burn_spark(self, actor, target, burn_tile)
 
 
 func _prime_bastion_ward(actor: Dictionary, tile_id: String, tile: Dictionary) -> void:
@@ -3804,6 +3844,7 @@ func _consume_arsenal_mark(actor: Dictionary, target: Dictionary, tile_id: Strin
 		var label := "Ally mark" if key == "ally_mark" else "Mark"
 		_emit("mark_spent", "%s on %s adds %d damage." % [label, target.name, mark.bonus],
 			actor, target, tile_id, mark.bonus)
+		ClassRelicEffects.on_mark_spent(self, mark.marker, actor, tile_id, mark.get("tile", ""))
 		return mark.bonus
 	return 0
 
@@ -3817,6 +3858,7 @@ func _consume_cantor_mark(actor: Dictionary, target: Dictionary, tile_id: String
 		return 0
 	if actor.id == mark.marker or actor.id in mark.contributors:
 		return 0
+	ClassRelicEffects.on_mark_spent(self, mark.marker, actor, tile_id, mark.get("tile", ""))
 	if mark.guard > 0:
 		target.erase("cantor_mark")
 		_guard_allies(actor, tile_id, mark.guard)
@@ -4199,7 +4241,10 @@ func _breaker_collision(moving: Dictionary, other: Dictionary) -> void:
 			activation.reason = _activation_result(activation)
 	var details := {"source_tile": setup.get("source_tile", "")}
 	_damage(source, moving, setup.damage, "breaker", "", details)
-	_damage(source, other, setup.damage, "breaker", "", details)
+	var impact_pin: int = setup.get("impact_pin", 0)
+	if impact_pin > 0:
+		details["class_relic"] = ClassRelicEffects.BREAKER
+	_damage(source, other, setup.damage + impact_pin, "breaker", "", details)
 	VanguardSpecialties.chain_collision(self, source, moving, other, setup)
 
 

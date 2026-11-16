@@ -946,7 +946,7 @@ func _elite_relic_draft(offers: Array) -> void:
 	for offer: Dictionary in offers:
 		var id: String = offer.id
 		_relic_draft_card(cards, id, "EliteRelic_", func(): _refresh_after_choice(_run.choose_elite_relic(id)),
-			offer.role, offer.companion)
+			offer.role, offer.companion, offer.get("owner", ""))
 
 
 func _boss_relic_draft() -> void:
@@ -988,7 +988,7 @@ func _relic_heading(title: String, subtitle: String) -> void:
 
 
 func _relic_draft_card(cards: HBoxContainer, id: String, button_prefix: String, select: Callable,
-		role := "", companion := "") -> void:
+		role := "", companion := "", owner := "") -> void:
 	var spec: Dictionary = FrontierRun.RELICS[id]
 	var tone: Color = RELIC_DRAFT_TONES.get(id, GOLD)
 	var card := _panel_stack(cards, Vector2.ZERO, true)
@@ -1019,6 +1019,8 @@ func _relic_draft_card(cards: HBoxContainer, id: String, button_prefix: String, 
 	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	card.add_child(title)
+	if not owner.is_empty():
+		_add_relic_owner(card, owner)
 	if not role.is_empty():
 		var role_label := _label(role, 13, tone)
 		role_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1045,7 +1047,8 @@ func _relic_draft_card(cards: HBoxContainer, id: String, button_prefix: String, 
 
 	var button := _button("Claim relic", select, true)
 	button.name = button_prefix + id
-	button.accessibility_name = "Claim %s. %s" % [spec.label, spec.description]
+	var claim: String = spec.label if owner.is_empty() else "%s for %s" % [spec.label, _hero_name(owner)]
+	button.accessibility_name = "Claim %s. %s" % [claim, spec.description]
 	button.size_flags_horizontal = SIZE_SHRINK_CENTER
 	var fills := {"normal": Color("#3c2838"), "hover": Color("#664743"), "pressed": Color("#4b323c")}
 	for state: String in fills:
@@ -1067,6 +1070,20 @@ func _relic_draft_card(cards: HBoxContainer, id: String, button_prefix: String, 
 	_enable_reward_card_click(card, button)
 	if panel.get_index() == 0:
 		button.grab_focus()
+
+
+func _add_relic_owner(card: VBoxContainer, owner: String) -> void:
+	var marker := HBoxContainer.new()
+	marker.alignment = BoxContainer.ALIGNMENT_CENTER
+	marker.add_theme_constant_override("separation", 4)
+	marker.add_child(_icon_view(GameIcons.hero_art(owner), 20 if _battle_overlay else 25))
+	var lane := _party().find_custom(func(hero: Dictionary): return hero.id == owner)
+	var tone := TEAL if lane < 0 else CombatIcons.hero_color(lane)
+	var label := _label("%s only" % _hero_name(owner), 13 if _battle_overlay else 15, tone)
+	label.name = "ClassRelicOwner"
+	label.size_flags_vertical = SIZE_SHRINK_CENTER
+	marker.add_child(label)
+	card.add_child(marker)
 
 
 func _claim_boss_relic(id: String) -> void:

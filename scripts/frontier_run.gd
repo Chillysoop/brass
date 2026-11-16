@@ -7,6 +7,7 @@ const PilotFormations = preload("res://scripts/pilot_formations.gd")
 const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 const ClassMasteries = preload("res://scripts/class_masteries.gd")
 const RecruitLoadouts = preload("res://scripts/recruit_loadouts.gd")
+const ClassRelics = preload("res://scripts/class_relics.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const UniversalTileUpgrades = preload("res://scripts/universal_tile_upgrades.gd")
 const HEROES = ArenaSim.HERO_CLASSES
@@ -38,7 +39,7 @@ const EARLY_BUILD_DIRECTIONS := {
 }
 const RELIC_STARTERS := {"towline_knot": "pull", "bridgeplate": "shield_ram"}
 const FORGE_UNLOCKS := {"blink": "blink_artifice", "shot": "shot_artifice", "guard": "guard_artifice"}
-const RELICS := {
+const SHARED_RELICS := {
 	"pocket_bell": {"label": "Pocket Bell", "description": "Gain guard at the start of each combat loop."},
 	"copper_compass": {"label": "Copper Compass", "description": "Your first push each loop travels farther."},
 	"quartermasters_coin": {"label": "Quartermaster's Coin", "description": "Gain 3 extra gold on the first skipped tile reward from each fight."},
@@ -66,6 +67,7 @@ const RELICS := {
 	"bellmaker_long_echo": {"label": "Long Echo", "description": "Each hero's first ranged hit per loop deals 4 extra damage."},
 	"bellmaker_resonant_plate": {"label": "Resonant Plate", "description": "Each hero gains 4 Guard when their first tile at least 3 beats wide finishes each loop."},
 }
+static var RELICS: Dictionary = SHARED_RELICS.merged(ClassRelics.RELICS)
 const META_NODES := {
 	"stout_start": {"label": "Stout Start", "description": "Begin each run with 8% more maximum HP.", "cost": 5, "requires": []},
 	"purse": {"label": "Well-stocked Purse", "description": "Begin each run with 8 extra gold.", "cost": 5, "requires": []},
@@ -880,6 +882,9 @@ func _encounter_for(node: Dictionary, segment: int) -> Dictionary:
 		var member := {"id": hero.id, "hero": hero.id, "hp": int(hero.hp), "max_hp": int(hero.max_hp)}
 		if hero.has("mastery"):
 			member.mastery = hero.mastery
+		var class_relic := ClassRelics.id_for(hero.id)
+		if class_relic in data.relics:
+			member.class_relic = class_relic
 		roster.append(member)
 	var options := {
 		"encounter": kind, "kind": kind, "id": node.id,
@@ -968,8 +973,12 @@ func will_draft_elite_relic() -> bool:
 
 
 func _can_draft_party_elite_relic() -> bool:
-	return _has_earned_elite_relic() and not data.get("party_elite_relic_drafted", false) \
-		and data.heroes.filter(func(hero: Dictionary): return int(hero.hp) > 0).size() >= 2
+	return not data.get("party_elite_relic_drafted", false) and _living_heroes().size() >= 2 \
+		and (int(data.get("segment", 1)) == 2 or _has_earned_elite_relic())
+
+
+func _living_heroes() -> Array:
+	return data.get("heroes", []).filter(func(hero: Dictionary): return int(hero.hp) > 0)
 
 
 func _has_earned_elite_relic() -> bool:
@@ -1006,6 +1015,10 @@ func choose_elite_relic(id: String) -> bool:
 	for offer: Dictionary in elite_relic_offers():
 		if offer.id != id or id in data.relics:
 			continue
+		var owner := ClassRelics.owner(id)
+		if not owner.is_empty() and (offer.get("owner") != owner \
+				or not _living_heroes().any(func(hero: Dictionary): return hero.id == owner)):
+			return false
 		var before := data.duplicate(true)
 		if party_elite_relic_draft():
 			data.party_elite_relic_drafted = true
@@ -1081,12 +1094,32 @@ func _build_elite_relic_offers() -> Array:
 
 
 func _build_party_elite_relic_offers() -> Array:
+	var class_offer := _class_elite_relic_offer()
+	if not _has_earned_elite_relic() and not class_offer.is_empty():
+		var first_offers := _build_elite_relic_offers().slice(0, 2)
+		first_offers.append(class_offer)
+		return first_offers
+	var shared_count := 3 if class_offer.is_empty() else 2
 	var picks := PARTY_ELITE_RELICS.filter(func(id: String): return id not in data.relics)
-	if picks.size() < 3:
+	if picks.size() < shared_count:
 		var alternatives := _available_relics().filter(func(id: String): return id not in picks)
-		picks.append_array(_sample(alternatives, 3 - picks.size(), int(data.seed), _node_salt(187)))
-	return _sample(picks, 3, int(data.seed), _node_salt(188)).map(func(id: String) -> Dictionary:
+		picks.append_array(_sample(alternatives, shared_count - picks.size(), int(data.seed), _node_salt(187)))
+	var offers := _sample(picks, shared_count, int(data.seed), _node_salt(188)).map(func(id: String) -> Dictionary:
 		return {"id": id, "role": "", "companion": ""})
+	if not class_offer.is_empty():
+		offers.append(class_offer)
+	return offers
+
+
+func _class_elite_relic_offer() -> Dictionary:
+	if int(data.get("segment", 1)) != 2:
+		return {}
+	var candidates := _living_heroes().map(func(hero: Dictionary): return ClassRelics.id_for(hero.id))
+	candidates = candidates.filter(func(id: String): return not id.is_empty() and id not in data.relics)
+	if candidates.is_empty():
+		return {}
+	var id: String = _sample(candidates, 1, int(data.seed), _node_salt(191))[0]
+	return {"id": id, "owner": ClassRelics.owner(id), "role": "", "companion": ""}
 
 
 func _elite_relic_offer(id: String, equipped := []) -> Dictionary:
@@ -1240,6 +1273,8 @@ func finish_combat(victory: bool, hp: Variant, combat_stats := {}) -> bool:
 			if party_relic:
 				data.elite_relic_offers = _build_party_elite_relic_offers()
 				data.party_elite_relic_pending = true
+				if not _has_earned_elite_relic():
+					data.elite_guaranteed_tile = ClassDecks.signature(data.hero)
 			elif draft_relic:
 				data.elite_relic_offers = _build_elite_relic_offers()
 				data.elite_guaranteed_tile = ClassDecks.signature(data.hero)
@@ -2253,7 +2288,7 @@ func _combat_reward_draft(kind: String, lane: int) -> Dictionary:
 	if kind == "elite":
 		var pool := _class_reward_pool(hero_id, 1, rows) + _class_reward_pool(hero_id, 2, rows) + _class_reward_pool(hero_id, 3, rows)
 		var fixed: Array = []
-		var first_elite := not elite_relic_offers().is_empty() and not party_elite_relic_draft()
+		var first_elite := not elite_relic_offers().is_empty() and (not party_elite_relic_draft() or data.has("elite_guaranteed_tile"))
 		if first_elite:
 			fixed.append(ClassDecks.signature(hero_id))
 		elif lane == 0 and data.node.type == "elite":
@@ -2956,8 +2991,7 @@ func _available_relics() -> Array:
 
 func _available_elite_relics() -> Array:
 	var pool := ELITE_RELICS.duplicate()
-	var living_count: int = data.get("heroes", []).filter(func(hero: Dictionary): return int(hero.hp) > 0).size()
-	if living_count < 2:
+	if _living_heroes().size() < 2:
 		pool.erase("twin_bell")
 	for held: String in data.get("relics", []):
 		pool.erase(held)
