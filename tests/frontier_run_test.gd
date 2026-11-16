@@ -4,6 +4,7 @@ const FrontierRun = preload("res://scripts/frontier_run.gd")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
+const TilePacking = preload("res://scripts/tile_packing.gd")
 var failures: Array[String] = []
 
 
@@ -135,6 +136,7 @@ func _initialize() -> void:
 	_check_arsenal_rewards()
 	_check_rotating_lead_starters()
 	_check_opening_specialty_rewards()
+	_check_hard_followup_rewards()
 	_check_later_act_specialties()
 	_check_acquisition_drafts()
 	_check_mobility_acquisition()
@@ -1253,6 +1255,159 @@ func _gate_pair_draft(run: FrontierRun, fixture: Dictionary, region: String) -> 
 		return []
 	run.loadout.lanes[0] = _acquisition_pair("jab")
 	return run.data.offers.duplicate() if run.finish_combat(true, 100) else []
+
+
+func _check_hard_followup_rewards() -> void:
+	var path := "user://hard-followup-test-%d.json" % Time.get_ticks_usec()
+	var run := FrontierRun.new()
+	run.load_save(path)
+	run.profile.medium_unlocked = true
+	run.profile.hard_unlocked = true
+	run.profile.glass_hard_unlocked = true
+	_check_hard_followup_route(run, false)
+	_check_hard_followup_route(run, true)
+	_check_hard_followup_single_copy(run)
+	_check_hard_followup_scope(run)
+	for base: String in [path, path + ".control", path + ".reroll"]:
+		for suffix in ["", ".bak", ".tmp"]:
+			if FileAccess.file_exists(base + suffix):
+				DirAccess.remove_absolute(ProjectSettings.globalize_path(base + suffix))
+
+
+func _check_hard_followup_route(run: FrontierRun, protected_first: bool) -> void:
+	if not (_equip_gate_starter(run, 7, "hard", "duelist") and run.finish_combat(true, 100) and run.reward("skip")):
+		check(false, "Reach the matched Hard route through the Gate Trial.")
+		return
+	run.loadout.lanes[0] = _acquisition_pair("jab")
+	var signature := ClassDecks.signature("duelist")
+	if protected_first:
+		run.loadout.storage[0] = [{"id": signature, "start": 0, "target": "nearest"}]
+		run.data.relics.append("siege_fuse")
+	var route := ["1-2", "3-1", "4-0"]
+	for index in range(route.size()):
+		if index == 1 and not (run.choose_node("2-2") and run.data.phase == "shop" and run.leave_node()):
+			check(false, "A real shop visit separates the two ordinary battle wins.")
+			return
+		if not run.choose_node(route[index]):
+			check(false, "Reach ordinary battle %d on the matched Hard route." % (index + 1))
+			return
+		var standard := _matched_followup_control(run)
+		if not run.finish_combat(true, 100):
+			check(false, "Win the ordinary Hard battle and open its reward.")
+			return
+		var offers: Array = run.data.offers.duplicate()
+		var pick := "skip"
+		if index == 0:
+			check(run.reward_hint("jab") == "Third copy", "The early reward preserves the available third Jab.")
+			_check_followup_combine(run)
+			if protected_first:
+				check(offers == standard and "slam" in offers and "Siege Fuse" in run.reward_hint("slam") \
+					and offers.any(func(id: String): return _reward_tile_family(id) == signature and ArenaSim.TILES[id].rarity == "rare"),
+					"A protected third copy, relic companion, and signature leave no room for a different offer.")
+				run.loadout.storage[0] = []
+				run.data.relics.erase("siege_fuse")
+			else:
+				pick = _check_followup_replacement(run, standard)
+				_check_followup_round_trip(run)
+		elif index == 1:
+			_check_followup_replacement(run, standard)
+		else:
+			check(offers == standard, "The third ordinary win keeps its original reward even if the first had no open slot.")
+		if pick != "skip":
+			check(TilePacking.can_place(run.loadout.lanes[0], pick, 2, ArenaSim.BEATS), "Equip the first new choice for the second fight.")
+			run.loadout.lanes[0].append({"id": pick, "start": 2, "target": ArenaSim.TILES[pick].targets[0]})
+		if not run.reward(pick):
+			check(false, "Resolve each early reward before traveling onward.")
+			return
+
+
+func _matched_followup_control(run: FrontierRun) -> Array:
+	# Duelist has no separate Medium build directions, so this changes only the Hard rule.
+	var control := FrontierRun.new()
+	var path := run.save_path
+	if not control.load_save(path):
+		check(false, "Load the same lead, inventory, and encounter for the matched draft.")
+		return []
+	control.save_path = path + ".control"
+	control.data.difficulty = "medium"
+	return control.data.offers.duplicate() if control.finish_combat(true, 100) else []
+
+
+func _check_followup_replacement(run: FrontierRun, standard: Array) -> String:
+	var offers: Array = run.data.offers
+	var added := offers.filter(func(id: String): return id not in standard)
+	var removed := standard.filter(func(id: String): return id not in offers)
+	var tier := func(id: String): return ArenaSim.TILES[id].rarity
+	check(offers.size() == 3 and added.size() <= 1 and added.size() == removed.size() and offers.map(tier) == standard.map(tier),
+		"The Hard follow-up changes at most one choice while keeping each card's rarity slot.")
+	var held: Array = run.loadout.lanes[0] + run.loadout.storage[0] + run.loadout.storage[1] + run.loadout.storage[2]
+	for id: String in (added if not added.is_empty() else offers):
+		var family := _reward_tile_family(id)
+		var traits := run._tile_reward_traits(id)
+		if id in ClassDecks.common("duelist") and ArenaSim.TILES[id].damage > 0 and run.reward_hint(id).is_empty() \
+				and held.all(func(item: Dictionary): return _reward_tile_family(item.id) != family) \
+				and offers.filter(func(offer: String): return _reward_tile_family(offer) == family).size() == 1 \
+				and run.loadout.lanes[0].all(func(item: Dictionary): return traits != run._tile_reward_traits(item.id)):
+			return id
+	check(false, "The draft has a fresh class choice with a different combat role and no instruction on its card.")
+	return "skip"
+
+
+func _check_followup_combine(run: FrontierRun) -> void:
+	var copies := TilePacking.find_copies(run.loadout.lanes, run.loadout.storage, "jab", [0])
+	var upgrade: String = TilePacking.next_options("jab")[0]
+	var plan := TilePacking.combine_plan(run.loadout.lanes, run.loadout.storage, copies, 2, upgrade, [0])
+	var inventory := run.loadout.duplicate(true)
+	check("jab" in run.data.offers and copies.size() == 2 and not plan.is_empty() \
+		and TilePacking.apply_combination(inventory.lanes, inventory.storage, plan.copies, plan.destination, upgrade, "nearest") \
+		and inventory.lanes[0].size() == 1 and inventory.lanes[0][0].id == upgrade,
+		"The protected card supplies a real third copy and its two owned inputs can combine immediately.")
+
+
+func _check_followup_round_trip(run: FrontierRun) -> void:
+	var path := run.save_path
+	var offers: Array = run.data.offers.duplicate()
+	var hints: Dictionary = run.data.reward_hints.duplicate()
+	var visited: Array = run.data.visited.duplicate()
+	check(run.load_save(path) and run.data.offers == offers and run.data.reward_hints == hints \
+		and run.data.visited == visited and not run.finish_combat(true, 100), "Resume the exact draft without recording another win.")
+	var rerolled := FrontierRun.new()
+	if rerolled.load_save(path):
+		rerolled.save_path = path + ".reroll"
+		check(rerolled.reroll_reward() and rerolled.load_save(rerolled.save_path) and rerolled.data.visited == visited,
+			"A paid reroll and subsequent reload do not count as another battle visit.")
+
+
+func _check_hard_followup_single_copy(run: FrontierRun) -> void:
+	if not (_equip_gate_starter(run, 7, "hard", "duelist") and run.finish_combat(true, 100) \
+			and run.reward("skip") and run.choose_node("1-2")):
+		check(false, "Reach the matched Hard reward with only one Jab owned.")
+		return
+	var standard := _matched_followup_control(run)
+	if not run.finish_combat(true, 100):
+		check(false, "Resolve the first ordinary fight with a one-tile inventory.")
+		return
+	var pick := _check_followup_replacement(run, standard)
+	check("jab" in standard and "jab" not in run.data.offers and pick != "skip" \
+		and run.data.offers[standard.find("jab")] == pick and run.reward_hint("jab").is_empty(),
+		"Replace the routine second Jab in its own slot before touching the two rolled cards.")
+
+
+func _check_hard_followup_scope(run: FrontierRun) -> void:
+	if _equip_gate_starter(run, 1, "hard", "duelist") and run.finish_combat(true, 100) and run.reward("skip"):
+		var beacon: Array = run.available_nodes().filter(func(node: Dictionary): return node.label == "Loaded Beacon")
+		if not beacon.is_empty() and run.choose_node(beacon[0].id) and run.event_choice(1):
+			var standard := _matched_followup_control(run)
+			check(run.finish_combat(true, 100) and run.data.offers == standard,
+				"The Loaded Beacon ambush does not modify the normal event reward.")
+		else:
+			check(false, "Reach the real Loaded Beacon ambush in the scope fixture.")
+	if _equip_gate_starter(run, 7, "hard", "duelist", "glass") and run.finish_combat(true, 100) and run.reward("skip"):
+		var battles: Array = run.available_nodes().filter(func(node: Dictionary): return node.type == "battle")
+		if not battles.is_empty() and run.choose_node(battles[0].id):
+			var standard := _matched_followup_control(run)
+			check(run.finish_combat(true, 100) and run.data.offers == standard,
+				"A Glass Foundry Hard regular battle keeps its original draft.")
 
 
 func _check_later_act_specialties() -> void:

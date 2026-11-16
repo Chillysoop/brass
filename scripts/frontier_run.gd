@@ -2453,7 +2453,56 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 			history[hero_id] = act
 			if recruit_draft >= 0:
 				_record_recruit_specialty(hero_id, family)
+	if lane == 0 and act == 1 and data.location == "brass" and data.difficulty == "hard" \
+			and data.node.type == "battle" and _prior_regular_battles(1, int(data.node.row)) < 2:
+		_reserve_early_class_tile(rewards, held, hints, first_roll, [common, uncommon, rare])
 	return {"offers": _sample(rewards, 3, int(data.seed), _node_salt(85 + salt)), "hints": hints}
+
+
+func _reserve_early_class_tile(rewards: Array, held: Dictionary, hints: Dictionary, first_roll: int, pools: Array) -> void:
+	var slot := rewards.find_custom(func(id: String): return hints.get(id) == "Owned copy" and int(held.get(id, 0)) == 1)
+	if slot < 0:
+		slot = _replaceable_reward_roll(rewards, held, first_roll, false, true)
+	if slot < 0:
+		return
+	var original: String = rewards[slot]
+	var rarity: String = ArenaSim.TILES[original].rarity
+	var tier := TILE_RARITIES.find(rarity)
+	var other_families := rewards.map(_reward_family)
+	other_families.remove_at(slot)
+	var unavailable := held.keys().map(_reward_family) + other_families
+	var equipped: Array = loadout.lanes[0].map(func(tile: Dictionary): return _tile_reward_traits(tile.id))
+	var best: Array[String] = []
+	var best_distance := 0
+	for id: String in pools[tier]:
+		if _reward_family(id) in unavailable or ArenaSim.TILES[id].rarity != rarity or ArenaSim.TILES[id].damage <= 0:
+			continue
+		var traits := _tile_reward_traits(id)
+		var distance := traits.size()
+		for other: Array in equipped:
+			var differences := 0
+			for index in range(traits.size()):
+				differences += int(traits[index] != other[index])
+			distance = mini(distance, differences)
+		if distance > best_distance:
+			best_distance = distance
+			best.clear()
+		if distance > 0 and distance == best_distance:
+			best.append(id)
+	if not best.is_empty() and original not in best:
+		hints.erase(original)
+		rewards[slot] = _sample(best, 1, int(data.seed), _node_salt(137))[0]
+
+
+func _tile_reward_traits(id: String) -> Array[bool]:
+	var spec: Dictionary = ArenaSim.TILES[id]
+	var family := _reward_family(id)
+	var moves := ArenaSim.is_blink_tile(id) or bool(spec.get("charge", false)) or spec.has("retreat")
+	var area := family == "slam" or spec.has("radius") or spec.has("splash") or spec.has("charge_path_damage")
+	var support := spec.has("guard") or spec.has("ally_guard") or spec.has("heal")
+	var displaces := family == "bash" or id in ["pull", "gravity_hook"] or spec.has("push") \
+		or spec.has("pull") or spec.has("isolation_pull_force") or spec.has("convergence_radius")
+	return [int(spec.width) >= 3, ArenaSim.is_ranged_tile(id), moves, area, support, displaces]
 
 
 func _replaceable_reward_roll(rewards: Array, held: Dictionary, first_roll: int, prefer_high := false,
@@ -2558,6 +2607,10 @@ func _party_battle_index() -> int:
 	var row := int(data.node.row)
 	if row < first_row or row >= first_row + NODES_PER_SEGMENT:
 		return -1
+	return _prior_regular_battles(first_row, row)
+
+
+func _prior_regular_battles(first_row: int, row: int) -> int:
 	var prior_battles := 0
 	for layer: Array in data.layers.slice(first_row, row):
 		if layer.any(func(node: Dictionary): return node.type == "battle" and node.id in data.visited):

@@ -12,6 +12,8 @@ Each class has 18 Commons and eight Uncommons in its combat reward deck. Use **V
 
 In **Brass Frontier Medium and Hard**, the lead hero's first tile draft offers their familiar class starter, a shared or relic-linked tile, and one of two alternate attacks from their class deck. The seed determines which alternate appears. Starshot can see Backdraft Bolt or Parallax Shot, and Lancer can see Phalanx Charge or Recoil Thrust. Take an alternate and the first combat draft favors new tiles while still offering a third copy when you can combine it.
 
+On **Brass Frontier Hard**, each of the first two regular battles after the opening can offer a new attack from your class deck with different timing or effects from those on your timeline. It takes the place of a second-copy offer or an ordinary roll of the same rarity. Third-copy offers can still complete a forge upgrade.
+
 In **Brass Frontier Medium**, the opening combat reward offers Warden a Guard or knockback direction, Hexwright a splash or protection direction, and Starshot a precision or mobile firing direction. Holding one of those tiles offers a complementary tile in a later Act I draft. You can still take other tiles and change direction as the run develops.
 
 Each new Brass Frontier expedition has one of three optional rewards at an Act I mystery node, including on Easy. **Salvage Bench** copies a Common you own. **Traveling Smith** upgrades an eligible tile for free. **Class Cache** offers an Uncommon from your hero's deck after you choose a category.

@@ -138,7 +138,7 @@ func _run() -> void:
 	_check(game.run.finish_run(), "Close the Crown Relay Hard victory recap.")
 	var glass_hard_fights := _new_route_playthrough(game, "hard", "glass")
 	_check(game.run.finish_run(), "Close the Glass Foundry Hard victory recap.")
-	var hard_fights := _new_route_playthrough(game, "hard", "brass", 3)
+	var hard_fights := _new_route_playthrough(game, "hard", "brass", 7)
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(save_path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path + suffix))
