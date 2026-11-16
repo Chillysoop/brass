@@ -136,6 +136,7 @@ func _initialize() -> void:
 	_check_opening_specialty_rewards()
 	_check_later_act_specialties()
 	_check_acquisition_drafts()
+	_check_mobility_acquisition()
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
@@ -1262,6 +1263,36 @@ func _check_acquisition_drafts() -> void:
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
+
+
+func _check_mobility_acquisition() -> void:
+	var run := FrontierRun.new()
+	run.loadout = {"lanes": [[], []], "storage": [[], [], []]}
+	for pair: Array in [["lancer", "phalanx_charge"], ["wayfarer", "veil_step"]]:
+		var hero: String = pair[0]
+		var family: String = pair[1]
+		var tiers: Array = ArenaSim.FORGE_FAMILIES[family]
+		check(family in run._class_reward_pool(hero, 0, []), "%s remains in the Common class deck." % family)
+		for tier in [1, 2]:
+			var pool := run._class_reward_pool(hero, tier, [])
+			check(tiers[tier].all(func(id: String): return id in pool and id not in run._class_reward_pool("warden", tier, [])),
+				"Both %s variants at tier %d can drop for %s before the family is owned." % [family, tier, hero])
+			var node := run._node("shop", "Relay Market", 1, 0)
+			run.data = {"phase": "shop", "segment": tier, "node": node, "layers": [[]], "visited": [],
+				"heroes": [{"id": hero}, {"id": "warden"}]}
+			var stocked := false
+			for seed in range(1, 129):
+				run.data.seed = seed
+				run.data.offers = run._shop_tiles()
+				var ordinary: Array = run.data.offers.duplicate()
+				run._add_shop_deck_offer()
+				var offer := run.shop_deck_offer_id()
+				if offer in tiers[tier]:
+					stocked = run.shop_class_offer_owner(offer) == hero and run.shop_stock() == ordinary + [offer]
+					break
+			check(stocked, "A party shop at tier %d can stock an unowned %s variant in %s's class slot." % [tier, family, hero])
+		check(tiers[4].all(func(id: String): return id not in run._class_reward_pool(hero, 4, [])),
+			"Direct %s offers are limited to the Common, Uncommon, and Rare pools." % family)
 
 
 func _start_acquisition_run(run: FrontierRun, difficulty: String) -> bool:

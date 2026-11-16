@@ -1636,7 +1636,7 @@ func _cast(actor: Dictionary, tile_id: String, rule: String, reach := -1.0) -> v
 			_damage(actor, target, tile.damage, tile_id)
 			_pull_toward(actor, target, tile_id, _attack_origin(actor), 780.0)
 		"bulwark_charge":
-			if _charge(actor, target, tile_id):
+			if not _charge(actor, target, tile_id).is_empty():
 				_strike_and_push(actor, target, tile_id, tile.damage, 810.0)
 				_guard_from_tile(actor, actor, tile.guard_on_hit, tile_id)
 			else:
@@ -1799,12 +1799,14 @@ func _heal_from_tile(actor: Dictionary, recipient: Dictionary, tile_id: String, 
 
 
 func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
-	var start: Vector2 = actor.pos
 	if tile.get("blink_strike", false) and not _blink_to_target(actor, target, tile_id, 0.0):
 		return
-	if tile.get("charge", false) and not _charge(actor, target, tile_id):
-		_emit("miss", "%s: %s has no clear path." % [actor.name, tile.label], actor, target, tile_id)
-		return
+	var charge := {}
+	if tile.get("charge", false):
+		charge = _charge(actor, target, tile_id)
+		if charge.is_empty():
+			_emit("miss", "%s: %s has no clear path." % [actor.name, tile.label], actor, target, tile_id)
+			return
 	var impact: Vector2 = target.pos
 	_prepare_siege_fuse(actor, target, tile_id)
 	var damage: int = tile.damage + _distance_bonus(actor, target, tile)
@@ -1841,7 +1843,10 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 	var burning: bool = tile.get("ember_burn_if_burning", false) and ArtificeSpecialties.is_burning(target)
 	_strip_guard(actor, target, tile_id, int(tile.get("guard_break", 0)))
 	_damage(actor, target, damage, tile_id)
-	VanguardSpecialties.apply_attack_followup(self, actor, target, tile_id, tile, start, impact)
+	if tile.get("charge_carry", false) and actor.hp > 0:
+		_carry_charge_past_target(actor, target, tile_id, impact, charge)
+	VanguardSpecialties.apply_attack_followup(self, actor, target, tile_id, tile, impact,
+		charge.get("route", PackedVector2Array()))
 	if tile.has("dash_followup_damage") and target.hp > 0:
 		var last_dash := int(actor.get("last_dash_tick", -1))
 		if last_dash >= 0 and last_dash < tick and tick - last_dash <= int(tile.dash_followup_beats) * TICKS_PER_BEAT:
@@ -2103,13 +2108,16 @@ func _cast_blink(actor: Dictionary, target: Dictionary, tile_id: String, tile: D
 func _blink_to_target(actor: Dictionary, target: Dictionary, tile_id: String, retreat: float, report_failure := true) -> bool:
 	var departure: Vector2 = actor.pos
 	var facing: float = actor.facing
-	var label: String = TILES[tile_id].label
-	if not _teleport(actor, target, tile_id, retreat):
+	var spec: Dictionary = TILES[tile_id]
+	var landing := _lateral_blink_landing(actor, target, retreat) if spec.has("blink_on_hit_retreat") else Vector2.INF
+	if landing != Vector2.INF:
+		_complete_teleport(actor, target, tile_id, landing, "blinks around")
+	elif not _teleport(actor, target, tile_id, retreat):
 		if report_failure:
-			_emit("miss", "%s: %s had no clear landing." % [actor.name, label], actor, target, tile_id)
+			_emit("miss", "%s: %s had no clear landing." % [actor.name, spec.label], actor, target, tile_id)
 		return false
 	if _has_relic(actor, "afterimage"):
-		actor["afterimage"] = {"position": departure, "facing": facing, "source": label, "beat": _beat()}
+		actor["afterimage"] = {"position": departure, "facing": facing, "source": spec.label, "beat": _beat()}
 	return true
 
 
@@ -2229,14 +2237,14 @@ func _pull_toward(actor: Dictionary, enemy: Dictionary, tile_id: String, center:
 	return true
 
 
-func _charge(actor: Dictionary, target: Dictionary, tile_id: String) -> bool:
+func _charge(actor: Dictionary, target: Dictionary, tile_id: String) -> Dictionary:
 	var origin: Vector2 = actor.pos
 	var destination: Vector2 = target.pos
 	var direction := origin.direction_to(destination)
 	var clearance: float = actor.radius + target.radius + 18.0
 	var distance := origin.distance_to(destination)
 	if distance <= clearance:
-		return true
+		return {"route": PackedVector2Array([origin])}
 	var route := PackedVector2Array()
 	if TILES[tile_id].get("flank_charge", false) and distance >= clearance + 56.0:
 		route = _curved_charge_route(actor, origin, destination, direction, clearance)
@@ -2249,7 +2257,7 @@ func _charge(actor: Dictionary, target: Dictionary, tile_id: String) -> bool:
 				route = PackedVector2Array([origin, candidate])
 				break
 	if route.is_empty():
-		return false
+		return {}
 	var landing := route[-1]
 	actor.pos = landing
 	actor.impulse = Vector2.ZERO
@@ -2257,7 +2265,7 @@ func _charge(actor: Dictionary, target: Dictionary, tile_id: String) -> bool:
 		actor["last_dash_tick"] = tick
 	_emit("charge", "%s dashes toward %s." % [actor.name, target.name], actor, target, tile_id, 0, origin, landing,
 		{"route": route})
-	return true
+	return {"route": route, "event": trace.back()}
 
 
 func _curved_charge_route(actor: Dictionary, origin: Vector2, target: Vector2, direction: Vector2, clearance: float) -> PackedVector2Array:
@@ -2282,6 +2290,54 @@ func _curved_charge_route(actor: Dictionary, origin: Vector2, target: Vector2, d
 		if route.size() == SEGMENTS + 1:
 			return route
 	return PackedVector2Array()
+
+
+func _carry_charge_past_target(actor: Dictionary, target: Dictionary, tile_id: String, impact: Vector2, charge: Dictionary) -> void:
+	var route: PackedVector2Array = charge.route
+	var strike: Vector2 = actor.pos
+	var forward := strike.direction_to(impact)
+	if forward.is_zero_approx():
+		return
+	var across := Vector2(-forward.y, forward.x)
+	if across.dot(ARENA_SIZE * 0.5 - impact) < 0.0:
+		across = -across
+	var clearance: float = actor.radius + target.radius + 8.0
+	for sign_value in [1.0, -1.0]:
+		var side := across * float(sign_value)
+		# Three short segments stay outside the body while passing its shoulder.
+		var carry := PackedVector2Array([
+			impact + (-forward * 0.72 + side * 0.84) * clearance,
+			impact + (forward * 0.18 + side * 1.05) * clearance,
+			impact + (forward * 0.78 + side * 0.72) * clearance,
+		])
+		if not _can_sweep_charge(actor, strike, carry):
+			continue
+		var impact_index := route.size() - 1
+		route.append_array(carry)
+		charge.route = route
+		var landing := route[-1]
+		actor.pos = landing
+		actor.impulse = Vector2.ZERO
+		actor["last_dash_tick"] = tick
+		if charge.has("event"):
+			# Both combat event lists hold this event. Present a single continuous route.
+			charge.event.to = landing
+			charge.event.route = route
+			charge.event["impact_index"] = impact_index
+		else:
+			_emit("charge", "%s rushes past %s." % [actor.name, target.name], actor, target, tile_id,
+				0, strike, landing, {"route": route, "impact_index": impact_index})
+		return
+
+
+func _can_sweep_charge(actor: Dictionary, start: Vector2, waypoints: PackedVector2Array) -> bool:
+	var origin := start
+	for point in waypoints:
+		if not _bounded(point, actor.radius).is_equal_approx(point) \
+				or not _slide_landing(actor, point, origin).is_equal_approx(point):
+			return false
+		origin = point
+	return _free_position(origin, actor)
 
 
 func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: String, offset: Vector2, force: float) -> bool:
@@ -2355,6 +2411,20 @@ func _track_collision_push(kind: String, actor: Dictionary, target: Dictionary, 
 	target["collision_push"] = setup
 
 
+func _lateral_blink_landing(actor: Dictionary, target: Dictionary, distance: float) -> Vector2:
+	var from_target: Vector2 = actor.pos - target.pos
+	var radius := from_target.length()
+	if radius < 1.0 or distance <= 0.0:
+		return Vector2.INF
+	# Limit the straight hop even while choosing an angle on the target's circle.
+	var angle := minf(deg_to_rad(125.0), 2.0 * asin(minf(1.0, distance / (2.0 * radius))))
+	for turn: float in [angle, -angle, angle * 0.64, -angle * 0.64, angle * 0.40, -angle * 0.40]:
+		var landing: Vector2 = target.pos + from_target.rotated(turn)
+		if _bounded(landing, actor.radius) == landing and _free_position(landing, actor):
+			return landing
+	return Vector2.INF
+
+
 func _teleport(actor: Dictionary, target: Dictionary, tile_id: String, retreat: float) -> bool:
 	var start_position: Vector2 = actor.pos
 	var target_position: Vector2 = target.pos
@@ -2373,20 +2443,25 @@ func _teleport(actor: Dictionary, target: Dictionary, tile_id: String, retreat: 
 			continue
 		if not _free_position(landing, actor):
 			continue
-		actor.pos = landing
-		actor.prev_pos = landing
-		actor.velocity = Vector2.ZERO
-		actor.impulse = Vector2.ZERO
-		actor["last_teleport_tick"] = tick
-		if actor.get("class") == "wayfarer":
-			actor["haste_until"] = tick + TICKS_PER_BEAT * 3
 		var action := "blinks away from" if retreat > 0.0 else "blinks beside"
-		_emit("teleport", "%s %s %s." % [actor.name, action, target.name], actor, target, tile_id, 0, start_position, landing)
-		if _has_relic(actor, "wayfarers_pin") and actor.get("wayfarers_pin_loop", -1) != _loop_index():
-			actor["wayfarers_pin_loop"] = _loop_index()
-			_guard(actor, 6, "wayfarers_pin")
+		_complete_teleport(actor, target, tile_id, landing, action)
 		return true
 	return false
+
+
+func _complete_teleport(actor: Dictionary, target: Dictionary, tile_id: String, landing: Vector2, action: String) -> void:
+	var departure: Vector2 = actor.pos
+	actor.pos = landing
+	actor.prev_pos = landing
+	actor.velocity = Vector2.ZERO
+	actor.impulse = Vector2.ZERO
+	actor["last_teleport_tick"] = tick
+	if actor.get("class") == "wayfarer":
+		actor["haste_until"] = tick + TICKS_PER_BEAT * 3
+	_emit("teleport", "%s %s %s." % [actor.name, action, target.name], actor, target, tile_id, 0, departure, landing)
+	if _has_relic(actor, "wayfarers_pin") and actor.get("wayfarers_pin_loop", -1) != _loop_index():
+		actor["wayfarers_pin_loop"] = _loop_index()
+		_guard(actor, 6, "wayfarers_pin")
 
 
 func _free_position(position: Vector2, actor: Dictionary) -> bool:

@@ -1155,6 +1155,12 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			draw_circle(tip, 3.5 * opacity, Color(WHITE, opacity), true, -1.0, true)
 		"charge":
 			_draw_charge_path(_project_charge_path(effect, field), progress)
+			var route: PackedVector2Array = effect.get("route", PackedVector2Array())
+			var strike := int(effect.get("impact_index", -1))
+			if strike >= 0 and strike < route.size():
+				var pivot := _project(route[strike], field)
+				var flash := 1.0 - smoothstep(0.10, 0.78, progress)
+				draw_arc(pivot, lerpf(6.0, 14.0, progress), 0.0, TAU, 20, Color("#ffe6ad", flash), 2.0, true)
 		"retreat":
 			_draw_retreat_path(from_point, to_point, progress)
 		"ranged_followup_ready", "lance_return_ready":

@@ -32,7 +32,7 @@ const SPECS := {
 	"veil_step": {
 		"label": "Veil Step", "width": 2, "range": 430.0, "damage": 11, "rarity": "common",
 		"ranged": true, "blink_on_hit_retreat": 115.0, "targets": ENEMY_TARGETS, "icon": "teleport",
-		"description": "Fire a shot, then blink up to 115 units away from the target if there is room.",
+		"description": "Fire a shot, then blink sideways around the target by up to 115 units. Blink away if both sides are blocked.",
 	},
 	"cinder_brand": {
 		"label": "Cinder Brand", "width": 2, "range": 440.0, "damage": 12, "rarity": "common",

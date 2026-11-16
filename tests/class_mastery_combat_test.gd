@@ -26,6 +26,8 @@ func _initialize() -> void:
 	_check_second_voice()
 	_check_rune_specialties()
 	_check_wayfarer_specialties()
+	_check_wayfarer_landings()
+	_check_wayfarer_flank()
 	_check_phantom_step()
 	_check_cinder_specialties()
 	for failure in failures:
@@ -352,15 +354,24 @@ func _check_rune_specialties() -> void:
 func _check_wayfarer_specialties() -> void:
 	var beat := ArenaSim.TICKS_PER_BEAT
 	var sim := _fixture("wayfarer", "", [_tile("veil_step", 0), _tile("mirror_dart", 3), _tile("mirror_dart", 5)])
-	var origin: Vector2 = sim.units[0].pos
+	var hero: Dictionary = sim.units[0]
+	hero.relics = ["wayfarers_pin", "afterimage"]
+	var origin: Vector2 = hero.pos
 	_step_to(sim, 2 * beat - 1)
-	_check(sim.units[0].pos.is_equal_approx(origin) and sim.activations.is_empty(), "Veil Step does not move or attack ahead of its right edge.")
+	_check(hero.pos.is_equal_approx(origin) and sim.activations.is_empty(), "Veil Step does not move or attack ahead of its right edge.")
 	sim.step()
 	var shot := _tile_events(sim, "veil_step", "hit", 2 * beat)
 	var blink := _tile_events(sim, "veil_step", "teleport", 2 * beat)
+	var target: Vector2 = sim.units[1].pos
 	_check(shot.size() == 1 and shot[0].from.is_equal_approx(origin) and blink.size() == 1
-		and blink[0].to.distance_to(sim.units[1].pos) > origin.distance_to(sim.units[1].pos),
-		"Veil Step attacks from the starting point, then teleports away.")
+		and sim.trace.find(shot[0]) < sim.trace.find(blink[0]) and hero.pos.is_equal_approx(blink[0].to)
+		and is_equal_approx(blink[0].to.distance_to(target), origin.distance_to(target))
+		and is_equal_approx(blink[0].to.distance_to(origin), ArenaSim.TILES.veil_step.blink_on_hit_retreat),
+		"Veil Step attacks from the starting point before circling the target at the same distance.")
+	_check(hero.get("last_teleport_tick", -1) == 2 * beat and hero.get("haste_until", -1) == 5 * beat
+		and hero.get("afterimage", {}).get("position") == origin
+		and _tile_events(sim, "wayfarers_pin", "guard", 2 * beat).size() == 1,
+		"A sideways blink still grants Wayfarer haste and triggers both teleport relics at the departure edge.")
 	_check(_tile_events(sim, "veil_step", "veil_echo", 2 * beat).is_empty(), "Common Veil Step has no afterimage shot.")
 	_step_to(sim, 7 * beat)
 	var dart: Dictionary = ArenaSim.TILES.mirror_dart
@@ -368,6 +379,63 @@ func _check_wayfarer_specialties() -> void:
 		"Mirror Dart uses a real teleport within its window")
 	_check_direct_hit(sim, "mirror_dart", 7 * beat, sim.units[1].id, dart.damage,
 		"Mirror Dart loses the teleport bonus after the window")
+
+
+func _check_wayfarer_landings() -> void:
+	var tile := _tile("veil_step", 0)
+	tile.target = "highest_hp"
+	var edge: int = ArenaSim.TILES.veil_step.width * ArenaSim.TICKS_PER_BEAT
+	var near_wall := _fixture("wayfarer", "", [tile])
+	var hero: Dictionary = near_wall.units[0]
+	var enemy: Dictionary = near_wall.units[1]
+	var origin := Vector2(325, ArenaSim.WALL_MARGIN + float(hero.radius) + 5.0)
+	hero.pos = origin
+	enemy.pos = origin + Vector2(175, 0)
+	enemy.hp = 500
+	_step_to(near_wall, edge)
+	var track := _tile_events(near_wall, tile.id, "teleport", edge)
+	_check(track.size() == 1 and hero.pos.y > origin.y + 60.0
+		and is_equal_approx(hero.pos.distance_to(enemy.pos), origin.distance_to(enemy.pos)),
+		"When the wall blocks the preferred orbit, Veil Step uses the clear side.")
+
+	var crowded := _fixture("wayfarer", "", [tile])
+	hero = crowded.units[0]
+	enemy = crowded.units[1]
+	origin = Vector2(325, 260)
+	hero.pos = origin
+	enemy.pos = origin + Vector2(175, 0)
+	enemy.hp = 500
+	crowded.units[2].pos = Vector2(780, 400)
+	for offset: Vector2 in [Vector2(-154, -79), Vector2(-154, 79)]:
+		crowded._add_campaign_enemy("recruit", enemy.pos + offset)
+		crowded.units.back().speed = 0.0
+		crowded.units.back().next_attack = 99999
+	_step_to(crowded, edge)
+	track = _tile_events(crowded, tile.id, "teleport", edge)
+	var retreat: float = ArenaSim.TILES.veil_step.blink_on_hit_retreat
+	_check(track.size() == 1 and hero.pos.is_equal_approx(origin - Vector2(retreat, 0)),
+		"When bodies block every sideways landing, Veil Step retreats into the open space.")
+
+
+func _check_wayfarer_flank() -> void:
+	var sim := _campaign_sandbox([[_tile("veil_step", 0), _tile("mirror_dart", 2)], [_tile("snap_shot", 2)]],
+		[{"id": "wayfarer"}, {"id": "warden"}])
+	var hero: Dictionary = sim.units[0]
+	var partner: Dictionary = sim.units[1]
+	var target: Dictionary = sim.units[2]
+	var center := Vector2(500, 260)
+	target.pos = center
+	hero.pos = center - Vector2(60, 0)
+	partner.pos = center - Vector2(165, 0)
+	sim.units[3].pos = center + Vector2(130, 0)
+	hero.relics = ["flanking_standard"]
+	partner.relics = ["flanking_standard"]
+	var beat := ArenaSim.TICKS_PER_BEAT
+	_step_to(sim, 4 * beat)
+	var flank := _tile_events(sim, "flanking_standard", "relic_proc", 4 * beat)
+	_check(flank.size() == 1 and flank[0].actor == hero.id and flank[0].target == target.id
+		and hero.pos.x > center.x and flank[0].source_tile == "mirror_dart",
+		"A close sideways blink opens a real opposite-side hit for Wayfarer's next shot.")
 
 
 func _check_phantom_step() -> void:

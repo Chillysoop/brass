@@ -2280,6 +2280,9 @@ func _class_reward_pool(hero_id: String, tier: int, rows: Array) -> Array:
 			common.append("gravity_hook")
 		return common
 	var families: Array = ClassDecks.forge_families(hero_id)
+	var mobility := ClassDecks.mobility_specialty(hero_id)
+	if tier <= 2 and not mobility.is_empty():
+		families.append(mobility)
 	for items: Array in rows:
 		for tile: Dictionary in items:
 			var family: String = ArenaSim.TILES[tile.id].get("family", "")
@@ -2697,7 +2700,7 @@ func _add_shop_deck_offer() -> void:
 	var lane := (offset + prior_shops) % hero_count
 	var hero_id: String = data.heroes[lane].id
 	var rows := _reward_inventory(lane)
-	var deck := ClassDecks.common(hero_id) + ClassDecks.uncommon(hero_id)
+	var deck := _class_shop_deck(hero_id)
 	var copies := _forge_copy_pool(hero_id, rows).filter(func(id: String):
 		return id not in data.offers and ArenaSim.TILES[id].get("family", id) in deck)
 	var copy := _owned_reward(copies, 196 + lane, false, rows)
@@ -2718,7 +2721,7 @@ func _add_class_shop_offers() -> void:
 	var owners: Dictionary = data.get("shop_class_offers", {})
 	for lane in range(data.heroes.size()):
 		var hero_id: String = data.heroes[lane].id
-		var pool := ClassDecks.common(hero_id) + ClassDecks.uncommon(hero_id)
+		var pool := _class_shop_deck(hero_id)
 		var fresh := pool.filter(func(id: String): return id not in data.offers)
 		if fresh.is_empty():
 			continue
@@ -2726,6 +2729,14 @@ func _add_class_shop_offers() -> void:
 		data.offers.append(id)
 		owners[id] = hero_id
 	data.shop_class_offers = owners
+
+
+func _class_shop_deck(hero_id: String) -> Array:
+	var deck := ClassDecks.common(hero_id) + ClassDecks.uncommon(hero_id)
+	var mobility := ClassDecks.mobility_specialty(hero_id)
+	if not mobility.is_empty():
+		deck.append_array(_class_forge_tier([mobility], mini(2, int(data.segment))))
+	return deck
 
 
 func _forge_copy_pool(hero_id: String, rows: Array) -> Array:

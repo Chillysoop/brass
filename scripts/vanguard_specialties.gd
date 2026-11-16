@@ -28,9 +28,9 @@ const SPECS := {
 	},
 	"phalanx_charge": {
 		"label": "Phalanx Charge", "width": 3, "range": 465.0, "damage": 15, "rarity": "common",
-		"charge": true, "charge_path_damage": 7, "charge_path_radius": 45.0,
+		"charge": true, "charge_carry": true, "charge_path_damage": 7, "charge_path_radius": 45.0,
 		"targets": ENEMY_TARGETS, "icon": "battle",
-		"description": "Rush and strike the target if the path is clear. Deal 7 damage to other enemies whose bodies come within 45 units of your path.",
+		"description": "Rush and strike, then pass the target's shoulder if there is room. Deal 7 damage to other enemies whose bodies come within 45 units of your path.",
 	},
 	"recoil_thrust": {
 		"label": "Recoil Thrust", "width": 2, "range": 210.0, "damage": 14, "rarity": "common",
@@ -59,11 +59,11 @@ static func reinforce_intercept(sim, actor: Dictionary) -> void:
 
 
 static func apply_attack_followup(sim, actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary,
-		start: Vector2, impact: Vector2) -> void:
+		impact: Vector2, route: PackedVector2Array) -> void:
 	if tile.has("block_wave_damage"):
 		_shield_wave(sim, actor, target, tile_id, tile, impact)
 	if tile.has("charge_path_damage"):
-		_charge_path(sim, actor, target, tile_id, tile, start)
+		_charge_path(sim, actor, target, tile_id, tile, route)
 
 
 static func _shield_wave(sim, actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary, impact: Vector2) -> void:
@@ -75,22 +75,26 @@ static func _shield_wave(sim, actor: Dictionary, target: Dictionary, tile_id: St
 			sim._damage(actor, enemy, int(tile.block_wave_damage), tile_id, "Shieldshock wave")
 
 
-static func _charge_path(sim, actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary, start: Vector2) -> void:
-	var finish: Vector2 = actor.pos
-	var route := finish - start
-	var length_squared := route.length_squared()
-	if length_squared < 1.0:
+static func _charge_path(sim, actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary, route: PackedVector2Array) -> void:
+	if route.size() < 2:
 		return
 	for enemy: Dictionary in sim.units:
 		if enemy.id == target.id or enemy.side == actor.side or enemy.hp <= 0:
 			continue
-		var offset: Vector2 = enemy.pos - start
-		var progress := offset.dot(route) / length_squared
-		if progress <= 0.0 or progress >= 1.0:
-			continue
-		var clearance := offset.distance_to(route * progress)
-		if clearance <= float(tile.charge_path_radius) + float(enemy.radius):
-			sim._damage(actor, enemy, int(tile.charge_path_damage), tile_id, "Phalanx sweep")
+		var radius: float = tile.charge_path_radius + enemy.radius
+		for index in range(1, route.size()):
+			var start := route[index - 1]
+			var segment := route[index] - start
+			var length_squared := segment.length_squared()
+			if length_squared < 1.0:
+				continue
+			var offset: Vector2 = enemy.pos - start
+			var progress := offset.dot(segment) / length_squared
+			if (index == 1 and progress <= 0.0) or (index == route.size() - 1 and progress >= 1.0):
+				continue
+			if offset.distance_squared_to(segment * clampf(progress, 0.0, 1.0)) <= radius * radius:
+				sim._damage(actor, enemy, int(tile.charge_path_damage), tile_id, "Phalanx sweep")
+				break
 
 
 static func chain_collision(sim, source: Dictionary, moving: Dictionary, other: Dictionary, setup: Dictionary) -> void:

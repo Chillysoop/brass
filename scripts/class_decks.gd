@@ -63,6 +63,7 @@ const DECKS := {
 		"uncommon": ["crossfire", "shoulder_check", "scattershot", "field_dressing"],
 		"extra_common": ["pilgrim_aid", "short_fuse", "tether_dart", "lantern_shot", "slip_cut", "spur", "spark_shot", "crosscut",
 			"mirror_dart", "veil_step"],
+		"mobility_specialty": "veil_step",
 		"signature": "ghost_volley",
 		"extra_uncommon": ["ward_lantern", "piercing_burst", "reverse_cut"],
 		"forge": ["bash", "blink", "shot"],
@@ -73,6 +74,7 @@ const DECKS := {
 		"uncommon": ["shoulder_check", "crossfire", "hook_sweep", "sundering_bolt"],
 		"extra_common": ["iron_vow", "rake", "tether_dart", "bellows_strike", "slip_cut", "spur", "crosscut", "tap_bolt",
 			"phalanx_charge", "recoil_thrust"],
+		"mobility_specialty": "phalanx_charge",
 		"signature": "comet_charge",
 		"extra_uncommon": ["reverse_cut", "piercing_burst", "flare_mortar"],
 		"forge": ["bash", "blink"],
@@ -147,6 +149,10 @@ static func common(hero_id: String) -> Array:
 
 static func specialties(hero_id: String) -> Array:
 	return SPECIALTY_COMMONS.get(hero_id, [])
+
+
+static func mobility_specialty(hero_id: String) -> String:
+	return _deck(hero_id).get("mobility_specialty", "")
 
 
 static func uncommon(hero_id: String) -> Array:

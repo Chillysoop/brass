@@ -290,14 +290,16 @@ static func _upgrade(id: String, base: Dictionary, tier: int, ranks: int, techni
 static func _describe_upgrade(tile: Dictionary) -> String:
 	var lines := PackedStringArray()
 	if tile.damage > 0:
-		if tile.get("flank_charge", false):
+		if tile.get("charge_carry", false):
+			lines.append("Rush and strike, then pass the target's shoulder if there is room.")
+		elif tile.get("flank_charge", false):
 			lines.append("Curve around the target when there is room, or rush directly.")
 		elif tile.get("charge", false):
 			lines.append("Rush the target if the path is clear.")
 		if tile.get("blink_strike", false):
 			lines.append("Blink beside the target and strike if there is a clear landing.")
 		if tile.has("blink_on_hit_retreat"):
-			lines.append("Fire a shot, then blink up to %d units away from the target if there is room." % int(tile.blink_on_hit_retreat))
+			lines.append("Fire a shot, then blink sideways around the target by up to %d units. Blink away if both sides are blocked." % int(tile.blink_on_hit_retreat))
 		if tile.has("blink_echo_damage"):
 			lines.append("A successful blink leaves an afterimage that shoots the same enemy for %d damage if it survives." % tile.blink_echo_damage)
 		if tile.has("teleport_followup_damage"):

@@ -25,6 +25,7 @@ func _initialize() -> void:
 	_check_ricochet()
 	_check_impact_driver()
 	_check_lancer_specialties()
+	_check_phalanx_carry()
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
@@ -406,6 +407,68 @@ func _check_lancer_specialties() -> void:
 	var followup := sim.trace.filter(func(event: Dictionary): return event.kind == "lance_return_spent")
 	_check(followup.size() == 1 and followup[0].tick == return_edge and followup[0].amount == recoil.lance_return_bonus
 		and not sim.units[0].has("lance_return"), "Recoil Thrust strengthens the next charge at the exact follow-up boundary.")
+
+
+func _check_phalanx_carry() -> void:
+	for id in ["phalanx_charge", "phalanx_charge_upgrade_uncommon_power", "phalanx_charge_upgrade_uncommon_technique"]:
+		var tile: Dictionary = ArenaSim.TILES[id]
+		var sim := _sim([[_tile(id, 0, "highest_hp")]], "lancer")
+		var hero: Dictionary = sim.units[0]
+		var target: Dictionary = sim.units[1]
+		var departure := Vector2(160, 250)
+		hero.pos = departure
+		target.pos = Vector2(480, 250)
+		var approach_foe := _add_still_scout(sim, Vector2(285, 302))
+		var carry_foe := _add_still_scout(sim, Vector2(476, 354))
+		var untouched_foe := _add_still_scout(sim, Vector2(476, 154))
+		carry_foe["arsenal_mark"] = {"expires": tile.width * BEAT, "order": -1, "bonus": 8}
+		var edge: int = tile.width * BEAT
+		_advance(sim, edge - 1)
+		_check(hero.pos == departure and target.hp == target.max_hp and carry_foe.hp == carry_foe.max_hp,
+			"The Lancer must wait for the tile edge before moving or damaging either enemy.")
+		var events := sim.step()
+		var charges := events.filter(func(event: Dictionary): return event.kind == "charge" and event.tile == id)
+		var hits := events.filter(func(event: Dictionary): return event.kind == "hit" and event.tile == id)
+		_check(charges.size() == 1 and hits.map(func(event: Dictionary) -> String: return event.target)
+			== [target.id, approach_foe.id, carry_foe.id] and approach_foe.hp == approach_foe.max_hp - tile.charge_path_damage
+			and carry_foe.hp == carry_foe.max_hp - tile.charge_path_damage and carry_foe.has("arsenal_mark")
+			and untouched_foe.hp == untouched_foe.max_hp,
+			"The main hit must land first, then the real approach and carry segments sweep each nearby foe once without consuming Marks.")
+		if charges.is_empty() or hits.is_empty():
+			continue
+		var route: PackedVector2Array = charges[0].route
+		var impact_index: int = charges[0].get("impact_index", -1)
+		_check(route.size() == 5 and impact_index == 1 and charges[0].from == departure and charges[0].to == hero.pos
+			and route[impact_index] == hits[0].from and hits[0].from.x < target.pos.x and hero.pos.x > target.pos.x,
+			"One route must report the initial strike point and the actual far-shoulder landing.")
+		for index in range(1, route.size()):
+			var point := route[index]
+			_check(point.is_equal_approx(sim._bounded(point, hero.radius)), "The Lancer route must stay within the arena.")
+			for other in [target, approach_foe, carry_foe, untouched_foe]:
+				var closest := Geometry2D.get_closest_point_to_segment(other.pos, route[index - 1], point)
+				_check(closest.distance_to(other.pos) >= hero.radius + other.radius + 2.95,
+					"Every segment of the Lancer route must clear living bodies.")
+
+	var fallback := _sim([[_tile("phalanx_charge", 0, "highest_hp")]], "lancer")
+	fallback.units[0].pos = Vector2(160, 50)
+	fallback.units[1].pos = Vector2(480, 50)
+	var approach_foe := _add_still_scout(fallback, Vector2(285, 103))
+	var blocking_foe := _add_still_scout(fallback, Vector2(469, 130))
+	_advance(fallback, 3 * BEAT)
+	var charges := fallback.trace.filter(func(event: Dictionary): return event.kind == "charge")
+	_check(charges.size() == 1 and charges[0].route.size() == 2 and not charges[0].has("impact_index")
+		and fallback.units[0].pos.x < fallback.units[1].pos.x and fallback.units[1].hp < fallback.units[1].max_hp
+		and approach_foe.hp < approach_foe.max_hp and blocking_foe.hp == blocking_foe.max_hp,
+		"When neither shoulder is clear, the original straight rush, hit, and approach sweep still resolve.")
+
+	var close := _sim([[_tile("phalanx_charge", 0)]], "lancer")
+	close.units[0].pos = Vector2(420, 250)
+	close.units[1].pos = Vector2(480, 250)
+	_advance(close, 3 * BEAT)
+	var close_events := close.trace.filter(func(event: Dictionary): return event.tile == "phalanx_charge")
+	_check(close_events.size() == 2 and close_events[0].kind == "hit" and close_events[1].kind == "charge"
+		and close_events[1].get("impact_index", -1) == 0 and close.units[0].pos.x > close.units[1].pos.x,
+		"In melee range the Lancer should strike at the start of its route, then carry past the target.")
 
 
 func _add_still_scout(sim: ArenaSim, position: Vector2) -> Dictionary:
