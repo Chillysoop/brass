@@ -36,7 +36,8 @@ func _check_draft_and_shop(game: Control) -> void:
 	run.load_save(save_path)
 	run.profile.medium_unlocked = true
 	if not _check(run.start_run(42, "medium", "brass") and run.choose_hero(run.data.offers[0])
-		and run.choose_relic("pocket_bell") and run.choose_starter("bash"), "Start the same Brass crew for both branches."):
+		and run.choose_relic("pocket_bell") and run.choose_starter(ClassDecks.starter(run.data.hero)),
+		"Start the same Brass crew for both branches."):
 		return
 	var boss_row := FrontierRun.NODES_PER_SEGMENT - 1
 	run.data.phase = "map"

@@ -159,7 +159,7 @@ func _check_compact_reward_overlay(lab: Control) -> void:
 	_check(run.abandon_run(), "Close the old checkpoint before checking the last act.")
 	run.profile.hard_unlocked = true
 	if not _check(run.start_run(42, "hard") and run.choose_hero("warden")
-		and run.choose_relic("pocket_bell") and run.choose_starter("bash"), "Prepare a Hard expedition for compact battle testing."):
+		and run.choose_relic("pocket_bell") and run.choose_starter("shield_tap"), "Prepare a Hard expedition for compact battle testing."):
 		return
 	run.data.segment = 3
 	run.data.node = run._node("battle", "Compact patrol", FrontierRun.NODES_PER_SEGMENT * 2, 0)

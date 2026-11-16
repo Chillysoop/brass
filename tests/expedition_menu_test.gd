@@ -430,7 +430,7 @@ func _check_enchantment_reward() -> void:
 		"Unlocking enchantments from the chart spends eight Aether Marks.")
 	run.profile.medium_unlocked = true
 	if not (run.start_run(42, "medium", "brass") and run.choose_preferred_hero("warden") and run.choose_relic("pocket_bell")
-		and run.choose_starter("bash") and run.finish_combat(true, 80)):
+		and run.choose_starter("shield_tap") and run.finish_combat(true, 80)):
 		_check(false, "Prepare the opening Brass fight reward with enchantments unlocked.")
 		return
 	game.run_return()
@@ -443,7 +443,7 @@ func _check_enchantment_reward() -> void:
 		"The reward lands on the exact beat dropped before the enchantment draft.")
 	var first_id := _find_enchantment_offer(run)
 	if first_id.is_empty():
-		_check(false, "The opening draft offers an enchantment compatible with Bash and a ranged recruit.")
+		_check(false, "The opening draft offers an enchantment compatible with Shield Tap and a ranged recruit.")
 		return
 	await _press_named(game.frontier_screen, "Enchantment_" + first_id)
 	_check(run.data.phase == "map" and run.enchantments() == [first_id]
@@ -462,7 +462,7 @@ func _check_enchantment_reward() -> void:
 	game.run_return()
 	var second_id := _find_enchantment_offer(run)
 	if second_id.is_empty():
-		_check(false, "The recruit draft offers a different enchantment compatible with Bash and Shot.")
+		_check(false, "The recruit draft offers a different enchantment compatible with Shield Tap and Shot.")
 		return
 	await _equip_draft_on_shot(second_id)
 	_check(run.data.phase == "map" and run.enchantments() == [first_id, second_id],
@@ -502,7 +502,7 @@ func _equip_draft_on_shot(id: String) -> void:
 		var shot := -1
 		for index in range(choices.item_count):
 			var label: String = choices.get_item_text(index)
-			_check(label != "Bash · Warden · 1", "The equip menu leaves occupied tiles out of its choices.")
+			_check(label != "Shield Tap · Warden · 1", "The equip menu leaves occupied tiles out of its choices.")
 			if label.begins_with("Shot ·"):
 				shot = choices.get_item_id(index)
 		_check(shot >= 0, "The draft can equip the enchantment on the recruit's unoccupied Shot.")
@@ -514,7 +514,7 @@ func _equip_draft_on_shot(id: String) -> void:
 
 func _find_enchantment_offer(run: FrontierRun) -> String:
 	for offer: Dictionary in run.enchantment_offers():
-		if TileEnchantments.is_eligible(offer.id, ArenaSim.TILES.bash, "bash") \
+		if TileEnchantments.is_eligible(offer.id, ArenaSim.TILES.shield_tap, "shield_tap") \
 				and TileEnchantments.is_eligible(offer.id, ArenaSim.TILES.shot, "shot"):
 			return offer.id
 	return ""

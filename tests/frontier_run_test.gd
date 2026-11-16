@@ -133,6 +133,7 @@ func _initialize() -> void:
 	_check_class_progression()
 	_check_slam_pool()
 	_check_arsenal_rewards()
+	_check_rotating_lead_starters()
 	_check_opening_specialty_rewards()
 	_check_later_act_specialties()
 	_check_acquisition_drafts()
@@ -285,7 +286,7 @@ func _check_medium(path: String) -> void:
 	var hero: String = run.data.offers[0]
 	run.choose_hero(hero)
 	run.choose_relic("pocket_bell")
-	run.choose_starter("bash")
+	check(run.choose_starter(ClassDecks.starter(hero)), "Equip the Medium lead before reaching the bosses.")
 	_reach_boss(run)
 	check(run.data.node.label == "The Tollkeeper" and not run.is_final_boss(), "First Medium boss must be intermediate.")
 	var marks: int = run.profile.marks
@@ -452,7 +453,7 @@ func _check_hard_and_glass(path: String) -> void:
 	run.start_run(42, "hard")
 	run.choose_hero(run.data.offers[0])
 	run.choose_relic("pocket_bell")
-	run.choose_starter("bash")
+	check(run.choose_starter(ClassDecks.starter(run.data.hero)), "Equip the Hard lead before reaching the bosses.")
 	for boss_id in FrontierRun.BRASS_BOSSES:
 		_reach_boss(run)
 		var encounter := run.encounter()
@@ -1015,6 +1016,125 @@ func _check_arsenal_rewards() -> void:
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
 
 
+func _check_rotating_lead_starters() -> void:
+	var path := "user://frontier-alternate-starter-test-%d.json" % Time.get_ticks_usec()
+	var run := FrontierRun.new()
+	run.load_save(path)
+	run.profile.medium_unlocked = true
+	run.profile.hard_unlocked = true
+	run.profile.glass_medium_unlocked = true
+	run.profile.marks = 999
+	for hero: String in FrontierRun.HEROES:
+		if hero not in run.available_classes():
+			check(run.buy_class(hero), "Unlock %s for the lead starter checks." % hero)
+	for hero: String in FrontierRun.HEROES:
+		var standard := ClassDecks.starter(hero)
+		var alternates := ClassDecks.alternate_starters(hero)
+		check(alternates.size() == 2 and alternates.all(func(id: String):
+			return id in ClassDecks.specialties(hero) and alternates.count(id) == 1 \
+				and id not in [standard, "shot", "bash"] and ArenaSim.TILES[id].rarity == "common" \
+				and ArenaSim.TILES[id].damage > 0), "%s has two distinct damaging Common starters in its specialties." % hero)
+		for difficulty: String in ["medium", "hard"]:
+			var seen: Array[String] = []
+			var first_draft: Array = []
+			for seed in [1, 2, 3, 4, 5, 6, 7, 8, 1]:
+				var context := "%s %s seed %d" % [hero, difficulty, seed]
+				if not _open_starter_draft(run, seed, difficulty, hero):
+					check(false, "%s must start the standard lead draft." % context)
+					continue
+				var offers: Array = run.data.offers.duplicate()
+				var rotating := offers.filter(func(id: String): return id in alternates)
+				check(offers.size() == 3 and rotating.size() == 1 and standard in offers and "shot" in offers,
+					"%s must offer one alternate beside the class starter and Shot." % context)
+				if rotating.size() != 1:
+					continue
+				if seed == 1:
+					check(first_draft.is_empty() or offers == first_draft, "%s must repeat the exact seed order." % context)
+					first_draft = offers
+					check(run.load_save(path) and run.data.phase == "starter" and run.data.offers == offers,
+						"%s must restore the pending three starter choices." % context)
+				var alternate: String = rotating[0]
+				if alternate not in seen:
+					seen.append(alternate)
+					_check_alternate_starter_battle(run, alternate, context)
+			check(alternates.all(func(id: String): return id in seen),
+				"Both alternate starters should appear for %s on %s across fixed seeds." % [hero, difficulty])
+	_check_alternate_opening_reward(run, path)
+	_check_starter_draft_boundaries(run, path)
+	for suffix in ["", ".bak", ".tmp"]:
+		if FileAccess.file_exists(path + suffix):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
+
+
+func _check_alternate_starter_battle(run: FrontierRun, id: String, context: String) -> void:
+	var deployed: bool = run.choose_starter(id) and run.loadout.lanes[0] == [{"id": id, "start": 0,
+		"target": ArenaSim.TILES[id].targets[0]}] and run.encounter().kind == "opening"
+	check(deployed, "%s must deploy %s alone for the Gate Trial." % [context, id])
+	if deployed:
+		var sim := ArenaSim.new()
+		sim.start(run.loadout.lanes, "solo", run.encounter())
+		for tick in range(4500):
+			if not sim.outcome.is_empty():
+				break
+			sim.step()
+		check(sim.outcome == "victory", "%s must win the Gate Trial with %s." % [context, id])
+
+
+func _check_alternate_opening_reward(run: FrontierRun, path: String) -> void:
+	var alternates := ClassDecks.alternate_starters("duelist")
+	for copies in [1, 2]:
+		var drafted := _open_starter_draft(run, 42, "hard", "duelist")
+		var candidates: Array = run.data.get("offers", []).filter(func(id: String): return id in alternates)
+		var equipped := drafted and candidates.size() == 1 and run.choose_starter(candidates[0])
+		check(equipped, "Equip the alternate attack for the Gate Trial.")
+		if not equipped:
+			return
+		var alternate: String = candidates[0]
+		if copies == 2:
+			run.loadout.storage[0].append(run.loadout.lanes[0][0].duplicate())
+		var rewarded: bool = run.save() and run.load_save(path) and run.finish_combat(true, 90) and run.data.phase == "reward"
+		check(rewarded, "Resolve the opening reward from a saved alternate starter fight.")
+		if not rewarded:
+			return
+		if copies == 1:
+			check(run.data.offers.size() == 3 and alternate not in run.data.offers,
+				"Favor new tiles over a routine copy after taking an alternate starter.")
+		else:
+			check(alternate in run.data.offers and run.reward_hint(alternate) == "Third copy",
+				"Keep a real third-copy offer after taking an alternate starter.")
+
+
+func _check_starter_draft_boundaries(run: FrontierRun, path: String) -> void:
+	var standard := ClassDecks.starter("warden")
+	var unchanged := ["bash", "shot", standard]
+	for relic: String in ["towline_knot", "bridgeplate"]:
+		var found := false
+		for seed in range(1, 17):
+			if _open_starter_draft(run, seed, "medium", "warden", "brass", relic):
+				var shared: String = FrontierRun.RELIC_STARTERS[relic]
+				check(run.data.offers.size() == 3 and standard in run.data.offers and shared in run.data.offers \
+					and run.data.offers.any(func(id: String): return id in ClassDecks.alternate_starters("warden")),
+					"Keep the starter linked to %s beside the standard and alternate cards." % relic)
+				found = true
+				break
+		check(found, "Reach a seeded %s starter draft." % relic)
+	check(_open_starter_draft(run, 42, "medium", "warden", "glass") and run.data.offers.size() == 3 \
+		and unchanged.all(func(id: String): return id in run.data.offers), "The Glass lead keeps the original starter choices.")
+	if _open_starter_draft(run, 42, "medium", "warden"):
+		run.data.offers = unchanged.duplicate()
+		check(run.save() and run.load_save(path) and run.data.offers == unchanged and run.choose_starter("bash"),
+			"An existing Medium starter save still resumes and accepts its original Bash.")
+		_reach_boss(run)
+		var reached := run.finish_combat(true, 85) and _finish_rewards(run, "skip") and run.choose_boss_relic("skip")
+		check(reached, "Reach the Brass recruit draft using the original saved starter.")
+		if reached:
+			var recruit: String = run.data.offers[0]
+			var previous_choices := ["bash", "shot", ClassDecks.starter(recruit)]
+			check(run.choose_recruit(recruit) and run.data.offers.size() == 3 \
+				and previous_choices.all(func(id: String): return id in run.data.offers) \
+				and run.recruit_loadout_offers().size() == 2, "Brass recruits keep their original starter choices and kits.")
+
+
 func _check_opening_specialty_rewards() -> void:
 	var path := "user://frontier-gate-specialty-test-%d.json" % Time.get_ticks_usec()
 	var run := FrontierRun.new()
@@ -1080,10 +1200,15 @@ func _check_opening_specialty_rewards() -> void:
 
 func _equip_gate_starter(run: FrontierRun, seed: int, difficulty: String, hero_id: String, region := "brass",
 		relic := "pocket_bell") -> bool:
+	return _open_starter_draft(run, seed, difficulty, hero_id, region, relic) \
+		and run.choose_starter(ClassDecks.starter(hero_id))
+
+
+func _open_starter_draft(run: FrontierRun, seed: int, difficulty: String, hero_id: String, region := "brass",
+		relic := "pocket_bell") -> bool:
 	if not run.data.is_empty() and not run.abandon_run():
 		return false
-	return run.start_run(seed, difficulty, region) and run.choose_preferred_hero(hero_id) \
-		and run.choose_relic(relic) and run.choose_starter(ClassDecks.starter(hero_id))
+	return run.start_run(seed, difficulty, region) and run.choose_preferred_hero(hero_id) and run.choose_relic(relic)
 
 
 func _offered_gate_specialties(offers: Array, hero_id: String) -> Array:

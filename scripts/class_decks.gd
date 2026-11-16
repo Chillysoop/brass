@@ -15,6 +15,21 @@ const SPECIALTY_COMMONS := {
 	"duelist": ["finishing_cut", "slip_cut", "pinpoint_lunge", "vanishing_cut"],
 }
 
+const ALTERNATE_STARTERS := {
+	"warden": ["reversal_plate", "rampart_rush"],
+	"bulwark": ["aegis_intercept", "shieldshock"],
+	"breaker": ["domino_maul", "impact_driver"],
+	"hexwright": ["severing_tether", "convergence_pulse"],
+	"wayfarer": ["slip_cut", "veil_step"],
+	"lancer": ["phalanx_charge", "recoil_thrust"],
+	"cantor": ["guard_refrain", "lantern_shot"],
+	"apothecary": ["tonic_dart", "catalyst_flask"],
+	"rune_smith": ["hammer_stamp", "quick_etch"],
+	"starshot": ["backdraft_bolt", "parallax_shot"],
+	"cinder_mage": ["cinder_brand", "wildfire_globe"],
+	"duelist": ["pinpoint_lunge", "vanishing_cut"],
+}
+
 # The first core Common is also a starter option.
 const DECKS := {
 	"warden": {
@@ -185,6 +200,10 @@ static func summary(hero_id: String) -> String:
 
 static func starter(hero_id: String) -> String:
 	return _deck(hero_id).common[0]
+
+
+static func alternate_starters(hero_id: String) -> Array:
+	return ALTERNATE_STARTERS.get(hero_id, [])
 
 
 static func _deck(hero_id: String) -> Dictionary:

@@ -3,6 +3,7 @@ extends SceneTree
 const ArenaScene = preload("res://arena.tscn")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
+const ClassDecks = preload("res://scripts/class_decks.gd")
 const SOLO_RELIC_IDS := ["afterimage", "barrage_rack", "siege_fuse", "switchback_lens", "longshot_prism"]
 const ROLES := ["Fits your build", "Pivot", "Wildcard"]
 
@@ -340,7 +341,8 @@ func _start(run: FrontierRun, seed_value: int, location := "moonwreck", difficul
 	run.profile.moonwreck_easy_unlocked = true
 	var started := (
 		run.start_run(seed_value, difficulty, location) and run.choose_hero(run.data.offers[0])
-		and run.choose_relic("pocket_bell") and run.choose_starter("bash")
+		and run.choose_relic("pocket_bell")
+		and run.choose_starter("bash" if "bash" in run.data.offers else ClassDecks.starter(run.data.hero))
 		and run.finish_combat(true, 95) and run.reward("skip")
 	)
 	_check(started, "Start the %s route with a reproducible solo build." % location)

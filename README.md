@@ -10,7 +10,9 @@ From the title screen, choose **New Expedition**, select **Brass Frontier**, and
 
 Each class has 18 Commons and eight Uncommons in its combat reward deck. Use **View class deck** on a hero or recruit card to inspect each tile and the class's signature Uncommon. After the victory animation, choose or skip a tile directly in the arena for each hero in party order. Rerolls start at 5 gold and double in price with each use until the next act. Tiles go to that hero's timeline when space allows, then to shared storage. The expedition saves after each pick. After the party takes its boss rewards, choose one of two starting loadouts for the new recruit. Each gives them their class starter and a second tile.
 
-In **Brass Frontier Medium**, the opening reward offers Warden a Guard or knockback direction, Hexwright a splash or protection direction, and Starshot a precision or mobile firing direction. Holding one of those tiles offers a complementary tile in a later Act I draft. You can still take other tiles and change direction as the run develops.
+In **Brass Frontier Medium and Hard**, the lead hero's first tile draft offers their familiar class starter, a shared or relic-linked tile, and one of two alternate attacks from their class deck. The seed determines which alternate appears. Starshot can see Backdraft Bolt or Parallax Shot, and Lancer can see Phalanx Charge or Recoil Thrust. Take an alternate and the first combat draft favors new tiles while still offering a third copy when you can combine it.
+
+In **Brass Frontier Medium**, the opening combat reward offers Warden a Guard or knockback direction, Hexwright a splash or protection direction, and Starshot a precision or mobile firing direction. Holding one of those tiles offers a complementary tile in a later Act I draft. You can still take other tiles and change direction as the run develops.
 
 Each new Brass Frontier expedition has one of three optional rewards at an Act I mystery node, including on Easy. **Salvage Bench** copies a Common you own. **Traveling Smith** upgrades an eligible tile for free. **Class Cache** offers an Uncommon from your hero's deck after you choose a category.
 

@@ -659,6 +659,8 @@ func choose_starter(id: String) -> bool:
 	var before := data.duplicate(true)
 	var before_loadout := loadout.duplicate(true)
 	loadout.lanes = [_starter_lane(id)]
+	if data.location == "brass" and data.difficulty in ["medium", "hard"] and id in ClassDecks.alternate_starters(data.hero):
+		data["rotating_lead_start"] = true
 	if "brass_metronome" in data.relics:
 		loadout.lanes[0][0].start = 1
 	data.phase = "combat"
@@ -730,10 +732,14 @@ func _starter_lane(id: String) -> Array:
 
 func _starter_offers(hero_id: String, salt: int, shared := "shot") -> Array:
 	var offers := ["bash", shared]
-	var specialties := ClassDecks.specialties(hero_id).filter(func(id: String): return ArenaSim.TILES[id].damage > 0)
-	if _is_brass_easy() and not specialties.is_empty():
+	if data.phase == "starter" and data.location == "brass" and data.difficulty in ["medium", "hard"]:
+		var alternates := ClassDecks.alternate_starters(hero_id)
+		offers[0] = _sample(alternates, 1, int(data.seed), salt + 41).front()
+	elif _is_brass_easy():
+		var specialties := ClassDecks.specialties(hero_id).filter(func(id: String): return ArenaSim.TILES[id].damage > 0)
 		var relic: String = data.relics.front()
-		if hero_id == "starshot" or (shared == "shot" and relic not in BUILD_RELICS and not forge_family_available("shot")):
+		if not specialties.is_empty() and (hero_id == "starshot" \
+				or (shared == "shot" and relic not in BUILD_RELICS and not forge_family_available("shot"))):
 			var slot := 0 if hero_id == "starshot" else 1
 			offers[slot] = _sample(specialties, 1, int(data.seed), salt + 41)[0]
 	var signature: String = ClassDecks.starter(hero_id)
@@ -2387,7 +2393,8 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 	var recruit_draft := party_draft if early_recruit and data.get("location") == "brass" else -1
 	var specialty_act: int = data.get("act_specialty_offers", {}).get(hero_id, 0)
 	var offer_act_specialty: bool = party_draft >= 0 and (established or early_recruit) and specialty_act != act
-	var prefer_new_tiles := opening_pilot or starshot_opening or fresh_battle_draft or recruit_draft == 1
+	var rotating_opening: bool = lane == 0 and data.node.type == "opening" and data.get("rotating_lead_start", false)
+	var prefer_new_tiles := opening_pilot or starshot_opening or fresh_battle_draft or recruit_draft == 1 or rotating_opening
 	var owned_hint := _copy_reward_hint(owned, rows) if not owned.is_empty() else ""
 	if not owned.is_empty() and (not prefer_new_tiles or owned_hint == "Third copy"):
 		rewards.append(owned)
@@ -2397,7 +2404,7 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 			rewards.append(signature_offer)
 		_add_early_build_offers(directions, held, opening_pilot, rewards, hints)
 	if lane == 0 and rewards.size() < 3 and (directions.is_empty() or opening_pilot or rewards.size() < 2):
-		var exclusions := rewards + held.keys() if starshot_opening else rewards
+		var exclusions := rewards + held.keys() if starshot_opening or rotating_opening else rewards
 		var bridge := _relic_bridge(exclusions)
 		if not bridge.is_empty():
 			rewards.append(bridge.tile)
@@ -2427,10 +2434,10 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 			pool = common.duplicate()
 			for tile: String in rewards:
 				pool.erase(tile)
-		if not directions.is_empty() or starshot_opening:
+		if not directions.is_empty() or starshot_opening or rotating_opening:
 			var new_tiles := pool.filter(func(id: String):
 				return not held.has(id) and (not starshot_opening or not held.has(ArenaSim.TILES[id].get("base_tile", id))))
-			if new_tiles.is_empty():
+			if new_tiles.is_empty() and not rotating_opening:
 				new_tiles = common.filter(func(id: String): return not held.has(id) and id not in rewards)
 			if not new_tiles.is_empty():
 				pool = new_tiles

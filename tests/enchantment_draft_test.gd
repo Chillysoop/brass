@@ -3,6 +3,7 @@ extends SceneTree
 const FrontierRun := preload("res://scripts/frontier_run.gd")
 const ArenaSim := preload("res://scripts/arena_sim.gd")
 const TileEnchantments := preload("res://scripts/tile_enchantments.gd")
+const ClassDecks := preload("res://scripts/class_decks.gd")
 
 var failures: Array[String] = []
 var path := "user://enchantment-draft-test-%d.json" % Time.get_ticks_usec()
@@ -49,7 +50,8 @@ func _check_draft() -> void:
 			return
 		var draft := run.enchantment_offers()
 		var ids := _offer_ids(run)
-		var eligible := ids.filter(func(id: String): return TileEnchantments.is_eligible(id, ArenaSim.TILES.bash, "bash"))
+		var starter: String = run.loadout.lanes[0][0].id
+		var eligible := ids.filter(func(id: String): return TileEnchantments.is_eligible(id, ArenaSim.TILES[starter], starter))
 		if not _check(run.data.phase == "enchantment" and ids.size() == 3 and eligible == ids
 				and ids.all(func(id: String): return ids.count(id) == 1),
 				"The opening draft offers three distinct enchantments that fit the starter when possible."):
@@ -57,7 +59,7 @@ func _check_draft() -> void:
 		_check(run.load_save(path) and run.enchantment_offers() == draft, "Resume the same open draft.")
 		var original_save_path := run.save_path
 		run.save_path = path + ".missing/file.json"
-		_check(not run.choose_enchantment(ids[0], {"lane": 0, "start": 0, "id": "bash"})
+		_check(not run.choose_enchantment(ids[0], {"lane": 0, "start": 0, "id": starter})
 			and run.data.get("phase") == "enchantment" and run.enchantments().is_empty()
 			and not run.loadout.lanes[0][0].has("enchantment"),
 			"A failed inline equip save must restore the open draft and the original tile.")
@@ -96,8 +98,9 @@ func _check_recruit_draft() -> void:
 	if not _check(run.start_run(42, "medium") and _win_opening(run), "Draft the first enchantment in Medium."):
 		return
 	var first: String = _offer_ids(run)[0]
-	var bash := {"lane": 0, "start": 0, "id": "bash"}
-	if not _check(run.choose_enchantment(first, bash), "Attach the first enchantment to Bash."):
+	var starter: String = run.loadout.lanes[0][0].id
+	var destination := {"lane": 0, "start": 0, "id": starter}
+	if not _check(run.choose_enchantment(first, destination), "Attach the first enchantment to the lead starter."):
 		return
 	# Start at the Act I boss, then use the normal reward, recruitment, and gate flows.
 	run.data.node = run.data.layers[FrontierRun.NODES_PER_SEGMENT - 1][0]
@@ -115,13 +118,13 @@ func _check_recruit_draft() -> void:
 			and run.reward("skip"), "Wait for both hero rewards before opening the recruitment draft."):
 		return
 	var second_draft := _offer_ids(run)
-	var compatible := second_draft.filter(func(id: String): return TileEnchantments.is_eligible(id, ArenaSim.TILES.bash, "bash"))
+	var compatible := second_draft.filter(func(id: String): return TileEnchantments.is_eligible(id, ArenaSim.TILES[starter], starter))
 	if not _check(second_draft.size() == 3 and first not in second_draft and not compatible.is_empty()
 			and run.load_save(path) and _offer_ids(run) == second_draft,
 			"Persist the seeded recruitment draft and exclude the owned effect."):
 		return
 	var second: String = compatible[0]
-	_check(run.choose_enchantment(second, bash) and run.load_save(path) and run.enchantments() == [first, second]
+	_check(run.choose_enchantment(second, destination) and run.load_save(path) and run.enchantments() == [first, second]
 		and run.loadout.lanes[0][0].enchantment == second and run.data.enchantment_drafts == ["opening", "recruit"],
 		"Replacing an attachment keeps the first enchantment available for another tile.")
 	run.data.phase = "combat"
@@ -164,7 +167,7 @@ func _win_opening(run: FrontierRun) -> bool:
 
 func _draft_opening(run: FrontierRun) -> bool:
 	return run.choose_hero(run.data.offers[0]) and run.choose_relic("pocket_bell") \
-		and run.choose_starter("bash")
+		and run.choose_starter("bash" if "bash" in run.data.offers else ClassDecks.starter(run.data.hero))
 
 
 func _check(success: bool, label: String) -> bool:

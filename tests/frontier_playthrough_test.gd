@@ -4,6 +4,7 @@ const Arena = preload("res://arena.tscn")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
+const ClassDecks = preload("res://scripts/class_decks.gd")
 var failures: Array[String] = []
 var save_path := "user://frontier-playtest-%s.json" % str(Time.get_ticks_usec())
 
@@ -177,9 +178,9 @@ func _medium_playthrough(game: Control) -> Dictionary:
 			"relic":
 				run.choose_relic("pocket_bell")
 			"starter":
-				run.choose_starter("bash")
+				_check(run.choose_starter("shot"), "Equip a ranged starter for the Medium lead's follow-up hit.")
 			"recruit_starter":
-				_check(run.choose_starter("shot"), "Equip the recruited hero.")
+				_check(run.choose_starter("bash"), "Give the Medium recruit Bash to expose the Marshal.")
 				recruited = true
 				_check(run.loadout.lanes.size() == 2, "Recruitment adds a second lane.")
 				_check(int(run.data.heroes[0].hp) == hp_at_recruit and run.data.heroes[1].hp == run.data.heroes[1].max_hp,
@@ -300,7 +301,12 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String,
 			"relic":
 				run.choose_relic("pocket_bell")
 			"starter":
-				run.choose_starter("bash")
+				var starter := "bash"
+				if brass_hard:
+					var alternates := ClassDecks.alternate_starters(run.data.hero)
+					starter = _preferred_offer(run.data.offers, alternates)
+					_check(starter in alternates, "The Brass Hard playthrough must start with the rotated Common.")
+				_check(run.choose_starter(starter), "Equip the lead starter in %s %s." % [location, difficulty])
 			"boss_relic":
 				boss_drafts += 1
 				_check(run.choose_boss_relic("bastion_medal"), "Claim the Bastion Medal before recruiting on Hard.")

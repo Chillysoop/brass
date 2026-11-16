@@ -172,7 +172,8 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 
 
 func _finish_opening(run: FrontierRun) -> bool:
-	return run.choose_relic(run.data.offers.front()) and run.choose_starter("bash") \
+	return run.choose_relic(run.data.offers.front()) \
+		and run.choose_starter("bash" if "bash" in run.data.offers else ClassDecks.starter(run.data.hero)) \
 		and run.finish_combat(true, 85) and run.reward("skip")
 
 

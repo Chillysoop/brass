@@ -30,7 +30,7 @@ func _check_locked_formation(location: String) -> void:
 	if not _expect(run.start_run(946, "medium", location), "The pilot must start on Medium."):
 		return
 	var lead: String = run.data.offers[0]
-	_expect(run.choose_hero(lead) and run.choose_relic("pocket_bell") and run.choose_starter("bash"),
+	_expect(run.choose_hero(lead) and run.choose_relic("pocket_bell") and run.choose_starter(ClassDecks.starter(lead)),
 		"A fresh expedition must enter its opening combat from the regular starter draft.")
 	var opening := run.encounter()
 	var resumed_opening := FrontierRun.new()
