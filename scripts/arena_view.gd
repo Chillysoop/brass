@@ -33,6 +33,8 @@ const ALLY_INTENT_ICONS := {"crown_war_drummer": "haste", "crown_galvanist": "te
 const RIGHT_RELAY_COLOR := Color("#e7b3ff")
 const DOCK_WINCH_COLOR := Color("#e6c193")
 const REPAIR_COLOR := Color("#a9e5bd")
+const REPAIRMASTER_DASH := "repairmaster_dash"
+const REPAIRMASTER_REPAIR := "repairmaster_repair"
 const ARENA_TEXTURES := {"glass": "glass_arena", "crown": "crown_arena", "moonwreck": "moonwreck_arena"}
 const ARENA_PATHS := {
 	"arena": "res://assets/arena.webp",
@@ -120,6 +122,7 @@ const ENCOUNTER_EFFECTS := {
 	"recruit_jammed": "spring_jam",
 	"tollkeeper_repair_interrupted": "repair_interrupted",
 	"tollkeeper_repair_separated": "repair_separated",
+	"repairmaster_interrupted": "repair_interrupted",
 	"marshal_shattered": "marshal_plate_broken",
 	"marshal_pressure_break": "marshal_plate_broken",
 	"marshal_defense_break": "marshal_plate_broken",
@@ -266,7 +269,7 @@ func present(units_data: Array, events: Array, tick := 0, attack_cues: Array = [
 		var kind: String = ENCOUNTER_EFFECTS.get(tile, event.get("kind", ""))
 		if kind == "relic_proc" and tile in RELIC_EFFECTS:
 			kind = tile
-		elif kind == "heal" and tile == ArenaSim.TOLLKEEPER_REPAIR_CUE:
+		elif kind == "heal" and _is_repair_cue(tile):
 			kind = "repair_heal"
 		if not EFFECT_LENGTHS.has(kind):
 			continue
@@ -347,9 +350,10 @@ func _register_movement_effect(kind: String, event: Dictionary) -> void:
 		_positions[event.actor] = event.from
 	if kind == "teleport":
 		_positions[event.actor] = event.to
-	elif kind == "charge" and str(event.actor).begins_with("hero_"):
+	elif kind == "charge" and (str(event.actor).begins_with("hero_") or event.get("tile", "") == REPAIRMASTER_DASH):
 		var route: PackedVector2Array = event.get("route", PackedVector2Array())
-		if route.size() > 2:
+		var step_count := 2 if event.get("tile", "") == REPAIRMASTER_DASH else 3
+		if route.size() >= step_count:
 			_positions[event.actor] = route[0]
 			_curved_charges[event.actor] = {"route": route, "age": 0.0}
 
@@ -411,7 +415,10 @@ func _draw() -> void:
 			continue
 		var point := _project(_positions.get(unit.id, unit.pos), field)
 		hud_space.append(_draw_unit(unit, point, sprite_scale))
+	_draw_repairmaster_cues(field)
 	for cast: Dictionary in _attack_casts:
+		if cast.tile in [REPAIRMASTER_DASH, REPAIRMASTER_REPAIR]:
+			continue
 		var moving: bool = cast.profile.style in ["blink", "dash"]
 		var origin: Vector2 = cast.from if moving else cast.get("strike_from", cast.from)
 		var start := _project(origin, field)
@@ -522,7 +529,7 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> Rect2:
 	var model_height := 132.0
 	if art_key in ["tempered_colossus", "crown_regent", "wreckmaster", "tidekeeper", "drowned_admiral"]:
 		model_height = 218.0
-	elif art_key in ["marshal", "regent", "glass_twin", "ember_twin", "prism_warden", "relay_captain", "relay_marshal", "brass_bellmaker", "brass_tollkeeper", "glass_refraction_engine"]:
+	elif art_key in ["marshal", "regent", "glass_twin", "ember_twin", "prism_warden", "relay_captain", "relay_marshal", "brass_bellmaker", "brass_tollkeeper", "brass_repairmaster", "glass_refraction_engine"]:
 		model_height = 191.0
 	elif art_key == "brass_captain":
 		model_height = 161.0
@@ -530,7 +537,7 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> Rect2:
 		model_height = 145.0
 	elif art_key == "clockwork":
 		model_height = 154.0
-	elif art_key == "tollkeeper_drone":
+	elif art_key in ["tollkeeper_drone", "repairmaster_drone"]:
 		model_height = 108.0
 	var art_height := maxf(39.0, unit_scale * model_height)
 	var motion: float = _gait_strengths.get(unit.id, 0.0)
@@ -599,6 +606,15 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> Rect2:
 	elif float(unit.get("guard", 0)) > 0.0:
 		draw_line(bar.position + Vector2(0.0, -2.0), bar.position + Vector2(bar.size.x, -2.0), CombatIcons.PALETTE["guard"], 2.0, true)
 	_draw_status_badges(unit, bar)
+	if unit.has("repairmaster_orders_used"):
+		var batteries := 0
+		for drone: Dictionary in units:
+			if drone.get("repairmaster_owner") == unit.id and drone.hp > 0 and drone.get("repairmaster_charge", false):
+				batteries += 1
+		for index in range(2):
+			_draw_repair_cell(bar, index, index < batteries)
+	elif unit.has("repairmaster_charge"):
+		_draw_repair_cell(bar, 0, unit.repairmaster_charge)
 	var stacks: int = unit.get("furnace_heat", unit.get("flywheel_momentum", 0))
 	for index in range(stacks):
 		var pip := Vector2(bar.end.x + 5.0 + index * 6.0, bar.get_center().y)
@@ -608,19 +624,35 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> Rect2:
 		var charge := clampf(inverse_lerp(float(window.x), float(window.y), float(combat_tick)), 0.0, 1.0)
 		var rapid := _attack_rate > 1.0
 		var gauge := Rect2(bar.position + Vector2(0, 9), Vector2(bar.size.x, 6.0 if rapid else 4.0))
-		var repairing: bool = unit.get("intent_attack_id", "") == ArenaSim.TOLLKEEPER_REPAIR_CUE
-		var charge_color := REPAIR_COLOR if repairing else GOLD.lerp(ENEMY_COLOR, charge * charge)
+		var attack_id: String = unit.get("intent_attack_id", "")
+		var repairing := _is_repair_cue(attack_id)
+		var retreating := attack_id == REPAIRMASTER_DASH
+		var repair_cycle := repairing or retreating
+		var charge_color := REPAIR_COLOR if repair_cycle else GOLD.lerp(ENEMY_COLOR, charge * charge)
 		draw_rect(gauge.grow(1), INK)
-		draw_rect(gauge, REPAIR_COLOR.darkened(0.76) if repairing else Color("#593b29"))
+		draw_rect(gauge, REPAIR_COLOR.darkened(0.76) if repair_cycle else Color("#593b29"))
 		draw_rect(Rect2(gauge.position, Vector2(gauge.size.x * charge, gauge.size.y)), charge_color)
 		if rapid:
 			draw_rect(gauge.grow(0.5), Color(charge_color, lerpf(0.56, 1.0, charge)), false, 1.0)
 		_draw_status_badge("heal" if repairing else "windup", Vector2(gauge.position.x - 8.0, gauge.get_center().y),
 			charge_color if rapid else Color.TRANSPARENT)
 		if repairing:
-			_draw_centered("REPAIRING", bar.get_center() - Vector2(0.0, 9.0), 13, REPAIR_COLOR)
+			var caption := "REPAIR LINK" if attack_id == REPAIRMASTER_REPAIR else "REPAIRING"
+			_draw_centered(caption, bar.get_center() - Vector2(0.0, 9.0), 13, REPAIR_COLOR)
+		elif retreating:
+			_draw_centered("FALLING BACK", bar.get_center() - Vector2(0.0, 9.0), 13, REPAIR_COLOR)
+		if attack_id == REPAIRMASTER_REPAIR:
+			var threshold := float(unit.get("repairmaster_interrupt_damage", 0.0))
+			if threshold > 0.0:
+				var damage_taken := int(unit.get("repairmaster_damage_taken", 0))
+				var damage_progress := clampf(damage_taken / threshold, 0.0, 1.0)
+				var interrupt_track := Rect2(gauge.position + Vector2(0.0, gauge.size.y + 3.0), Vector2(gauge.size.x, 2.0))
+				draw_rect(interrupt_track.grow(1.0), INK)
+				draw_rect(interrupt_track, Color("#73463a"))
+				draw_rect(Rect2(interrupt_track.position, Vector2(interrupt_track.size.x * damage_progress, interrupt_track.size.y)), ENEMY_COLOR)
+				_draw_centered("Interrupt %d/%d" % [damage_taken, int(threshold)],
+					interrupt_track.get_center() + Vector2(0, 11), 10, WHITE)
 		var special: String = unit.get("special_intent", "")
-		var attack_id: String = unit.get("intent_attack_id", "")
 		var windup_label: String = SIGNATURE_WINDUP_LABELS.get(attack_id, "")
 		if attack_id == "veteran" and not str(unit.get("captain_rally", "")).is_empty():
 			windup_label = "FALL BACK"
@@ -712,11 +744,19 @@ func _draw_enemy_release(cast: Dictionary, center: Vector2) -> void:
 		center + Vector2(0.0, -reach), center + Vector2(reach, 0.0),
 		center + Vector2(0.0, reach), center + Vector2(-reach, 0.0), center + Vector2(0.0, -reach),
 	])
-	var tone := REPAIR_COLOR if cast.tile == ArenaSim.TOLLKEEPER_REPAIR_CUE else SWEEP_LIGHT
+	var tone := REPAIR_COLOR if _is_repair_cue(cast.tile) else SWEEP_LIGHT
 	draw_polyline(points, Color(INK, opacity), 4.0, true)
 	draw_polyline(points, Color(tone, opacity), 1.6, true)
 	if cast.get("landed", true):
 		draw_circle(center, 2.0, Color(tone, opacity), true, -1.0, true)
+
+
+func _draw_repair_cell(bar: Rect2, index: int, available: bool) -> void:
+	var center := Vector2(bar.end.x + 6.0 + index * 8.0, bar.get_center().y)
+	var cell := Rect2(center - Vector2(2.5, 2.5), Vector2(5.0, 5.0))
+	draw_rect(cell.grow(1.0), INK)
+	draw_rect(cell, REPAIR_COLOR if available else REPAIR_COLOR.darkened(0.76))
+	draw_line(cell.position + Vector2(1.0, -1.0), cell.position + Vector2(4.0, -1.0), REPAIR_COLOR.darkened(0.22), 1.0)
 
 
 func _draw_status_badges(unit: Dictionary, bar: Rect2) -> void:
@@ -879,7 +919,10 @@ func _draw_intents(field: Rect2) -> void:
 				_draw_sweep_warning(center, radius)
 			continue
 		var start := _project(_positions.get(unit.id, unit.pos), field)
-		if unit.get("intent_attack_id", "") == ArenaSim.TOLLKEEPER_REPAIR_CUE:
+		var attack_id: String = unit.get("intent_attack_id", "")
+		if attack_id in [REPAIRMASTER_DASH, REPAIRMASTER_REPAIR]:
+			continue
+		if attack_id == ArenaSim.TOLLKEEPER_REPAIR_CUE:
 			_draw_repair_intent(unit, target_id, start, field)
 			continue
 		if special == "glass_mirrorback":
@@ -974,6 +1017,64 @@ func _draw_intents(field: Rect2) -> void:
 			elif target.id == secondary:
 				warning = TELEPORT_COLOR.darkened(0.21)
 			_draw_aim_warning(start, end, warning)
+
+
+func _is_repair_cue(attack_id: String) -> bool:
+	return attack_id in [ArenaSim.TOLLKEEPER_REPAIR_CUE, REPAIRMASTER_REPAIR]
+
+
+func _draw_repairmaster_retreat(start: Vector2, end: Vector2) -> void:
+	var distance := start.distance_to(end)
+	if distance >= 24.0:
+		var direction := start.direction_to(end)
+		var trail_start := start + direction * 11.0
+		var trail_end := end - direction * 11.0
+		draw_dashed_line(trail_start, trail_end, Color(INK, 0.84), 5.0, 11.0)
+		draw_dashed_line(trail_start, trail_end, REPAIR_COLOR, 2.0, 11.0)
+		_draw_motion_chevron(start.lerp(end, 0.57), direction, 11.0, REPAIR_COLOR, INK)
+	_draw_ellipse(end, Vector2(13.0, 7.0), Color(INK, 0.55))
+	draw_arc(end, 13.0, 0.0, TAU, 26, REPAIR_COLOR, 1.9, true)
+
+
+func _draw_repairmaster_cues(field: Rect2) -> void:
+	for unit: Dictionary in units:
+		if not _windups.has(unit.id):
+			continue
+		var cue: String = unit.get("intent_attack_id", "")
+		if cue == REPAIRMASTER_DASH and unit.has("repairmaster_dash_landing"):
+			var origin := _project(_positions.get(unit.id, unit.pos), field)
+			_draw_repairmaster_retreat(origin, _project(unit.repairmaster_dash_landing, field))
+			continue
+		if cue != REPAIRMASTER_REPAIR:
+			continue
+		for drone: Dictionary in units:
+			if drone.id == unit.intent and drone.hp > 0:
+				var source := _project(_positions.get(drone.id, drone.pos), field)
+				var target := _project(_positions.get(unit.id, unit.pos), field)
+				_draw_repairmaster_link(source, target, 1.0)
+				break
+	for effect: Dictionary in _effects:
+		if effect.kind == "repair_heal" and effect.tile == REPAIRMASTER_REPAIR:
+			var source := _project(effect.from, field)
+			var target := _project(effect.to, field)
+			_draw_repairmaster_link(source, target, 1.0 - effect.age / EFFECT_LENGTHS.repair_heal)
+
+
+func _draw_repairmaster_link(source: Vector2, target: Vector2, opacity: float) -> void:
+	var start := source - Vector2(0.0, 17.0)
+	var end := target - Vector2(0.0, 28.0)
+	var bend := start.lerp(end, 0.5) + Vector2(32.0, -13.0)
+	var beam := PackedVector2Array()
+	for index in range(13):
+		beam.append(start.bezier_interpolate(bend, bend, end, float(index) / 12.0))
+	draw_polyline(beam, Color("#233b34", opacity * 0.92), 7.0, true)
+	draw_polyline(beam, Color(REPAIR_COLOR, opacity * 0.85), 3.0, true)
+	draw_circle(start, 4.0, Color(REPAIR_COLOR, opacity), true, -1.0, true)
+	for offset: float in [0.0, 0.33, 0.66]:
+		var relay := start.bezier_interpolate(bend, bend, end, fposmod(_animation_time * 2.8 + offset, 1.0))
+		draw_circle(relay, 2.1, Color(WHITE, opacity), true, -1.0, true)
+	if opacity > 0.45:
+		_draw_status_badge("heal", end, REPAIR_COLOR)
 
 
 func _draw_support_link(start: Vector2, end: Vector2, color: Color, icon := "guard") -> void:
@@ -1154,7 +1255,10 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			draw_dashed_line(departure, tip, Color(TELEPORT_COLOR, opacity * 0.85), 2.0, 6.0)
 			draw_circle(tip, 3.5 * opacity, Color(WHITE, opacity), true, -1.0, true)
 		"charge":
-			_draw_charge_path(_project_charge_path(effect, field), progress)
+			if effect.tile == REPAIRMASTER_DASH:
+				_draw_retreat_path(from_point, to_point, progress)
+			else:
+				_draw_charge_path(_project_charge_path(effect, field), progress)
 			var route: PackedVector2Array = effect.get("route", PackedVector2Array())
 			var strike := int(effect.get("impact_index", -1))
 			if strike >= 0 and strike < route.size():
@@ -1260,7 +1364,8 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 				var spark := from_point + ray * extent * progress * 0.85 - Vector2(0, sin(progress * PI) * (20.0 + 5.0 * (index % 3)))
 				draw_circle(spark, 2.0 + opacity * 1.6, Color(GOLD, opacity), true, -1.0, true)
 		"repair_heal":
-			draw_line(from_point, to_point, Color(REPAIR_COLOR, opacity * opacity), 2.5, true)
+			if effect.tile != REPAIRMASTER_REPAIR:
+				draw_line(from_point, to_point, Color(REPAIR_COLOR, opacity * opacity), 2.5, true)
 			draw_arc(to_point, 8.0 + progress * 21.0, 0.0, TAU, 24, Color(REPAIR_COLOR, opacity), 2.0, true)
 		"repair_interrupted", "repair_separated":
 			draw_arc(from_point, 8.0 + progress * 21.0, 0.0, TAU, 24, Color(REPAIR_COLOR, opacity), 2.0, true)

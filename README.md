@@ -56,7 +56,7 @@ Enemy encounters rotate from the opening fight onward in new expeditions. Each a
 
 One optional Act I battle in each region is marked **Wave** on the route map. The arena marks where a reinforcement will arrive on beat 7 or 9 of the first loop.
 
-Medium starts solo. After the Act I boss, take a Legendary tile into your build and recruit a second hero. Both lanes fire on the same beat clock. Push or pull the Gilded Marshal, then hit with the other hero within three beats to shatter its plate and interrupt it. Direct hits also wear down the plating, as does getting the whole crew through a sweep without losing HP. Defeating the Marshal unlocks Brass Frontier Hard and Glass Foundry Easy. Each hero can take a Legendary trophy after the final boss.
+Medium starts solo. After the Act I boss, take a Legendary tile into your build and recruit a second hero. Both lanes fire on the same beat clock. The seed chooses the Gilded Marshal or the Repairmaster for Act II. The Marshal fights behind breakable plating. The Repairmaster dashes to its drones and pauses to channel a repair. Defeating either unlocks Brass Frontier Hard and Glass Foundry Easy. Each hero can take a Legendary trophy after the final boss.
 
 In Brass Frontier Medium and Hard, the Act I boss offers a relic draft after the Legendary pick. The Tollkeeper offers Signet, Bastion Medal, Guild Ledger, and **Repair Kit**, which can heal a hero after a full block. The Bellmaker offers **Clapper**, **Long Echo**, and **Resonant Plate** to reward support tiles, ranged attacks, and wide tiles respectively.
 
@@ -78,7 +78,7 @@ Moonwreck Docks Medium adds Breakwater Gate and a second hero after the Wreckmas
 
 Moonwreck Docks Hard adds Blackwater Gate and a third hero after the Tidekeeper. The Drowned Admiral reels the party in before charging Undertow Sweep. Break its anchor with a push, reverse the undertow with a pull from a second hero, then interrupt the sweep with a push from the third. Stagger the tiles across all three timelines so they finish in that order before the sweep lands.
 
-Brass Frontier Hard has three legs. Recruit after the Tollkeeper and the Gilded Marshal. When the Iron Regent raises its seals, land damaging hits from three different heroes within four beats to break them.
+Brass Frontier Hard has three legs. Recruit after the Act I and Act II bosses. When the Iron Regent raises its seals, land damaging hits from three different heroes within four beats to break them.
 
 ## Arena practice
 

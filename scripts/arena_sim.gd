@@ -13,6 +13,7 @@ const StarterSpecialtyEffects = preload("res://scripts/starter_specialty_effects
 const ApothecaryTiles = preload("res://scripts/apothecary_tiles.gd")
 const VanguardSpecialties = preload("res://scripts/vanguard_specialties.gd")
 const ArtificeSpecialties = preload("res://scripts/artifice_specialties.gd")
+const BrassRepairmaster = preload("res://scripts/brass_repairmaster.gd")
 const PILOT_ENEMY_SCRIPTS := {
 	"brass": BrassVarietyEnemies, "glass": GlassPilotEnemies,
 	"crown": CrownVarietyEnemies, "moonwreck": MoonPilotEnemies,
@@ -89,6 +90,7 @@ const BELLMAKER_RESONANT_PLATE_GUARD := 4
 const TOLLKEEPER_REPAIR_CUE := "tollkeeper_repair"
 const BOSS_REVIEW_STAGES := {
 	"tollkeeper_repair": "start", "tollkeeper_repair_interrupted": "success", "tollkeeper_repair_separated": "success",
+	"repairmaster_dash": "start", "repairmaster_repair": "start", "repairmaster_interrupted": "success",
 	"marshal_plate": "start", "marshal_exposed": "progress", "marshal_shattered": "success",
 	"marshal_plate_worn": "progress", "marshal_sweep_weathered": "progress",
 	"marshal_pressure_break": "success", "marshal_defense_break": "success",
@@ -179,6 +181,11 @@ const CAMPAIGN_ENEMIES := {
 		"special": "repair", "repair_reach": 132.0, "repair_amount": 14, "repair_cue": TOLLKEEPER_REPAIR_CUE},
 	"marshal": {"name": "The Gilded Marshal", "art": "marshal", "hp": 860, "radius": 48.0, "speed": 89.0,
 		"spacing": 122.0, "reach": 227.0, "damage": 38, "first": 110, "cooldown": 105, "windup": 49, "push": 415.0, "displacement": 0.7},
+	"brass_repairmaster": {"name": "The Repairmaster", "art": "brass_repairmaster", "hp": 680, "radius": 46.0, "speed": 94.0,
+		"spacing": 113.0, "reach": 245.0, "damage": 27, "first": 105, "cooldown": 108, "windup": 38,
+		"push": 325.0, "displacement": 0.78, "repair_reach": BrassRepairmaster.REPAIR_REACH, "repair_amount": BrassRepairmaster.HEAL_AMOUNT},
+	"repairmaster_drone": {"name": "Repair Drone", "art": "repairmaster_drone", "hp": 58, "radius": 19.0, "speed": 0.0,
+		"spacing": 260.0, "reach": 310.0, "damage": 5, "first": 155, "cooldown": 143, "windup": 32},
 	"regent": {"name": "The Iron Regent", "art": "regent", "hp": 1140, "radius": 51.0, "speed": 86.0,
 		"spacing": 118.0, "reach": 222.0, "damage": 43, "first": 114, "cooldown": 112, "windup": 54, "push": 380.0, "displacement": 0.6},
 	"glass_recruit": {"name": "Glass Apprentice", "art": "glass_recruit", "hp": 34, "radius": 24.0, "speed": 87.0,
@@ -736,6 +743,8 @@ func _start_campaign(options: Dictionary) -> void:
 			match boss_id:
 				"brass_bellmaker":
 					_add_campaign_enemy("brass_bellmaker", Vector2(647, y), 0, health_scale, damage_scale)
+				"brass_repairmaster":
+					BrassRepairmaster.spawn(self, y, difficulty == "hard")
 				"iron_regent":
 					_add_campaign_enemy("regent", Vector2(647, y))
 				"gilded_marshal":
@@ -2410,6 +2419,8 @@ func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: Str
 			_activation.get_or_add("mastery_target", target.id)
 	var action := "pulls" if kind == "pull" else "knocks back"
 	_emit(kind, "%s %s %s." % [actor.name, action, target.name], actor, target, tile_id, roundi(force), start_position, endpoint)
+	if moved and actor.side == "hero" and target.get("attack_id") in [BrassRepairmaster.BOSS_ID, BrassRepairmaster.DRONE_ID]:
+		BrassRepairmaster.on_displacement(self, actor, target, endpoint)
 	if not _activation.is_empty() and actor.side == "hero" and target.side == "enemy" and target.hp > 0 \
 			and force > 0.0 and _has_relic(actor, "towline_knot") and _towline_loop != _loop_index():
 		_towline_loop = _loop_index()
@@ -2520,6 +2531,8 @@ func _free_position(position: Vector2, actor: Dictionary) -> bool:
 func _run_enemies() -> void:
 	for enemy in units:
 		if enemy.side != "enemy" or enemy.hp <= 0:
+			continue
+		if enemy.get("attack_id") == BrassRepairmaster.BOSS_ID and BrassRepairmaster.before_turn(self, enemy):
 			continue
 		if enemy.get("sprite") == "tempered_colossus" and not enemy.colossus_shattered:
 			if tick > LOOP_TICKS and tick % LOOP_TICKS == 1:
@@ -2684,6 +2697,10 @@ func _resolve_enemy_attack(enemy: Dictionary) -> void:
 	var attack: Dictionary = enemy.get("attack", {})
 	enemy.intent = ""
 	enemy.next_attack = tick + int(attack.get("cooldown", 116 if enemy.id == "scout" else 138))
+	var cue: String = enemy.get("intent_attack_id", "")
+	if cue in [BrassRepairmaster.DASH, BrassRepairmaster.REPAIR]:
+		BrassRepairmaster.resolve(self, enemy, _find_unit(intent), cue)
+		return
 	var special_intent: String = enemy.get("special_intent", "")
 	if not special_intent.is_empty():
 		enemy.erase("special_intent")
@@ -3536,6 +3553,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		impact_details["pierced_guard"] = pierced_guard
 	var strike_origin: Vector2 = source_details.get("strike_origin", _attack_origin(actor))
 	_emit("hit", hit_message, actor, target, tile_id, dealt, strike_origin, Vector2.INF, impact_details)
+	if dealt > 0 and actor.side == "hero" and target.get("attack_id") in [BrassRepairmaster.BOSS_ID, BrassRepairmaster.DRONE_ID]:
+		BrassRepairmaster.on_damage(self, actor, target, dealt)
 	if pierced_guard > 0:
 		var note := "Piercing dealt %d damage through Guard." % pierced_guard
 		_activation.get_or_add("effect_details", []).append(note)

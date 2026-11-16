@@ -10,6 +10,7 @@ var failures: Array[String] = []
 
 func _initialize() -> void:
 	var run := FrontierRun.new()
+	var brass_act_two_bosses := {}
 	for seed_value in range(1, 129):
 		var layers := run._make_map(seed_value)
 		_check_map(layers)
@@ -27,7 +28,18 @@ func _initialize() -> void:
 		check(glass_hard.slice(0, 14) == _with_gate_link(glass_medium, glass_hard[14][0].id),
 			"Glass Hard should keep the first two Glass legs and connect the Prism Warden to leg three.")
 		_check_glass_hard_leg(glass_hard)
-		_check_map(run._make_map(seed_value, "hard"), 3, "iron_regent")
+		var brass_medium := run._make_map(seed_value, "medium")
+		var brass_hard := run._make_map(seed_value, "hard")
+		var brass_act_two: Dictionary = brass_medium.back()[0]
+		brass_act_two_bosses[brass_act_two.boss_id] = true
+		check(brass_act_two.boss_id in FrontierRun.BRASS_ACT_TWO_BOSSES
+			and brass_act_two.label == FrontierRun.BOSS_LABELS[brass_act_two.boss_id]
+			and brass_medium == run._make_map(seed_value, "medium"),
+			"Brass Act II must use a valid, deterministic boss and matching name.")
+		check(brass_hard.slice(0, 14) == _with_gate_link(brass_medium, brass_hard[14][0].id),
+			"Medium and Hard must pick the same Act II boss for a seed.")
+		_check_map(brass_medium, 2, brass_act_two.boss_id)
+		_check_map(brass_hard, 3, "iron_regent")
 		var crown := run._make_map(seed_value, "easy", "crown")
 		_check_map(crown, 1, "relay_captain")
 		check(crown == run._make_map(seed_value, "easy", "crown"), "Crown Relay maps must be deterministic.")
@@ -57,6 +69,8 @@ func _initialize() -> void:
 			"Moonwreck Hard must keep the first two Moonwreck legs and connect the Tidekeeper to leg three.")
 		_check_moonwreck_hard_leg(moonwreck_hard)
 	check(run._make_map(1) != run._make_map(2), "Distinct seeds should vary routes.")
+	check(brass_act_two_bosses.size() == FrontierRun.BRASS_ACT_TWO_BOSSES.size(),
+		"Brass Act II must rotate through both bosses across new expeditions.")
 
 	var path := "user://frontier-model-test-%d.json" % Time.get_ticks_usec()
 	check(not run.load_save(path), "A new save path should start empty.")
@@ -119,6 +133,7 @@ func _initialize() -> void:
 	check(resumed.start_run(42) and resumed.data.max_hp == 108, "Stout Start must raise the next run's starting HP.")
 	check("gravity_hook" in resumed._normal_pool(), "Gravity Hook must stay eligible for future drafts.")
 	_check_medium(path)
+	_check_repairmaster_campaign()
 	_check_hard_and_glass(path)
 	_check_glass_hard(path)
 	_check_crown_easy(path)
@@ -323,6 +338,54 @@ func _check_medium(path: String) -> void:
 	check(restored.reward(second_trophy) and restored.data.phase == "result"
 		and restored.data.trophy == "" and restored.data.trophies == {second_hero: second_trophy},
 		"Final rewards must record each hero's trophy and lead to the recap.")
+
+
+func _check_repairmaster_campaign() -> void:
+	for difficulty: String in ["medium", "hard"]:
+		var path := "user://frontier-repairmaster-%s-%d.json" % [difficulty, Time.get_ticks_usec()]
+		var run := FrontierRun.new()
+		run.load_save(path)
+		run.profile.medium_unlocked = true
+		run.profile.hard_unlocked = difficulty == "hard"
+		var recruited := _equip_gate_starter(run, 9, difficulty, "warden") and _recruit_at_next_boss(run)
+		check(recruited, "Recruit normally before the Repairmaster route on %s." % difficulty)
+		if recruited:
+			_reach_boss(run)
+			var encounter := run.encounter()
+			check(encounter.get("boss_id") == "brass_repairmaster" and encounter.get("segment") == 2
+				and encounter.heroes.size() == 2 and run.data.node.label == "The Repairmaster"
+				and run.is_final_boss() == (difficulty == "medium"), "Enter the seeded Repairmaster fight with two heroes.")
+			var restored := FrontierRun.new()
+			check(restored.load_save(path) and restored.encounter() == encounter,
+				"Resume the same Repairmaster fight and party from disk.")
+			var marks: int = restored.profile.marks
+			var won := restored.finish_combat(true, [70, 65])
+			check(won and restored.reward_count() == 2, "Both heroes earn a Repairmaster reward.")
+			if won:
+				for lane in range(2):
+					check(restored.reward_lane() == lane and restored.data.offers.size() == 3
+						and restored.data.offers.all(func(id: String): return ArenaSim.TILES[id].rarity == "legendary")
+						and restored.reward("skip"), "Each Repairmaster reward offers three Legendary tiles.")
+				if difficulty == "medium":
+					check(restored.data.phase == "result" and restored.can_start("hard")
+						and restored.can_start("easy", "glass") and restored.profile.marks == marks + 34,
+						"A Repairmaster victory on Medium completes the expedition and pays the normal unlocks.")
+					restored.profile.erase("hard_unlocked")
+					restored.profile.erase("glass_easy_unlocked")
+					check(restored.save() and restored.load_save(path) and restored.can_start("hard")
+						and restored.can_start("easy", "glass") and restored.profile.marks == marks + 34,
+						"Recover missing Medium unlocks from a completed Repairmaster save without repaying Marks.")
+				else:
+					check(restored.data.phase == "recruit" and restored.profile.marks == marks + 4,
+						"Hard offers a third recruit after the Repairmaster payout.")
+					if restored.data.phase == "recruit":
+						var third: String = restored.data.offers[0]
+						check(restored.choose_recruit(third) and restored.choose_recruit_starter(ClassDecks.starter(third))
+							and restored.data.heroes.size() == 3 and restored.available_nodes()[0].row == 14,
+							"The Repairmaster route opens the third act with all three heroes.")
+		for suffix in ["", ".bak", ".tmp"]:
+			if FileAccess.file_exists(path + suffix):
+				DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
 
 
 func _check_legacy_medium_unlocks() -> void:

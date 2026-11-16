@@ -169,7 +169,7 @@ const NAVIGATION_EVENTS := ["Broker's Table", "Salvage Permit", "Bounty Board"]
 const LOCATION_LABELS := {"brass": "Brass Frontier", "glass": "Glass Foundry", "crown": "Crown Relay", "moonwreck": "Moonwreck Docks"}
 const BOSS_LABELS := {
 	"tollkeeper": "The Tollkeeper", "gilded_marshal": "The Gilded Marshal",
-	"brass_bellmaker": "The Bellmaker",
+	"brass_bellmaker": "The Bellmaker", "brass_repairmaster": "The Repairmaster",
 	"iron_regent": "The Iron Regent", "crucible_twins": "The Crucible Twins", "prism_warden": "The Prism Warden",
 	"glass_refraction_engine": "The Refraction Engine",
 	"tempered_colossus": "The Tempered Colossus",
@@ -186,6 +186,7 @@ const GLASS_BOSS_SCOUTS := {
 	"glass_refraction_engine": "The Engine locks a beam onto a marked line. Displace it during the windup, move off the line, or time Guard. Stay at range to avoid its close discharge.",
 }
 const BRASS_BOSSES := ["tollkeeper", "gilded_marshal", "iron_regent"]
+const BRASS_ACT_TWO_BOSSES := ["gilded_marshal", "brass_repairmaster"]
 const GLASS_BOSSES := ["crucible_twins", "prism_warden", "tempered_colossus"]
 const CROWN_BOSSES := ["relay_captain", "relay_marshal", "crown_regent"]
 const MOONWRECK_BOSSES := ["wreckmaster", "tidekeeper", "drowned_admiral"]
@@ -487,7 +488,7 @@ func _is_brass_medium_victory(record: Dictionary) -> bool:
 	var node: Variant = record.get("node")
 	var layers: Variant = record.get("layers")
 	return (node is Dictionary and layers is Array and not layers.is_empty()
-		and node.get("type") == "boss" and node.get("boss_id") == "gilded_marshal"
+		and node.get("type") == "boss" and node.get("boss_id") in BRASS_ACT_TWO_BOSSES
 		and node.get("row") == layers.size() - 1)
 
 
@@ -2133,7 +2134,10 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 			else:
 				leg_labels = MOONWRECK_BLACKWATER_NODE_LABELS
 		_append_layers(layers, leg, leg_labels, rng, used_events)
-		_append_boss(layers, bosses[segment])
+		var boss_id: String = bosses[segment]
+		if location == "brass" and segment == 1:
+			boss_id = BRASS_ACT_TWO_BOSSES[_rng(seed_value, 689).randi_range(0, BRASS_ACT_TWO_BOSSES.size() - 1)]
+		_append_boss(layers, boss_id)
 	if "navigation" in profile.meta:
 		_add_navigation_events(layers, seed_value, seed_salt)
 	for row in range(layers.size() - 1):
