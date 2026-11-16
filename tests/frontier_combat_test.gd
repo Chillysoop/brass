@@ -637,8 +637,15 @@ func _check_medium_marshal_counters() -> void:
 	sim._damage(lead, marshal, 25, "shot", "Secondary impact")
 	_check(marshal.marshal_plate_integrity == ArenaSim.MARSHAL_MEDIUM_PLATE, "Secondary impacts do not wear down the plate")
 	sim._damage(lead, marshal, 25, "shot")
-	_check(marshal.marshal_plate_integrity == ArenaSim.MARSHAL_MEDIUM_PLATE - 9,
-		"Pressure wears the plate by damage lost to its mitigation")
+	_check(marshal.marshal_plate_integrity == ArenaSim.MARSHAL_MEDIUM_PLATE - 9 - ArenaSim.MARSHAL_PRESSURE_WEAR_PER_TILE,
+		"Direct tile attacks add a fixed amount of pressure beyond mitigation wear")
+	var short_damage: int = ArenaSim.TILES.jab.damage
+	var short_wear := short_damage - roundi(short_damage * 0.62) + ArenaSim.MARSHAL_PRESSURE_WEAR_PER_TILE
+	var integrity_before: int = marshal.marshal_plate_integrity
+	for strike in range(3):
+		sim._damage(lead, marshal, short_damage, "jab")
+	_check(marshal.marshal_plate_integrity == integrity_before - 3 * short_wear,
+		"Repeated small attacks each contribute their own wear to the plate")
 	lead.pos = marshal.pos - Vector2(100, 0)
 	_marshal_sweep(sim, marshal, lead)
 	marshal.marshal_plate_integrity = 9
@@ -655,17 +662,23 @@ func _check_medium_marshal_counters() -> void:
 	var ally: Dictionary = sim.units[1]
 	sim._damage(lead, marshal, 410, "shot")
 	lead.pos = marshal.pos - Vector2(100, 0)
+	ally.pos = marshal.pos - Vector2(325, 0)
 	lead.guard = ArenaSim.MARSHAL_MEDIUM_SWEEP_DAMAGE - 1
 	_marshal_sweep(sim, marshal, lead)
 	sim._resolve_intent(marshal)
-	_check(lead.hp == lead.max_hp - 1 and marshal.marshal_plate_integrity == ArenaSim.MARSHAL_MEDIUM_PLATE,
-		"Any HP lost to the sweep prevents defense progress")
+	var partial := sim.trace.filter(func(event: Dictionary): return event.tile == "marshal_sweep_weathered")
+	var partial_wear := roundi(ArenaSim.MARSHAL_WEATHERED_SWEEP_WEAR * (1.0 - 1.0 / ArenaSim.MARSHAL_MEDIUM_SWEEP_DAMAGE))
+	_check(lead.hp == lead.max_hp - 1 and marshal.marshal_plate_integrity == ArenaSim.MARSHAL_MEDIUM_PLATE - partial_wear
+		and partial.size() == 1 and partial[0].partial and partial[0].amount == partial_wear
+		and marshal.next_attack == sim.tick + marshal.attack.cooldown,
+		"A partial Guard block plus a living ally outside the ring softens the plate without delaying the next attack")
 	lead.impulse = Vector2.ZERO
 	lead.guard = ArenaSim.MARSHAL_MEDIUM_SWEEP_DAMAGE
 	_marshal_sweep(sim, marshal, lead)
 	sim._resolve_intent(marshal)
 	_check(lead.hp == lead.max_hp - 1 and lead.impulse == Vector2.ZERO and
-		marshal.marshal_plate_integrity == ArenaSim.MARSHAL_MEDIUM_PLATE - ArenaSim.MARSHAL_WEATHERED_SWEEP_WEAR,
+		marshal.marshal_plate_integrity == ArenaSim.MARSHAL_MEDIUM_PLATE - partial_wear - ArenaSim.MARSHAL_WEATHERED_SWEEP_WEAR
+		and marshal.next_attack == sim.tick + marshal.attack.cooldown + ArenaSim.TICKS_PER_BEAT,
 		"A fully blocked sweep cannot push the crew and wears down the plate")
 	lead.pos = marshal.pos - Vector2(300, 0)
 	for repeat in range(2):
@@ -683,8 +696,8 @@ func _check_medium_marshal_counters() -> void:
 		sim._damage(lead, marshal, 410, "shot")
 		_marshal_sweep(sim, marshal, lead)
 		if difficulty == "hard":
-			_check(not marshal.has("marshal_plate_integrity") and marshal.attack.cooldown == 105,
-				"Hard keeps the original Marshal plating and attack rate")
+			_check(marshal.marshal_plate_integrity == ArenaSim.MARSHAL_HARD_PLATE and marshal.attack.cooldown == 105
+				and marshal.marshal_sweep_damage == 45, "Hard gains a tougher finite plate and preserves its attack rate and sweep damage")
 		sim._displace("push", lead, marshal, "bash", Vector2.RIGHT, 300.0)
 		sim._damage(lead, marshal, 25, "shot")
 		_check(marshal.marshal_plated and not str(marshal.intent).is_empty(), "The same hero cannot complete the team counter")
@@ -692,6 +705,50 @@ func _check_medium_marshal_counters() -> void:
 		_check(not marshal.marshal_plated and not marshal.has("pilot_ring_radius") and str(marshal.intent).is_empty()
 			and marshal.next_attack == sim.tick + ArenaSim.TICKS_PER_BEAT * 5
 			and _has_event(sim, "interrupt", "marshal_shattered"), "The second hero shatters armor and interrupts the sweep")
+
+	options.difficulty = "hard"
+	sim.start([[], []], "duo", options)
+	marshal = sim.units.back()
+	lead = sim.units[0]
+	ally = sim.units[1]
+	sim._damage(lead, marshal, 410, "shot")
+	lead.pos = marshal.pos - Vector2(100, 0)
+	ally.pos = marshal.pos - Vector2(325, 0)
+	_marshal_sweep(sim, marshal, lead)
+	sim._resolve_intent(marshal)
+	_check(lead.hp == lead.max_hp - 45 and marshal.marshal_plate_integrity == ArenaSim.MARSHAL_HARD_PLATE,
+		"One unguarded hit and one dodge only prevent half the Hard sweep and earn no wear")
+	lead.guard = 20
+	_marshal_sweep(sim, marshal, lead)
+	sim._resolve_intent(marshal)
+	_check(lead.hp == lead.max_hp - 70 and marshal.marshal_plate_integrity == ArenaSim.MARSHAL_HARD_PLATE - 21,
+		"Guard capped below the raw attack can still weather Hard plating when the other hero clears the ring")
+	marshal.pos.x = ArenaSim.ARENA_SIZE.x - ArenaSim.WALL_MARGIN - marshal.radius
+	sim._displace("push", lead, marshal, "bash", Vector2.RIGHT, 600.0)
+	_check(marshal.marshal_exposed_until == 0, "A push blocked by the arena wall cannot expose the Act II Marshal")
+	marshal.impulse = Vector2.ZERO
+	sim._displace("pull", lead, marshal, "pull", Vector2.LEFT, 600.0)
+	_check(marshal.marshal_exposed_until > 0, "A pull that creates meaningful movement still opens the team window")
+
+	var lane := [{"id": "split_shot", "start": 0, "target": "nearest"}, {"id": "split_shot", "start": 2, "target": "farthest"}]
+	sim.start([lane, []], "duo", options)
+	marshal = sim.units.back()
+	lead = sim.units[0]
+	sim._add_campaign_enemy("recruit", marshal.pos - Vector2(86, 0))
+	sim._damage(lead, marshal, 410, "shot")
+	for unit: Dictionary in sim.units:
+		unit.speed = 0.0
+		unit.next_attack = 99999
+	for frame in range(ArenaSim.TICKS_PER_BEAT * 2):
+		sim.step()
+	_check(marshal.marshal_plate_integrity == ArenaSim.MARSHAL_HARD_PLATE and sim.trace.any(func(event: Dictionary):
+		return event.kind == "hit" and event.tile == "split_shot" and event.target == marshal.id),
+		"A native splash onto the Marshal can hit his plate without adding direct-hit wear")
+	for frame in range(ArenaSim.TICKS_PER_BEAT * 2):
+		sim.step()
+	var solid_hits := sim.trace.filter(func(event: Dictionary): return event.tile == "marshal_plate_worn")
+	_check(solid_hits.size() == 1 and solid_hits[0].tick == ArenaSim.TICKS_PER_BEAT * 4,
+		"Selecting the Marshal with the same splash tile adds pressure exactly once")
 
 
 func _marshal_sweep(sim: ArenaSim, marshal: Dictionary, target: Dictionary) -> void:

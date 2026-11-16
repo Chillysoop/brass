@@ -64,6 +64,7 @@ const EFFECT_LENGTHS := {
 	"repair_separated": 0.65,
 	"brass_cannon_impact": 0.55,
 	"marshal_plate_broken": 1.1,
+	"marshal_sweep_weathered": 0.75,
 	"relay_interrupted": 0.65,
 	"relay_link_broken": 0.42,
 	"relay_marshal_separated": 0.55,
@@ -144,6 +145,7 @@ const ENCOUNTER_EFFECTS := {
 	"marshal_shattered": "marshal_plate_broken",
 	"marshal_pressure_break": "marshal_plate_broken",
 	"marshal_defense_break": "marshal_plate_broken",
+	"marshal_sweep_weathered": "marshal_sweep_weathered",
 	"relay_interrupted": "relay_interrupted",
 	"relay_link_broken": "relay_link_broken",
 	"relay_marshal_interrupted": "relay_interrupted",
@@ -172,6 +174,7 @@ const FLOATING_CUES := {
 	"repair_interrupted": "REPAIR INTERRUPTED",
 	"repair_separated": "OUT OF REPAIR RANGE",
 	"marshal_plate_broken": "PLATE BROKEN",
+	"marshal_sweep_weathered": "SWEEP WEATHERED",
 	"relay_interrupted": "INTERRUPTED",
 	"relay_link_broken": "LINK BROKEN",
 	"relay_marshal_separated": "SEPARATED",
@@ -931,17 +934,15 @@ func _draw_marshal_cues(board: Rect2) -> void:
 			continue
 		var baseline := Vector2(board.get_center().x, board.position.y + 24.0)
 		if _windups.has(unit.id) and unit.get("intent_attack_id") == "marshal_sweep":
-			var caption := "GILDED SWEEP · %d DAMAGE · GUARD OR CLEAR THE RING" % ArenaSim.MARSHAL_MEDIUM_SWEEP_DAMAGE
+			var damage: int = unit.get("marshal_sweep_damage", ArenaSim.MARSHAL_MEDIUM_SWEEP_DAMAGE)
+			var caption := "GILDED SWEEP · %d DAMAGE" % damage
 			var text_width := get_theme_default_font().get_string_size(caption, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 15).x
 			var badge := Rect2(baseline - Vector2(text_width * 0.5 + 12.0, 18.0), Vector2(text_width + 24.0, 25.0))
 			draw_rect(badge, Color(SWEEP_EDGE, 0.94))
 			draw_rect(badge, Color(SWEEP_LIGHT, 0.76), false, 1.0)
 			_draw_centered(caption, baseline, 15, SWEEP_LIGHT)
-		elif unit.get("marshal_plated", false):
-			if int(unit.get("marshal_exposed_until", 0)) > 0:
-				_draw_centered("PLATE OPEN · HIT WITH ANOTHER HERO", baseline, 14, HERO_COLOR)
-			else:
-				_draw_centered("HITS WEAR THE PLATE · FULLY GUARD OR CLEAR THE SWEEP", baseline, 14, GOLD)
+		elif unit.get("marshal_plated", false) and int(unit.get("marshal_exposed_until", 0)) > 0:
+			_draw_centered("PLATE OPEN", baseline, 14, HERO_COLOR)
 		break
 
 
@@ -1520,6 +1521,8 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			draw_arc(to_point, 8.0 + progress * 21.0, 0.0, TAU, 24, Color(REPAIR_COLOR, opacity), 2.0, true)
 		"repair_interrupted", "repair_separated":
 			draw_arc(from_point, 8.0 + progress * 21.0, 0.0, TAU, 24, Color(REPAIR_COLOR, opacity), 2.0, true)
+		"marshal_sweep_weathered":
+			draw_arc(to_point, 13.0 + progress * 21.0, 0.0, TAU, 24, Color(HERO_COLOR, opacity), 2.5, true)
 		"guard", "heal", "defeat_unit", "relay_interrupted", "relay_link_broken", "relay_marshal_separated", "tidekeeper_unanchored", "admiral_reversed", "spring_jam", "marshal_plate_broken":
 			var color := RELAY_SHIELD_COLOR if kind == "guard" else ENEMY_COLOR
 			if kind == "heal":
@@ -1653,7 +1656,14 @@ func _draw_feedback(effect: Dictionary, field: Rect2) -> void:
 				var ray := Vector2.RIGHT.rotated(index * TAU / 4.0 + 0.7)
 				draw_line(impact + ray * (4.0 + progress * 8.0), impact + ray * (10.0 + progress * 11.0), Color(color, opacity), 2.0, true)
 			return
-	var lift := 52.0 if kind == "marshal_plate_broken" else 24.0
+	var lift := 24.0
+	if kind == "marshal_plate_broken":
+		lift = 52.0
+	elif kind == "marshal_sweep_weathered":
+		lift = 77.0
+		color = HERO_COLOR
+		if effect.get("partial", false):
+			label = "SWEEP MITIGATED"
 	_draw_centered(label, point - Vector2(0.0, lift + progress * 25.0), 15, Color(color, opacity))
 
 

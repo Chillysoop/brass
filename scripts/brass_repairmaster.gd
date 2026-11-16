@@ -10,10 +10,11 @@ const COMPLETED := "repairmaster_repair_completed"
 const REPAIR_REACH := 155.0
 const HEAL_AMOUNT := 46
 const BURST_THRESHOLD := 32
-const DISPLACEMENT_THRESHOLD := 25.0
+const DISPLACEMENT_THRESHOLD := 18.0
 const DASH_RANGE := 320.0
 const DASH_BEATS := 2
-const REPAIR_BEATS := 3
+const REPAIR_BEATS := 4
+const HARD_REPAIR_RECOVERY := 104
 const ORDER_THRESHOLDS := [70, 35]
 
 
@@ -24,7 +25,10 @@ static func spawn(sim, y: float, hard: bool) -> void:
 		boss.hp = 980
 		boss.max_hp = 980
 		boss.attack.damage = 41
-		boss.attack.cooldown = 104
+		boss.attack.first += sim.TICKS_PER_BEAT
+		boss.next_attack = boss.attack.first
+		boss.attack.cooldown = HARD_REPAIR_RECOVERY + sim.TICKS_PER_BEAT
+		boss["repairmaster_repair_recovery"] = HARD_REPAIR_RECOVERY
 	boss["repairmaster_orders_used"] = 0
 	boss["repairmaster_next_order"] = 0
 	boss["repairmaster_damage_taken"] = 0
@@ -94,6 +98,7 @@ static func resolve(sim, boss: Dictionary, drone: Dictionary, cue: String) -> vo
 		return
 	var restored := mini(HEAL_AMOUNT, int(boss.max_hp) - int(boss.hp))
 	_clear_order(sim, boss)
+	boss.next_attack = sim.tick + int(boss.get("repairmaster_repair_recovery", boss.attack.cooldown))
 	if restored <= 0:
 		return
 	boss.hp += restored
@@ -114,12 +119,12 @@ static func on_damage(sim, actor: Dictionary, target: Dictionary, dealt: int) ->
 		_cancel(sim, boss, target, "drone_destroyed", "The Repairmaster's chosen drone was destroyed.", actor)
 
 
-static func on_displacement(sim, actor: Dictionary, target: Dictionary, landing: Vector2) -> void:
-	if _position(target).distance_to(landing) < DISPLACEMENT_THRESHOLD:
+static func on_displacement(sim, actor: Dictionary, target: Dictionary, projected_travel: float) -> void:
+	if projected_travel < DISPLACEMENT_THRESHOLD:
 		return
 	var boss := _active_boss_for(sim, target)
 	if not boss.is_empty() and target.id in [boss.id, boss.intent]:
-		_cancel(sim, boss, sim._find_unit(boss.intent), "displacement", "The crew separates the Repairmaster from its drone.", actor)
+		_cancel(sim, boss, sim._find_unit(boss.intent), "displacement", "The crew disrupts the Repairmaster's alignment.", actor)
 
 
 static func _active_boss_for(sim, target: Dictionary) -> Dictionary:

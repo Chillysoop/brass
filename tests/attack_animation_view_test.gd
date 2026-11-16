@@ -60,6 +60,8 @@ func _run() -> void:
 	_check_ranged_standoff(view)
 	_check_limb_pose(view)
 	_check_fast_windup(view)
+	_check_marshal_weathered_feedback(view, false)
+	_check_marshal_weathered_feedback(view, true)
 	_check_movement_paths(view)
 	_check_fast_mobility(view)
 	view.queue_free()
@@ -103,6 +105,34 @@ func _check_fast_windup(view: ArenaView) -> void:
 	view.present(sim.units, [], 106, [], 3)
 	_expect(not view._windups.has(enemy.id) and not view._actor_casts.has(enemy.id),
 		"Canceling a windup must clear the warning without inventing a release.")
+
+
+func _check_marshal_weathered_feedback(view: ArenaView, partial: bool) -> void:
+	var sim := ArenaSim.new()
+	var difficulty := "hard" if partial else "medium"
+	sim.start([[], []], "duo", {"location": "brass", "difficulty": difficulty,
+		"segment": 2, "encounter": "boss", "boss_id": "gilded_marshal",
+		"heroes": [{"hero": "warden"}, {"hero": "starshot"}]})
+	var marshal: Dictionary = sim.units.back()
+	marshal.pos = Vector2(800, 265)
+	marshal.marshal_plated = true
+	marshal.marshal_plate_integrity = marshal.marshal_plate_max_integrity
+	marshal["pilot_ring_radius"] = float(marshal.attack.reach) + ArenaSim.MARSHAL_SWEEP_EXTRA_REACH
+	var lead: Dictionary = sim.units.front()
+	if partial:
+		lead.pos = Vector2(725, 265)
+		lead.guard = int(marshal.marshal_sweep_damage) - 5
+	sim._start_enemy_intent(marshal, sim.units.front().id, sim.tick + 1, "marshal_sweep")
+	view.reset_view(sim.units)
+	var events := sim.step()
+	view.present(sim.units, events, sim.tick, sim.visual_cues, 3)
+	var is_weathered := func(effect: Dictionary) -> bool:
+		return (effect.kind == "marshal_sweep_weathered" and effect.target == marshal.id
+			and effect.get("partial", false) == partial)
+	view._process(0.35)
+	_expect(view._effects.any(is_weathered), "Successful mitigation of the Marshal's real %s sweep stays visible at 3×." % difficulty)
+	view._process(0.42)
+	_expect(not view._effects.any(is_weathered), "The weathered-sweep confirmation should fade after the cue.")
 
 
 func _check_movement_paths(view: ArenaView) -> void:

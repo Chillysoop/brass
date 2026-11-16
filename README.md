@@ -58,7 +58,7 @@ Enemy encounters rotate from the opening fight onward in new expeditions. Each a
 
 One optional Act I battle in each region is marked **Wave** on the route map. The arena marks where a reinforcement will arrive on beat 7 or 9 of the first loop.
 
-Medium starts solo. After the Act I boss, take a Legendary tile into your build and recruit a second hero. Both lanes fire on the same beat clock. The seed chooses the Gilded Marshal or the Repairmaster for Act II. The Marshal fights behind breakable plating. The Repairmaster dashes to its drones and pauses to channel a repair. Defeating either unlocks Brass Frontier Hard and Glass Foundry Easy. Each hero can take a Legendary trophy after the final boss.
+Medium starts solo. After the Act I boss, take a Legendary tile into your build and recruit a second hero. Both lanes fire on the same beat clock. The seed chooses the Gilded Marshal or the Repairmaster for Act II. Repeated hits and well-timed defense wear down the Marshal's plating. Displacement opens it for a follow-up from another hero. The Repairmaster dashes to its drones and channels a repair for four beats. A burst of damage or displacement can interrupt the channel. Defeating either unlocks Brass Frontier Hard and Glass Foundry Easy. Each hero can take a Legendary trophy after the final boss.
 
 In Brass Frontier Medium and Hard, the Act I boss offers a relic draft after the Legendary pick. The Tollkeeper offers Signet, Bastion Medal, Guild Ledger, and **Repair Kit**, which can heal a hero after a full block. The Bellmaker offers **Clapper**, **Long Echo**, and **Resonant Plate** to reward support tiles, ranged attacks, and wide tiles respectively.
 

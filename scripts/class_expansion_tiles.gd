@@ -121,16 +121,16 @@ const SPECS := {
 		"description": "Rush and knock back the target and other enemies within 120 units of the impact. Gain 4 Guard on hit.",
 	},
 	"convergence_pulse": {
-		"label": "Convergence Pulse", "short_label": "Convergence", "width": 3, "range": 475.0, "damage": 15, "rarity": "common",
+		"label": "Convergence Pulse", "short_label": "Convergence", "width": 3, "range": 475.0, "damage": 18, "rarity": "common",
 		"ranged": true, "convergence_radius": 210.0, "convergence_force": 620.0, "convergence_targets": 3,
 		"convergence_damage_per_pull": 4, "targets": ENEMY_TARGETS, "icon": "pull",
 		"description": "Draw up to 3 other enemies within 210 units toward the target. Deal 4 extra damage to the target for each enemy moved inward.",
 	},
 	"severing_tether": {
-		"label": "Severing Tether", "width": 2, "range": 465.0, "damage": 12, "rarity": "common",
+		"label": "Severing Tether", "width": 2, "range": 465.0, "damage": 14, "rarity": "common",
 		"ranged": true, "isolation_pull_force": 675.0, "isolation_distance": 44.0, "isolation_damage": 7,
-		"targets": ENEMY_TARGETS, "icon": "pull",
-		"description": "Pull the target toward you. Deal 7 extra damage if the pull moves it at least 44 units farther from its nearest ally.",
+		"guard": 3, "targets": ENEMY_TARGETS, "icon": "pull",
+		"description": "Pull the target toward you. Deal 7 extra damage if the pull moves it at least 44 units farther from its nearest ally. Gain 3 Guard on hit.",
 	},
 	"tonic_dart": {
 		"label": "Tonic Dart", "width": 2, "range": 450.0, "damage": 10, "rarity": "common",

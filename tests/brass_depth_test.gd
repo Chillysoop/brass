@@ -174,9 +174,10 @@ func _check_marshal() -> void:
 		view.present(sim.units, break_events, sim.tick)
 		_check(view._effects.size() == 1 and view._effects[0].kind == "marshal_plate_broken",
 			approach + " · show the plate break in the arena")
-		var weathered_sweep := sim.trace.any(func(event: Dictionary) -> bool: return event.tile == "marshal_sweep_weathered")
-		_check(weathered_sweep == (approach == "defense"),
-			approach + " · only the defensive fixture relies on weathering sweeps")
+		var full_weathering := sim.trace.any(func(event: Dictionary) -> bool:
+			return event.tile == "marshal_sweep_weathered" and not event.partial)
+		_check(full_weathering == (approach == "defense"),
+			approach + " · only the defensive fixture relies on fully weathering sweeps")
 		print("Marshal · %s · %s · %d/%d HP" % [approach, sim.outcome, int(sim.units[0].hp), int(sim.units[1].hp)])
 	view.free()
 

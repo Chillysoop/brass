@@ -35,15 +35,15 @@ const SPECS := {
 		"description": "Fire a shot, then blink sideways around the target by up to 115 units. Blink away if both sides are blocked.",
 	},
 	"cinder_brand": {
-		"label": "Cinder Brand", "width": 2, "range": 440.0, "damage": 12, "rarity": "common",
-		"ranged": true, "push": 300.0, "ember_burn_damage": 3, "ember_burn_ticks": 2, "targets": ENEMY_TARGETS, "icon": "battle",
-		"description": "Knock the target back. If it was pushed or pulled in the last 3 beats, burn it for 3 damage per beat for 2 beats.",
+		"label": "Cinder Brand", "width": 2, "range": 440.0, "damage": 14, "rarity": "common",
+		"ranged": true, "push": 380.0, "ember_burn_damage": 3, "ember_burn_ticks": 2, "targets": ENEMY_TARGETS, "icon": "battle",
+		"description": "Knock the target back. Burn it for 3 damage per beat for 2 beats if this hit moves it or it was pushed or pulled in the last 3 beats.",
 	},
 	"wildfire_globe": {
-		"label": "Wildfire Globe", "width": 3, "range": 435.0, "damage": 16, "rarity": "common",
-		"ranged": true, "splash": 120.0, "splash_damage": 5, "ember_burn_damage": 3, "ember_burn_ticks": 2,
-		"ember_burn_radius": 135.0, "ember_burn_if_burning": true, "targets": ENEMY_TARGETS, "icon": "area",
-		"description": "Deal 5 damage to other enemies within 120 units of the target. If the target was already burning, burn surviving enemies within 135 units of it for 3 damage per beat for 2 beats.",
+		"label": "Wildfire Globe", "width": 3, "range": 480.0, "damage": 18, "rarity": "common",
+		"ranged": true, "splash": 120.0, "splash_damage": 9, "ember_burn_damage": 3, "ember_burn_ticks": 2,
+		"ember_burn_radius": 135.0, "ember_burn_if_burning": true, "retreat": 80.0, "targets": ENEMY_TARGETS, "icon": "area",
+		"description": "Deal 9 damage to other enemies within 120 units of the target, then dash back up to 80 units. If the target was already burning, burn surviving enemies within 135 units of it for 3 damage per beat for 2 beats.",
 	},
 }
 

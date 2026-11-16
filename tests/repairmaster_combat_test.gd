@@ -9,10 +9,12 @@ var failures: Array[String] = []
 
 func _initialize() -> void:
 	_check_spawns()
+	_check_hard_strike_pacing()
 	_check_dash_and_finite_repairs()
 	_check_burst_counter()
 	_check_burst_at_tile_edge()
 	_check_displacement_and_destroying_drones()
+	_check_light_and_opposing_displacement()
 	_check_blocked_dash()
 	for failure in failures:
 		printerr(failure)
@@ -32,7 +34,8 @@ func _check_spawns() -> void:
 		and medium.units[3].attack_id == Repairmaster.DRONE_ID and medium.units[4].attack_id == Repairmaster.DRONE_ID
 		and medium.units[3].hp == 58 and medium.units[3].attack.damage == 5
 		and hard.units[2].hp == 980 and hard.units[2].max_hp == 980 and hard.units[2].attack.damage == 41
-		and hard.units[2].attack.cooldown == 104 and hard.units[3].hp == 72 and hard.units[3].attack.damage == 6,
+		and hard.units[2].attack.cooldown == 125 and hard.units[2].next_attack == 126
+		and hard.units[3].hp == 72 and hard.units[3].attack.damage == 6,
 		"The selected boss must spawn a Repairmaster and two scaled repair drones.")
 	_check(medium.units[3].pos.x - medium.units[2].pos.x >= 100.0
 		and medium.units[4].pos.x - medium.units[2].pos.x >= 100.0
@@ -42,6 +45,34 @@ func _check_spawns() -> void:
 	marshal.start([[], []], "solo", _encounter("medium", "gilded_marshal"))
 	_check(marshal.units.size() == 3 and marshal.units[2].attack_id == "marshal" and marshal.units[2].hp == 860,
 		"The original Marshal must remain available with its existing Medium stats.")
+
+
+func _check_hard_strike_pacing() -> void:
+	var hard := _fixture("hard")
+	var boss: Dictionary = hard.units[2]
+	hard.units[0].pos = Vector2(235, 260)
+	boss.next_attack = boss.attack.first
+	var first_release: int = boss.next_attack + boss.attack.windup
+	_advance(hard, first_release)
+	var strikes := _events(hard, "hit", "enemy_attack")
+	_check(strikes.size() == 1 and strikes[0].tick == first_release and strikes[0].amount == 41,
+		"The delayed first Hard strike releases at its usual windup and retains its damage.")
+	var second_release: int = first_release + 125 + boss.attack.windup
+	_advance(hard, second_release - 1)
+	_check(_events(hard, "hit", "enemy_attack").size() == 1,
+		"The crew gets an additional beat between ordinary Hard strikes.")
+	_advance(hard, second_release)
+	strikes = _events(hard, "hit", "enemy_attack")
+	_check(strikes.size() == 2 and strikes[1].tick == second_release,
+		"The next normal strike releases on the recharged beat.")
+
+	var repairing := _fixture("hard")
+	var channeling: Dictionary = repairing.units[2]
+	_begin_repair_order(repairing)
+	_advance(repairing, channeling.intent_tick)
+	_advance(repairing, channeling.intent_tick)
+	_check(_events(repairing, "heal", Repairmaster.REPAIR).size() == 1 and channeling.next_attack == repairing.tick + 104,
+		"The regular melee cadence change does not change recovery after an actual repair.")
 
 
 func _check_dash_and_finite_repairs() -> void:
@@ -119,21 +150,22 @@ func _check_burst_counter() -> void:
 
 
 func _check_burst_at_tile_edge() -> void:
-	var sim := _fixture("medium", [[{"id": "shot", "start": 3}], [{"id": "longshot", "start": 3}]])
+	var sim := _fixture("medium", [[{"id": "shot", "start": 5}], [{"id": "longshot", "start": 5}]])
 	var boss: Dictionary = sim.units[2]
 	sim.units[0].pos = Vector2(215, 120)
 	sim.units[1].pos = Vector2(230, 405)
+	sim.tick = BEAT - 1
 	_begin_repair_order(sim)
-	var edge := 5 * BEAT
+	var edge := 7 * BEAT
 	_advance(sim, edge - 1)
-	_check(boss.intent_attack_id == Repairmaster.REPAIR and boss.repairmaster_damage_taken == 0
+	_check(boss.intent_attack_id == Repairmaster.REPAIR and boss.intent_tick == edge and boss.repairmaster_damage_taken == 0
 		and _events(sim, "interrupt", Repairmaster.INTERRUPTED).is_empty(),
 		"Charging ranged tiles must not affect the repair counter ahead of their right edge.")
 	sim.step()
 	var interrupts := _events(sim, "interrupt", Repairmaster.INTERRUPTED)
 	_check(interrupts.size() == 1 and interrupts[0].tick == edge and interrupts[0].counter == "damage"
-		and interrupts[0].counter_actor == sim.units[1].id,
-		"Two ordinary ranged attacks on the same tile edge can end the burst window before the heal.")
+		and interrupts[0].counter_actor == sim.units[1].id and _events(sim, "heal", Repairmaster.REPAIR).is_empty(),
+		"Two ordinary ranged attacks on the last tile edge can interrupt before the same-tick heal.")
 
 
 func _check_displacement_and_destroying_drones() -> void:
@@ -171,6 +203,25 @@ func _check_displacement_and_destroying_drones() -> void:
 	_advance(destroyed, 2 * BEAT)
 	_check(destroyed.outcome == "victory" and exposed.repairmaster_orders_used == 1,
 		"With both drones gone, ordinary shots must be able to finish the Repairmaster without a special counter.")
+
+
+func _check_light_and_opposing_displacement() -> void:
+	var light := _fixture("hard", [[{"id": "bellows_strike", "start": 0}], []])
+	light.units[0].pos = Vector2(235, 260)
+	_begin_repair_order(light)
+	_advance(light, 2 * BEAT)
+	var interrupts := _events(light, "interrupt", Repairmaster.INTERRUPTED)
+	_check(interrupts.size() == 1 and interrupts[0].tick == 2 * BEAT and interrupts[0].counter == "displacement"
+		and interrupts[0].counter_actor == light.units[0].id,
+		"A light Bellows Strike in reach must interrupt the dash on its real two-beat edge.")
+
+	var opposed := _fixture()
+	var boss: Dictionary = opposed.units[2]
+	_begin_repair_order(opposed)
+	boss.impulse = Vector2.RIGHT * 750.0
+	opposed._displace("pull", opposed.units[0], boss, "pull", Vector2.LEFT, 220.0)
+	_check(boss.intent_attack_id == Repairmaster.DASH and _events(opposed, "interrupt", Repairmaster.INTERRUPTED).is_empty(),
+		"An opposing tap that does not move the boss its own way must not borrow travel from existing momentum.")
 
 
 func _check_blocked_dash() -> void:

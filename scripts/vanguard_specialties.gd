@@ -16,15 +16,15 @@ const SPECS := {
 		"description": "If your Guard absorbed damage within 3 beats, deal 5 extra damage to the target and 7 damage to each other enemy within 135 units of it.",
 	},
 	"domino_maul": {
-		"label": "Domino Maul", "width": 3, "range": 178.0, "damage": 17, "rarity": "common",
+		"label": "Domino Maul", "width": 3, "range": 178.0, "damage": 22, "rarity": "common",
 		"push": 775.0, "collision_bonus": 7, "collision_chain_push": 700.0,
 		"targets": ENEMY_TARGETS, "icon": "push",
 		"description": "Knock the target back. If it collides with an enemy, both take 7 extra collision damage and the second enemy is knocked onward for one more collision.",
 	},
 	"impact_driver": {
 		"label": "Impact Driver", "width": 4, "range": 190.0, "damage": 26, "rarity": "common",
-		"guard_break": 8, "windup_bonus": 8, "targets": ENEMY_TARGETS, "icon": "battle",
-		"description": "Strip up to 8 Guard before the hit. Deal 8 extra damage if the target is winding up.",
+		"guard_break": 8, "windup_bonus": 8, "guard": 6, "targets": ENEMY_TARGETS, "icon": "battle",
+		"description": "Strip up to 8 Guard before the hit. Deal 8 extra damage if the target is winding up. Gain 6 Guard on hit.",
 	},
 	"phalanx_charge": {
 		"label": "Phalanx Charge", "width": 3, "range": 465.0, "damage": 15, "rarity": "common",

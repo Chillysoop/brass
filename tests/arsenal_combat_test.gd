@@ -283,12 +283,13 @@ func _check_severing_tether() -> void:
 		if not ally_offset.is_zero_approx():
 			_add_still_scout(sim, target.pos + ally_offset)
 		_advance(sim, edge - 1)
-		_check(sim.activations.is_empty() and target.impulse == Vector2.ZERO,
+		_check(sim.activations.is_empty() and target.impulse == Vector2.ZERO and sim.units[0].guard == 0,
 			"Severing Tether waits for its right edge.")
 		sim.step()
 		var expected: int = tile.damage + (int(tile.isolation_damage) if ally_offset.x > 0.0 else 0)
 		_check(sim.activations[-1].tick == edge and target.hp == target.max_hp - expected and target.impulse.x < 0,
 			"Severing Tether adds damage only if the pull separates the target enough from its nearest living ally.")
+		_check(sim.units[0].guard == tile.guard, "Severing Tether grants Guard even against a lone target.")
 
 
 func _check_aegis_intercept() -> void:
@@ -375,9 +376,12 @@ func _check_impact_driver() -> void:
 	target.guard = tile.guard_break + 5
 	target.intent = sim.units[0].id
 	target.intent_tick = (int(tile.width) + 1) * BEAT
-	_advance(sim, tile.width * BEAT)
+	_advance(sim, tile.width * BEAT - 1)
+	_check(sim.units[0].guard == 0, "Impact Driver waits for its right edge before granting Guard.")
+	sim.step()
 	_check(target.hp == target.max_hp - tile.damage - tile.windup_bonus + 5 and target.guard == 0,
 		"Impact Driver strips Guard before landing its heavy bonus against a winding-up target.")
+	_check(sim.units[0].guard == tile.guard, "Impact Driver grants Guard when it lands.")
 
 
 func _check_lancer_specialties() -> void:

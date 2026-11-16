@@ -404,6 +404,8 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 			if tile.has("ember_burn_radius"):
 				burn_target = "surviving enemies within %d range of the impact" % int(tile.ember_burn_radius)
 			var trigger := "was already burning" if tile.get("ember_burn_if_burning", false) else "was pushed or pulled in the last 3 beats"
+			if tile.has("push") and not tile.get("ember_burn_if_burning", false):
+				trigger = "was moved by this hit or pushed or pulled in the last 3 beats"
 			lines.append("If the target %s, burn %s for %d damage per beat for %d beats." % [
 				trigger, burn_target, tile.ember_burn_damage, tile.ember_burn_ticks])
 	if tile.has("ally_guard"):

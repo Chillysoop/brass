@@ -42,8 +42,11 @@ const IMPULSE_CAP := 1000.0
 const IMPULSE_DECAY := 1850.0
 const MARSHAL_SWEEP_EXTRA_REACH := 48.0
 const MARSHAL_MEDIUM_PLATE := 120
+const MARSHAL_HARD_PLATE := 140
 const MARSHAL_MEDIUM_SWEEP_DAMAGE := 26
 const MARSHAL_WEATHERED_SWEEP_WEAR := 48
+const MARSHAL_PRESSURE_WEAR_PER_TILE := 2
+const MARSHAL_EXPOSURE_TRAVEL := 10.0
 const COLOSSUS_SWEEP_BEATS := 9
 const COLOSSUS_EXTRA_REACH := 110.0
 const RELAY_LINK_REACH := 115.0
@@ -755,12 +758,17 @@ func _start_campaign(options: Dictionary) -> void:
 					_add_campaign_enemy("regent", Vector2(647, y))
 				"gilded_marshal":
 					_add_campaign_enemy("marshal", Vector2(647, y), 0, 1.10 if difficulty == "hard" else 1.0, 1.06 if difficulty == "hard" else 1.0)
+					var marshal: Dictionary = units.back()
 					if difficulty == "medium":
-						var marshal: Dictionary = units.back()
 						marshal["marshal_plate_max_integrity"] = MARSHAL_MEDIUM_PLATE
 						marshal["marshal_plate_integrity"] = 0
 						marshal.attack.damage = 32
 						marshal.attack.cooldown = 126
+					if segment == 2 and difficulty == "hard":
+						marshal["marshal_plate_max_integrity"] = MARSHAL_HARD_PLATE
+						marshal["marshal_plate_integrity"] = 0
+					if segment == 2 and difficulty in ["medium", "hard"]:
+						marshal["marshal_sweep_damage"] = MARSHAL_MEDIUM_SWEEP_DAMAGE if difficulty == "medium" else int(marshal.attack.damage) + 5
 				_:
 					if boss_id == "tollkeeper" and difficulty == "easy" and segment == 1 and options.get("boss_variant") == "repair_drone":
 						_add_campaign_enemy("boss", Vector2(647, y), 0, 0.84, 0.94)
@@ -2424,6 +2432,8 @@ func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: Str
 	target.impulse = impulse.limit_length(IMPULSE_CAP)
 	var launch: Vector2 = target.impulse
 	var endpoint := _bounded(start_position + launch.normalized() * (launch.length_squared() / (2.0 * IMPULSE_DECAY)), target.radius)
+	# Bodies share overlap corrections during movement. Only the arena wall bounds this launch projection.
+	var forward_travel := (endpoint - start_position).dot(direction)
 	var moved := force > 0.0 and not start_position.is_equal_approx(endpoint)
 	if moved:
 		target["displaced_until"] = tick + DISPLACEMENT_BONUS_WINDOW
@@ -2433,7 +2443,7 @@ func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: Str
 	var action := "pulls" if kind == "pull" else "knocks back"
 	_emit(kind, "%s %s %s." % [actor.name, action, target.name], actor, target, tile_id, roundi(force), start_position, endpoint)
 	if moved and actor.side == "hero" and target.get("attack_id") in [BrassRepairmaster.BOSS_ID, BrassRepairmaster.DRONE_ID]:
-		BrassRepairmaster.on_displacement(self, actor, target, endpoint)
+		BrassRepairmaster.on_displacement(self, actor, target, forward_travel)
 	if not _activation.is_empty() and actor.side == "hero" and target.side == "enemy" and target.hp > 0 \
 			and force > 0.0 and _has_relic(actor, "towline_knot") and _towline_loop != _loop_index():
 		_towline_loop = _loop_index()
@@ -2443,7 +2453,8 @@ func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: Str
 		}
 	_break_displaced_relay_link(target, endpoint, actor if actor.side == "hero" else {})
 	if target.get("marshal_plated", false) and actor.side == "hero" and force > 100.0:
-		_expose_marshal(actor, target)
+		if not target.has("marshal_sweep_damage") or forward_travel >= MARSHAL_EXPOSURE_TRAVEL:
+			_expose_marshal(actor, target)
 	elif target.get("prism_warded", false) and actor.side == "hero" and force > 100.0:
 		_expose_prism(actor, target)
 	elif target.get("colossus_stage", 0) == 1 and actor.side == "hero" and force > 100.0:
@@ -2625,7 +2636,7 @@ func _run_enemies() -> void:
 			message = "The Marshal charges a sweep. Push or pull it, then follow up with your other hero."
 			if enemy.has("marshal_plate_integrity"):
 				enemy["pilot_ring_radius"] = attack.reach + MARSHAL_SWEEP_EXTRA_REACH
-				message = "Gilded Sweep · %d damage inside the ring. Interrupt with your crew, block it with Guard, or move clear." % MARSHAL_MEDIUM_SWEEP_DAMAGE
+				message = "Gilded Sweep · %d damage inside the ring." % int(enemy.get("marshal_sweep_damage", MARSHAL_MEDIUM_SWEEP_DAMAGE))
 		elif enemy.get("regent_sealed", false):
 			action_id = "regent_sweep"
 			message = "The Regent charges a sweep. Land a hit from each hero within 4 beats to break its seals."
@@ -2787,7 +2798,7 @@ func _resolve_enemy_attack(enemy: Dictionary) -> void:
 		_prism_beam(enemy, intent, attack)
 		return
 	if enemy.has("marshal_plate_integrity") and enemy.get("intent_attack_id") == "marshal_sweep":
-		_resolve_medium_marshal_sweep(enemy, attack)
+		_resolve_gilded_sweep(enemy, attack)
 		return
 	if enemy.get("marshal_plated", false) and not enemy.has("marshal_plate_integrity"):
 		_sweep(enemy, attack, MARSHAL_SWEEP_EXTRA_REACH, 5)
@@ -2941,32 +2952,48 @@ func _sweep(enemy: Dictionary, attack: Dictionary, extra_reach: float, bonus_dam
 		_emit("miss", "%s's sweep hits no one." % enemy.name, enemy, enemy, "enemy_attack")
 
 
-func _resolve_medium_marshal_sweep(enemy: Dictionary, attack: Dictionary) -> void:
+func _resolve_gilded_sweep(enemy: Dictionary, attack: Dictionary) -> void:
 	var radius: float = enemy.get("pilot_ring_radius", attack.reach + MARSHAL_SWEEP_EXTRA_REACH)
 	enemy.erase("pilot_ring_radius")
 	var affected := _enemies_in_area(enemy, enemy.pos, radius)
+	var sweep_damage: int = enemy.get("marshal_sweep_damage", MARSHAL_MEDIUM_SWEEP_DAMAGE)
+	var living := 0
+	for hero: Dictionary in units:
+		if hero.side == "hero" and hero.hp > 0:
+			living += 1
+	var exposure := living * sweep_damage
+	var mitigated := (living - affected.size()) * sweep_damage
 	var hp_lost := 0
 	for hero: Dictionary in affected:
 		var hp_before: int = hero.hp
-		_damage(enemy, hero, MARSHAL_MEDIUM_SWEEP_DAMAGE, "enemy_attack")
+		var guard_before: int = hero.guard
+		_damage(enemy, hero, sweep_damage, "enemy_attack")
 		if hero.hp < hp_before:
+			mitigated += guard_before
 			hp_lost += hp_before - int(hero.hp)
 			if hero.hp > 0:
 				_displace("push", enemy, hero, "enemy_attack", hero.pos - enemy.pos, attack.push)
+		else:
+			mitigated += sweep_damage
 	if affected.is_empty():
 		_emit("miss", "The heroes stay clear of Gilded Sweep.", enemy, enemy, "enemy_attack")
-	if hp_lost > 0:
-		var message := "Gilded Sweep costs the crew %d HP." % hp_lost
-		if enemy.marshal_plated:
-			message += " Fully guard or clear the ring to wear down the plating."
-		_review_boss_event("miss", "marshal_sweep_hit", message, enemy)
-		return
 	var response := "The crew stays clear of Gilded Sweep." if affected.is_empty() else "Guard absorbs Gilded Sweep without HP loss."
-	enemy.next_attack += TICKS_PER_BEAT
-	var wear := mini(int(enemy.marshal_plate_integrity), MARSHAL_WEATHERED_SWEEP_WEAR)
+	var wear := MARSHAL_WEATHERED_SWEEP_WEAR
+	if hp_lost > 0:
+		_review_boss_event("miss", "marshal_sweep_hit", "Gilded Sweep costs the crew %d HP." % hp_lost, enemy)
+		if not enemy.has("marshal_sweep_damage") or exposure <= 0:
+			return
+		wear = roundi(MARSHAL_WEATHERED_SWEEP_WEAR * maxf(0.0, (2.0 * mitigated - exposure) / exposure))
+		if wear <= 0 or not enemy.marshal_plated:
+			return
+		response = "Guard and movement soften Gilded Sweep."
+	else:
+		enemy.next_attack += TICKS_PER_BEAT
+	wear = mini(int(enemy.marshal_plate_integrity), wear)
 	if wear > 0:
 		response += " The plating loses %d integrity." % wear
-	_emit("interrupt", response, enemy, enemy, "marshal_sweep_weathered", wear)
+	_emit("interrupt", response, enemy, enemy, "marshal_sweep_weathered", wear, Vector2.INF, Vector2.INF,
+		{"partial": hp_lost > 0, "mitigated": mitigated, "exposure": exposure})
 	_wear_marshal_plate(enemy, enemy, wear, "defense")
 
 
@@ -3533,7 +3560,12 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 					amount += ClassRelicEffects.critical_bonus(self, actor, target, tile_id)
 			amount += trail_bonus
 		if target.get("marshal_plated", false) and actor.side == "hero":
-			amount = _marshal_damage(actor, target, amount, extra_hit.is_empty())
+			var pressure_hit := extra_hit.is_empty()
+			if target.has("marshal_sweep_damage") and not _activation.is_empty():
+				pressure_hit = primary_tile and not _activation.get("marshal_pressure_used", false)
+				if pressure_hit and amount > 0:
+					_activation["marshal_pressure_used"] = true
+			amount = _marshal_damage(actor, target, amount, pressure_hit)
 		elif target.get("prism_warded", false) and actor.side == "hero":
 			amount = _prism_damage(actor, target, amount)
 		elif target.get("regent_sealed", false) and actor.side == "hero":
@@ -3674,6 +3706,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		if target.has("marshal_plate_integrity"):
 			target.marshal_plate_integrity = target.marshal_plate_max_integrity
 			message = "The Marshal raises its plating. Team interrupts shatter it. Hits and sweeps without HP loss wear it down."
+		if target.has("marshal_sweep_damage"):
+			message = "The Marshal raises its plating."
 		_emit("intent", message, target, actor, "marshal_plate")
 	elif target.get("sprite") == "prism_warden" and target.hp * 5 <= target.max_hp * 3 and not target.get("prism_raised", false):
 		target["prism_raised"] = true
@@ -4074,8 +4108,10 @@ func _expose_marshal(actor: Dictionary, marshal: Dictionary) -> void:
 		return
 	marshal.marshal_exposed_until = tick + TICKS_PER_BEAT * 3
 	marshal["marshal_opened_by"] = actor.id
-	_emit("interrupt", "%s exposes the Marshal for 3 beats. Follow up with your other hero." % actor.name,
-		actor, marshal, "marshal_exposed")
+	var message := "%s exposes the Marshal for 3 beats." % actor.name
+	if not marshal.has("marshal_sweep_damage"):
+		message += " Follow up with your other hero."
+	_emit("interrupt", message, actor, marshal, "marshal_exposed")
 
 
 func _expose_prism(actor: Dictionary, warden: Dictionary) -> void:
@@ -4114,7 +4150,8 @@ func _marshal_damage(actor: Dictionary, marshal: Dictionary, amount: int, direct
 		return amount + 18
 	var reduced := maxi(1, roundi(amount * 0.62))
 	if direct_hit and amount > 0 and marshal.has("marshal_plate_integrity"):
-		if _wear_marshal_plate(actor, marshal, maxi(1, amount - reduced), "pressure"):
+		var tile_wear := MARSHAL_PRESSURE_WEAR_PER_TILE if marshal.has("marshal_sweep_damage") else 0
+		if _wear_marshal_plate(actor, marshal, maxi(1, amount - reduced) + tile_wear, "pressure"):
 			return amount
 	if marshal.marshal_exposed_until > 0:
 		return amount

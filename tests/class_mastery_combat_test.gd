@@ -481,10 +481,15 @@ func _check_cinder_specialties() -> void:
 
 	var cold := _fixture("cinder_mage", "", [_tile("wildfire_globe", 0)])
 	_step_to(cold, 3 * beat - 1)
+	_check(not cold.trace.any(func(event: Dictionary): return event.tile == "wildfire_globe" and event.kind == "retreat"),
+		"Wildfire Globe waits for its right edge before dashing.")
 	cold.units[1].impulse = Vector2(150, 0)
 	cold.step()
 	_check(cold.units[1].get("burn_left", 0) > 0 and _tile_events(cold, "wildfire_globe", "ember_ignite", 3 * beat).is_empty(),
 		"Wildfire Globe can't use a burn that its own hit started through Cinder Mage's passive.")
+	var dash := _tile_events(cold, "wildfire_globe", "retreat", 3 * beat)
+	_check(dash.size() == 1 and dash[0].to.distance_to(cold.units[1].pos) > dash[0].from.distance_to(cold.units[1].pos),
+		"Wildfire Globe creates space after the hit even when the target did not start burning.")
 
 
 func _check_direct_hit(sim: ArenaSim, id: String, tick: int, target: String, damage: int, premise: String) -> void:
