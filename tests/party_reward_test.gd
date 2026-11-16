@@ -13,9 +13,16 @@ const ORIGINAL_STARTERS := {
 }
 const EXCLUSIVE_COMMONS := {
 	"warden": ["reversal_plate", "rampart_rush"],
+	"bulwark": ["aegis_intercept", "shieldshock"],
+	"breaker": ["domino_maul", "impact_driver"],
 	"hexwright": ["convergence_pulse", "severing_tether"],
+	"wayfarer": ["mirror_dart", "veil_step"],
+	"lancer": ["phalanx_charge", "recoil_thrust"],
+	"cantor": ["guard_refrain", "echo_chime"],
 	"apothecary": ["tonic_dart", "catalyst_flask"],
+	"rune_smith": ["hammer_stamp", "quick_etch"],
 	"starshot": ["backdraft_bolt", "parallax_shot"],
+	"cinder_mage": ["cinder_brand", "wildfire_globe"],
 	"duelist": ["pinpoint_lunge", "vanishing_cut"],
 }
 
@@ -40,6 +47,7 @@ func _run() -> void:
 	_check_signature_milestones()
 	_check_recruit_specialty_drafts("starshot", "assault")
 	_check_recruit_specialty_drafts("hexwright", "support")
+	_check_third_hero_specialties()
 	await _check_medium_rewards(game)
 	game.queue_free()
 	await process_frame
@@ -67,7 +75,7 @@ func _check_class_decks() -> void:
 		var common: Array = ClassDecks.common(class_id)
 		var uncommon: Array = ClassDecks.uncommon(class_id)
 		var signature := ClassDecks.signature(class_id)
-		var exclusive: Array = EXCLUSIVE_COMMONS.get(class_id, [])
+		var exclusive: Array = EXCLUSIVE_COMMONS[class_id]
 		var expansion_common_count := 8 + exclusive.size()
 		var common_count := 10 + expansion_common_count
 		_check(common.size() == common_count and common.all(func(id: String):
@@ -84,7 +92,7 @@ func _check_class_decks() -> void:
 		_check(uncommon.filter(func(id: String): return signature_owners.has(id)) == [signature],
 			"%s should list only its own signature." % class_id)
 		var specialties := ClassDecks.specialties(class_id)
-		_check(specialties.size() == (0 if exclusive.is_empty() else 4) and exclusive.all(func(id: String):
+		_check(specialties.size() == 4 and exclusive.all(func(id: String):
 			return id in specialties), "%s should have its own specialty list." % class_id)
 		for id: String in specialties:
 			var tier_sizes := TilePacking.forge_tiers(id).map(func(tier: Array): return tier.size())
@@ -135,12 +143,13 @@ func _check_specialty_opening_drafts(hero_id: String) -> void:
 	var run := FrontierRun.new()
 	run.load_save(save_path)
 	var specialties := ClassDecks.specialties(hero_id)
+	var attacking := specialties.filter(func(id: String): return ArenaSim.TILES[id].damage > 0)
 	var is_starshot := hero_id == "starshot"
 	var original := ClassDecks.starter(hero_id)
 	var seen_starters := {}
 	var seen_rewards := {}
 	var regular_drafts_without_copy := 0
-	for seed_value: int in [2, 5, 7, 9, 11, 13, 16, 17]:
+	for seed_value in range(1, 17):
 		var started := run.start_run(seed_value)
 		run.data.offers = [hero_id]
 		started = started and run.choose_hero(hero_id) and run.choose_relic("pocket_bell")
@@ -152,7 +161,8 @@ func _check_specialty_opening_drafts(hero_id: String) -> void:
 		var starter_specialties := starter_offers.filter(func(id: String): return id in specialties)
 		var shared := "shot" if is_starshot else "bash"
 		_check(starter_offers.size() == 3 and original in starter_offers and shared in starter_offers \
-			and starter_specialties.size() == 1, "%s's starter draft should include one rotating specialty." % hero_id)
+			and starter_specialties.size() == 1 and starter_specialties.front() in attacking,
+			"%s's starter draft should include one rotating attacking specialty." % hero_id)
 		var starter: String = starter_specialties.front() if not starter_specialties.is_empty() else original
 		seen_starters[starter] = true
 		var rewarded := run.choose_starter(starter) and run.finish_combat(true, run.data.heroes[0].max_hp)
@@ -176,7 +186,8 @@ func _check_specialty_opening_drafts(hero_id: String) -> void:
 		_check(starter in run._standard_rewards() and run.reward_hint(starter) == "Third copy",
 			"An owned pair should keep its upgrade opportunity in a later draft.")
 		run.abandon_run()
-	_check(seen_starters.size() >= 3 and seen_rewards.size() >= 3, "%s should see rotating Easy specialties." % hero_id)
+	_check(seen_starters.size() >= mini(3, attacking.size()) and seen_rewards.size() >= 3,
+		"%s should see rotating Easy specialties." % hero_id)
 	if is_starshot:
 		_check(regular_drafts_without_copy > 0, "Starshot should sometimes see an ordinary draft without a second copy.")
 
@@ -286,6 +297,10 @@ func _draft_offers_rare(run: FrontierRun, signature: String) -> bool:
 	return run.data.offers.any(func(id: String): return id in TilePacking.next_options(signature))
 
 
+func _reserved_specialty(run: FrontierRun, hero_id: String) -> String:
+	return run.data.get("recruit_specialties", {}).get(hero_id, "")
+
+
 func _check_recruit_specialty_drafts(recruit: String, loadout_choice: String) -> void:
 	var run := FrontierRun.new()
 	run.load_save(save_path)
@@ -298,7 +313,7 @@ func _check_recruit_specialty_drafts(recruit: String, loadout_choice: String) ->
 	started = started and run.finish_combat(true, 100) and run.reward("skip") and run.choose_boss_relic("skip")
 	run.data.offers = [recruit]
 	started = started and run.choose_recruit(recruit) and run.choose_recruit_loadout(loadout_choice)
-	_check(started and not run.data.has("recruit_specialty"), "A new Medium recruit starts without specialty history.")
+	_check(started and not run.data.has("recruit_specialties"), "A new Medium recruit starts without specialty history.")
 	if not started:
 		run.abandon_run()
 		return
@@ -319,7 +334,7 @@ func _check_recruit_specialty_drafts(recruit: String, loadout_choice: String) ->
 	if not reached_gate:
 		run.abandon_run()
 		return
-	var first: String = run.data.get("recruit_specialty", "")
+	var first := _reserved_specialty(run, recruit)
 	_check(first in eligible and first in run.data.offers and run.data.offers.size() == 3,
 		"The Upper Gate draft reserves a class specialty from a family %s does not own." % recruit)
 	_check(_draft_offers_rare(run, ClassDecks.signature(recruit)) and starter in run.data.offers \
@@ -327,12 +342,12 @@ func _check_recruit_specialty_drafts(recruit: String, loadout_choice: String) ->
 		"The reserved specialty must fit beside %s's Rare signature and third-copy upgrade." % recruit)
 	var gate_offers: Array = run.data.offers.duplicate()
 	_check(run.load_save(save_path) and run.reward_lane() == 1 and run.data.offers == gate_offers \
-		and run.data.get("recruit_specialty") == first,
+		and _reserved_specialty(run, recruit) == first,
 		"Resuming a pending recruit draft must preserve its exact offers and specialty history.")
-	if recruit == "starshot":
-		run.data.starshot_recruit_specialty = first
-		run.data.erase("recruit_specialty")
-		_check(run.save() and run.load_save(save_path), "An older save can still carry Starshot's original specialty history.")
+	var legacy_key := "starshot_recruit_specialty" if recruit == "starshot" else "recruit_specialty"
+	run.data[legacy_key] = first
+	run.data.erase("recruit_specialties")
+	_check(run.save() and run.load_save(save_path), "An older save can still carry a scalar history value.")
 
 	# Seed 1 allows an event and a shop between the gate and the second ordinary battle.
 	var reached_second := run.reward("skip") and run.choose_node("8-0") and run.event_choice(0) \
@@ -342,7 +357,7 @@ func _check_recruit_specialty_drafts(recruit: String, loadout_choice: String) ->
 	if not reached_second:
 		run.abandon_run()
 		return
-	var second: String = run.data.get("recruit_specialty", "")
+	var second := _reserved_specialty(run, recruit)
 	_check(second in eligible and second != first and second in run.data.offers,
 		"The second battle reserves a different unowned specialty even after the first one was skipped.")
 	_check(starter in run.data.offers and run.reward_hint(starter) == "Third copy",
@@ -350,9 +365,87 @@ func _check_recruit_specialty_drafts(recruit: String, loadout_choice: String) ->
 	var reached_third := run.reward("skip") and run.choose_node("11-0") and run.finish_combat(true, [100, 100]) \
 		and run.reward("skip")
 	_check(reached_third and run.reward_lane() == 1 and run.data.offers.size() == 3 \
-		and run.data.get("recruit_specialty") == second,
+		and _reserved_specialty(run, recruit) == second,
 		"Later battle drafts are generated without reserving another recruit specialty.")
 	run.abandon_run()
+
+
+func _check_third_hero_specialties() -> void:
+	var run := FrontierRun.new()
+	run.load_save(save_path)
+	run.profile.medium_unlocked = true
+	run.profile.hard_unlocked = true
+	run.profile.marks = maxi(run.profile.marks, run.class_unlock_cost("cantor"))
+	var locked: bool = run.start_run(1) and "cantor" not in run.data.offers and not run.choose_preferred_hero("cantor") \
+		and run.choose_preferred_hero("warden") and run.choose_relic("pocket_bell") \
+		and run.choose_starter(ClassDecks.starter("warden")) and run.finish_combat(true, 100)
+	_check(locked and not run.data.offers.any(func(id: String): return id in EXCLUSIVE_COMMONS.cantor),
+		"An unpurchased Cantor and its exclusive Commons should be absent from the Warden's run.")
+	run.abandon_run()
+	var purchased := run.buy_class("cantor") and run.load_save(save_path) and run.start_run(1) \
+		and run.choose_preferred_hero("cantor") and run.choose_relic("pocket_bell")
+	_check(purchased and ClassDecks.starter("cantor") in run.data.offers and run.data.offers.any(func(id: String):
+		return id in ClassDecks.specialties("cantor") and ArenaSim.TILES[id].damage > 0),
+		"After chart purchase and reload, Cantor is selectable and its authored specialty joins the starter draft.")
+	run.abandon_run()
+
+	# This seed offers Starshot after Act I and the purchased Cantor after Act II.
+	var started := run.start_run(1, "hard") and run.choose_preferred_hero("warden") and run.choose_relic("pocket_bell") \
+		and run.choose_starter(ClassDecks.starter("warden")) and _walk_to_recruitment(run) \
+		and run.choose_recruit("starshot") and run.choose_recruit_loadout("assault") and _walk_to_recruitment(run) \
+		and run.choose_recruit("cantor") and run.choose_recruit_starter(ClassDecks.starter("cantor"))
+	_check(started and run.loadout.lanes.size() == 3, "Taking two legal Hard boss routes should add a third hero.")
+	if not started:
+		run.abandon_run()
+		return
+	var first_recruit := _reserved_specialty(run, "starshot")
+	_check(first_recruit in ClassDecks.specialties("starshot"), "The earlier Hard recruit should already have specialty history.")
+
+	# Reserve the support tile by equipping the other three families before the gate.
+	var start: int = ArenaSim.TILES[ClassDecks.starter("cantor")].width
+	for id: String in ClassDecks.specialties("cantor"):
+		if ArenaSim.TILES[id].damage > 0:
+			run.loadout.lanes[2].append(_signature_tile(id, start))
+			start += ArenaSim.TILES[id].width
+	var gate: Dictionary = run.available_nodes()[0]
+	var reached := run.choose_node(gate.id) and run.finish_combat(true, [100, 100, 100]) \
+		and run.reward("skip") and run.reward("skip")
+	_check(reached and run.reward_lane() == 2 and "line_guard" in run.data.offers \
+		and _reserved_specialty(run, "cantor") == "line_guard" and _draft_offers_rare(run, ClassDecks.signature("cantor")),
+		"The third hero's gate draft can reserve a support specialty beside their Rare signature.")
+	var offers: Array = run.data.offers.duplicate()
+	_check(run.load_save(save_path) and run.reward_lane() == 2 and run.data.offers == offers \
+		and _reserved_specialty(run, "cantor") == "line_guard" and _reserved_specialty(run, "starshot") == first_recruit,
+		"Reloading the Hard gate draft should preserve separate histories and the third hero's choices.")
+	run.abandon_run()
+
+
+func _walk_to_recruitment(run: FrontierRun) -> bool:
+	while run.data.phase != "recruit":
+		match run.data.phase:
+			"combat":
+				var hp: Array = run.data.heroes.map(func(hero: Dictionary): return hero.hp)
+				if not run.finish_combat(true, hp):
+					return false
+			"reward":
+				var relics := run.elite_relic_offers()
+				if not relics.is_empty() and not run.choose_elite_relic(relics[0].id):
+					return false
+				if not run.reward("skip"):
+					return false
+			"map":
+				var nodes := run.available_nodes()
+				if nodes.is_empty() or not run.choose_node(nodes[0].id):
+					return false
+			"boss_relic":
+				if not run.choose_boss_relic("skip"):
+					return false
+			"event", "shop", "rest":
+				if not run.leave_node():
+					return false
+			_:
+				return false
+	return true
 
 
 func _check_medium_rewards(game: Control) -> void:

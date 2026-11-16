@@ -6,6 +6,8 @@ const COMMON_IDS := [
 	"backdraft_bolt", "parallax_shot",
 	"reversal_plate", "rampart_rush", "convergence_pulse", "severing_tether",
 	"tonic_dart", "catalyst_flask", "pinpoint_lunge", "vanishing_cut",
+	"aegis_intercept", "shieldshock", "domino_maul", "impact_driver", "phalanx_charge", "recoil_thrust",
+	"guard_refrain", "echo_chime", "hammer_stamp", "quick_etch", "mirror_dart", "veil_step", "cinder_brand", "wildfire_globe",
 ]
 const UNCOMMON_IDS := [
 	"ward_lantern", "piercing_burst", "reverse_cut", "flare_mortar",

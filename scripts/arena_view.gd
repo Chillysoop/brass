@@ -685,6 +685,7 @@ func _draw_status_badges(unit: Dictionary, bar: Rect2) -> void:
 		badges.append("burn")
 	if int(unit.get("arsenal_mark", {}).get("expires", -1)) >= combat_tick \
 			or int(unit.get("cantor_mark", {}).get("expires", -1)) >= combat_tick \
+			or int(unit.get("chorus_echo", {}).get("expires", -1)) >= combat_tick \
 			or int(unit.get("crown_spotter_until", 0)) > combat_tick:
 		badges.append("mark")
 	if int(unit.get("haste_until", 0)) > combat_tick:

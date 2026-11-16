@@ -10,6 +10,9 @@ const TECHNIQUE_GAINS := {
 	"dash_followup_damage": 2, "long_critical_bonus": 0.05,
 	"recent_block_damage": 2, "repeat_target_damage": 2, "duel_kill_bonus": 2,
 	"convergence_damage_per_pull": 1, "isolation_damage": 2, "healing_damage_bonus": 1,
+	"intercept_guard": 2, "block_wave_damage": 2, "charge_path_damage": 2, "collision_bonus": 2, "lance_return_bonus": 2,
+	"harmony_guard": 1, "chorus_echo_damage": 2, "rune_quick_bonus": 1, "rune_heavy_bonus": 2,
+	"teleport_followup_damage": 2, "blink_on_hit_retreat": 10.0, "ember_burn_damage": 1,
 }
 const AUTHORED_SIGNATURES := {
 	"rampart_counter": {
@@ -282,6 +285,14 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 			lines.append("Rush the target if the path is clear.")
 		if tile.get("blink_strike", false):
 			lines.append("Blink beside the target and strike if there is a clear landing.")
+		if tile.has("blink_on_hit_retreat"):
+			lines.append("Fire a shot, then blink up to %d units away from the target if there is room." % int(tile.blink_on_hit_retreat))
+		if tile.has("teleport_followup_damage"):
+			lines.append("Deal %d extra damage if you successfully teleported in the previous %d beats." % [
+				tile.teleport_followup_damage, tile.teleport_followup_beats])
+		if tile.has("charge_path_damage"):
+			lines.append("Deal %d damage to other enemies whose bodies come within %d units of your charge path." % [
+				tile.charge_path_damage, int(tile.charge_path_radius)])
 		lines.append("%d reach." % int(tile.range))
 		if tile.has("pull_before_hit"):
 			lines.append("Pull the target toward you with %d force before the hit." % int(tile.pull))
@@ -307,6 +318,9 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 		if tile.has("recent_block_damage"):
 			lines.append("Deal %d extra damage if your Guard absorbed an enemy hit in the last %d beats." % [
 				tile.recent_block_damage, tile.recent_block_beats])
+		if tile.has("block_wave_damage"):
+			lines.append("When that bonus triggers, deal %d damage to other enemies within %d units of the target." % [
+				tile.block_wave_damage, int(tile.block_wave_radius)])
 		if tile.has("repeat_target_damage"):
 			lines.append("Deal %d extra damage if the last attack you landed hit the same enemy." % tile.repeat_target_damage)
 		if tile.has("splash"):
@@ -317,6 +331,8 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 			lines.append("Push the target with %d force." % int(tile.push))
 		if tile.has("collision_bonus"):
 			lines.append("If the pushed target collides with another enemy shortly afterward, deal %d extra collision damage to both." % tile.collision_bonus)
+		if tile.has("collision_chain_push"):
+			lines.append("Knock the second enemy onward for one more collision.")
 		if tile.has("sweep_push_radius"):
 			lines.append("Push other enemies within %d range of the impact away from you with %d force." % [
 				int(tile.sweep_push_radius), int(tile.sweep_push_force)])
@@ -355,17 +371,22 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 		if tile.has("chorus_guard"):
 			lines.append("Mark the target for %d beats. The next hit on it from another hero gives all living heroes %d Guard." % [
 				tile.chorus_guard_beats, tile.chorus_guard])
+		if tile.has("chorus_echo_damage"):
+			lines.append("Within %d beats, another hero can hit the target to echo %d damage to its nearest other enemy within %d units." % [
+				tile.chorus_echo_beats, tile.chorus_echo_damage, int(tile.chorus_echo_radius)])
 		if tile.has("lance_travel_bonus"):
 			lines.append("Gain up to %d damage for walking 80 units. Hitting with this upgrade resets the distance." % tile.lance_travel_bonus)
 		if tile.has("lance_return_bonus"):
-			lines.append("If this hit pushes an enemy, your next charging hit within %d beats deals %d extra damage." % [
-				tile.lance_return_beats, tile.lance_return_bonus])
+			var movement := "you dash away" if tile.has("retreat") else "this hit pushes an enemy"
+			lines.append("If %s, your next charging hit within %d beats deals %d extra damage." % [
+				movement, tile.lance_return_beats, tile.lance_return_bonus])
 		if tile.has("ember_burn_damage"):
 			var burn_target := "the target"
 			if tile.has("ember_burn_radius"):
 				burn_target = "surviving enemies within %d range of the impact" % int(tile.ember_burn_radius)
-			lines.append("If the target was pushed or pulled in the last 3 beats, burn %s for %d damage per beat for %d beats." % [
-				burn_target, tile.ember_burn_damage, tile.ember_burn_ticks])
+			var trigger := "was already burning" if tile.get("ember_burn_if_burning", false) else "was pushed or pulled in the last 3 beats"
+			lines.append("If the target %s, burn %s for %d damage per beat for %d beats." % [
+				trigger, burn_target, tile.ember_burn_damage, tile.ember_burn_ticks])
 	if tile.has("ally_guard"):
 		lines.append("On hit, give %d Guard to the living ally with the lowest HP. Gain it yourself if no ally is alive." % tile.ally_guard)
 	var healing_dart: bool = tile.get("heal_overflow_on_hit", false)
@@ -384,6 +405,10 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 	if tile.has("bastion_block_threshold"):
 		lines.append("On hit, ready a ward for %d beats. Absorb at least %d damage with Guard from a single enemy hit to give each living hero %d Guard once." % [
 			tile.bastion_beats, tile.bastion_block_threshold, tile.bastion_party_guard])
+	if tile.has("intercept_guard"):
+		lines.append("Gain %d Guard before your next intercept within %d beats." % [tile.intercept_guard, tile.intercept_beats])
+	if tile.has("harmony_guard"):
+		lines.append("Other heroes whose tiles finish on the same beat gain %d extra Guard." % tile.harmony_guard)
 	if tile.has("heal") and not healing_dart:
 		var recipient := "yourself"
 		if tile.get("party_heal", false):

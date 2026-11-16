@@ -22,10 +22,14 @@ func _initialize() -> void:
 	_check_catalyst_flask()
 	_check_warden_tiles()
 	_check_duelist_tiles()
+	_check_cantor_specialties()
+	_check_rune_specialties()
+	_check_wayfarer_specialties()
+	_check_cinder_specialties()
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Class masteries and new Warden, Duelist, and Apothecary tiles passed combat checks.")
+		print("Class masteries and class specialty tiles passed combat checks.")
 	quit(0 if failures.is_empty() else 1)
 
 
@@ -253,6 +257,110 @@ func _check_duelist_tiles() -> void:
 		"The next hit on a different target spends Vanishing Cut's kill bonus")
 	_check_direct_hit(cut, "shot", 7 * ArenaSim.TICKS_PER_BEAT, cut.units[2].id, ArenaSim.TILES.shot.damage + 2,
 		"Later attacks keep Duelist's normal streak but no longer receive the kill bonus")
+
+
+func _check_cantor_specialties() -> void:
+	var beat := ArenaSim.TICKS_PER_BEAT
+	var harmonized := _campaign_sandbox([[_tile("guard_refrain", 0)], [_tile("shot", 0)], [_tile("shot", 1)]],
+		[{"id": "cantor"}, {"id": "warden"}, {"id": "duelist"}])
+	_step_to(harmonized, 2 * beat - 1)
+	_check(harmonized.units[0].guard == 0 and harmonized.activations.is_empty(), "Guard Refrain waits until its right edge.")
+	harmonized.step()
+	var base: int = ArenaSim.TILES.guard_refrain.guard
+	var extra: int = ArenaSim.TILES.guard_refrain.harmony_guard
+	var guards := _tile_events(harmonized, "guard_refrain", "guard", 2 * beat)
+	_check(guards.map(func(event: Dictionary): return int(event.amount)) == [base, base, base, extra]
+		and guards.back().target == harmonized.units[1].id,
+		"Guard Refrain's bonus only protects the ally whose tile ends on the same beat.")
+
+	var chime := _campaign_sandbox([[_tile("echo_chime", 0), _tile("shot", 2)], [_tile("shot", 2), _tile("tap_bolt", 4)]],
+		[{"id": "cantor"}, {"id": "warden"}])
+	_step_to(chime, 5 * beat)
+	var echoed := _tile_events(chime, "echo_chime", "hit", 4 * beat)
+	var self_hit := chime.trace.find_custom(func(event: Dictionary):
+		return event.kind == "hit" and event.tile == "shot" and event.actor == chime.units[0].id)
+	_check(echoed.size() == 1 and echoed[0].actor == chime.units[0].id and echoed[0].target == chime.units[3].id
+		and echoed[0].get("chorus_echo", false) and echoed[0].amount == ArenaSim.TILES.echo_chime.chorus_echo_damage
+		and self_hit >= 0 and chime.trace.find(echoed[0]) > self_hit,
+		"Only a different hero triggers Echo Chime, and the extra hit belongs to the chime on the neighboring enemy.")
+	_check(_tile_events(chime, "echo_chime", "hit", 5 * beat).is_empty(), "Echo Chime is spent after its first allied echo.")
+
+
+func _check_rune_specialties() -> void:
+	var beat := ArenaSim.TICKS_PER_BEAT
+	var quick: int = ArenaSim.TILES.snap_shot.damage
+	var hammer: Dictionary = ArenaSim.TILES.hammer_stamp
+	var stamped := _fixture("rune_smith", "", [_tile("hammer_stamp", 0), _tile("snap_shot", 3),
+		_tile("snap_shot", 4), _tile("snap_shot", 5)])
+	stamped.units[1].pos = stamped.units[0].pos + Vector2(110, 0)
+	_step_to(stamped, 3 * beat - 1)
+	_check(stamped.activations.is_empty(), "Hammer Stamp can't charge the next tiles early.")
+	_step_to(stamped, 6 * beat)
+	var target: String = stamped.units[1].id
+	_check_direct_hit(stamped, "snap_shot", 4 * beat, target, quick + hammer.rune_quick_bonus + 5,
+		"Hammer Stamp's first quick hit includes Rune Smith's passive")
+	_check_direct_hit(stamped, "snap_shot", 5 * beat, target, quick + hammer.rune_quick_bonus, "Hammer Stamp charges a second quick hit")
+	_check_direct_hit(stamped, "snap_shot", 6 * beat, target, quick, "A third quick hit has no stamp charge")
+
+	var etched := _fixture("rune_smith", "", [_tile("quick_etch", 0), _tile("snap_shot", 1), _tile("iron_arc", 2)])
+	etched.units[1].pos = etched.units[0].pos + Vector2(110, 0)
+	_step_to(etched, 5 * beat)
+	_check_direct_hit(etched, "snap_shot", 2 * beat, etched.units[1].id, quick, "Quick Etch doesn't spend its charge on another quick attack")
+	_check_direct_hit(etched, "iron_arc", 5 * beat, etched.units[1].id,
+		ArenaSim.TILES.iron_arc.damage + ArenaSim.TILES.quick_etch.rune_heavy_bonus, "Quick Etch boosts the next wide attack")
+
+	var mixed := _fixture("rune_smith", "", [_tile("hammer_stamp", 0), _tile("quick_etch", 3),
+		_tile("snap_shot", 4), _tile("iron_arc", 5)])
+	mixed.units[1].pos = mixed.units[0].pos + Vector2(110, 0)
+	_step_to(mixed, 8 * beat)
+	_check_direct_hit(mixed, "snap_shot", 5 * beat, mixed.units[1].id, quick + hammer.rune_quick_bonus,
+		"Quick Etch preserves Hammer Stamp's remaining quick charge")
+	_check_direct_hit(mixed, "iron_arc", 8 * beat, mixed.units[1].id,
+		ArenaSim.TILES.iron_arc.damage + ArenaSim.TILES.quick_etch.rune_heavy_bonus, "The wide charge remains available too")
+
+
+func _check_wayfarer_specialties() -> void:
+	var beat := ArenaSim.TICKS_PER_BEAT
+	var sim := _fixture("wayfarer", "", [_tile("veil_step", 0), _tile("mirror_dart", 3), _tile("mirror_dart", 5)])
+	var origin: Vector2 = sim.units[0].pos
+	_step_to(sim, 2 * beat - 1)
+	_check(sim.units[0].pos.is_equal_approx(origin) and sim.activations.is_empty(), "Veil Step does not move or attack ahead of its right edge.")
+	sim.step()
+	var shot := _tile_events(sim, "veil_step", "hit", 2 * beat)
+	var blink := _tile_events(sim, "veil_step", "teleport", 2 * beat)
+	_check(shot.size() == 1 and shot[0].from.is_equal_approx(origin) and blink.size() == 1
+		and blink[0].to.distance_to(sim.units[1].pos) > origin.distance_to(sim.units[1].pos),
+		"Veil Step attacks from the starting point, then teleports away.")
+	_step_to(sim, 7 * beat)
+	var dart: Dictionary = ArenaSim.TILES.mirror_dart
+	_check_direct_hit(sim, "mirror_dart", 5 * beat, sim.units[1].id, dart.damage + dart.teleport_followup_damage,
+		"Mirror Dart uses a real teleport within its window")
+	_check_direct_hit(sim, "mirror_dart", 7 * beat, sim.units[1].id, dart.damage,
+		"Mirror Dart loses the teleport bonus after the window")
+
+
+func _check_cinder_specialties() -> void:
+	var beat := ArenaSim.TICKS_PER_BEAT
+	var spread := _campaign_sandbox([[_tile("wildfire_globe", 2)], [_tile("bellows_strike", 0), _tile("cinder_brand", 2)]],
+		[{"id": "cinder_mage"}, {"id": "warden"}])
+	spread.units[2].pos = spread.units[1].pos + Vector2(145, -48)
+	spread.units[3].pos = spread.units[2].pos + Vector2(70, 40)
+	_step_to(spread, 7 * beat)
+	var branded := _tile_events(spread, "cinder_brand", "ember_ignite", 4 * beat)
+	_check(branded.size() == 1 and branded[0].target == spread.units[2].id
+		and not _tile_events(spread, "bellows_strike", "push", 2 * beat).is_empty(),
+		"Cinder Brand ignites a target actually pushed earlier.")
+	var ignited := _tile_events(spread, "wildfire_globe", "ember_ignite", 5 * beat)
+	var delayed := _tile_events(spread, "wildfire_globe", "ember_tick", 6 * beat)
+	_check(ignited.size() == 2 and delayed.size() == 2 and delayed[0].amount == ArenaSim.TILES.wildfire_globe.ember_burn_damage,
+		"Wildfire Globe spreads an existing burn to the cluster and credits its delayed damage.")
+
+	var cold := _fixture("cinder_mage", "", [_tile("wildfire_globe", 0)])
+	_step_to(cold, 3 * beat - 1)
+	cold.units[1].impulse = Vector2(150, 0)
+	cold.step()
+	_check(cold.units[1].get("burn_left", 0) > 0 and _tile_events(cold, "wildfire_globe", "ember_ignite", 3 * beat).is_empty(),
+		"Wildfire Globe can't use a burn that its own hit started through Cinder Mage's passive.")
 
 
 func _check_direct_hit(sim: ArenaSim, id: String, tick: int, target: String, damage: int, premise: String) -> void:

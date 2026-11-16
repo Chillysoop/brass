@@ -2,11 +2,12 @@ extends SceneTree
 
 # From the repository root:
 # godot --headless --path . --script tools/class_build_audit.gd -- --output=class-audit.json
-# Options: --difficulty=easy, --through-marshal, --as-recruit, --seeds=1,2,3, --classes=warden,hexwright
-# The default Medium audit stops after the first boss. The recruit audit samples natural
-# offers and continues through the Marshal. All runs use fresh scratch saves, Preferred
-# Hero access, Pocket Bell, and the same route policy. Drafts repack equipped tiles,
-# stow displaced tiles, and skip rerolls and forges.
+# Options: --difficulty=easy|medium|hard, --through-marshal, --as-recruit,
+# --seeds=1,2,3, --classes=warden,hexwright
+# Medium stops at the first boss by default. Hard continues to the final boss.
+# Recruit audits consider natural class offers for the final party slot.
+# Audits including a locked class buy the complete class roster in scratch saves.
+# All drafts repack equipped tiles, stow displaced tiles, and skip rerolls and forges.
 
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
@@ -18,7 +19,15 @@ const POLICIES := {
 	"duelist": ["quick", "finisher"],
 	"apothecary": ["sustain", "tempo"],
 	"starshot": ["mobile", "precision"],
+	"bulwark": ["shelter", "heavy"],
+	"breaker": ["knockback", "heavy"],
+	"lancer": ["charge", "retreat"],
+	"cantor": ["mark", "shelter"],
+	"rune_smith": ["charged", "tempo"],
+	"wayfarer": ["blink", "retreat"],
+	"cinder_mage": ["cluster", "ember"],
 }
+const PARTNER_PRIORITY := ["warden", "hexwright", "apothecary", "starshot", "duelist"]
 const ROUTE_PRIORITY := ["elite", "battle", "shop", "event", "rest", "boss"]
 const ELITE_RELIC_PRIORITY := ["barrage_rack", "twin_bell", "longshot_prism", "siege_fuse", "switchback_lens", "afterimage"]
 const BOSS_RELIC_PRIORITY := ["tollkeeper_signet", "bellmaker_long_echo", "bellmaker_resonant_plate"]
@@ -28,12 +37,20 @@ const SPECIALTIES := {
 	"duelist": ["finishing_cut", "slip_cut", "pinpoint_lunge", "vanishing_cut"],
 	"apothecary": ["pilgrim_aid", "lantern_shot", "tonic_dart", "catalyst_flask"],
 	"starshot": ["retreat_shot", "spark_shot", "backdraft_bolt", "parallax_shot"],
+	"bulwark": ["iron_vow", "line_guard", "aegis_intercept", "shieldshock"],
+	"breaker": ["bellows_strike", "rake", "domino_maul", "impact_driver"],
+	"lancer": ["spur", "slip_cut", "phalanx_charge", "recoil_thrust"],
+	"cantor": ["line_guard", "lantern_shot", "guard_refrain", "echo_chime"],
+	"rune_smith": ["stave_crush", "tap_bolt", "hammer_stamp", "quick_etch"],
+	"wayfarer": ["retreat_shot", "slip_cut", "mirror_dart", "veil_step"],
+	"cinder_mage": ["furnace_burst", "bellows_strike", "cinder_brand", "wildfire_globe"],
 }
 
 var scratch := ""
 var difficulty := "medium"
 var through_marshal := false
 var as_recruit := false
+var unlock_roster := false
 
 
 func _initialize() -> void:
@@ -64,11 +81,12 @@ func _run() -> void:
 			return
 	var valid_seeds := not seeds.is_empty() and seeds.all(func(seed_value: int): return seed_value > 0)
 	var valid_classes := not classes.is_empty() and classes.all(func(class_id: String): return class_id in POLICIES)
-	var valid_scope := difficulty in ["easy", "medium"] and (not through_marshal or difficulty == "medium")
+	var valid_scope := difficulty in ["easy", "medium", "hard"] and (not through_marshal or difficulty != "easy")
 	if not valid_seeds or not valid_classes or not valid_scope:
-		printerr("Expected positive seeds, supported starter classes, and an Easy or Medium scope.")
+		printerr("Expected positive seeds, supported classes, and a valid difficulty and recruit scope.")
 		quit(2)
 		return
+	unlock_roster = classes.any(func(class_id: String): return class_id in FrontierRun.CLASS_UNLOCKS)
 	var temp := OS.get_environment("TEMP")
 	if temp.is_empty():
 		temp = OS.get_environment("TMPDIR")
@@ -103,7 +121,7 @@ func _run() -> void:
 			quit(2)
 			return
 		file.store_string(JSON.stringify({"difficulty": difficulty, "through_marshal": through_marshal, "as_recruit": as_recruit,
-			"seeds": seeds, "specialties": SPECIALTIES, "summary": summary, "runs": rows}, "\t"))
+			"unlocked_roster": unlock_roster, "seeds": seeds, "specialties": SPECIALTIES, "summary": summary, "runs": rows}, "\t"))
 	quit(1 if rows.any(func(row: Dictionary): return row.result == "incomplete") else 0)
 
 
@@ -115,9 +133,11 @@ func _summarize(class_id: String, rows: Array) -> Dictionary:
 	var final_overlap := 0.0
 	var paired_builds := 0
 	var different_families := 0
+	var reached := 0
 	for index in range(rows.size()):
 		var row: Dictionary = rows[index]
 		wins += int(row.result == "victory")
+		reached += int(not row.final.is_empty())
 		var draft_index := 0
 		for draft: Dictionary in row.drafts:
 			if draft.kind != "reward" or draft.lane != row.lane or draft.encounter not in ["opening", "battle"]:
@@ -141,7 +161,7 @@ func _summarize(class_id: String, rows: Array) -> Dictionary:
 	var overlap := final_overlap / maxi(1, paired_builds)
 	print("%s summary: %d/%d wins, early specialty drafts %s, mean final family overlap %.3f across %d paired seeds" % [
 		class_id, wins, rows.size(), early, overlap, paired_builds])
-	return {"wins": wins, "total": rows.size(), "early_drafts": early, "paired_final_builds": paired_builds,
+	return {"wins": wins, "total": rows.size(), "reached_class": reached, "early_drafts": early, "paired_final_builds": paired_builds,
 		"paired_final_family_overlap": overlap, "different_final_families": different_families}
 
 
@@ -162,27 +182,54 @@ func _lead_for(class_id: String) -> String:
 	return "warden" if class_id == "starshot" else "starshot"
 
 
+func _setup_profile(run: FrontierRun) -> bool:
+	run.profile.medium_unlocked = true
+	run.profile.hard_unlocked = difficulty == "hard"
+	if unlock_roster:
+		for id: String in FrontierRun.CLASS_UNLOCKS:
+			run.profile.marks += run.class_unlock_cost(id)
+		for id: String in FrontierRun.CLASS_UNLOCKS:
+			if not run.buy_class(id):
+				return false
+	return true
+
+
+func _hero_lane() -> int:
+	return int(FrontierRun.SEGMENT_COUNTS[difficulty]) - 1 if as_recruit else 0
+
+
+func _pick_recruit(offers: Array, class_id: String, lane: int) -> String:
+	if not as_recruit:
+		return _priority_pick(offers, PARTNER_PRIORITY)
+	if lane == _hero_lane():
+		return class_id
+	return _priority_pick(offers.filter(func(id: String): return id != class_id), PARTNER_PRIORITY)
+
+
 func _natural_recruit_offer(class_id: String, seed_value: int) -> bool:
 	var probe := FrontierRun.new()
 	probe.save_path = scratch.path_join("offer-%s-%d.json" % [class_id, seed_value])
-	probe.profile.medium_unlocked = true
-	if not probe.start_run(seed_value, difficulty) or not probe.choose_preferred_hero(_lead_for(class_id)):
+	if not _setup_profile(probe) or not probe.start_run(seed_value, difficulty) or not probe.choose_preferred_hero(_lead_for(class_id)):
 		return false
-	probe.data.node = probe.data.layers[FrontierRun.NODES_PER_SEGMENT - 1][0]
-	probe._start_recruitment()
+	# Use the live recruitment roll at each deterministic boss node in a scratch run.
+	for lane in range(1, _hero_lane() + 1):
+		probe.data.node = probe.data.layers[lane * FrontierRun.NODES_PER_SEGMENT - 1][0]
+		probe._start_recruitment()
+		if lane < _hero_lane():
+			probe.data.heroes.append({"id": _pick_recruit(probe.data.offers, class_id, lane)})
 	return class_id in probe.data.offers
 
 
 func _expedition(class_id: String, seed_value: int, policy: String) -> Dictionary:
 	var run := FrontierRun.new()
 	run.save_path = scratch.path_join("%s-%d-%s.json" % [class_id, seed_value, policy])
-	run.profile.medium_unlocked = true
 	var lead := _lead_for(class_id)
-	var hero_lane := 1 if as_recruit else 0
+	var hero_lane := _hero_lane()
 	var lead_policy: String = POLICIES[lead][0] if as_recruit else policy
 	var row := {"class": class_id, "seed": seed_value, "policy": policy, "lane": hero_lane, "result": "incomplete", "phase": "",
 		"drafts": [], "fights": [], "route": [], "starter_trials": [], "final": [], "partner": "", "relics": []}
-	if not run.start_run(seed_value, difficulty) or not run.choose_preferred_hero(lead) or not run.choose_relic("pocket_bell"):
+	if not _setup_profile(run) or not run.start_run(seed_value, difficulty) \
+			or not run.choose_preferred_hero(lead) or not run.choose_relic("pocket_bell"):
 		return row
 	var starters: Array = run.data.offers.duplicate()
 	var starter: String = _best_tile(starters, lead_policy, lead, true)
@@ -191,7 +238,7 @@ func _expedition(class_id: String, seed_value: int, policy: String) -> Dictionar
 		return row
 	if not as_recruit and policy == POLICIES[class_id][0]:
 		row.starter_trials = _starter_trials(run.encounter(), starters)
-	for step in range(75):
+	for step in range(110):
 		match run.data.phase:
 			"combat":
 				var encounter := run.encounter()
@@ -201,7 +248,7 @@ func _expedition(class_id: String, seed_value: int, policy: String) -> Dictionar
 				row.fights.append(fight)
 				if fight.result.is_empty() or not run.finish_combat(fight.result == "victory", fight.hp):
 					break
-				if encounter.encounter == "boss" and not through_marshal:
+				if encounter.encounter == "boss" and not through_marshal and difficulty != "hard":
 					row.result = fight.result
 					break
 			"reward":
@@ -224,15 +271,16 @@ func _expedition(class_id: String, seed_value: int, policy: String) -> Dictionar
 				if not run.choose_boss_relic(_priority_pick(run.data.offers, BOSS_RELIC_PRIORITY)):
 					break
 			"recruit":
-				var recruit := class_id if as_recruit else _priority_pick(run.data.offers, ["warden", "hexwright", "apothecary", "starshot", "duelist"])
+				var recruit := _pick_recruit(run.data.offers, class_id, run.data.heroes.size())
 				row.partner = lead if as_recruit else recruit
 				if not run.choose_recruit(recruit):
 					break
 			"recruit_starter":
-				var loadout := _recruit_loadout(run.recruit_loadout_offers(), policy, class_id)
+				var lane: int = run.data.heroes.size()
+				var loadout := _recruit_loadout(run.recruit_loadout_offers(), policy, class_id) if lane == hero_lane else "assault"
 				if not run.choose_recruit_loadout(loadout):
 					break
-				row.drafts.append({"node": "Recruit", "kind": "loadout", "lane": 1, "pick": loadout, "tiles": _ids(run.loadout.lanes[1])})
+				row.drafts.append({"node": "Recruit", "kind": "loadout", "lane": lane, "pick": loadout, "tiles": _ids(run.loadout.lanes[lane])})
 			"shop":
 				if run.data.heroes.any(func(hero: Dictionary): return hero.hp <= hero.max_hp - 15):
 					run.shop_heal()
@@ -455,7 +503,7 @@ func _best_build(pool: Array, policy: String, class_id: String) -> Array:
 
 
 func _order_tiles(ids: Array, policy: String) -> void:
-	var lanes := ["mobile", "cluster", "guard", "sustain", "tempo"]
+	var lanes := ["mobile", "cluster", "guard", "sustain", "tempo", "charged", "ember", "blink"]
 	if policy not in lanes:
 		return
 	# Place a setup tile immediately before each matching payoff when both fit.
@@ -475,6 +523,17 @@ func _order_tiles(ids: Array, policy: String) -> void:
 			"sustain", "tempo":
 				if spec.has("healing_damage_bonus"):
 					setup = &"heal"
+			"ember":
+				if spec.has("displaced_bonus") or spec.has("ember_burn_damage"):
+					setup = &"pull"
+			"blink":
+				if spec.has("teleport_followup_damage"):
+					setup = &"blink_on_hit_retreat"
+		if policy == "charged" and int(spec.width) <= 2 and int(spec.damage) > 0:
+			var heavy := ids.find_custom(func(id: String): return int(ArenaSim.TILES[id].width) >= 3)
+			if heavy >= 0:
+				var id: String = ids.pop_at(heavy)
+				ids.insert(ids.find(payoff), id)
 		if setup.is_empty():
 			continue
 		var producer := ids.find_custom(func(id: String): return id != payoff and float(ArenaSim.TILES[id].get(setup, 0)) > 0)
@@ -506,8 +565,22 @@ func _build_score(ids: Array, policy: String, class_id: String) -> float:
 				score += float(payoff.guard_bonus) * 0.55
 			if payoff.has("healing_damage_bonus") and float(setup.get("heal", 0)) > 0:
 				score += float(payoff.healing_damage_bonus) * 0.50
+			if class_id == "rune_smith" and int(setup.width) >= 3 and int(payoff.width) <= 2 and int(payoff.damage) > 0:
+				score += 5.0 if policy == "charged" else 2.5
+			if payoff.get("charge", false) and int(payoff.width) <= int(setup.get("lance_return_beats", 0)):
+				score += float(setup.get("lance_return_bonus", 0)) * 0.65
+			if payoff.has("teleport_followup_damage") and _teleports(prior, setup):
+				score += float(payoff.teleport_followup_damage) * 0.72
+			if int(payoff.damage) > 0 and int(payoff.width) >= 3:
+				score += float(setup.get("rune_heavy_bonus", 0)) * 0.65
+			elif int(payoff.damage) > 0:
+				score += float(setup.get("rune_quick_bonus", 0)) * 0.84
 		prior = id
 	return score
+
+
+func _teleports(id: String, tile: Dictionary) -> bool:
+	return _family(id) == "blink" or tile.get("blink_strike", false) or tile.has("blink_on_hit_retreat")
 
 
 func _tile_score(id: String, policy: String, class_id: String) -> float:
@@ -532,6 +605,8 @@ func _tile_score(id: String, policy: String, class_id: String) -> float:
 	score += float(tile.get("isolation_damage", 0)) * (0.72 if policy == "isolate" else 0.35)
 	score += float(tile.get("repeat_target_damage", 0)) * (0.76 if policy == "quick" else 0.55)
 	score += float(tile.get("duel_kill_bonus", 0)) * (0.80 if policy == "finisher" else 0.30)
+	score += float(tile.get("block_wave_damage", 0)) * 0.20 + float(tile.get("charge_path_damage", 0)) * 0.40
+	score += float(tile.get("chorus_mark_bonus", 0)) * 0.48 + float(tile.get("collision_bonus", 0)) * 0.28
 	score += float(tile.get("distance_bonus", 0)) * (1.18 if policy == "precision" else 0.66)
 	score += (2.0 if ranged and damage > 0.0 else 0.0) + minf(2.5, displacement / 180.0)
 	if tile.has("long_critical_bonus"):
@@ -543,7 +618,7 @@ func _tile_score(id: String, policy: String, class_id: String) -> float:
 		"knockback":
 			score += minf(10.0, pushing / 50.0) + displaced * 0.48
 		"cluster":
-			score += splash * 0.88 + displaced * 0.38
+			score += splash * 0.88 + displaced * 0.38 + (2.0 if tile.has("ember_burn_radius") else 0.0)
 		"isolate":
 			score += minf(10.0, pulling / 46.0) + displaced * 0.68 + guard * 0.32
 		"quick", "tempo":
@@ -561,6 +636,25 @@ func _tile_score(id: String, policy: String, class_id: String) -> float:
 				score += 7.0
 		"partner":
 			score += guard * 0.7 + minf(6.0, displacement / 60.0)
+		"shelter":
+			score += guard * (1.5 if tile.get("support") == "party" else 0.8) + heal * 0.4
+			score += float(tile.get("intercept_guard", 0)) * 0.8 + float(tile.get("harmony_guard", 0)) * 0.6
+		"heavy":
+			var wide_hit := damage > 0.0 and int(tile.width) >= 3
+			score += (damage * 0.21 if wide_hit else 0.0) + float(tile.get("guard_break", 0)) * 0.65
+		"charge":
+			score += (8.0 if tile.get("charge", false) else 0.0) + float(tile.get("lance_travel_bonus", 0)) * 0.62
+		"retreat":
+			var retreat := float(tile.get("retreat", tile.get("blink_on_hit_retreat", 0)))
+			score += minf(9.0, retreat * 0.072) + float(tile.get("ranged_followup_bonus", 0)) * 0.7
+		"mark":
+			score += (mark + float(tile.get("chorus_mark_bonus", 0))) * 0.85 + float(tile.get("ally_guard", 0)) * 0.45
+		"charged":
+			score += 2.5 if damage > 0.0 and int(tile.width) >= 3 else 0.0
+		"blink":
+			score += 9.0 if _teleports(id, tile) else 0.0
+		"ember":
+			score += displaced * 0.82 + float(tile.get("ember_burn_damage", 0)) * 0.80 + minf(6.0, displacement / 130.0)
 	if class_id == "apothecary" and damage > 0.0:
 		score += 1.5
 	return score

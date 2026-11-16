@@ -40,6 +40,13 @@ const MOTIF_COLORS := {
 	"convergence_pulse": Color("#b48cf2"), "severing_tether": Color("#64cdd4"),
 	"tonic_dart": Color("#9de7a5"), "catalyst_flask": Color("#e2ca69"),
 	"pinpoint_lunge": Color("#f4e9b8"), "vanishing_cut": Color("#dc92c5"),
+	"aegis_intercept": Color("#79c3d2"), "shieldshock": Color("#71a6e5"),
+	"domino_maul": Color("#ed9565"), "impact_driver": Color("#c9a087"),
+	"phalanx_charge": Color("#f3c577"), "recoil_thrust": Color("#b4cba0"),
+	"guard_refrain": Color("#98d7c1"), "echo_chime": Color("#d1a6dd"),
+	"hammer_stamp": Color("#ffb478"), "quick_etch": Color("#c1bfdc"),
+	"mirror_dart": Color("#a5caff"), "veil_step": Color("#ac91f2"),
+	"cinder_brand": Color("#f7997f"), "wildfire_globe": Color("#e8af51"),
 }
 
 const MOTIF_VARIANTS := {
@@ -55,6 +62,7 @@ const MOTIF_VARIANTS := {
 const SIGNATURE_EFFECTS := {
 	"bash": "hammer", "shield_ram": "hammer", "rebound": "hammer", "bulwark_charge": "hammer",
 	"slam": "hammer", "meteor_seal": "meteor",
+	"domino_maul": "hammer", "impact_driver": "hammer", "hammer_stamp": "hammer",
 }
 
 
@@ -97,7 +105,7 @@ static func _style(base_id: String, tile: Dictionary) -> String:
 		if int(tile.get("heal", 0)) > 0:
 			return "heal"
 		return "ward" if tile.get("support", "self") != "self" else "guard"
-	if tile.get("family", "") == "blink" or tile.get("blink_strike", false):
+	if tile.get("family", "") == "blink" or tile.get("blink_strike", false) or tile.has("blink_on_hit_retreat"):
 		return "blink"
 	if tile.get("charge", false) or base_id == "bulwark_charge":
 		return "dash"
@@ -107,16 +115,20 @@ static func _style(base_id: String, tile: Dictionary) -> String:
 	match base_id:
 		"bash", "shield_ram", "rebound", "shove", "shield_tap", "bellows_strike", "rampart_counter", "riposte", "reversal_plate":
 			return "thrust"
-		"jab", "pike_thrust", "needle_point":
+		"jab", "pike_thrust", "needle_point", "aegis_intercept", "recoil_thrust":
 			return "thrust"
 		"sweep", "iron_arc", "crosscut":
 			return "spin"
-		"meteor_seal", "meteor_volley", "flare_mortar", "short_fuse", "furnace_burst", "cinder_wave":
+		"meteor_seal", "meteor_volley", "flare_mortar", "short_fuse", "furnace_burst", "cinder_wave", "wildfire_globe", "shieldshock":
 			return "burst"
 		"rail_shot", "star_piercer", "rivet_bolt", "tap_bolt", "sundering_bolt", "spark_shot", "backdraft_bolt", "tonic_dart":
 			return "bolt"
 		"chorus_bolt":
 			return "ward" if tile.has("chorus_guard") else "mark"
+		"guard_refrain":
+			return "ward"
+		"echo_chime", "cinder_brand":
+			return "mark"
 	if tile.get("family", "") == "shot" or tile.get("ranged", false):
 		if tile.has("mark_bonus") or tile.has("chorus_mark_bonus"):
 			return "mark"

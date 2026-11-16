@@ -11,6 +11,8 @@ const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 const ClassMasteries = preload("res://scripts/class_masteries.gd")
 const StarterSpecialtyEffects = preload("res://scripts/starter_specialty_effects.gd")
 const ApothecaryTiles = preload("res://scripts/apothecary_tiles.gd")
+const VanguardSpecialties = preload("res://scripts/vanguard_specialties.gd")
+const ArtificeSpecialties = preload("res://scripts/artifice_specialties.gd")
 const PILOT_ENEMY_SCRIPTS := {
 	"brass": BrassVarietyEnemies, "glass": GlassPilotEnemies,
 	"crown": CrownVarietyEnemies, "moonwreck": MoonPilotEnemies,
@@ -478,7 +480,8 @@ const CORE_TILES := {
 	}
 }
 
-static var _arsenal_tiles: Dictionary = ArsenalTiles.SPECS.merged(ClassExpansionTiles.SPECS)
+static var _arsenal_tiles: Dictionary = ArsenalTiles.SPECS.merged(ClassExpansionTiles.SPECS).merged(
+	VanguardSpecialties.SPECS).merged(ArtificeSpecialties.SPECS)
 static var TILES: Dictionary = CORE_TILES.merged(_arsenal_tiles)
 static var FORGE_FAMILIES: Dictionary = CORE_FORGE_FAMILIES.duplicate()
 
@@ -541,7 +544,7 @@ static func critical_chance(class_id: String, tile_id: String, distance: float) 
 
 static func is_blink_tile(tile_id: String) -> bool:
 	var tile: Dictionary = TILES.get(tile_id, {})
-	return tile.get("family", "") == "blink" or tile.get("blink_strike", false)
+	return tile.get("family", "") == "blink" or tile.get("blink_strike", false) or tile.has("blink_on_hit_retreat")
 
 
 static func can_trigger_afterimage(tile_id: String) -> bool:
@@ -1475,7 +1478,7 @@ func _matches_mastery_hit(trigger: String, actor: Dictionary, target: Dictionary
 		"new_target_hit": return actor.get("focus_target", "") != target.id
 		"low_hp_hit": return 2 * int(target.hp) <= int(target.max_hp)
 		"marked_hit":
-			for key: String in ["arsenal_mark", "ally_mark", "cantor_mark"]:
+			for key: String in ["arsenal_mark", "ally_mark", "cantor_mark", "chorus_echo"]:
 				if int(target.get(key, {}).get("expires", -1)) >= tick:
 					return true
 	return false
@@ -1553,7 +1556,8 @@ func _record_mastery(message: String) -> void:
 func _add_tile_visual_cue(actor: Dictionary, tile_id: String, origin: Vector2, first_event: int) -> void:
 	var target := _find_unit(_activation.target)
 	var tile: Dictionary = TILES[tile_id]
-	var radius: float = tile.get("radius", tile.get("splash", tile.get("convergence_radius", tile.get("guard_radius", 0.0))))
+	var radius: float = tile.get("radius", tile.get("splash", tile.get("convergence_radius",
+		tile.get("block_wave_radius", tile.get("guard_radius", 0.0)))))
 	var impact: Vector2 = target.get("pos", origin)
 	var anchored := false
 	var contact_points: Array[Vector2] = []
@@ -1788,6 +1792,7 @@ func _heal_from_tile(actor: Dictionary, recipient: Dictionary, tile_id: String, 
 
 
 func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
+	var start: Vector2 = actor.pos
 	if tile.get("blink_strike", false) and not _blink_to_target(actor, target, tile_id, 0.0):
 		return
 	if tile.get("charge", false) and not _charge(actor, target, tile_id):
@@ -1803,6 +1808,10 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 		damage += int(tile.recent_block_damage)
 	if actor.get("last_primary_tile_target", "") == target.id:
 		damage += int(tile.get("repeat_target_damage", 0))
+	var last_blink := int(actor.get("last_teleport_tick", -1))
+	if tile.has("teleport_followup_damage") and last_blink >= 0 and last_blink < tick \
+			and tick - last_blink <= int(tile.teleport_followup_beats) * TICKS_PER_BEAT:
+		damage += int(tile.teleport_followup_damage)
 	if target.hp * 2 < target.max_hp:
 		damage += int(tile.get("low_hp_bonus", 0))
 	if not str(target.intent).is_empty() and target.intent_tick >= tick:
@@ -1822,8 +1831,10 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 	if pull_first:
 		_pull_toward(actor, target, tile_id, _attack_origin(actor), tile.pull)
 	damage += StarterSpecialtyEffects.hexwright_pull_bonus(self, actor, target, tile_id, tile)
+	var burning: bool = tile.get("ember_burn_if_burning", false) and ArtificeSpecialties.is_burning(target)
 	_strip_guard(actor, target, tile_id, int(tile.get("guard_break", 0)))
 	_damage(actor, target, damage, tile_id)
+	VanguardSpecialties.apply_attack_followup(self, actor, target, tile_id, tile, start, impact)
 	if tile.has("dash_followup_damage") and target.hp > 0:
 		var last_dash := int(actor.get("last_dash_tick", -1))
 		if last_dash >= 0 and last_dash < tick and tick - last_dash <= int(tile.dash_followup_beats) * TICKS_PER_BEAT:
@@ -1840,7 +1851,10 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 			_apply_arsenal_mark(actor, target, tile_id, tile)
 		if tile.has("chorus_mark_bonus") or tile.has("chorus_guard"):
 			_apply_cantor_mark(actor, target, tile_id, tile)
-	if tile.has("ember_burn_damage") and tick <= target.get("displaced_until", -1):
+		if tile.has("chorus_echo_damage"):
+			ArtificeSpecialties.prime_echo(self, actor, target, tile_id, tile)
+	var burn_ready: bool = burning if tile.get("ember_burn_if_burning", false) else tick <= target.get("displaced_until", -1)
+	if tile.has("ember_burn_damage") and burn_ready:
 		_apply_ember_burn(actor, target, tile_id, tile, impact)
 	if tile.has("cluster_pull_radius"):
 		_cluster_pull(actor, target, tile_id, impact, tile.cluster_pull_radius, tile.cluster_pull_force)
@@ -1849,10 +1863,18 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 	if tile.has("retreat") and _retreat_from(actor, target, tile_id, tile.retreat):
 		if tile.has("ranged_followup_bonus"):
 			_prime_ranged_followup(actor, tile_id, tile)
+		if tile.has("lance_return_bonus"):
+			_prime_return_charge(actor, tile_id, tile)
+	if tile.has("blink_on_hit_retreat"):
+		_blink_to_target(actor, target, tile_id, tile.blink_on_hit_retreat, false)
 	if tile.get("heal_overflow_on_hit", false):
 		ApothecaryTiles.apply_tonic(self, actor, tile_id, tile)
 	elif tile.has("guard"):
 		_apply_arsenal_support(actor, _arsenal_support_target(actor, tile), tile_id, tile)
+		if tile.has("harmony_guard"):
+			ArtificeSpecialties.apply_harmony_guard(self, actor, tile_id, tile)
+		if tile.has("intercept_guard"):
+			VanguardSpecialties.prime_intercept(self, actor, tile_id, tile)
 	if tile.has("ally_guard"):
 		_guard_from_tile(actor, _weakest_other_ally(actor), tile.ally_guard, tile_id)
 	if tile.has("bastion_party_guard"):
@@ -2053,12 +2075,13 @@ func _cast_blink(actor: Dictionary, target: Dictionary, tile_id: String, tile: D
 		_guard_allies(actor, tile_id, tile.guard, tile.get("guard_radius", 0.0), true)
 
 
-func _blink_to_target(actor: Dictionary, target: Dictionary, tile_id: String, retreat: float) -> bool:
+func _blink_to_target(actor: Dictionary, target: Dictionary, tile_id: String, retreat: float, report_failure := true) -> bool:
 	var departure: Vector2 = actor.pos
 	var facing: float = actor.facing
 	var label: String = TILES[tile_id].label
 	if not _teleport(actor, target, tile_id, retreat):
-		_emit("miss", "%s: %s had no clear landing." % [actor.name, label], actor, target, tile_id)
+		if report_failure:
+			_emit("miss", "%s: %s had no clear landing." % [actor.name, label], actor, target, tile_id)
 		return false
 	if _has_relic(actor, "afterimage"):
 		actor["afterimage"] = {"position": departure, "facing": facing, "source": label, "beat": _beat()}
@@ -2297,6 +2320,7 @@ func _teleport(actor: Dictionary, target: Dictionary, tile_id: String, retreat: 
 		actor.prev_pos = landing
 		actor.velocity = Vector2.ZERO
 		actor.impulse = Vector2.ZERO
+		actor["last_teleport_tick"] = tick
 		if actor.get("class") == "wayfarer":
 			actor["haste_until"] = tick + TICKS_PER_BEAT * 3
 		var action := "blinks away from" if retreat > 0.0 else "blinks beside"
@@ -3125,6 +3149,7 @@ func _intercept_target(target: Dictionary) -> Dictionary:
 			continue
 		if ally.get("bulwark_loop", -1) == _loop_index():
 			continue
+		VanguardSpecialties.reinforce_intercept(self, ally)
 		_emit("intercept", "%s intercepts the attack on %s." % [ally.name, target.name], ally, target, "bulwark")
 		return ally
 	return target
@@ -3223,6 +3248,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 			amount += _mastery_hit(actor, target, tile_id)
 			amount = _class_attack_damage(actor, target, tile_id, amount)
 			if not _activation.is_empty() and actor.side == "hero" and target.side == "enemy":
+				if _activation.actor == actor.id and _activation.target == target.id and _activation.tile == tile_id:
+					ArtificeSpecialties.resolve_ally_echo(self, actor, target)
 				amount += _consume_arsenal_mark(actor, target, tile_id)
 				amount += _consume_cantor_mark(actor, target, tile_id)
 				amount += _consume_ranged_followup(actor, target, tile_id)
@@ -3394,7 +3421,8 @@ func _release_bastion_ward(carrier: Dictionary, blocked: int) -> void:
 func _prime_return_charge(actor: Dictionary, tile_id: String, tile: Dictionary) -> void:
 	var bonus: int = tile.lance_return_bonus
 	actor["lance_return"] = {"bonus": bonus, "until": tick + int(tile.lance_return_beats) * TICKS_PER_BEAT}
-	_emit("lance_return_ready", "The push readies a charge for %d extra damage." % bonus, actor, actor, tile_id, bonus)
+	var movement := "backstep" if tile.has("retreat") else "push"
+	_emit("lance_return_ready", "The %s readies a charge for %d extra damage." % [movement, bonus], actor, actor, tile_id, bonus)
 
 
 func _lance_hit_bonus(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
@@ -3430,26 +3458,27 @@ func _prime_rune_charge(actor: Dictionary, tile_id: String) -> void:
 	var hits: int = tile.get("rune_quick_hits", 1) if quick > 0 else 1
 	var bonus := maxi(heavy, quick)
 	var width := "quick" if quick > 0 else "wide"
-	actor["signature_rune"] = {"quick": quick > 0, "hits": hits, "bonus": bonus, "until": tick + LOOP_TICKS}
+	var key := "quick_rune_charge" if quick > 0 else "wide_rune_charge"
+	actor[key] = {"hits": hits, "bonus": bonus, "until": tick + LOOP_TICKS}
 	_emit("rune_charge_ready", "%s charges %d %s hits for +%d damage each." % [actor.name, hits, width, bonus],
 		actor, actor, tile_id, bonus)
 
 
 func _consume_rune_charge(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
-	var charge: Dictionary = actor.get("signature_rune", {})
+	var key := "quick_rune_charge" if TILES[tile_id].width <= 2 else "wide_rune_charge"
+	var charge: Dictionary = actor.get(key, {})
 	if charge.is_empty():
 		return 0
 	if tick > charge.until:
-		actor.erase("signature_rune")
+		actor.erase(key)
 		return 0
-	var quick: bool = TILES[tile_id].width <= 2
-	if quick != charge.quick or _activation.get("signature_rune_spent", false):
+	if _activation.get("signature_rune_spent", false):
 		return 0
 	_activation["signature_rune_spent"] = true
 	charge.hits -= 1
 	var bonus: int = charge.bonus
 	if charge.hits <= 0:
-		actor.erase("signature_rune")
+		actor.erase(key)
 	_emit("rune_charge_spent", "%s's rune adds %d damage." % [actor.name, bonus],
 		actor, target, tile_id, bonus, _attack_origin(actor))
 	return bonus
@@ -3869,6 +3898,8 @@ func _breaker_collision(moving: Dictionary, other: Dictionary) -> void:
 	var setup: Dictionary = moving.get("collision_push", {})
 	if moving.hp <= 0 or other.hp <= 0 or moving.side != other.side or tick > setup.get("until", -1):
 		return
+	if other.id == setup.get("collision_origin", ""):
+		return
 	var impulse: Vector2 = moving.impulse
 	var contact: Vector2 = other.pos - moving.pos
 	if impulse.dot(contact.normalized()) < 100.0:
@@ -3889,6 +3920,7 @@ func _breaker_collision(moving: Dictionary, other: Dictionary) -> void:
 	var details := {"source_tile": setup.get("source_tile", "")}
 	_damage(source, moving, setup.damage, "breaker", "", details)
 	_damage(source, other, setup.damage, "breaker", "", details)
+	VanguardSpecialties.chain_collision(self, source, moving, other, setup)
 
 
 func _find_unit(id: String) -> Dictionary:

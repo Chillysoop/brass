@@ -1,0 +1,111 @@
+extends RefCounted
+
+const ENEMY_TARGETS := ["nearest", "farthest", "lowest_hp", "highest_hp"]
+
+const SPECS := {
+	"aegis_intercept": {
+		"label": "Aegis Intercept", "width": 2, "range": 166.0, "damage": 9, "rarity": "common",
+		"guard": 6, "support": "weakest", "intercept_guard": 6, "intercept_beats": 3,
+		"targets": ENEMY_TARGETS, "icon": "guard",
+		"description": "Strike and give 6 Guard to the living hero with the lowest HP. Gain 6 Guard before your next intercept within 3 beats.",
+	},
+	"shieldshock": {
+		"label": "Shieldshock", "width": 3, "range": 180.0, "damage": 17, "rarity": "common",
+		"recent_block_damage": 5, "recent_block_beats": 3, "block_wave_damage": 7, "block_wave_radius": 135.0,
+		"targets": ENEMY_TARGETS, "icon": "area",
+		"description": "If your Guard absorbed damage within 3 beats, deal 5 extra damage to the target and 7 damage to each other enemy within 135 units of it.",
+	},
+	"domino_maul": {
+		"label": "Domino Maul", "width": 3, "range": 178.0, "damage": 17, "rarity": "common",
+		"push": 775.0, "collision_bonus": 7, "collision_chain_push": 700.0,
+		"targets": ENEMY_TARGETS, "icon": "push",
+		"description": "Knock the target back. If it collides with an enemy, both take 7 extra collision damage and the second enemy is knocked onward for one more collision.",
+	},
+	"impact_driver": {
+		"label": "Impact Driver", "width": 4, "range": 190.0, "damage": 26, "rarity": "common",
+		"guard_break": 8, "windup_bonus": 8, "targets": ENEMY_TARGETS, "icon": "battle",
+		"description": "Strip up to 8 Guard before the hit. Deal 8 extra damage if the target is winding up.",
+	},
+	"phalanx_charge": {
+		"label": "Phalanx Charge", "width": 3, "range": 465.0, "damage": 15, "rarity": "common",
+		"charge": true, "charge_path_damage": 7, "charge_path_radius": 45.0,
+		"targets": ENEMY_TARGETS, "icon": "battle",
+		"description": "Rush and strike the target if the path is clear. Deal 7 damage to other enemies whose bodies come within 45 units of your path.",
+	},
+	"recoil_thrust": {
+		"label": "Recoil Thrust", "width": 2, "range": 210.0, "damage": 14, "rarity": "common",
+		"retreat": 125.0, "lance_return_bonus": 7, "lance_return_beats": 3,
+		"targets": ENEMY_TARGETS, "icon": "battle",
+		"description": "Strike, then dash away up to 125 units. If you move, your next charge hit within 3 beats deals 7 extra damage.",
+	},
+}
+
+
+static func prime_intercept(sim, actor: Dictionary, tile_id: String, tile: Dictionary) -> void:
+	if tile.has("intercept_guard"):
+		actor["intercept_aegis"] = {
+			"guard": int(tile.intercept_guard), "tile": tile_id,
+			"until": sim.tick + int(tile.intercept_beats) * sim.TICKS_PER_BEAT,
+		}
+
+
+static func reinforce_intercept(sim, actor: Dictionary) -> void:
+	var aegis: Dictionary = actor.get("intercept_aegis", {})
+	if aegis.is_empty():
+		return
+	actor.erase("intercept_aegis")
+	if sim.tick <= aegis.until:
+		sim._guard_from_tile(actor, actor, aegis.guard, aegis.tile)
+
+
+static func apply_attack_followup(sim, actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary,
+		start: Vector2, impact: Vector2) -> void:
+	if tile.has("block_wave_damage"):
+		_shield_wave(sim, actor, target, tile_id, tile, impact)
+	if tile.has("charge_path_damage"):
+		_charge_path(sim, actor, target, tile_id, tile, start)
+
+
+static func _shield_wave(sim, actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary, impact: Vector2) -> void:
+	var last_block := int(actor.get("last_guard_block_tick", -1))
+	if last_block < 0 or sim.tick - last_block > int(tile.recent_block_beats) * sim.TICKS_PER_BEAT:
+		return
+	for enemy: Dictionary in sim._enemies_in_area(actor, impact, tile.block_wave_radius):
+		if enemy.id != target.id:
+			sim._damage(actor, enemy, int(tile.block_wave_damage), tile_id, "Shieldshock wave")
+
+
+static func _charge_path(sim, actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary, start: Vector2) -> void:
+	var finish: Vector2 = actor.pos
+	var route := finish - start
+	var length_squared := route.length_squared()
+	if length_squared < 1.0:
+		return
+	for enemy: Dictionary in sim.units:
+		if enemy.id == target.id or enemy.side == actor.side or enemy.hp <= 0:
+			continue
+		var offset: Vector2 = enemy.pos - start
+		var progress := offset.dot(route) / length_squared
+		if progress <= 0.0 or progress >= 1.0:
+			continue
+		var clearance := offset.distance_to(route * progress)
+		if clearance <= float(tile.charge_path_radius) + float(enemy.radius):
+			sim._damage(actor, enemy, int(tile.charge_path_damage), tile_id, "Phalanx sweep")
+
+
+static func chain_collision(sim, source: Dictionary, moving: Dictionary, other: Dictionary, setup: Dictionary) -> void:
+	if setup.get("relayed", false) or other.hp <= 0:
+		return
+	var tile_id: String = setup.get("source_tile", "")
+	var force: float = sim.TILES.get(tile_id, {}).get("collision_chain_push", 0.0)
+	if force <= 0.0:
+		return
+	var offset: Vector2 = other.pos - moving.pos
+	if offset.is_zero_approx():
+		return
+	var previous: Dictionary = other.get("collision_push", {})
+	sim._displace("push", source, other, tile_id, offset, force)
+	var relay: Dictionary = other.get("collision_push", {})
+	if not relay.is_empty() and not is_same(previous, relay):
+		relay["relayed"] = true
+		relay["collision_origin"] = moving.id

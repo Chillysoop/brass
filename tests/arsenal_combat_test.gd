@@ -17,6 +17,11 @@ func _initialize() -> void:
 	_check_displacement_window()
 	_check_convergence_pulse()
 	_check_severing_tether()
+	_check_aegis_intercept()
+	_check_shieldshock()
+	_check_domino_maul()
+	_check_impact_driver()
+	_check_lancer_specialties()
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
@@ -213,6 +218,108 @@ func _check_severing_tether() -> void:
 		var expected: int = tile.damage + (int(tile.isolation_damage) if ally_offset.x > 0.0 else 0)
 		_check(sim.activations[-1].tick == edge and target.hp == target.max_hp - expected and target.impulse.x < 0,
 			"Severing Tether adds damage only if the pull separates the target enough from its nearest living ally.")
+
+
+func _check_aegis_intercept() -> void:
+	var tile: Dictionary = ArenaSim.TILES.aegis_intercept
+	var sim := _sim([[_tile("aegis_intercept", 0)], []], "bulwark")
+	var defender: Dictionary = sim.units[0]
+	var ally: Dictionary = sim.units[1]
+	var enemy: Dictionary = sim.units[2]
+	defender.pos = Vector2(230, 265)
+	ally.pos = Vector2(160, 330)
+	ally.hp = 45
+	_advance(sim, tile.width * BEAT - 1)
+	_check(ally.guard == 0 and not defender.has("intercept_aegis"), "Aegis Intercept waits for its right edge.")
+	sim.step()
+	_check(enemy.hp == enemy.max_hp - tile.damage and ally.guard == tile.guard and defender.guard == 0,
+		"Aegis Intercept attacks and gives Guard to the weakest living hero.")
+	var intercept := sim._intercept_target(ally)
+	_check(intercept.id == defender.id and defender.guard == tile.intercept_guard and not defender.has("intercept_aegis"),
+		"Aegis adds Guard before the actual intercept consumes it.")
+	sim._damage(enemy, intercept, 18, "enemy_attack")
+	_check(defender.guard == 0 and ally.hp == 45 and ally.guard == tile.guard,
+		"The intercept shields its intended ally from the enemy hit.")
+
+
+func _check_shieldshock() -> void:
+	var tile: Dictionary = ArenaSim.TILES.shieldshock
+	for blocks in [false, true]:
+		var sim := _sim([[_tile("shieldshock", 0)]], "bulwark")
+		var hero: Dictionary = sim.units[0]
+		var target: Dictionary = sim.units[1]
+		hero.pos = Vector2(230, 265)
+		hero.guard = 8
+		var near := _add_still_scout(sim, Vector2(460, 320))
+		var far := _add_still_scout(sim, Vector2(565, 290))
+		_advance(sim, tile.width * BEAT - 1)
+		if blocks:
+			sim._damage(target, hero, 20, "enemy_attack")
+		sim.step()
+		var extra: int = tile.recent_block_damage if blocks else 0
+		var wave: int = tile.block_wave_damage if blocks else 0
+		_check(target.hp == target.max_hp - tile.damage - extra and near.hp == near.max_hp - wave
+			and far.hp == far.max_hp, "Shieldshock gets its bonus and wave only after Guard blocks actual damage.")
+
+
+func _check_domino_maul() -> void:
+	var tile: Dictionary = ArenaSim.TILES.domino_maul
+	var sim := _sim([[_tile("domino_maul", 0)]], "breaker")
+	sim.units[0].pos = Vector2(170, 265)
+	sim.units[1].pos = Vector2(280, 265)
+	var second := _add_still_scout(sim, Vector2(345, 265))
+	var third := _add_still_scout(sim, Vector2(420, 265))
+	var fourth := _add_still_scout(sim, Vector2(495, 265))
+	_advance(sim, tile.width * BEAT)
+	_check(sim.activations[-1].damage == tile.damage and second.hp == second.max_hp,
+		"Domino Maul hits at its right edge and waits for physical contact to deal collision damage.")
+	_advance(sim, tile.width * BEAT + 2 * BEAT)
+	var contacts := sim.trace.filter(func(event: Dictionary): return event.kind == "hammer_collision" and event.tile == "domino_maul")
+	_check(contacts.size() == 2 and contacts[0].target == second.id and contacts[1].target == third.id
+		and third.hp < third.max_hp and fourth.hp == fourth.max_hp,
+		"Domino Maul's second enemy can collide with a third enemy without relaying a second time.")
+
+
+func _check_impact_driver() -> void:
+	var tile: Dictionary = ArenaSim.TILES.impact_driver
+	var sim := _sim([[_tile("impact_driver", 0)]], "breaker")
+	var target: Dictionary = sim.units[1]
+	sim.units[0].pos = Vector2(230, 265)
+	target.guard = tile.guard_break + 5
+	target.intent = sim.units[0].id
+	target.intent_tick = (int(tile.width) + 1) * BEAT
+	_advance(sim, tile.width * BEAT)
+	_check(target.hp == target.max_hp - tile.damage - tile.windup_bonus + 5 and target.guard == 0,
+		"Impact Driver strips Guard before landing its heavy bonus against a winding-up target.")
+
+
+func _check_lancer_specialties() -> void:
+	var tile: Dictionary = ArenaSim.TILES.phalanx_charge
+	var sim := _sim([[_tile("phalanx_charge", 0, "highest_hp")]], "lancer")
+	var origin := Vector2(160, 250)
+	sim.units[0].pos = origin
+	var target: Dictionary = sim.units[1]
+	target.pos = Vector2(480, 250)
+	var near := _add_still_scout(sim, Vector2(285, 302))
+	var far := _add_still_scout(sim, Vector2(330, 350))
+	near["arsenal_mark"] = {"expires": tile.width * BEAT, "order": -1, "bonus": 8}
+	_advance(sim, tile.width * BEAT - 1)
+	_check(sim.units[0].pos == origin and near.hp == near.max_hp, "Phalanx Charge waits for the tile's right edge.")
+	sim.step()
+	_check(sim.units[0].pos.x > 400 and target.hp == target.max_hp - tile.damage
+		and near.hp == near.max_hp - tile.charge_path_damage and near.has("arsenal_mark") and far.hp == far.max_hp,
+		"Phalanx Charge hits foes along the actual dash path without consuming their Marks.")
+	var recoil: Dictionary = ArenaSim.TILES.recoil_thrust
+	sim = _sim([[_tile("recoil_thrust", 0), _tile("phalanx_charge", recoil.width)]], "lancer")
+	sim.units[0].pos = Vector2(170, 265)
+	sim.units[1].pos = Vector2(325, 265)
+	_advance(sim, recoil.width * BEAT)
+	_check(sim.units[0].pos.x < 100 and sim.units[0].has("lance_return"), "Recoil Thrust readies a return charge after a real retreat.")
+	var return_edge: int = (recoil.width + tile.width) * BEAT
+	_advance(sim, return_edge)
+	var followup := sim.trace.filter(func(event: Dictionary): return event.kind == "lance_return_spent")
+	_check(followup.size() == 1 and followup[0].tick == return_edge and followup[0].amount == recoil.lance_return_bonus
+		and not sim.units[0].has("lance_return"), "Recoil Thrust strengthens the next charge at the exact follow-up boundary.")
 
 
 func _add_still_scout(sim: ArenaSim, position: Vector2) -> Dictionary:

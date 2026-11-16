@@ -714,7 +714,7 @@ func _starter_lane(id: String) -> Array:
 
 func _starter_offers(hero_id: String, salt: int, shared := "shot") -> Array:
 	var offers := ["bash", shared]
-	var specialties := ClassDecks.specialties(hero_id)
+	var specialties := ClassDecks.specialties(hero_id).filter(func(id: String): return ArenaSim.TILES[id].damage > 0)
 	if _is_brass_easy() and not specialties.is_empty():
 		var relic: String = data.relics.front()
 		if hero_id == "starshot" or (shared == "shot" and relic not in BUILD_RELICS and not forge_family_available("shot")):
@@ -2281,7 +2281,7 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 		var candidates := specialties.filter(func(id: String): return not held.has(id) and id not in rewards)
 		rewards.append_array(_sample(candidates, 1, int(data.seed), _node_salt(86 + salt)))
 	if recruit_draft >= 0 and rewards.size() < 3:
-		_reserve_recruit_specialty(specialties, held, rewards)
+		_reserve_recruit_specialty(lane, specialties, held, rewards)
 	var rng := _rng(int(data.seed), _node_salt(84 + salt))
 	while rewards.size() < 3:
 		var roll := rng.randi_range(1, 100)
@@ -2308,11 +2308,15 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 
 
 func _early_recruit_draft(lane: int) -> int:
-	if lane != 1 or data.get("location") != "brass" or data.get("difficulty") != "medium" \
-		or data.node.type != "battle" or int(data.node.row) < NODES_PER_SEGMENT:
+	if lane < 1 or data.get("location") != "brass" or data.get("difficulty") not in ["medium", "hard"] \
+		or data.node.type != "battle":
+		return -1
+	var first_row := lane * NODES_PER_SEGMENT
+	var row := int(data.node.row)
+	if row < first_row or row >= first_row + NODES_PER_SEGMENT:
 		return -1
 	var prior_battles := 0
-	for layer: Array in data.layers.slice(NODES_PER_SEGMENT, int(data.node.row)):
+	for layer: Array in data.layers.slice(first_row, row):
 		if layer.any(func(node: Dictionary): return node.type == "battle" and node.id in data.visited):
 			prior_battles += 1
 			if prior_battles >= 2:
@@ -2320,17 +2324,21 @@ func _early_recruit_draft(lane: int) -> int:
 	return prior_battles
 
 
-func _reserve_recruit_specialty(specialties: Array, held: Dictionary, rewards: Array) -> void:
+func _reserve_recruit_specialty(lane: int, specialties: Array, held: Dictionary, rewards: Array) -> void:
 	var held_families := {}
 	for id: String in held:
 		held_families[ArenaSim.TILES[id].get("family", id)] = true
-	var previous := str(data.get("recruit_specialty", data.get("starshot_recruit_specialty", "")))
+	var hero_id: String = data.heroes[lane].id
+	var history: Dictionary = data.get("recruit_specialties", {})
+	var legacy: String = str(data.get("recruit_specialty", data.get("starshot_recruit_specialty", ""))) if lane == 1 else ""
+	var previous := str(history.get(hero_id, legacy))
 	var options := specialties.filter(func(id: String):
 		return id != previous and not held_families.has(id) and id not in rewards)
-	var choice := _sample(options, 1, int(data.seed), _node_salt(1155))
+	var choice := _sample(options, 1, int(data.seed), _node_salt(86 + lane * 1069))
 	if not choice.is_empty():
 		rewards.append(choice[0])
-		data.recruit_specialty = choice[0]
+		history[hero_id] = choice[0]
+		data.recruit_specialties = history
 
 
 func _early_build_directions(lane: int, hero_id: String) -> Array:
