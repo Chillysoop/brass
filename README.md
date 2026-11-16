@@ -6,7 +6,7 @@ The Windows playtest includes Easy, Medium, and Hard expeditions in Brass Fronti
 
 From the title screen, choose **New Expedition**, select **Brass Frontier**, and start on **Easy** to draft a hero, relic, and starting tile. You can enter an optional seed on the difficulty screen. Win the opening fight, pick rewards, then travel a seeded route through battles, elites, shops, events, and a rest site. Health, relics, gold, and tile layouts carry between stops. The game saves between fights and after loadout changes. **Continue** picks up from the saved checkpoint.
 
-**Save slots** switches among three independent profiles. **New Game** starts with fresh progress in the chosen slot. **New Expedition** uses the active slot's existing unlocks and Aether Marks. Earlier saves open in Slot 1.
+**New Expedition** starts a run with the active slot's unlocks and Aether Marks. **Save Slots** switches among three independent profiles. Choose **Reset Save Slot** on an occupied slot to clear its progress and start a fresh Brass Frontier Easy expedition. Earlier saves open in Slot 1.
 
 Each class has its own combat reward deck. Use **View class deck** on a hero or recruit card to inspect each tile and the class's signature Uncommon. After the victory animation, choose or skip a tile directly in the arena for each hero in party order. Rerolls start at 5 gold and double in price with each use until the next act. Tiles go to that hero's timeline when space allows, then to shared storage. The expedition saves after each pick. After choosing a recruit, the run seed offers two of their class's three starting kits. Choose one to put both tiles on the new hero's timeline.
 
@@ -34,7 +34,7 @@ Defeat the Tollkeeper on Easy to bank Aether Marks and unlock **Medium**. Open t
 
 Warden, Hexwright, Apothecary, Starshot, and Duelist are available from the start. In **Aether Chart → Class roster**, spend Marks between expeditions to unlock the other seven classes for future hero and recruit drafts. After your first Brass Frontier clear, **Choose from roster** on the opening draft lets you pick any class you have unlocked. Starter relic and tile drafts follow either choice.
 
-Clearing an expedition unlocks two **Class mastery** options for each hero in your party. In a later run, choose one while equipping that class. It adds a bonus alongside the original passive, and the gold star next to the hero's name shows the active mastery.
+Clearing an expedition unlocks two **Class mastery** options for each hero in your party. In a later run, use **Choose mastery** on that hero's card or open the mastery options while equipping the hero. A mastery adds a bonus alongside the original passive, and the gold star next to the hero's name shows the active mastery.
 
 Cinder Mage can ignite a foe hit within three beats of a push or pull once per loop. **Sear** is a one-beat shot that deals extra damage to burning enemies. **Wildfire Globe** ignites its target and spreads Burn to nearby enemies if the target was already burning. The flame beside an enemy's health shows how many Burn beats remain.
 

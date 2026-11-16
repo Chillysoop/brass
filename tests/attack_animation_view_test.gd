@@ -61,6 +61,7 @@ func _run() -> void:
 	_check_ranged_standoff(view)
 	_check_limb_pose(view)
 	_check_fast_windup(view)
+	_check_windup_layout(view)
 	_check_marshal_weathered_feedback(view, false)
 	_check_marshal_weathered_feedback(view, true)
 	_check_burn_status(view)
@@ -107,6 +108,43 @@ func _check_fast_windup(view: ArenaView) -> void:
 	view.present(sim.units, [], 106, [], 3)
 	_expect(not view._windups.has(enemy.id) and not view._actor_casts.has(enemy.id),
 		"Canceling a windup must clear the warning without inventing a release.")
+
+
+func _check_windup_layout(view: ArenaView) -> void:
+	var original_size := view.size
+	view.size = Vector2(390, 260)
+	view.reset_view([])
+	var area := Rect2(8, 8, 374, 244)
+	var health := Rect2(140, 135, 94, 32)
+	var anchor := Vector2(187, 135)
+	var extent := Vector2(118, 36)
+	var occupied: Array[Rect2] = [health]
+	var first := view._windup_callout_bounds(area, anchor, extent, occupied)
+	_expect(first.get_center().x == anchor.x and first.end.y < health.position.y,
+		"A windup belongs above its unit's HUD when that space is available.")
+	occupied.append(first)
+	var second := view._windup_callout_bounds(area, anchor + Vector2(5, 2), extent, occupied)
+	_expect(area.encloses(second) and not second.intersects(first) and not second.intersects(health),
+		"Nearby windups occupy separate readable space at narrow widths.")
+	occupied.append(second)
+	var third := view._windup_callout_bounds(area, anchor + Vector2(7, 2), Vector2(153, 36), occupied)
+	_expect(area.encloses(third) and not occupied.any(func(other: Rect2): return other.intersects(third)),
+		"A third enlarged label can reflow around crowded HUDs.")
+	var left_edge := view._windup_callout_bounds(area, Vector2(14, 65), extent, [])
+	_expect(area.encloses(left_edge), "A windup against the arena edge stays on the board.")
+
+	view.present([], [{"kind": "hit", "tile": "shot", "actor": "hero_1", "target": "enemy",
+		"amount": 25, "from": Vector2(600, 260), "to": Vector2(635, 270)}], 21, [], 3)
+	view._combat_number_layout_size = view.size
+	view._combat_numbers[0]["bounds"] = first
+	view._layout_combat_numbers(area, 0.45, [health], [first, second])
+	var moved: Rect2 = view._combat_numbers[0].bounds
+	_expect(moved.has_area() and not moved.intersects(first) and not moved.intersects(second),
+		"An active damage number yields to a newly occupied windup position at 3×.")
+	view._layout_combat_numbers(area, 0.45, [health], [first, second])
+	_expect(view._combat_numbers[0].bounds == moved, "The damage number remains in place without another collision.")
+	view.size = original_size
+	view.reset_view([])
 
 
 func _check_marshal_weathered_feedback(view: ArenaView, partial: bool) -> void:

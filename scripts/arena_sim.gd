@@ -81,6 +81,7 @@ const FLANKING_STANDARD_WINDOW := 2 * TICKS_PER_BEAT
 const FLANKING_STANDARD_DOT := -0.5
 const SIEGE_PULL_REACH := 185.0
 const SIEGE_PULL_DISTANCE := 82.0
+const POCKET_BELL_GUARD := 5
 const MAX_GUARD := 28
 const OVERFLOW_HEAL_CAP := 6
 const LONGSHOT_PRISM_RANGE := 180.0
@@ -1065,7 +1066,7 @@ func step() -> Array[Dictionary]:
 		_overflow_healed = 0
 		for unit in units:
 			if unit.hp > 0 and _has_relic(unit, "pocket_bell"):
-				_guard(unit, 5, "pocket_bell")
+				_guard(unit, POCKET_BELL_GUARD, "pocket_bell")
 	_move_units()
 	_arrive_reinforcements()
 	_refresh_relay_links()

@@ -93,17 +93,72 @@ static func timeline_drop_plan(lanes: Array, storage: Array, lane_index: int, st
 	if stored:
 		available_storage = storage.duplicate()
 		available_storage[source_row] = storage[source_row].filter(func(item: Dictionary): return item.start != source_start)
-	return _timeline_stow_plan(items, available_storage, id, start, ignored)
+	return _stow_plan(items, available_storage, id, start, ignored)
 
 
-static func _timeline_stow_plan(items: Array, storage: Array, id: String, start: int, ignored: int) -> Dictionary:
+static func forge_upgrade_plan(lanes: Array, storage: Array, source: Dictionary, upgrade: String) -> Dictionary:
+	var stored := source.has("row")
+	var groups := storage if stored else lanes
+	var index := int(source.get("row" if stored else "lane", -1))
+	var original := int(source.get("start", -1))
+	if index < 0 or index >= groups.size() or not ArenaSim.TILES.has(upgrade):
+		return {}
+	var items: Array = groups[index]
+	if not items.any(func(item: Dictionary): return item.start == original and item.id == source.get("id")):
+		return {}
+	var capacity := STORAGE_COLUMNS if stored else ArenaSim.BEATS
+	var width := int(ArenaSim.TILES[upgrade].width)
+	var extra := width - int(ArenaSim.TILES[source.id].width)
+	var free := _free_cells(items, capacity)
+	if extra > free:
+		var total := 0 if stored else free
+		for row: Array in storage:
+			total += _free_cells(row, STORAGE_COLUMNS)
+		if extra > total:
+			return {}
+	var starts := range(capacity - width + 1)
+	starts.sort_custom(func(a: int, b: int):
+		var distance_a := absi(a - original)
+		var distance_b := absi(b - original)
+		return a < b if distance_a == distance_b else distance_a < distance_b)
+	for start: int in starts:
+		var nudged := nudge_plan(items, upgrade, start, capacity, original)
+		if not nudged.is_empty():
+			return nudged
+	var best := {}
+	for start: int in starts:
+		var stowed := _stow_plan(items, storage, upgrade, start, original, capacity, index if stored else -1, false)
+		if not stowed.is_empty() and (best.is_empty() or stowed.stows.size() < best.stows.size()):
+			best = stowed
+			if best.stows.size() == 1:
+				return best
+	if stored and best.is_empty():
+		for row in range(storage.size()):
+			if row == index:
+				continue
+			for start: int in starts:
+				var relocated := nudge_plan(storage[row], upgrade, start, capacity)
+				if not relocated.is_empty():
+					relocated["destination_row"] = row
+					return relocated
+	return best
+
+
+static func _free_cells(items: Array, capacity: int) -> int:
+	for item: Dictionary in items:
+		capacity -= int(ArenaSim.TILES[item.id].width)
+	return capacity
+
+
+static func _stow_plan(items: Array, storage: Array, id: String, start: int, ignored: int,
+		capacity := ArenaSim.BEATS, source_row := -1, directly_covered := true) -> Dictionary:
 	var end: int = start + ArenaSim.TILES[id].width
 	var displaced := items.filter(func(item: Dictionary):
-		return item.start != ignored and item.start < end and item.start + ArenaSim.TILES[item.id].width > start)
+		return item.start != ignored and (not directly_covered or (item.start < end and item.start + ArenaSim.TILES[item.id].width > start)))
 	var best := {}
 	var best_count := displaced.size() + 1
 	var best_distance := 0
-	# Try the covered tiles first, keeping as many equipped as the available spans allow.
+	# Reuse the drag rules for shifting neighbors around the available spans.
 	for mask in range(1, 1 << displaced.size()):
 		var to_stow := []
 		for index in range(displaced.size()):
@@ -112,7 +167,7 @@ static func _timeline_stow_plan(items: Array, storage: Array, id: String, start:
 		if to_stow.size() > best_count:
 			continue
 		var remaining := items.filter(func(item: Dictionary): return item not in to_stow)
-		var plan := nudge_plan(remaining, id, start, ArenaSim.BEATS, ignored)
+		var plan := nudge_plan(remaining, id, start, capacity, ignored)
 		if plan.is_empty():
 			continue
 		var distance := 0
@@ -120,7 +175,7 @@ static func _timeline_stow_plan(items: Array, storage: Array, id: String, start:
 			distance += absi(int(plan.moves[origin]) - origin)
 		if to_stow.size() == best_count and distance >= best_distance:
 			continue
-		var positions := _stow_positions(storage, to_stow)
+		var positions := _stow_positions(storage, to_stow, source_row)
 		if positions.is_empty():
 			continue
 		best_count = to_stow.size()
@@ -130,9 +185,13 @@ static func _timeline_stow_plan(items: Array, storage: Array, id: String, start:
 	return best
 
 
-static func _stow_positions(storage: Array, items: Array) -> Array[Dictionary]:
+static func _stow_positions(storage: Array, items: Array, source_row := -1) -> Array[Dictionary]:
 	var occupied: Array[int] = []
-	for row: Array in storage:
+	for index in range(storage.size()):
+		if index == source_row:
+			occupied.append((1 << STORAGE_COLUMNS) - 1)
+			continue
+		var row: Array = storage[index]
 		var reserved := 0
 		for item: Dictionary in row:
 			reserved |= ((1 << int(ArenaSim.TILES[item.id].width)) - 1) << int(item.start)

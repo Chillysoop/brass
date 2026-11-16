@@ -11,7 +11,7 @@ const MUTED := Color("#a9bac0")
 const TEAL := Color("#7ee3d7")
 
 signal purchase_requested(id: String)
-signal starter_requested(id: String)
+signal starter_requested(id: String, choose_mastery: bool)
 signal deck_requested(id: String)
 signal back_requested
 
@@ -35,6 +35,7 @@ var _status: Label
 var _copy: Label
 var _hint: Label
 var _deck: Button
+var _mastery: Button
 var _action: Button
 
 
@@ -183,10 +184,21 @@ func _build_details(body: HBoxContainer) -> void:
 	_hint = _label("", 14, MUTED)
 	_hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	stack.add_child(_hint)
+	var details_actions := HFlowContainer.new()
+	details_actions.add_theme_constant_override("h_separation", 8)
+	details_actions.add_theme_constant_override("v_separation", 6)
+	stack.add_child(details_actions)
 	_deck = _button("View class deck", func(): deck_requested.emit(_selected))
 	_deck.name = "ViewRosterClassDeck"
 	_deck.custom_minimum_size.y = 34
-	stack.add_child(_deck)
+	_deck.size_flags_horizontal = SIZE_EXPAND_FILL
+	details_actions.add_child(_deck)
+	_mastery = _button("Choose mastery", func(): _confirm(true))
+	_mastery.name = "ChooseRosterMastery"
+	_mastery.tooltip_text = "Choose this hero and view their mastery options."
+	_mastery.custom_minimum_size.y = 34
+	_mastery.add_theme_color_override("font_color", BRASS)
+	details_actions.add_child(_mastery)
 	_action = _button("", _confirm, true)
 	_action.custom_minimum_size.y = 47
 	stack.add_child(_action)
@@ -244,6 +256,7 @@ func _select(id: String) -> void:
 	_status.text = _state(entry)
 	_status.add_theme_color_override("font_color", TEAL if entry.owned else BRASS)
 	_copy.text = entry.description
+	_mastery.visible = _picker and entry.owned and entry.get("mastery", false)
 	_hint.text = ""
 	if _picker:
 		_action.name = "ChooseStarterClass"
@@ -273,10 +286,10 @@ func _can_buy(entry: Dictionary) -> bool:
 	return _purchase_enabled and not entry.owned and _marks >= int(entry.cost)
 
 
-func _confirm() -> void:
+func _confirm(choose_mastery := false) -> void:
 	var entry: Dictionary = _entries[_selected]
 	if _picker and entry.owned:
-		starter_requested.emit(_selected)
+		starter_requested.emit(_selected, choose_mastery)
 	elif not _picker and _can_buy(entry):
 		purchase_requested.emit(_selected)
 

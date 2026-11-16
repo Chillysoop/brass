@@ -10,7 +10,7 @@ signal practice_requested
 signal quit_requested
 signal page_changed(page: String, location: String)
 signal save_slot_requested(slot: int)
-signal new_game_requested(slot: int, replace_existing: bool)
+signal reset_save_slot_requested(slot: int)
 
 const INK := Color("#0d1826")
 const NAVY := Color("#172733")
@@ -85,7 +85,7 @@ func _show_page(page: String, location: String = "brass") -> void:
 	match _page:
 		"regions": _regions()
 		"difficulty": _difficulty()
-		"slots", "new_game": _save_slots(_page == "new_game")
+		"slots": _save_slots()
 		_: _title()
 	_focus_current_page.call_deferred()
 	page_changed.emit(_page, _location)
@@ -100,7 +100,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if not is_visible_in_tree() or not event.is_action_pressed("ui_cancel"):
 		return
 	match _page:
-		"regions", "slots", "new_game": _show_page("title")
+		"regions", "slots": _show_page("title")
 		"difficulty": _show_page("regions", _location)
 		_: return
 	get_viewport().set_input_as_handled()
@@ -137,14 +137,12 @@ func _title() -> void:
 	var start := _button("New Expedition", func(): _show_page("regions", _latest_region()), not resumable)
 	GameIcons.decorate(start, "route", 24)
 	start.name = "NewExpedition"
-	start.tooltip_text = "Choose a new route with this slot’s Aether Marks and unlocks."
 	left.add_child(start)
+	var start_hint := _wrap("Start a new run with this slot’s unlocks and Aether Marks.", 16, TEAL)
+	start_hint.name = "NewExpeditionHint"
+	left.add_child(start_hint)
 	if _focus_target == null:
 		_focus_target = start
-	var new_game := _button("New Game", func(): _show_page("new_game"))
-	new_game.name = "NewGame"
-	new_game.tooltip_text = "Start with no unlocks or Aether Marks in a save slot."
-	left.add_child(new_game)
 	var chart := _button("Aether Chart", func(): chart_requested.emit())
 	GameIcons.decorate(chart, "relic", 24)
 	chart.name = "AetherChart"
@@ -159,7 +157,7 @@ func _title() -> void:
 	var footer := HBoxContainer.new()
 	footer.add_theme_constant_override("separation", 12)
 	rows.add_child(footer)
-	var choose_slots := _button("Save slots", func(): _show_page("slots"))
+	var choose_slots := _button("Save Slots", func(): _show_page("slots"))
 	choose_slots.name = "SaveSlots"
 	choose_slots.custom_minimum_size.y = 36
 	footer.add_child(choose_slots)
@@ -170,12 +168,10 @@ func _title() -> void:
 		rows.add_child(_label(_run.save_error, 15, CORAL))
 
 
-func _save_slots(fresh_game: bool) -> void:
+func _save_slots() -> void:
 	_backdrop("title-art.webp", "arena.webp", 0.27)
 	var layout := _body()
-	_header(layout, "New Game" if fresh_game else "Save slots", "Title", func(): _show_page("title"))
-	if fresh_game:
-		layout.add_child(_wrap("Start Brass Frontier Easy with fresh progress. Choose where to save it.", 18, MUTED))
+	_header(layout, "Save Slots", "Title", func(): _show_page("title"))
 	var cards := HBoxContainer.new()
 	cards.add_theme_constant_override("separation", 15)
 	layout.add_child(cards)
@@ -201,17 +197,21 @@ func _save_slots(fresh_game: bool) -> void:
 		var spacer := Control.new()
 		spacer.size_flags_vertical = SIZE_EXPAND_FILL
 		contents.add_child(spacer)
-		var caption := "Use slot"
-		if fresh_game:
-			caption = "Replace slot" if occupied else "Start New Game"
-		elif current:
-			caption = "Current slot"
-		var choose := _button(caption, func(): _choose_slot(slot, fresh_game, occupied), not occupied if fresh_game else current)
-		choose.name = "NewGameSlot_%d" % slot if fresh_game else "SaveSlot_%d" % slot
-		choose.disabled = current and not fresh_game
-		contents.add_child(choose)
-		if not choose.disabled and (_focus_target == null or (fresh_game and _focus_target.get_meta("occupied", true) and not occupied)):
-			choose.set_meta("occupied", occupied)
+		var actions := HFlowContainer.new()
+		actions.add_theme_constant_override("h_separation", 8)
+		actions.add_theme_constant_override("v_separation", 6)
+		contents.add_child(actions)
+		var choose := _button("Current slot" if current else "Use slot", func(): save_slot_requested.emit(slot), current)
+		choose.name = "SaveSlot_%d" % slot
+		choose.disabled = current
+		choose.size_flags_horizontal = SIZE_EXPAND_FILL
+		actions.add_child(choose)
+		if occupied:
+			var reset := _button("Reset Save Slot", func(): _confirm_slot_reset(slot), false, true)
+			reset.name = "ResetSaveSlot_%d" % slot
+			reset.add_theme_color_override("font_color", CORAL)
+			actions.add_child(reset)
+		if not choose.disabled and _focus_target == null:
 			_focus_target = choose
 	if not _run.save_error.is_empty():
 		layout.add_child(_wrap(_run.save_error, 17, CORAL))
@@ -228,21 +228,15 @@ func _slot_status(summary: Dictionary) -> String:
 	return "Expedition in progress"
 
 
-func _choose_slot(slot: int, fresh_game: bool, occupied: bool) -> void:
-	if not fresh_game:
-		save_slot_requested.emit(slot)
-		return
-	if not occupied:
-		new_game_requested.emit(slot, false)
-		return
+func _confirm_slot_reset(slot: int) -> void:
 	var dialog := ConfirmationDialog.new()
-	dialog.name = "ReplaceSaveSlot"
-	dialog.title = "Replace Slot %d?" % slot
-	dialog.dialog_text = "The expedition, unlocks and Aether Marks in this slot will be replaced by a fresh game."
-	dialog.ok_button_text = "Replace slot"
+	dialog.name = "ConfirmSaveSlotReset"
+	dialog.title = "Reset Slot %d?" % slot
+	dialog.dialog_text = "Clear this slot’s expedition, unlocks and Aether Marks and start a fresh Brass Frontier Easy expedition."
+	dialog.ok_button_text = "Reset slot"
 	dialog.confirmed.connect(func():
 		dialog.queue_free()
-		new_game_requested.emit(slot, true)
+		reset_save_slot_requested.emit(slot)
 	)
 	dialog.canceled.connect(dialog.queue_free)
 	add_child(dialog)

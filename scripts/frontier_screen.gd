@@ -94,9 +94,9 @@ func configure(host: Control) -> void:
 		if not _host.run_select_save_slot(slot):
 			_expedition_menu.render(_run, "slots")
 	)
-	_expedition_menu.new_game_requested.connect(func(slot: int, replace_existing: bool):
-		if not _host.run_start_new_game_slot(slot, replace_existing):
-			_expedition_menu.render(_run, "new_game")
+	_expedition_menu.reset_save_slot_requested.connect(func(slot: int):
+		if not _host.run_start_new_game_slot(slot, true):
+			_expedition_menu.render(_run, "slots")
 	)
 	_expedition_menu.quit_requested.connect(func(): get_tree().quit())
 	_aether_chart = AetherChartMenu.new()
@@ -140,10 +140,11 @@ func render(model, page_override: String = "", battle_overlay := false) -> void:
 		_class_roster.show()
 		_render_class_roster()
 		return
-	_shell(phase)
+	var compact_classes := phase in ["hero", "recruit", "masteries"] and get_viewport_rect().size.y < 680.0
+	_shell(phase, compact_classes)
 	match phase:
-		"hero", "relic", "starter", "recruit", "recruit_starter": _draft(phase)
-		"masteries": _masteries_page()
+		"hero", "relic", "starter", "recruit", "recruit_starter": _draft(phase, compact_classes)
+		"masteries": _masteries_page(compact_classes)
 		"map": _map()
 		"reward": _reward()
 		"boss_relic": _boss_relic_draft()
@@ -159,7 +160,7 @@ func render(model, page_override: String = "", battle_overlay := false) -> void:
 	create_tween().tween_property(_layout, "modulate:a", 1.0, 0.16)
 
 
-func _shell(phase: String) -> void:
+func _shell(phase: String, compact_classes: bool) -> void:
 	var base := ColorRect.new()
 	base.color = Color(INK, 0.88) if _battle_overlay else INK
 	base.mouse_filter = MOUSE_FILTER_IGNORE
@@ -184,10 +185,10 @@ func _shell(phase: String) -> void:
 	for side in ["left", "right"]:
 		margin.add_theme_constant_override("margin_" + side, 14 if _battle_overlay else 37)
 	for side in ["top", "bottom"]:
-		margin.add_theme_constant_override("margin_" + side, 6 if _battle_overlay else 25)
+		margin.add_theme_constant_override("margin_" + side, 6 if _battle_overlay else (14 if compact_classes else 25))
 	_layout = VBoxContainer.new()
 	_bottom_actions = null
-	_layout.add_theme_constant_override("separation", 5 if _battle_overlay else 13)
+	_layout.add_theme_constant_override("separation", 5 if _battle_overlay else (8 if compact_classes else 13))
 	margin.add_child(_layout)
 	var bar := HBoxContainer.new()
 	bar.add_theme_constant_override("separation", 10)
@@ -283,9 +284,9 @@ func _start_new_run(seed_value: int, difficulty: String, location: String) -> vo
 			_host.run_menu()
 		return
 	var dialog := ConfirmationDialog.new()
-	dialog.title = "Start a new run?"
-	dialog.dialog_text = "Starting a new run replaces your current expedition."
-	dialog.ok_button_text = "Start new run"
+	dialog.title = "Start a new expedition?"
+	dialog.dialog_text = "This replaces the expedition in progress. Your unlocks and Aether Marks carry into the next run."
+	dialog.ok_button_text = "Start new expedition"
 	dialog.confirmed.connect(func():
 		if _run.abandon_run():
 			_host.run_start(seed_value, difficulty, location)
@@ -297,7 +298,7 @@ func _start_new_run(seed_value: int, difficulty: String, location: String) -> vo
 	dialog.popup_centered()
 
 
-func _draft(phase: String) -> void:
+func _draft(phase: String, compact_classes: bool) -> void:
 	var recruit_rank := "third" if _party().size() == 2 else "second"
 	var title: String = {
 		"hero": "Choose your hero", "relic": "Choose a starter relic", "starter": "Choose your first tile",
@@ -314,7 +315,7 @@ func _draft(phase: String) -> void:
 	if phase == "relic":
 		_relic_heading(title, "")
 	else:
-		_page_title(title, subtitle)
+		_page_title(title, subtitle, compact_classes)
 	var cards := _cards_row()
 	var offers: Array = _run.data.get("offers", [])
 	if phase == "hero" and _run.can_choose_starter():
@@ -329,7 +330,7 @@ func _draft(phase: String) -> void:
 	if phase == "relic":
 		_add_starter_relic_cards(cards, offers)
 	elif loadouts.is_empty():
-		_add_draft_cards(cards, offers, phase)
+		_add_draft_cards(cards, offers, phase, compact_classes)
 	else:
 		_add_recruit_loadouts(cards, loadouts)
 	var masteries: Array = _run.mastery_offers()
@@ -373,9 +374,9 @@ func _add_recruit_loadouts(cards: HBoxContainer, offers: Array) -> void:
 		card.add_child(pick)
 
 
-func _masteries_page() -> void:
+func _masteries_page(compact: bool) -> void:
 	var class_id: String = _run.data.get("pending_recruit", _run.data.hero)
-	_page_title(_hero_name(class_id) + " mastery", "Add one bonus to your class passive for this expedition.")
+	_page_title(_hero_name(class_id) + " mastery", "Choose an optional bonus to your class passive for this expedition.", compact)
 	var cards := _cards_row()
 	var active: String = _run.selected_mastery()
 	for mastery: Dictionary in _run.mastery_offers():
@@ -390,7 +391,11 @@ func _masteries_page() -> void:
 		var remove := _button("Remove mastery", func(): _pick_mastery(""))
 		remove.name = "NoClassMastery"
 		footer.add_child(remove)
-	footer.add_child(_button("Back to draft", _host.run_return))
+	var next: String = {"relic": "Continue to relics", "starter": "Continue to starter tile"}.get(_run.data.phase,
+		"Continue to loadouts" if not _run.recruit_loadout_offers().is_empty() else "Continue to starter tile")
+	var continue_draft := _button(next, _host.run_return, false, compact)
+	continue_draft.name = "ContinueMasteryDraft"
+	footer.add_child(continue_draft)
 
 
 func _pick_mastery(id: String) -> void:
@@ -414,32 +419,70 @@ func _add_starter_relic_cards(cards: HBoxContainer, offers: Array) -> void:
 		_relic_draft_card(cards, id, "StarterRelic_", func(): _pick_draft("relic", id))
 
 
-func _add_draft_cards(cards: HBoxContainer, offers: Array, phase: String) -> void:
+func _add_draft_cards(cards: HBoxContainer, offers: Array, phase: String, compact_classes: bool) -> void:
 	for id: String in offers:
-		var entry: Dictionary
-		match phase:
-			"hero", "recruit": entry = FrontierRun.HEROES[id]
-			_: entry = ArenaSim.TILES[id]
+		if phase in ["hero", "recruit"]:
+			_add_class_draft_card(cards, id, phase, compact_classes)
+			continue
+		var entry: Dictionary = ArenaSim.TILES[id]
 		var info := str(entry.get("description", ""))
 		var card := _choice(cards, entry.label, info, "Choose", func(): _pick_draft(phase, id))
-		if phase in ["hero", "recruit"]:
-			_add_portrait(card, GameIcons.hero_art(id), 205)
-			var deck := _label(ClassDecks.summary(id), 15, TEAL)
-			deck.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-			card.add_child(deck)
-			card.move_child(deck, 2)
-			var deck_button := _button("View class deck", func(): _show_class_deck(id))
-			deck_button.name = "ClassDeck_" + id
-			GameIcons.decorate(deck_button, "review", 17)
-			card.add_child(deck_button)
-			card.move_child(deck_button, card.get_child_count() - 2)
-		else:
-			var hero_id: String = _run.data.get("pending_recruit", _run.data.get("hero", ""))
-			_add_tile_header(card, id, entry, hero_id)
-			if id == ClassDecks.starter(hero_id):
-				var badge := _label("Class starter", 15, TEAL)
-				card.add_child(badge)
-				card.move_child(badge, 3)
+		var hero_id: String = _run.data.get("pending_recruit", _run.data.get("hero", ""))
+		_add_tile_header(card, id, entry, hero_id)
+		if id == ClassDecks.starter(hero_id):
+			var badge := _label("Class starter", 15, TEAL)
+			card.add_child(badge)
+			card.move_child(badge, 3)
+
+
+func _add_class_draft_card(cards: HBoxContainer, id: String, phase: String, compact: bool) -> void:
+	var entry: Dictionary = FrontierRun.HEROES[id]
+	var card := _panel_stack(cards, Vector2(0, 280), true)
+	if compact:
+		card.get_parent().add_theme_stylebox_override("panel", _box(PANEL, EDGE, 9, 8))
+		card.add_theme_constant_override("separation", 6)
+	_add_portrait(card, GameIcons.hero_art(id), 86 if compact else 205)
+	var title := _label(entry.label, 21 if compact else 27, CREAM, true)
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	card.add_child(title)
+	var deck := _label(ClassDecks.summary(id), 14 if compact else 15, TEAL)
+	deck.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	card.add_child(deck)
+	var details := _label(entry.description, 14 if compact else 17, MUTED)
+	details.name = "ChoiceDetails"
+	details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	if compact:
+		var description_scroll := ScrollContainer.new()
+		description_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		description_scroll.custom_minimum_size.y = 36
+		description_scroll.size_flags_vertical = SIZE_EXPAND_FILL
+		details.size_flags_horizontal = SIZE_EXPAND_FILL
+		description_scroll.add_child(details)
+		card.add_child(description_scroll)
+	else:
+		details.size_flags_vertical = SIZE_EXPAND_FILL
+		card.add_child(details)
+	var actions := HFlowContainer.new()
+	actions.add_theme_constant_override("h_separation", 8)
+	actions.add_theme_constant_override("v_separation", 6)
+	card.add_child(actions)
+	var deck_button := _button("View class deck", func(): _show_class_deck(id), false, compact)
+	deck_button.name = "ClassDeck_" + id
+	deck_button.size_flags_horizontal = SIZE_EXPAND_FILL
+	if not compact:
+		GameIcons.decorate(deck_button, "review", 17)
+	actions.add_child(deck_button)
+	if id in _run.profile.mastered_classes:
+		var mastery := _button("Choose mastery", func(): _pick_draft(phase, id, true), false, compact)
+		mastery.name = "ChooseMasteryFor_" + id
+		mastery.tooltip_text = "Choose this hero and view their mastery options."
+		mastery.add_theme_color_override("font_color", GOLD)
+		if not compact:
+			GameIcons.decorate(mastery, "elite", 17)
+		actions.add_child(mastery)
+	var choose := _button("Choose", func(): _pick_draft(phase, id), true, compact)
+	choose.name = ("ChooseHero_" if phase == "hero" else "ChooseRecruit_") + id
+	card.add_child(choose)
 
 
 func _show_class_deck(hero_id: String) -> void:
@@ -517,14 +560,22 @@ func _show_deck_tile(summary: VBoxContainer, details: RichTextLabel, spec: Dicti
 	TileKeywords.set_description(details, copy)
 
 
-func _pick_draft(phase: String, id: String) -> void:
+func _pick_draft(phase: String, id: String, choose_mastery := false) -> void:
+	if phase in ["hero", "recruit"]:
+		_after_class_choice(_run.choose_hero(id), choose_mastery)
+		return
 	match phase:
-		"hero": _run.choose_hero(id)
 		"relic": _run.choose_relic(id)
 		"starter": _run.choose_starter(id)
-		"recruit": _run.choose_recruit(id)
 		"recruit_starter": _run.choose_recruit_starter(id)
 	_host.run_return()
+
+
+func _after_class_choice(advanced: bool, choose_mastery: bool) -> void:
+	if advanced and choose_mastery and not _run.mastery_offers().is_empty():
+		render(_run, "masteries")
+	else:
+		_refresh_after_choice(advanced)
 
 
 func _map() -> void:
@@ -1496,7 +1547,8 @@ func _render_class_roster() -> void:
 	for id: String in FrontierRun.HEROES:
 		var hero: Dictionary = FrontierRun.HEROES[id]
 		entries.append({"id": id, "label": hero.label, "description": hero.description,
-			"cost": _run.class_unlock_cost(id), "owned": id in available})
+			"cost": _run.class_unlock_cost(id), "owned": id in available,
+			"mastery": id in _run.profile.mastered_classes})
 	if _choosing_starter:
 		_class_roster.render_picker(entries)
 	else:
@@ -1508,9 +1560,9 @@ func _buy_roster_class(id: String) -> void:
 		_render_class_roster()
 
 
-func _pick_starter_class(id: String) -> void:
+func _pick_starter_class(id: String, choose_mastery: bool) -> void:
 	if _choosing_starter:
-		_refresh_after_choice(_run.choose_preferred_hero(id))
+		_after_class_choice(_run.choose_preferred_hero(id), choose_mastery)
 
 
 func _close_class_roster() -> void:
@@ -1520,11 +1572,11 @@ func _close_class_roster() -> void:
 		render(_run, "chart")
 
 
-func _page_title(title: String, subtitle: String) -> void:
-	_layout.add_child(_label(title, 27 if _battle_overlay else 44, CREAM, true))
+func _page_title(title: String, subtitle: String, compact := false) -> void:
+	_layout.add_child(_label(title, 27 if _battle_overlay or compact else 44, CREAM, true))
 	if subtitle.is_empty():
 		return
-	var text := _label(subtitle, 17, MUTED)
+	var text := _label(subtitle, 15 if compact else 17, MUTED)
 	text.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_layout.add_child(text)
 
@@ -1797,14 +1849,16 @@ func _label(value: String, points: int, color: Color, display := false) -> Label
 	return label
 
 
-func _button(title: String, activate: Callable, primary := false) -> Button:
+func _button(title: String, activate: Callable, primary := false, compact := false) -> Button:
 	var button := Button.new()
 	button.text = title
-	button.custom_minimum_size.y = 33 if _battle_overlay else 41
+	button.custom_minimum_size.y = 30 if compact else (33 if _battle_overlay else 41)
+	if compact:
+		button.add_theme_font_size_override("font_size", 14)
 	button.pressed.connect(activate)
 	var fill := Color("#60492d") if primary else PANEL_DARK
 	var border := GOLD if primary else EDGE
-	var inset := 7 if _battle_overlay else 12
+	var inset := 5 if compact else (7 if _battle_overlay else 12)
 	button.add_theme_stylebox_override("normal", _box(fill, border, 6, inset))
 	button.add_theme_stylebox_override("hover", _box(fill.lightened(0.12), GOLD, 6, inset))
 	button.add_theme_stylebox_override("pressed", _box(fill.darkened(0.14), GOLD, 6, inset))

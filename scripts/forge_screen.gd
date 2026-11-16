@@ -23,6 +23,7 @@ var _source_id := ""
 var _tiers: Array = []
 var _next_ids: Array = []
 var _inspected_id := ""
+var _inspected_plan: Variant = null
 var _is_combine := true
 var _cards: Dictionary = {}
 var _title: Label
@@ -373,7 +374,9 @@ func _inspect(id: String) -> void:
 	for rule: String in tile.get("targets", []):
 		targeting.append(TARGETS.get(rule, rule.capitalize()))
 	var can_choose := id in _next_ids
-	var fits: bool = not can_choose or _host.forge_can_fit(id)
+	var layout: Dictionary = _host.forge_layout(id) if can_choose else {}
+	_inspected_plan = layout.get("plan")
+	var fits: bool = not can_choose or (_host.forge_can_fit(id) if layout.is_empty() else not layout.plan.is_empty())
 	for child in _detail_stats.get_children():
 		_detail_stats.remove_child(child)
 		child.queue_free()
@@ -389,8 +392,7 @@ func _inspect(id: String) -> void:
 	_confirm.disabled = not can_choose or not fits
 	var prompt := "Combine into " if _is_combine else "Upgrade to "
 	_confirm.text = prompt + tile.label if can_choose else "Choose a next-tier tile"
-	var layout: Dictionary = _host.forge_layout(id) if can_choose else {}
-	if not fits and layout.is_empty():
+	if not fits:
 		_confirm.text = "Needs more room"
 	_show_layout(layout, tile, fits)
 	_confirm.add_theme_stylebox_override("normal", _box(Color("#5b442a"), GOLD))
@@ -423,45 +425,63 @@ func _show_layout(layout: Dictionary, upgrade: Dictionary, fits: bool) -> void:
 		extra = int(upgrade.width) - int(ArenaSim.TILES[layout.source.id].width)
 	_layout_preview.visible = extra > 0
 	_room_instruction.visible = extra > 0
-	_edit_layout.visible = extra > 0 and not fits
 	if extra <= 0:
+		_edit_layout.hide()
 		return
 	_edit_layout.text = "Edit storage" if layout.stored else "Edit timeline"
 	var source: Dictionary = ArenaSim.TILES[layout.source.id]
-	var source_start := int(layout.source.start)
+	var original := int(layout.source.start)
+	var plan: Dictionary = layout.plan
+	var source_start := int(plan.get("start", original))
 	var extension_start := source_start + int(source.width)
 	var extension_end := source_start + int(upgrade.width)
 	var cell_name := "cell" if layout.stored else "beat"
 	var needed := "one free %s" % cell_name if extra == 1 else "%d free %ss" % [extra, cell_name]
-	var blockers := PackedStringArray()
+	var changes := PackedStringArray()
+	var preview: Dictionary = {}
+	var stows := {}
+	for stow: Dictionary in plan.get("stows", []):
+		stows[stow.start] = stow
+	if plan.has("destination_row"):
+		changes.append("%s moves to storage row %d, cell %d" % [upgrade.label, int(plan.destination_row) + 1, source_start + 1])
+	elif source_start != original:
+		changes.append("%s moves to %s %d" % [upgrade.label, cell_name, source_start + 1])
+	var moves: Dictionary = plan.get("moves", {})
 	for item: Dictionary in layout.items:
-		if int(item.start) >= extension_end or int(item.start) + int(ArenaSim.TILES[item.id].width) <= extension_start:
+		var prior: int = item.start
+		var tile: Dictionary = ArenaSim.TILES[item.id]
+		if stows.has(prior):
+			var stow: Dictionary = stows[prior]
+			changes.append("%s goes to storage row %d, cell %d" % [tile.label, int(stow.row) + 1, int(stow.position) + 1])
 			continue
-		var label: String = ArenaSim.TILES[item.id].label
-		if label not in blockers:
-			blockers.append(label)
+		if fits and not plan.has("destination_row") and prior == original:
+			continue
+		var destination: int = moves.get(prior, prior)
+		if destination != prior:
+			changes.append("%s moves from %s %d to %d" % [tile.label, cell_name, prior + 1, destination + 1])
+		for cell in range(destination, destination + int(tile.width)):
+			preview[cell] = tile.label
+	_edit_layout.visible = not fits or not changes.is_empty()
 	if fits:
-		_room_instruction.text = "Fits here with %s immediately after %s." % [needed, source.label]
+		if changes.is_empty():
+			_room_instruction.text = "Fits here with %s after %s." % [needed, source.label]
+		else:
+			_room_instruction.text = ". ".join(changes) + "."
+			_confirm.text = "Upgrade and make room"
 	else:
-		_room_instruction.text = "Needs %s immediately after %s." % [needed, source.label]
-		if extension_end > int(layout.capacity):
-			_room_instruction.text += " Move it earlier in the %s." % ("row" if layout.stored else "timeline")
-		elif not blockers.is_empty():
-			_room_instruction.text += " Blocked by %s." % ", ".join(blockers)
+		_room_instruction.text = "No room for the wider tile. Free %s to upgrade %s." % [needed, source.label]
 	_room_instruction.add_theme_color_override("font_color", CLEAR if fits else BLOCKED)
 	for index in range(int(layout.capacity)):
-		var occupant := ""
-		for item: Dictionary in layout.items:
-			if int(item.start) <= index and index < int(item.start) + int(ArenaSim.TILES[item.id].width):
-				occupant = ArenaSim.TILES[item.id].label
-				break
+		var occupant: String = preview.get(index, "")
 		var is_source := index >= source_start and index < extension_start
 		var is_extension := index >= extension_start and index < extension_end
+		if fits and (is_source or is_extension):
+			occupant = upgrade.label
 		var color := EDGE
 		if is_source:
 			color = GOLD
 		elif is_extension:
-			color = CLEAR if occupant.is_empty() else BLOCKED
+			color = CLEAR if fits or occupant.is_empty() else BLOCKED
 		var cell := Label.new()
 		cell.text = str(index + 1)
 		cell.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -478,15 +498,15 @@ func _show_layout(layout: Dictionary, upgrade: Dictionary, fits: bool) -> void:
 		cell.add_theme_stylebox_override("normal", style)
 		var contents := occupant if not occupant.is_empty() else "Open"
 		cell.tooltip_text = "%s %d · %s" % [cell_name.capitalize(), index + 1, contents]
-		if is_extension and not occupant.is_empty():
+		if not fits and is_extension and not occupant.is_empty():
 			cell.tooltip_text += " blocks this upgrade"
 		cell.accessibility_name = cell.tooltip_text
 		_layout_preview.add_child(cell)
 
 
 func _confirm_upgrade() -> void:
-	if _inspected_id in _next_ids:
-		_host.forge_choose(_inspected_id)
+	if not _confirm.disabled and _inspected_id in _next_ids:
+		_host.forge_choose(_inspected_id, _inspected_plan)
 
 
 func _box(fill: Color, border: Color, border_width := 1) -> StyleBoxFlat:

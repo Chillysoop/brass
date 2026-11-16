@@ -252,6 +252,9 @@ func _check_crowded_reward_drop(lab: Control) -> void:
 		return
 	lab.run_return()
 	await process_frame
+	var swap_hint := lab.storage_screen.find_child("StorageSwapHint", true, false) as Label
+	_check(swap_hint != null and swap_hint.is_visible_in_tree() and "same-width" in swap_hint.text,
+		"The reward storage panel tells players that same-width drops swap tiles.")
 	lab._place({"id": "tap_bolt", "row": 0, "lane": -1, "start": 7}, 0, 4, true)
 	_check(run.data.phase == "reward" and lab.lanes[0][4].target == "farthest"
 		and lab.storage_rows[0][0].start == 7 and lab.storage_rows[0][0].target == "lowest_hp",

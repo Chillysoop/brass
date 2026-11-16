@@ -381,14 +381,14 @@ func _check_combat_numbers() -> void:
 		{"kind": "guard", "amount": 5, "target": "hero_0", "actor": "hero_0", "tile": "guard", "from": near_edge, "to": near_edge},
 	]
 	view.present([], events, 60, [], 3)
-	view._layout_combat_numbers(field, 0.43, [charge_bar])
+	view._layout_combat_numbers(field, 0.43, [charge_bar], [])
 	var critical: Dictionary = view._combat_numbers[0]
 	var original: Rect2 = critical.bounds
 	_check(critical.label == "29!" and view._combat_numbers[2].glyph == "heal" and view._combat_numbers[3].glyph == "guard",
 		"Critical damage, healing, and Guard use distinct combat numbers.")
 	view._process(0.55)
 	view.present([], [events[1]], 159, [], 3)
-	view._layout_combat_numbers(field, 0.43, [charge_bar])
+	view._layout_combat_numbers(field, 0.43, [charge_bar], [])
 	var placed: Array[Rect2] = [charge_bar]
 	var viewport := Rect2(Vector2.ZERO, view.size)
 	for number: Dictionary in view._combat_numbers:
@@ -694,12 +694,12 @@ func _check_forge_layout_edit(lab: Control) -> void:
 	lab._open_camp_forge()
 	lab.forge_screen._inspect("bulwark_charge")
 	var caption: String = lab.forge_screen._room_instruction.text
-	_check(lab.forge_screen._confirm.disabled and lab.forge_screen._edit_layout.visible
-		and "one free beat immediately after Shield Ram" in caption and "Blocked by Hook Sweep" in caption,
-		"A camp upgrade should explain which adjacent beat and tile are blocking it.")
+	_check(not lab.forge_screen._confirm.disabled and lab.forge_screen._edit_layout.visible
+		and lab.forge_screen._confirm.text == "Upgrade and make room" and "Hook Sweep moves" in caption,
+		"A wider camp upgrade should preview the adjacent tile's move and offer manual editing.")
 	var room: HBoxContainer = lab.forge_screen._layout_preview
-	_check(room.get_child_count() == ArenaSim.BEATS and "Beat 10 · Hook Sweep" in room.get_child(9).tooltip_text,
-		"The preview should mark the overlapping beat on the twelve-beat strip.")
+	_check(room.get_child_count() == ArenaSim.BEATS and room.get_child(9).tooltip_text == "Beat 10 · Bulwark Charge",
+		"The twelve-beat strip should show which tile will occupy the formerly blocked beat.")
 	lab.forge_screen._edit_layout.pressed.emit()
 	_check(not lab.forge_screen.visible and lab.storage_screen.visible and lab.action.text == "Back to forge",
 		"Edit timeline should open the existing timeline and storage with a direct way back to the chosen upgrade.")
@@ -712,7 +712,7 @@ func _check_forge_layout_edit(lab: Control) -> void:
 	lab.storage_pick(0, lab.storage_rows[0][0])
 	lab.action.pressed.emit()
 	_check(lab.forge_screen.visible and lab.forge_screen._inspected_id == "bulwark_charge" \
-		and not lab.forge_screen._confirm.disabled and room.get_child(7).tooltip_text == "Beat 8 · Open",
+		and not lab.forge_screen._confirm.disabled and room.get_child(7).tooltip_text == "Beat 8 · Bulwark Charge",
 		"Returning should preserve the inspected branch and follow the original tile after rearranging.")
 	lab.forge_screen._confirm.pressed.emit()
 	var restored := FrontierRun.new()

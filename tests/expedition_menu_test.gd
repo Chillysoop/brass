@@ -68,10 +68,17 @@ func _check_save_slots() -> void:
 	_check(run.load_active_save_slot(folder) and run.save_path == old_path and run.active_save_slot == 1,
 		"With no slot index, startup opens the existing Slot 1 file directly.")
 	game.run_menu()
-	await _press_named(menu, "NewGame")
-	_check(menu.find_children("NewGameSlot_*", "Button", true, false).size() == 3,
-		"New Game offers exactly three independent save slots.")
-	await _press_named(menu, "NewGameSlot_2")
+	_check(menu.find_child("NewGame", true, false) == null, "The title has no separate destructive New Game action.")
+	await _press_named(menu, "SaveSlots")
+	_check(menu.find_children("SaveSlot_*", "Button", true, false).size() == 3
+		and menu.find_children("ResetSaveSlot_*", "Button", true, false).size() == 1,
+		"Save slots offers three independent slots and a reset action only for occupied Slot 1.")
+	await _press_named(menu, "SaveSlot_2")
+	_check(run.active_save_slot == 2 and run.data.is_empty() and run.profile == FrontierRun.DEFAULT_PROFILE,
+		"Selecting an empty slot opens its blank profile.")
+	await _press_named(menu, "NewExpedition")
+	await _press_named(menu, "Region_brass")
+	await _press_named(menu, "Difficulty_easy")
 	var new_seed: int = run.data.get("seed", 0)
 	_check(run.active_save_slot == 2 and run.data.phase == "hero" and run.data.hp == 100
 		and run.profile == FrontierRun.DEFAULT_PROFILE, "A blank slot starts a fresh Brass Easy hero draft.")
@@ -96,11 +103,28 @@ func _check_save_slots() -> void:
 	_check(restored.load_active_save_slot(folder) and restored.active_save_slot == 1 and restored.data.seed == 991,
 		"Restart still resolves to the original slot after a failed index write.")
 	game.run_menu()
-	await _press_named(menu, "NewGame")
-	await _press_named(menu, "NewGameSlot_1")
-	var confirmation := menu.find_child("ReplaceSaveSlot", true, false) as ConfirmationDialog
+	await _press_named(menu, "SaveSlots")
+	var scale := root.content_scale_mode
+	var window_size := root.size
+	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
+	root.size = Vector2i(856, 535)
+	await process_frame
+	await process_frame
+	for button: Button in menu.find_children("ResetSaveSlot_*", "Button", true, false):
+		_check(root.get_visible_rect().encloses(button.get_global_rect()), "Each occupied slot’s reset action fits at compact width.")
+	root.content_scale_mode = scale
+	root.size = window_size
+	await _press_named(menu, "ResetSaveSlot_1")
+	var confirmation := menu.find_child("ConfirmSaveSlotReset", true, false) as ConfirmationDialog
 	_check(confirmation != null and confirmation.visible and run.data.seed == 991 and run.profile.marks == 37,
-		"Choosing an occupied slot requires an explicit confirmation before the reset.")
+		"Reset Save Slot requires explicit confirmation before the reset.")
+	if confirmation != null:
+		confirmation.canceled.emit()
+		await process_frame
+		_check(run.data.seed == 991 and run.profile.marks == 37 and not run.start_new_game_in_slot(1),
+			"Cancel preserves the expedition and profile, and an unconfirmed occupied reset is rejected.")
+		await _press_named(menu, "ResetSaveSlot_1")
+		confirmation = menu.find_child("ConfirmSaveSlotReset", true, false) as ConfirmationDialog
 	if confirmation != null:
 		confirmation.confirmed.emit()
 		await process_frame
@@ -129,6 +153,9 @@ func _check_save_slots() -> void:
 
 func _check_navigation() -> void:
 	_check(menu.is_visible_in_tree() and not chart.is_visible_in_tree(), "A fresh game opens on the title menu.")
+	var hint := menu.find_child("NewExpeditionHint", true, false) as Label
+	_check(hint != null and hint.is_visible_in_tree() and hint.text.contains("unlocks and Aether Marks"),
+		"The title visibly explains the profile progress carried into a new expedition.")
 	await _press_named(menu, "NewExpedition")
 	_check(game.run.data.is_empty(), "Starting from the title must open region selection before creating a run.")
 	_check_disabled(menu, "Region_glass", "Locked")
@@ -556,6 +583,7 @@ func _check_class_roster() -> void:
 		"The purchase adds only Breaker and spends six Aether Marks on disk.")
 	await _press_named(roster, "BackFromClassRoster")
 	_check(chart.is_visible_in_tree(), "Back from the class roster returns to the Aether Chart.")
+	run.profile.mastered_classes = ["breaker"]
 	_check(run.start_run(TEST_SEED), "Start an expedition with Breaker unlocked.")
 	var draft: Array = run.data.offers.duplicate()
 	game.run_return()
@@ -569,9 +597,12 @@ func _check_class_roster() -> void:
 		"Returning to Draft Three preserves the seeded choices.")
 	await _press_named(game.frontier_screen, "ChooseStarterFromRoster")
 	await _press_named(roster, "ClassRoster_breaker")
-	await _press_named(roster, "ChooseStarterClass")
-	_check(run.data.phase == "relic" and run.data.hero == "breaker",
-		"Choosing an unlocked class directly enters the normal relic draft.")
+	await _press_named(roster, "ChooseRosterMastery")
+	_check(run.data.phase == "relic" and run.data.hero == "breaker" and not run.mastery_offers().is_empty(),
+		"The mastered class action in the full roster selects the class and opens its mastery choices.")
+	await _press_named(game.frontier_screen, "ContinueMasteryDraft")
+	_check(game.frontier_screen.find_child("ChooseClassMastery", true, false) != null and run.selected_mastery().is_empty(),
+		"Skipping from the mastery screen enters the normal relic draft.")
 
 
 func _press_text(parent: Control, prefix: String) -> void:

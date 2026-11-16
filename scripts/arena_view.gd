@@ -440,12 +440,16 @@ func _draw() -> void:
 		var second: Vector2 = _positions.get(b.id, b.pos)
 		return first.y < second.y)
 	var hud_space: Array[Rect2] = []
+	var figure_space: Array[Rect2] = []
+	var windup_callouts: Array[Dictionary] = []
 	var cannon_muzzles: Dictionary[String, Vector2] = {}
 	for unit in ordered_units:
 		if unit.hp <= 0:
 			continue
 		var point := _project(_positions.get(unit.id, unit.pos), field)
-		hud_space.append(_draw_unit(unit, point, sprite_scale, cannon_muzzles))
+		var bounds := _draw_unit(unit, point, sprite_scale, cannon_muzzles, windup_callouts)
+		hud_space.append(bounds.hud)
+		figure_space.append(bounds.figure)
 	_draw_repairmaster_cues(field)
 	for cast: Dictionary in _attack_casts:
 		if cast.tile in [REPAIRMASTER_DASH, REPAIRMASTER_REPAIR]:
@@ -476,8 +480,10 @@ func _draw() -> void:
 					AttackAnimation.draw_secondary_contact(self, cast.profile, start, end, progress, cast_size)
 	for effect in _effects:
 		_draw_feedback(effect, field)
+	figure_space.append_array(hud_space)
+	var windup_space := _draw_windup_callouts(windup_callouts, figure_space, board)
 	if not _combat_numbers.is_empty():
-		_layout_combat_numbers(field, sprite_scale, hud_space)
+		_layout_combat_numbers(field, sprite_scale, hud_space, windup_space)
 		for number in _combat_numbers:
 			if number.bounds.has_area():
 				_draw_combat_number(number)
@@ -555,7 +561,7 @@ func _combat_sprite(id: String, key: String, texture: Texture2D, friendly: bool)
 
 
 func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float,
-		cannon_muzzles: Dictionary[String, Vector2]) -> Rect2:
+		cannon_muzzles: Dictionary[String, Vector2], windup_callouts: Array[Dictionary]) -> Dictionary:
 	var friendly: bool = unit.side == "hero"
 	var accent := HERO_COLOR if friendly else ENEMY_COLOR
 	if friendly and location == "glass":
@@ -668,58 +674,7 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float,
 	for index in range(stacks):
 		var pip := Vector2(bar.end.x + 5.0 + index * 6.0, bar.get_center().y)
 		draw_circle(pip, 2.4, ENEMY_COLOR.lightened(0.2), true, -1.0, true)
-	if _windups.has(unit.id):
-		var window: Vector2i = _windups[unit.id]
-		var charge := clampf(inverse_lerp(float(window.x), float(window.y), float(combat_tick)), 0.0, 1.0)
-		var rapid := _attack_rate > 1.0
-		var gauge := Rect2(bar.position + Vector2(0, 9), Vector2(bar.size.x, 6.0 if rapid else 4.0))
-		var attack_id: String = unit.get("intent_attack_id", "")
-		var repairing := _is_repair_cue(attack_id)
-		var retreating := attack_id == REPAIRMASTER_DASH
-		var repair_cycle := repairing or retreating
-		var charge_color := REPAIR_COLOR if repair_cycle else GOLD.lerp(ENEMY_COLOR, charge * charge)
-		if attack_id == VANGUARD_CHARGE:
-			charge_color = VANGUARD_COLOR
-		elif attack_id == CANNON_SHOT:
-			charge_color = CANNON_COLOR
-		draw_rect(gauge.grow(1), INK)
-		draw_rect(gauge, REPAIR_COLOR.darkened(0.76) if repair_cycle else Color("#593b29"))
-		draw_rect(Rect2(gauge.position, Vector2(gauge.size.x * charge, gauge.size.y)), charge_color)
-		if rapid:
-			draw_rect(gauge.grow(0.5), Color(charge_color, lerpf(0.56, 1.0, charge)), false, 1.0)
-		_draw_status_badge("heal" if repairing else "windup", Vector2(gauge.position.x - 8.0, gauge.get_center().y),
-			charge_color if rapid else Color.TRANSPARENT)
-		if repairing:
-			var caption := "REPAIR LINK" if attack_id == REPAIRMASTER_REPAIR else "REPAIRING"
-			_draw_centered(caption, bar.get_center() - Vector2(0.0, 9.0), 13, REPAIR_COLOR)
-		elif retreating:
-			_draw_centered("FALLING BACK", bar.get_center() - Vector2(0.0, 9.0), 13, REPAIR_COLOR)
-		if attack_id == REPAIRMASTER_REPAIR:
-			var threshold := float(unit.get("repairmaster_interrupt_damage", 0.0))
-			if threshold > 0.0:
-				var damage_taken := int(unit.get("repairmaster_damage_taken", 0))
-				var damage_progress := clampf(damage_taken / threshold, 0.0, 1.0)
-				var interrupt_track := Rect2(gauge.position + Vector2(0.0, gauge.size.y + 3.0), Vector2(gauge.size.x, 2.0))
-				draw_rect(interrupt_track.grow(1.0), INK)
-				draw_rect(interrupt_track, Color("#73463a"))
-				draw_rect(Rect2(interrupt_track.position, Vector2(interrupt_track.size.x * damage_progress, interrupt_track.size.y)), ENEMY_COLOR)
-				_draw_centered("Interrupt %d/%d" % [damage_taken, int(threshold)],
-					interrupt_track.get_center() + Vector2(0, 11), 10, WHITE)
-		var special: String = unit.get("special_intent", "")
-		var windup_label: String = SIGNATURE_WINDUP_LABELS.get(attack_id, "")
-		if attack_id == "veteran" and not str(unit.get("captain_rally", "")).is_empty():
-			windup_label = "FALL BACK"
-		elif attack_id == "boss" and unit.get("enraged", false):
-			windup_label = "RALLY STRIKE"
-		if not windup_label.is_empty():
-			var warning_color := charge_color if attack_id in [VANGUARD_CHARGE, CANNON_SHOT] else WHITE
-			_draw_centered(windup_label, bar.get_center() - Vector2(0.0, 9.0), 12, warning_color)
-		if special in ["powder_runner", "brass_pressure_sentinel"]:
-			var progress_count: int = unit.get("powder_hits", unit.get("pressure_vents", 0))
-			for index in range(2):
-				var pip := gauge.end + Vector2(5.0 + index * 6.0, -2.0)
-				draw_circle(pip, 2.3, HERO_COLOR if index < progress_count else GOLD, true, -1.0, true)
-	elif _attack_rate > 1.0 and cast.get("kind", "") == "enemy_cast":
+	if not _windups.has(unit.id) and _attack_rate > 1.0 and cast.get("kind", "") == "enemy_cast":
 		_draw_enemy_release(cast, Vector2(bar.get_center().x, bar.end.y + 7.0))
 	if int(unit.get("tar_slow_until", 0)) > combat_tick:
 		draw_arc(point, radius, 0.0, PI, 16, Color("#be915d"), 2.0, true)
@@ -787,7 +742,134 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float,
 		_draw_centered("WINCH PULL", bar.get_center() - Vector2(0.0, 9.0), 13, DOCK_WINCH_COLOR)
 	var hud := bar.grow_individual(30.0, 26.0, 30.0, 16.0) if _windups.has(unit.id) \
 		else bar.grow_individual(13.0, 5.0, 13.0, 13.0)
-	return hud.merge(burn_badge) if burn_badge.has_area() else hud
+	if _windups.has(unit.id):
+		var anchor := Vector2(bar.get_center().x, hud.position.y)
+		windup_callouts.append(_windup_callout(unit, anchor))
+	var aspect := float(texture.get_width()) / maxf(1.0, texture.get_height()) if texture else 1.0
+	var figure_size := Vector2(art_height * minf(1.4, aspect) * 0.82, art_height * 0.84)
+	var figure := Rect2(point + bounce - Vector2(figure_size.x * 0.5, figure_size.y), figure_size)
+	return {"hud": hud.merge(burn_badge) if burn_badge.has_area() else hud, "figure": figure}
+
+
+func _windup_callout(unit: Dictionary, anchor: Vector2) -> Dictionary:
+	var window: Vector2i = _windups[unit.id]
+	var charge := clampf(inverse_lerp(float(window.x), float(window.y), float(combat_tick)), 0.0, 1.0)
+	var attack_id: String = unit.get("intent_attack_id", "")
+	var repairing := _is_repair_cue(attack_id)
+	var caption: String = SIGNATURE_WINDUP_LABELS.get(attack_id, "")
+	var tone := GOLD.lerp(ENEMY_COLOR, charge * charge)
+	if repairing:
+		caption = "REPAIR LINK" if attack_id == REPAIRMASTER_REPAIR else "REPAIRING"
+		tone = REPAIR_COLOR
+	elif attack_id == REPAIRMASTER_DASH:
+		caption = "FALLING BACK"
+		tone = REPAIR_COLOR
+	elif attack_id == VANGUARD_CHARGE:
+		tone = VANGUARD_COLOR
+	elif attack_id == CANNON_SHOT:
+		tone = CANNON_COLOR
+	elif attack_id == "veteran" and not str(unit.get("captain_rally", "")).is_empty():
+		caption = "FALL BACK"
+	elif attack_id == "boss" and unit.get("enraged", false):
+		caption = "RALLY STRIKE"
+	var interrupt_limit := int(unit.get("repairmaster_interrupt_damage", 0)) if attack_id == REPAIRMASTER_REPAIR else 0
+	var interrupt_damage := int(unit.get("repairmaster_damage_taken", 0))
+	var detail := "Interrupt %d/%d" % [interrupt_damage, interrupt_limit] if interrupt_limit > 0 else ""
+	var special: String = unit.get("special_intent", "")
+	var pips := int(unit.get("powder_hits", unit.get("pressure_vents", 0))) \
+		if special in ["powder_runner", "brass_pressure_sentinel"] else -1
+	return {"anchor": anchor, "caption": caption, "tone": tone, "charge": charge,
+		"glyph": "heal" if repairing else "windup", "detail": detail,
+		"interrupt": clampf(float(interrupt_damage) / maxi(1, interrupt_limit), 0.0, 1.0), "pips": pips}
+
+
+func _windup_callout_bounds(area: Rect2, anchor: Vector2, extent: Vector2, occupied: Array[Rect2]) -> Rect2:
+	var limit := (area.end - extent).max(area.position)
+	var origin := (anchor - Vector2(extent.x * 0.5, extent.y + 5.0)).clamp(area.position, limit)
+	var preferred := Rect2(origin, extent)
+	if not occupied.any(func(other: Rect2): return other.intersects(preferred.grow(2.0))):
+		return preferred
+	var columns: Array[float] = [origin.x, area.position.x, limit.x]
+	var rows: Array[float] = [origin.y, area.position.y, limit.y]
+	for blocker: Rect2 in occupied:
+		columns.append(clampf(blocker.position.x - extent.x - 4.0, area.position.x, limit.x))
+		columns.append(clampf(blocker.end.x + 4.0, area.position.x, limit.x))
+		rows.append(clampf(blocker.position.y - extent.y - 4.0, area.position.y, limit.y))
+		rows.append(clampf(blocker.end.y + 4.0, area.position.y, limit.y))
+	var best := preferred
+	var best_cost := INF
+	for row: float in rows:
+		var below_anchor := maxf(0.0, row + extent.y - anchor.y)
+		for column: float in columns:
+			var position := Vector2(column, row)
+			var cost := position.distance_squared_to(origin) + 3.0 * below_anchor * below_anchor
+			if cost >= best_cost:
+				continue
+			var bounds := Rect2(position, extent)
+			if not occupied.any(func(other: Rect2): return other.intersects(bounds.grow(2.0))):
+				best = bounds
+				best_cost = cost
+	return best
+
+
+func _draw_windup_callouts(callouts: Array[Dictionary], blocked: Array[Rect2], board: Rect2) -> Array[Rect2]:
+	var reserved: Array[Rect2] = []
+	if callouts.is_empty():
+		return reserved
+	var area := board.grow(-5.0)
+	if not _reinforcement_warning.is_empty() or units.any(func(unit: Dictionary):
+		return (unit.hp > 0 and unit.has("marshal_plate_integrity")
+			and (unit.get("intent_attack_id") == "marshal_sweep" and _windups.has(unit.id)
+				or int(unit.get("marshal_exposed_until", 0)) > combat_tick))
+	):
+		area.position.y += 27.0
+		area.size.y -= 27.0
+	var occupied := blocked.duplicate()
+	for callout: Dictionary in callouts:
+		var width := maxf(67.0, _combat_number_font.get_string_size(callout.caption, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 16).x + 16.0)
+		width = maxf(width, _combat_number_font.get_string_size(callout.detail, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 12).x + 16.0)
+		var height := 20.0 if callout.caption.is_empty() else 36.0
+		if not callout.detail.is_empty():
+			height += 17.0
+		var bounds := _windup_callout_bounds(area, callout.anchor, Vector2(width, height), occupied)
+		occupied.append(bounds)
+		reserved.append(bounds)
+		var stem := Vector2(clampf(callout.anchor.x, bounds.position.x + 8.0, bounds.end.x - 8.0), bounds.end.y)
+		if callout.anchor.y >= stem.y:
+			draw_line(stem, callout.anchor, Color(INK, 0.94), 3.0, true)
+			draw_line(stem, callout.anchor, Color(callout.tone, 0.80), 1.0, true)
+	for index in range(callouts.size()):
+		_draw_windup_callout(callouts[index], reserved[index])
+	return reserved
+
+
+func _draw_windup_callout(callout: Dictionary, bounds: Rect2) -> void:
+	draw_rect(bounds, Color("#201c27f8"))
+	draw_rect(bounds, Color(callout.tone, 0.78), false, 1.0)
+	var track_y := bounds.position.y + 6.0
+	if not callout.caption.is_empty():
+		draw_string(_combat_number_font, Vector2(bounds.position.x, bounds.position.y + 17.0),
+			callout.caption, HORIZONTAL_ALIGNMENT_CENTER, bounds.size.x, 16, WHITE)
+		track_y += 16.0
+	var track_width := bounds.size.x - (45.0 if callout.pips >= 0 else 28.0)
+	var track := Rect2(bounds.position.x + 21.0, track_y, track_width, 8.0 if _attack_rate > 1.0 else 7.0)
+	_draw_windup_meter(track, callout.charge, callout.tone)
+	CombatIcons.draw(self, callout.glyph, Vector2(bounds.position.x + 11.0, track.get_center().y), 12.0, callout.tone)
+	if callout.pips >= 0:
+		for index in range(2):
+			var pip := Vector2(track.end.x + 6.0 + index * 7.0, track.get_center().y)
+			draw_circle(pip, 2.5, HERO_COLOR if index < callout.pips else GOLD, true, -1.0, true)
+	if not callout.detail.is_empty():
+		var interrupt_track := Rect2(track.position.x, track.end.y + 4.0, track.size.x, 3.0)
+		_draw_windup_meter(interrupt_track, callout.interrupt, ENEMY_COLOR)
+		draw_string(_combat_number_font, Vector2(bounds.position.x, bounds.end.y - 4.0),
+			callout.detail, HORIZONTAL_ALIGNMENT_CENTER, bounds.size.x, 12, WHITE)
+
+
+func _draw_windup_meter(track: Rect2, progress: float, tone: Color) -> void:
+	draw_rect(track, Color("#55363a"))
+	draw_rect(Rect2(track.position, Vector2(track.size.x * progress, track.size.y)), tone)
+	draw_rect(track, Color(tone, 0.66), false, 1.0)
 
 
 func _draw_enemy_release(cast: Dictionary, center: Vector2) -> void:
@@ -995,10 +1077,13 @@ func _draw_intents(field: Rect2) -> void:
 			var radius: Vector2 = float(unit.blast_radius) * field.size / WORLD_SIZE
 			var center := _project(unit.blast_center, field)
 			if special == "bellmaker_shot":
-				_draw_sweep_warning(center, radius, Color("#f8bd91"))
+				_draw_bellmaker_warning(center, radius, Color("#f8bd91"))
 				var notch := minf(radius.x, radius.y) * 0.34
 				for direction: Vector2 in [Vector2.UP, Vector2.DOWN, Vector2.LEFT, Vector2.RIGHT]:
-					draw_line(center + direction * notch * 0.38, center + direction * notch, Color("#ffe0b0"), 2.0, true)
+					var notch_start := center + direction * notch * 0.38
+					var notch_end := center + direction * notch
+					draw_line(notch_start, notch_end, SWEEP_EDGE, 5.0, true)
+					draw_line(notch_start, notch_end, SWEEP_LIGHT, 2.0, true)
 			elif special == "crown_chorister":
 				_draw_sweep_warning(center, radius, RELAY_SHIELD_COLOR)
 			else:
@@ -1023,7 +1108,7 @@ func _draw_intents(field: Rect2) -> void:
 			elif special == "crown_page_advance":
 				_draw_sweep_warning(start, radius, RELAY_SHIELD_COLOR)
 			elif special == "bellmaker_ring":
-				_draw_sweep_warning(start, radius, GOLD)
+				_draw_bellmaker_warning(start, radius, GOLD)
 			elif special == "glass_refraction_discharge":
 				_draw_sweep_warning(start, radius, Color("#b9bfff"))
 			elif unit.get("intent_attack_id") == "marshal_sweep":
@@ -1339,6 +1424,12 @@ func _dock_sweep_radius(unit: Dictionary) -> float:
 func _draw_sweep_warning(center: Vector2, radius: Vector2, warning: Color = Color("#f29c76")) -> void:
 	_draw_ellipse(center, radius, Color(warning, 0.11))
 	_draw_dashed_ellipse(center, radius, warning)
+
+
+func _draw_bellmaker_warning(center: Vector2, radius: Vector2, accent: Color) -> void:
+	_draw_ellipse(center, radius, Color(SWEEP_EDGE, 0.15))
+	_draw_dashed_ellipse(center, radius, SWEEP_EDGE, 6.2)
+	_draw_dashed_ellipse(center, radius, accent, 2.5)
 
 
 func _draw_marshal_sweep_warning(center: Vector2, radius: Vector2, charge: float) -> void:
@@ -1751,16 +1842,19 @@ func _add_combat_number(event: Dictionary) -> void:
 		_combat_numbers.remove_at(maxi(0, oldest_normal))
 
 
-func _layout_combat_numbers(field: Rect2, unit_scale: float, hud_space: Array[Rect2]) -> void:
+func _layout_combat_numbers(field: Rect2, unit_scale: float, hud_space: Array[Rect2],
+		windup_space: Array[Rect2]) -> void:
 	var resized := size != _combat_number_layout_size
 	_combat_number_layout_size = size
 	var occupied := hud_space.duplicate()
+	occupied.append_array(windup_space)
 	for number in _combat_numbers:
-		if resized:
+		var bounds: Rect2 = number.get("bounds", Rect2())
+		if resized or (bounds.has_area() and windup_space.any(func(other: Rect2): return other.intersects(bounds))):
 			number.erase("bounds")
-		elif number.has("bounds") and number.bounds.has_area():
-			occupied.append(number.bounds)
-	# Place new criticals first, and keep all assigned positions steady as the numbers rise.
+		elif bounds.has_area():
+			occupied.append(bounds)
+	# Keep numbers steady unless a new windup claims their space.
 	var lift := clampf(unit_scale * 110.0, 44.0, 78.0)
 	for critical: bool in [true, false]:
 		for number in _combat_numbers:

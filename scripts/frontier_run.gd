@@ -40,7 +40,7 @@ const EARLY_BUILD_DIRECTIONS := {
 const RELIC_STARTERS := {"towline_knot": "pull", "bridgeplate": "shield_ram"}
 const FORGE_UNLOCKS := {"blink": "blink_artifice", "shot": "shot_artifice", "guard": "guard_artifice"}
 const SHARED_RELICS := {
-	"pocket_bell": {"label": "Pocket Bell", "description": "Gain guard at the start of each combat loop."},
+	"pocket_bell": {"label": "Pocket Bell", "description": "Each living hero gains %d Guard at the start of each combat loop." % ArenaSim.POCKET_BELL_GUARD},
 	"copper_compass": {"label": "Copper Compass", "description": "Your first push each loop travels farther."},
 	"quartermasters_coin": {"label": "Quartermaster's Coin", "description": "Gain 3 extra gold on the first skipped tile reward from each fight."},
 	"trail_ration": {"label": "Trail Ration", "description": "Recover 5 HP after each victory."},
@@ -1728,16 +1728,13 @@ func leave_node() -> bool:
 	return _return_to_map(data.duplicate(true))
 
 
-func rest(action: String, forge_notice := "") -> bool:
-	if data.get("phase") != "rest" or action not in ["heal", "forge"]:
+func rest(action: String) -> bool:
+	if data.get("phase") != "rest" or action != "heal":
 		return false
 	var before := data.duplicate(true)
-	if action == "heal":
-		for hero: Dictionary in data.heroes:
-			hero.hp = mini(int(hero.max_hp), int(hero.hp) + ceili(float(hero.max_hp) * 0.30))
-		_sync_lead_hero()
-	elif not forge_notice.is_empty():
-		data.node_notice = forge_notice
+	for hero: Dictionary in data.heroes:
+		hero.hp = mini(int(hero.max_hp), int(hero.hp) + ceili(float(hero.max_hp) * 0.30))
+	_sync_lead_hero()
 	return _return_to_map(before)
 
 
@@ -1827,51 +1824,89 @@ func _begin_mystery_reward(offers: Array) -> bool:
 func mystery_smith_options(id: String) -> Array:
 	if data.get("phase") != "event" or mystery_kind() != "traveling_smith":
 		return []
-	var family: String = ArenaSim.TILES.get(id, {}).get("family", "")
-	return TilePacking.next_options(id) if forge_family_available(family) else []
+	return TilePacking.next_options(id) if _camp_forge_requirement(id).is_empty() else []
 
 
 func choose_mystery_upgrade(source: Dictionary, upgrade: String) -> bool:
-	var source_id: String = source.get("id", "")
-	if upgrade not in mystery_smith_options(source_id):
-		return false
+	return data.get("phase") == "event" and mystery_kind() == "traveling_smith" and choose_camp_upgrade(source, upgrade)
+
+
+func camp_forge_blocker(source: Dictionary) -> String:
+	var phase: String = data.get("phase", "")
+	if phase != "rest" and (phase != "event" or mystery_kind() != "traveling_smith"):
+		return "The forge is unavailable here."
 	var stored := source.has("row")
 	var rows: Array = loadout.storage if stored else loadout.lanes
 	var row := int(source.get("row" if stored else "lane", -1))
-	if row < 0 or row >= rows.size():
-		return false
-	var items: Array = rows[row]
-	var capacity := TilePacking.STORAGE_COLUMNS if stored else ArenaSim.BEATS
 	var start := int(source.get("start", -1))
-	if not TilePacking.can_place(items, upgrade, start, capacity, start):
+	var id: String = source.get("id", "")
+	if row < 0 or row >= rows.size() or _forge_tile_index(rows[row], id, start) < 0:
+		return "Select a tile to forge."
+	return _camp_forge_requirement(id)
+
+
+func _camp_forge_requirement(id: String) -> String:
+	var tile: Dictionary = ArenaSim.TILES.get(id, {})
+	if TilePacking.next_options(id).is_empty():
+		if tile.get("rarity") == "legendary":
+			return "%s is already Legendary." % tile.label
+		return "This tile has no forge upgrade."
+	var family: String = tile.get("family", "")
+	if not forge_family_available(family):
+		var unlock: Dictionary = META_NODES[FORGE_UNLOCKS[family]]
+		return "Unlock %s in the Aether Chart (%d Marks)." % [unlock.label, unlock.cost]
+	return ""
+
+
+func camp_forge_plan(source: Dictionary, upgrade: String) -> Dictionary:
+	if not camp_forge_blocker(source).is_empty() or upgrade not in TilePacking.next_options(source.get("id", "")):
+		return {}
+	return TilePacking.forge_upgrade_plan(loadout.lanes, loadout.storage, source, upgrade)
+
+
+func choose_camp_upgrade(source: Dictionary, upgrade: String, expected_plan: Variant = null) -> bool:
+	var plan := camp_forge_plan(source, upgrade)
+	if plan.is_empty() or (expected_plan != null and expected_plan != plan):
 		return false
-	for item: Dictionary in items:
-		if item.id != source_id or item.start != start:
-			continue
-		var before := data.duplicate(true)
-		var target: String = item.target
-		var enchantment: String = item.get("enchantment", "")
-		var targets: Array = ArenaSim.TILES[upgrade].targets
-		item.id = upgrade
-		TileEnchantments.keep_if_eligible(item, ArenaSim.TILES[upgrade])
-		if target not in targets and (target not in ArenaSim.CROWN_TARGET_RULES or "nearest" not in targets):
-			item.target = targets[0]
-		var was_suppressed: bool = loadout.suppressed.erase(upgrade)
-		data.phase = "map"
-		data.offers = []
-		data.node_notice = "%s upgraded to %s." % [ArenaSim.TILES[source_id].label, ArenaSim.TILES[upgrade].label]
-		if not enchantment.is_empty() and not item.has("enchantment"):
-			data.node_notice += "\n%s returned to storage." % TileEnchantments.info(enchantment).label
-		if _save_run_change(before):
-			return true
-		item.id = source_id
-		item.target = target
-		if not enchantment.is_empty():
-			item.enchantment = enchantment
-		if was_suppressed:
-			loadout.suppressed[upgrade] = true
-		return false
-	return false
+	var before := data.duplicate(true)
+	var before_loadout := loadout
+	var revised := loadout.duplicate(true)
+	var stored := source.has("row")
+	var row: int = source.row if stored else source.lane
+	var source_items: Array = revised.storage[row] if stored else revised.lanes[row]
+	var item: Dictionary = source_items.pop_at(_forge_tile_index(source_items, source.id, source.start))
+	var items: Array = revised.storage[plan.get("destination_row", row)] if stored else source_items
+	for stow: Dictionary in plan.get("stows", []):
+		var index := items.find_custom(func(neighbor: Dictionary): return neighbor.start == stow.start)
+		var neighbor: Dictionary = items.pop_at(index)
+		neighbor.start = stow.position
+		var storage_row: Array = revised.storage[stow.row]
+		storage_row.append(neighbor)
+		storage_row.sort_custom(func(a: Dictionary, b: Dictionary): return int(a.start) < int(b.start))
+	for neighbor: Dictionary in items:
+		neighbor.start = plan.moves.get(neighbor.start, neighbor.start)
+	var enchantment: String = item.get("enchantment", "")
+	var target: String = item.target
+	var spec: Dictionary = ArenaSim.TILES[upgrade]
+	item.id = upgrade
+	item.start = plan.start
+	TileEnchantments.keep_if_eligible(item, spec)
+	if target not in spec.targets and (target not in ArenaSim.CROWN_TARGET_RULES or "nearest" not in spec.targets):
+		item.target = spec.targets[0]
+	items.append(item)
+	items.sort_custom(func(a: Dictionary, b: Dictionary): return int(a.start) < int(b.start))
+	revised.suppressed.erase(upgrade)
+	loadout = revised
+	data.phase = "map"
+	data.offers = []
+	data.node_notice = "%s upgraded to %s." % [ArenaSim.TILES[source.id].label, spec.label]
+	if not enchantment.is_empty() and not item.has("enchantment"):
+		data.node_notice += "\n%s returned to storage." % TileEnchantments.info(enchantment).label
+	return _save_run_change(before, {}, before_loadout)
+
+
+func _forge_tile_index(items: Array, id: String, start: int) -> int:
+	return items.find_custom(func(item: Dictionary): return item.start == start and item.id == id)
 
 
 func event_text() -> String:

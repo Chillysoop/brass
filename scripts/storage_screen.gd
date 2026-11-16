@@ -107,7 +107,7 @@ func _apply_tile_size(row_size: Vector2) -> void:
 
 
 func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can_combine := false,
-		enchantments := [], protect_selected := false) -> void:
+		enchantments := [], protect_selected := false, forge_blocker := "") -> void:
 	var focus := get_viewport().gui_get_focus_owner()
 	var scroll_top := _grid.scroll_vertical
 	_focused_cell = focus.get_meta("storage_cell", Vector2i(-1, -1)) if is_instance_valid(focus) else Vector2i(-1, -1)
@@ -127,7 +127,8 @@ func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can
 	_discard.disabled = not _selected.has("lane") or protect_selected
 	_discard.tooltip_text = "Return to the forge before discarding this tile." if protect_selected else ""
 	_forge.visible = camp
-	_forge.disabled = not _selected.has("lane")
+	_forge.disabled = not _selected.has("lane") or not forge_blocker.is_empty()
+	_forge.tooltip_text = forge_blocker
 	_combine.visible = can_combine
 	_render_enchantments(enchantments)
 	if _selected.is_empty():
@@ -135,6 +136,8 @@ func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can
 		if camp:
 			message = "Select a tile in the sequence or storage to upgrade."
 		show_message("Select a tile to enchant." if _enchantment_rows.visible and not camp else message)
+	elif camp and not forge_blocker.is_empty():
+		show_message(forge_blocker)
 	else:
 		var tile: Dictionary = _host.tile_spec(_selected.id)
 		show_message("%s selected" % tile.get("label", _selected.id))
@@ -221,6 +224,12 @@ func _build() -> void:
 	_board.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_board.add_theme_constant_override("separation", 4)
 	_grid.add_child(_board)
+	var swap_hint := _label("Drop onto a same-width tile to swap.", 12, MUTED)
+	swap_hint.name = "StorageSwapHint"
+	swap_hint.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	swap_hint.mouse_filter = MOUSE_FILTER_PASS
+	swap_hint.tooltip_text = swap_hint.text
+	_layout.add_child(swap_hint)
 	_enchantment_rows = VBoxContainer.new()
 	_enchantment_rows.name = "HeldEnchantments"
 	_enchantment_rows.add_theme_constant_override("separation", 3)

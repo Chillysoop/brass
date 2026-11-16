@@ -668,8 +668,10 @@ func _rebuild_loadout() -> void:
 		setup_hint.text = "%s fits. Select Back to forge to apply it." % label if forge_can_fit(upgrade) \
 			else "Make room after %s for %s, then select Back to forge." % [source_name, label]
 	elif camp_forge:
-		setup_hint.text = "Select a tile to upgrade for free, then choose Forge selected." if _traveling_smith_forge() \
-			else "Select an upgradeable tile, then choose Forge selected."
+		var blocker: String = run.camp_forge_blocker(selected)
+		camp_button.disabled = not blocker.is_empty()
+		camp_button.tooltip_text = blocker
+		setup_hint.text = blocker if not blocker.is_empty() else "Choose Forge selected to upgrade this tile for free."
 	elif campaign and not run.recovered_starter.is_empty():
 		setup_hint.text = "%s was restored to your timeline so you can continue." % ArenaSim.TILES[run.recovered_starter].label
 	elif state == "setup" and _teaching_timeline() and not lanes[0].is_empty():
@@ -1518,8 +1520,10 @@ func _render_storage() -> void:
 			offer.row = row
 			all_offers.append(offer)
 	var protect_selected := _editing_camp_forge() and is_same(_selected_tile(), pending_forge.camp_tile)
-	storage_screen.render(storage_rows, selected, all_offers, camp_forge and not _editing_camp_forge(),
-		_selected_combine_copies().size() >= 3, _enchantment_controls(), protect_selected)
+	var can_forge := camp_forge and not _editing_camp_forge()
+	var blocker: String = run.camp_forge_blocker(selected) if can_forge else ""
+	storage_screen.render(storage_rows, selected, all_offers, can_forge,
+		_selected_combine_copies().size() >= 3, _enchantment_controls(), protect_selected, blocker)
 
 func _held_enchantments() -> Array:
 	return run.enchantments() if campaign or not retry_options.is_empty() else []
@@ -1684,10 +1688,6 @@ func _combine_prompt(row: int, lane: int, offer: Dictionary) -> Control:
 	buttons.add_child(_button("No", func(): _offer_combine(row, lane, offer.start, false)))
 	return panel
 
-func _forge_family_available(id: String) -> bool:
-	var family: String = ArenaSim.TILES.get(id, {}).get("family", "")
-	return (not campaign and retry_options.is_empty()) or run.forge_family_available(family)
-
 func _combine_offers(items: Array) -> Array[Dictionary]:
 	if _editing_camp_forge():
 		return []
@@ -1734,7 +1734,7 @@ func _decline_combine() -> void:
 		return
 	forge_close()
 
-func forge_choose(id: String) -> void:
+func forge_choose(id: String, expected_plan: Variant = null) -> void:
 	if pending_forge.is_empty() or not forge_screen.visible:
 		return
 	if pending_forge.has("reward"):
@@ -1745,7 +1745,7 @@ func forge_choose(id: String) -> void:
 			_commit_inventory_combine(id)
 		return
 	if pending_forge.has("camp"):
-		_commit_camp_forge(id)
+		_commit_camp_forge(id, expected_plan)
 		return
 	var offer: Dictionary = pending_forge.offer
 	if id not in TilePacking.next_options(offer.id):
@@ -1783,9 +1783,7 @@ func forge_can_fit(id: String) -> bool:
 	if pending_forge.has("inventory_copies"):
 		return not _inventory_upgrade_plan(id).is_empty()
 	if pending_forge.has("camp"):
-		var layout := forge_layout(id)
-		return not layout.is_empty() and TilePacking.can_place(layout.items, id,
-			layout.source.start, layout.capacity, layout.source.start)
+		return not run.camp_forge_plan(pending_forge.camp, id).is_empty()
 	return int(ArenaSim.TILES[id].width) <= int(pending_forge.offer.width)
 
 func forge_layout(id: String) -> Dictionary:
@@ -1793,8 +1791,9 @@ func forge_layout(id: String) -> Dictionary:
 	if source.is_empty() or id not in TilePacking.next_options(source.id):
 		return {}
 	var stored := source.has("row")
-	return {"source": source, "stored": stored,
-		"items": storage_rows[source.row] if stored else lanes[source.lane],
+	var plan: Dictionary = run.camp_forge_plan(source, id)
+	var items: Array = storage_rows[plan.get("destination_row", source.row)] if stored else lanes[source.lane]
+	return {"source": source, "stored": stored, "plan": plan, "items": items,
 		"capacity": TilePacking.STORAGE_COLUMNS if stored else ArenaSim.BEATS}
 
 func forge_edit_layout(id: String) -> void:
@@ -2102,20 +2101,11 @@ func _traveling_smith_forge() -> bool:
 	return camp_forge and run.data.get("phase") == "event" and run.mystery_kind() == "traveling_smith"
 
 func _open_camp_forge() -> void:
-	var smith := _traveling_smith_forge()
-	if _editing_camp_forge() or not camp_forge or (run.data.get("phase") != "rest" and not smith):
+	if _editing_camp_forge() or not camp_forge:
 		return
-	var id: String = selected.get("id", "")
-	if not selected.has("lane") or TilePacking.next_options(id).is_empty():
-		_show_inventory_message("Select a tile that has a forge upgrade.")
-		return
-	if not _forge_family_available(id):
-		var family: String = ArenaSim.TILES[id].get("family", "")
-		var unlock: Dictionary = FrontierRun.META_NODES[FrontierRun.FORGE_UNLOCKS[family]]
-		_show_inventory_message("Unlock %s in the Aether Chart." % unlock.label)
-		return
-	if smith and run.mystery_smith_options(id).is_empty():
-		_show_inventory_message("Choose a tile the smith can upgrade.")
+	var blocker: String = run.camp_forge_blocker(selected)
+	if not blocker.is_empty():
+		_show_inventory_message(blocker)
 		return
 	var item := _selected_tile()
 	if item.is_empty():
@@ -2125,38 +2115,24 @@ func _open_camp_forge() -> void:
 	storage_screen.hide()
 	forge_screen.open(selected.id, 1)
 
-func _commit_camp_forge(id: String) -> void:
+func _commit_camp_forge(id: String, expected_plan: Variant) -> void:
 	var source: Dictionary = pending_forge.camp
-	if _traveling_smith_forge():
-		if run.choose_mystery_upgrade(source, id):
-			_after_forge_upgrade()
-		else:
-			forge_screen.show_error(run.save_error if not run.save_error.is_empty() else "This tile cannot use that upgrade. Make room or choose another tile.")
+	var blocker: String = run.camp_forge_blocker(source)
+	if not blocker.is_empty():
+		forge_screen.show_error(blocker)
 		return
-	if run.data.get("phase") != "rest" or not _forge_family_available(source.id) or id not in TilePacking.next_options(source.id):
+	var plan: Dictionary = run.camp_forge_plan(source, id)
+	if plan.is_empty():
+		forge_screen.show_error("There is no room for this upgrade. Move or store a tile and try again.")
 		return
-	var stored: bool = source.has("row")
-	var items: Array = storage_rows[source.row] if stored else lanes[source.lane]
-	if not forge_can_fit(id):
-		forge_screen.show_error("Make room next to the tile for the wider upgrade.")
+	if expected_plan != null and expected_plan != plan:
+		forge_screen.resume_layout()
+		forge_screen.show_error("The layout changed. Review the new placement before confirming.")
 		return
-	for item: Dictionary in items:
-		if item.start == source.start and item.id == source.id:
-			var before := _inventory_checkpoint()
-			var enchantment: String = item.get("enchantment", "")
-			item.id = id
-			item.target = _forge_target(id, item.target)
-			TileEnchantments.keep_if_eligible(item, tile_spec(id))
-			var notice := "%s upgraded to %s." % [tile_spec(source.id).label, tile_spec(id).label]
-			if not enchantment.is_empty() and not item.has("enchantment"):
-				notice += "\n%s returned to storage." % TileEnchantments.info(enchantment).label
-			suppressed_combines.erase(id)
-			if run.rest("forge", notice):
-				_after_forge_upgrade()
-			else:
-				_restore_inventory(before)
-				forge_screen.show_error(run.save_error)
-			return
+	if run.choose_camp_upgrade(source, id, plan):
+		_after_forge_upgrade()
+	else:
+		forge_screen.show_error(run.save_error)
 
 func _forge_target(id: String, previous: String) -> String:
 	var valid: Array = ArenaSim.TILES[id].targets

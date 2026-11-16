@@ -51,6 +51,8 @@ func _check_bellmaker_unlock(game: Control) -> String:
 	_check(first_preview.get("title") == "The Bellmaker" and opening == null,
 		"The seeded Bellmaker assignment is kept without adding an opening draft preview.")
 	var hero_id: String = run.data.offers.front()
+	_check(game.frontier_screen.find_child("ChooseMasteryFor_" + hero_id, true, false) == null,
+		"A fresh hero card does not advertise an unearned mastery.")
 	if not _check(run.choose_hero(hero_id) and run.mastery_offers().is_empty()
 		and not run.choose_mastery("anchor_ward") and _finish_opening(run),
 		"A fresh hero cannot select a mastery and can still reach the route."):
@@ -94,15 +96,32 @@ func _check_bellmaker_unlock(game: Control) -> String:
 
 func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 	var run: FrontierRun = game.run
-	if not _check(run.start_run(BELLMAKER_SEED, "medium") and run.choose_preferred_hero(hero_id),
+	if not _check(run.start_run(BELLMAKER_SEED, "medium") and hero_id in run.data.offers,
 		"The mastered class can start a new Medium expedition."):
 		return
-	var masteries := run.mastery_offers()
-	if not _check(masteries.size() == 2 and masteries[0].id != masteries[1].id and run.selected_mastery().is_empty(),
-		"A future expedition gives the class two optional mastery choices."):
+	await _check_compact_mastery_choices(game, "ChooseHero_")
+	if not _press(game.frontier_screen, "ChooseHero_" + hero_id):
+		return
+	await process_frame
+	_check(run.data.phase == "relic" and game.frontier_screen.find_child("ChooseClassMastery", true, false) != null,
+		"The ordinary hero action goes straight to relics with the existing mastery option.")
+	if not _check(run.abandon_run() and run.start_run(BELLMAKER_SEED, "medium"), "Restart the draft to try its direct mastery action."):
 		return
 	game.run_return()
 	await process_frame
+	if not _press(game.frontier_screen, "ChooseMasteryFor_" + hero_id):
+		return
+	await process_frame
+	var masteries := run.mastery_offers()
+	if not _check(run.data.phase == "relic" and run.data.hero == hero_id and masteries.size() == 2
+		and masteries[0].id != masteries[1].id and run.selected_mastery().is_empty()
+		and game.frontier_screen.find_child("MasteryOption_" + str(masteries[0].id), true, false) != null,
+		"The mastered hero card selects the class and opens its two optional mastery choices."):
+		return
+	if not _press(game.frontier_screen, "ContinueMasteryDraft"):
+		return
+	await process_frame
+	_check(run.selected_mastery().is_empty(), "Continuing straight to relics leaves the optional mastery unselected.")
 	if not _press(game.frontier_screen, "ChooseClassMastery"):
 		return
 	await process_frame
@@ -119,7 +138,10 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 	if not _check(run.choose_node(preview.id), "Reach the Medium Bellmaker."):
 		return
 	_check(run.encounter().heroes[0].mastery == masteries[0].id, "The active mastery is carried into the encounter.")
-	if not _check(run.finish_combat(true, 61) and run.reward("skip"), "The Medium Bellmaker grants the Legendary reward before its relics."):
+	if not _check(run.finish_combat(true, 61), "The Medium Bellmaker grants a Legendary tile before its relics."):
+		return
+	game.run_return()
+	if not _check(game.run_send_reward_to_storage(run.data.offers.front()), "Store the reward so its receipt is present on the recruit draft."):
 		return
 	var relics := run.boss_relic_offers().map(func(offer: Dictionary): return offer.id)
 	relics.sort()
@@ -128,8 +150,19 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 		"The Bellmaker offers three distinctive relics before recruitment."):
 		return
 	var recruit: String = run.data.offers.front()
-	if not _check(run.choose_recruit(recruit), "Select a second hero after the Bellmaker."):
+	run.profile.mastered_classes.append(recruit)
+	await _check_compact_mastery_choices(game, "ChooseRecruit_")
+	if not _press(game.frontier_screen, "ChooseMasteryFor_" + recruit):
 		return
+	await process_frame
+	var recruit_masteries := run.mastery_offers()
+	if not _check(run.data.phase == "recruit_starter" and recruit_masteries.size() == 2,
+		"The mastered recruit card opens mastery selection before loadouts."):
+		return
+	var recruit_mastery: String = recruit_masteries[0].id
+	if not _press(game.frontier_screen, "MasteryOption_" + recruit_mastery):
+		return
+	await process_frame
 	var kits := run.recruit_loadout_offers()
 	if not _check(kits.size() == 2 and kits[0].id != kits[1].id and kits[0].tiles != kits[1].tiles,
 		"The recruit gets two mechanically distinct loadouts."):
@@ -145,7 +178,8 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 		_check(legacy.save() and legacy.load_save(legacy.save_path) and legacy.recruit_loadout_offers().is_empty()
 			and legacy.choose_recruit_starter(ClassDecks.starter(recruit)) and legacy.loadout.lanes[1].size() == 1,
 			"An existing one-tile recruit draft remains playable.")
-	if not _check(run.load_save(save_path) and run.recruit_loadout_offers() == kits, "The new recruit loadout draft survives restart."):
+	if not _check(run.load_save(save_path) and run.recruit_loadout_offers() == kits and run.selected_mastery() == recruit_mastery,
+		"The recruit loadout draft and optional mastery survive restart."):
 		return
 	var unoffered := RecruitLoadouts.choices(recruit).filter(func(kit: Dictionary): return kit not in kits)
 	_check(unoffered.size() == 1 and not run.choose_recruit_loadout(unoffered[0].id) \
@@ -170,7 +204,7 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 		"Choosing the second offered kit equips the recruit exactly once and returns to the map."):
 		return
 	var lane: Array = run.loadout.lanes[1]
-	_check(run.loadout.lanes[0] == lead and run.data.heroes[1].id == recruit and lane.size() == 2
+	_check(run.loadout.lanes[0] == lead and run.data.heroes[1].id == recruit and run.data.heroes[1].mastery == recruit_mastery and lane.size() == 2
 		and lane.map(func(tile: Dictionary): return tile.id) == kits[1].tiles and not run.choose_recruit_loadout(kits[0].id),
 		"Only the selected kit's tiles are equipped and the lead timeline stays intact.")
 	if lane.size() != 2:
@@ -180,6 +214,31 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 		"The two recruit tiles share a timeline without overlapping or exceeding its length.")
 	var equipped := lane.duplicate(true)
 	_check(run.load_save(save_path) and run.loadout.lanes[1] == equipped, "The recruit retains both selected tiles after reloading.")
+
+
+func _check_compact_mastery_choices(game: Control, choose_prefix: String) -> void:
+	var run: FrontierRun = game.run
+	var mastered: Array = run.profile.mastered_classes
+	var original_scale := root.content_scale_mode
+	var original_size := root.size
+	run.profile.mastered_classes = run.data.offers.duplicate()
+	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
+	root.size = Vector2i(856, 535)
+	game.run_return()
+	await process_frame
+	await process_frame
+	for id: String in run.data.offers:
+		for prefix: String in [choose_prefix, "ClassDeck_", "ChooseMasteryFor_"]:
+			var button := game.frontier_screen.find_child(prefix + id, true, false) as Button
+			var area := button.get_global_rect() if button != null else Rect2()
+			_check(button != null and button.is_visible_in_tree() and root.get_visible_rect().encloses(area),
+				"%s fits inside the compact draft with all three masteries available (%s in %s)." % [prefix + id, area, root.get_visible_rect()])
+	run.profile.mastered_classes = mastered
+	root.size = original_size
+	root.content_scale_mode = original_scale
+	game.run_return()
+	await process_frame
+	await process_frame
 
 
 func _check_recruit_kit_catalog() -> void:
