@@ -35,6 +35,7 @@ const MOTIF_COLORS := {
 	"chorus_bolt": Color("#c6a3e8"), "triage_kit": Color("#8be5a7"),
 	"runic_anvil": Color("#eaa160"), "horizon_round": Color("#8bd8f1"),
 	"cinder_wave": Color("#f18c66"), "needle_point": Color("#e6cafa"),
+	"backdraft_bolt": Color("#f99860"), "parallax_shot": Color("#c6b8ff"),
 }
 
 const MOTIF_VARIANTS := {
@@ -44,6 +45,7 @@ const MOTIF_VARIANTS := {
 	"guard": 0, "brace": 1, "ward_link": 2, "shield_chorus": 3,
 	"slam": 0, "shockwave": 1, "sundering_slam": 2, "quake": 3,
 	"pull": 0, "gravity_hook": 1, "grapple": 2, "tether_dart": 3,
+	"backdraft_bolt": 2, "parallax_shot": 3,
 }
 
 const SIGNATURE_EFFECTS := {
@@ -106,7 +108,7 @@ static func _style(base_id: String, tile: Dictionary) -> String:
 			return "spin"
 		"meteor_seal", "meteor_volley", "flare_mortar", "short_fuse", "furnace_burst", "cinder_wave":
 			return "burst"
-		"rail_shot", "star_piercer", "rivet_bolt", "tap_bolt", "sundering_bolt", "spark_shot":
+		"rail_shot", "star_piercer", "rivet_bolt", "tap_bolt", "sundering_bolt", "spark_shot", "backdraft_bolt":
 			return "bolt"
 		"chorus_bolt":
 			return "ward" if tile.has("chorus_guard") else "mark"

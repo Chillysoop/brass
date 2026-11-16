@@ -27,6 +27,7 @@ func _run() -> void:
 	game.set_physics_process(false)
 	game.run.load_save(save_path)
 	_check_class_decks()
+	_check_starshot_opening_drafts()
 	_check_signature_elite_progression()
 	_check_signature_milestones()
 	await _check_medium_rewards(game)
@@ -56,16 +57,19 @@ func _check_class_decks() -> void:
 		var common: Array = ClassDecks.common(class_id)
 		var uncommon: Array = ClassDecks.uncommon(class_id)
 		var signature := ClassDecks.signature(class_id)
-		_check(common.size() == 18 and common.all(func(id: String):
+		var expansion_common_count := 10 if class_id == "starshot" else 8
+		var common_count := 10 + expansion_common_count
+		_check(common.size() == common_count and common.all(func(id: String):
 			return common.count(id) == 1 and ArenaSim.TILES.has(id) \
-				and ArenaSim.TILES[id].get("rarity", "common") == "common"), "%s should have 18 distinct Commons." % class_id)
+				and ArenaSim.TILES[id].get("rarity", "common") == "common"),
+			"%s should have %d distinct Commons." % [class_id, common_count])
 		_check(uncommon.size() == 8 and uncommon.all(func(id: String):
 			return uncommon.count(id) == 1 and ArenaSim.TILES.get(id, {}).get("rarity") == "uncommon"),
 			"%s should have 8 distinct Uncommons." % class_id)
 		var new_commons := common.filter(func(id: String): return id in ClassExpansionTiles.COMMON_IDS)
 		var new_uncommons := uncommon.filter(func(id: String): return id in ClassExpansionTiles.UNCOMMON_IDS)
-		_check(new_commons.size() == 8 and new_uncommons.size() == 4,
-			"%s should gain eight new Commons and four new Uncommons." % class_id)
+		_check(new_commons.size() == expansion_common_count and new_uncommons.size() == 4,
+			"%s should gain %d extra Commons and four extra Uncommons." % [class_id, expansion_common_count])
 		_check(uncommon.filter(func(id: String): return signature_owners.has(id)) == [signature],
 			"%s should list only its own signature." % class_id)
 		common.sort()
@@ -83,6 +87,7 @@ func _check_class_decks() -> void:
 			continue
 		var class_pool := common + uncommon
 		var seen := {}
+		run.data.node.type = "battle"
 		for seed_value in range(1, 385):
 			run.data.seed = seed_value
 			run.data.phase = "combat"
@@ -101,6 +106,45 @@ func _check_class_decks() -> void:
 				break
 		_check(seen.size() == class_pool.size(), "%s must be able to draw every class tile across seeded victories." % class_id)
 		run.abandon_run()
+
+
+func _check_starshot_opening_drafts() -> void:
+	var run := FrontierRun.new()
+	run.load_save(save_path)
+	var specialties := ["retreat_shot", "spark_shot", "backdraft_bolt", "parallax_shot"]
+	var seen_starters := {}
+	var seen_rewards := {}
+	var regular_drafts_without_copy := 0
+	for seed_value: int in [2, 5, 7, 9, 11, 13, 16, 17]:
+		var started := run.start_run(seed_value) and run.choose_hero("starshot") and run.choose_relic("pocket_bell")
+		_check(started, "Seed %d must offer a fresh Easy Starshot opening." % seed_value)
+		if not started:
+			run.abandon_run()
+			continue
+		var starter_offers: Array = run.data.offers
+		var starter_specialties := starter_offers.filter(func(id: String): return id in specialties)
+		_check(starter_offers.size() == 3 and "rivet_bolt" in starter_offers and "shot" in starter_offers \
+			and starter_specialties.size() == 1, "Starshot's starter draft should include one rotating specialty.")
+		var starter: String = starter_specialties.front() if not starter_specialties.is_empty() else "rivet_bolt"
+		seen_starters[starter] = true
+		var rewarded := run.choose_starter(starter) and run.finish_combat(true, run.data.heroes[0].max_hp)
+		_check(rewarded, "Starshot should reach the first reward normally.")
+		var reward_offers: Array = run.data.offers
+		var reward_specialties := reward_offers.filter(func(id: String): return id in specialties)
+		_check(reward_offers.size() == 3 and reward_offers.all(func(id: String): return reward_offers.count(id) == 1) \
+			and not reward_offers.any(func(id: String): return ArenaSim.TILES[id].get("base_tile", id) == starter) \
+			and not reward_specialties.is_empty(), "Starshot's opening win should draft three distinct tiles, including a new specialty.")
+		for id: String in reward_specialties:
+			seen_rewards[id] = true
+		run.data.node.type = "battle"
+		if starter not in run._standard_rewards():
+			regular_drafts_without_copy += 1
+		run.loadout.storage[0].append(run.loadout.lanes[0][0].duplicate())
+		_check(starter in run._standard_rewards(), "An owned pair should keep its upgrade opportunity in a later draft.")
+		run.abandon_run()
+	_check(seen_starters.size() >= 3 and seen_rewards.size() >= 3,
+		"Starshot should see different specialties across Easy openings.")
+	_check(regular_drafts_without_copy > 0, "Starshot's ordinary battles should sometimes draft without a guaranteed second copy.")
 
 
 func _check_signature_elite_progression() -> void:

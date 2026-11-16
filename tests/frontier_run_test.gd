@@ -1034,7 +1034,7 @@ func _check_navigation(path: String) -> void:
 		check(not seen.is_empty(), "A Charted expedition finds at least one new mystery event.")
 	check(labels.has_all(FrontierRun.NAVIGATION_EVENTS), "All Navigation events appear across seeds.")
 	check(run.start_run(18) and run.choose_hero(run.data.offers[0]) and run.choose_relic("pocket_bell")
-		and run.choose_starter("bash"), "Open a test expedition with Navigation.")
+		and run.choose_starter(run.data.offers[0]), "Open a test expedition with Navigation.")
 	var restored := FrontierRun.new()
 	check(restored.load_save(path) and restored.data.layers == run.data.layers, "Saved Navigation nodes survive a reload.")
 	run.data.node = run._node("event", "Broker's Table", 1, 0)

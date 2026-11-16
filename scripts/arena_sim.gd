@@ -524,11 +524,16 @@ static func is_ranged_tile(tile_id: String) -> bool:
 
 
 static func critical_chance(class_id: String, tile_id: String, distance: float) -> float:
-	if TILES.get(tile_id, {}).get("damage", 0) <= 0:
+	var tile: Dictionary = TILES.get(tile_id, {})
+	if tile.get("damage", 0) <= 0:
 		return 0.0
+	var at_distance := distance > PRECISION_BONUS_RANGE
+	var chance := BASE_CRITICAL_CHANCE
 	if class_id == "starshot" and is_ranged_tile(tile_id):
-		return STARSHOT_LONG_CRITICAL_CHANCE if distance > PRECISION_BONUS_RANGE else STARSHOT_CRITICAL_CHANCE
-	return BASE_CRITICAL_CHANCE
+		chance = STARSHOT_LONG_CRITICAL_CHANCE if at_distance else STARSHOT_CRITICAL_CHANCE
+	if at_distance:
+		chance += float(tile.get("long_critical_bonus", 0.0))
+	return minf(chance, 1.0)
 
 
 static func is_blink_tile(tile_id: String) -> bool:
@@ -624,7 +629,8 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 				ranged_damage += int(spec.damage)
 				if spec.damage > 0:
 					ranged_reach = minf(ranged_reach, tile.reach)
-			has_precision = has_precision or spec.has("distance_bonus") or spec.has("ranged_followup_bonus")
+			has_precision = has_precision or spec.has("distance_bonus") or spec.has("ranged_followup_bonus") \
+				or spec.has("long_critical_bonus")
 			has_close_attack = has_close_attack or (spec.damage > 0
 				and (not ranged or tile.reach < PRECISION_SPACING or spec.get("blink_strike", false)))
 			if spec.has("lance_travel_bonus"):
@@ -1806,6 +1812,10 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 		_pull_toward(actor, target, tile_id, _attack_origin(actor), tile.pull)
 	_strip_guard(actor, target, tile_id, int(tile.get("guard_break", 0)))
 	_damage(actor, target, damage, tile_id)
+	if tile.has("dash_followup_damage") and target.hp > 0:
+		var last_dash := int(actor.get("last_dash_tick", -1))
+		if last_dash >= 0 and last_dash < tick and tick - last_dash <= int(tile.dash_followup_beats) * TICKS_PER_BEAT:
+			_damage(actor, target, int(tile.dash_followup_damage), tile_id, "Backdraft", {"dash_followup": true})
 	_apply_splash(actor, target, tile_id, tile)
 	if target.hp > 0:
 		if tile.has("push"):
@@ -1923,6 +1933,7 @@ func _retreat_from(actor: Dictionary, target: Dictionary, tile_id: String, dista
 			continue
 		actor.pos = landing
 		actor.prev_pos = landing
+		actor["last_dash_tick"] = tick
 		_emit("retreat", "%s retreats from %s." % [actor.name, target.name], actor, target, tile_id, 0, start, landing)
 		return true
 	return false
@@ -2172,6 +2183,8 @@ func _charge(actor: Dictionary, target: Dictionary, tile_id: String) -> bool:
 			continue
 		actor.pos = landing
 		actor.impulse = Vector2.ZERO
+		if landing.distance_squared_to(origin) >= 1.0:
+			actor["last_dash_tick"] = tick
 		_emit("charge", "%s dashes toward %s." % [actor.name, target.name], actor, target, tile_id, 0, origin, landing)
 		return true
 	return false

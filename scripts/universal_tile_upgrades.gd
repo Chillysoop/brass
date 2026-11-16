@@ -7,6 +7,7 @@ const TECHNIQUE_GAINS := {
 	"guard_bonus": 3, "displaced_bonus": 3, "distance_bonus": 3, "windup_bonus": 3,
 	"low_hp_bonus": 3, "guard_break": 3, "guard": 2, "mark_bonus": 2, "splash_damage": 2,
 	"splash": 12.0, "push": 38.0, "pull": 38.0, "retreat": 10.0,
+	"dash_followup_damage": 2, "long_critical_bonus": 0.05,
 }
 const AUTHORED_SIGNATURES := {
 	"rampart_counter": {
@@ -293,6 +294,12 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 		]:
 			if tile.has(bonus[0]):
 				lines.append("Deal %d extra damage %s." % [tile[bonus[0]], bonus[1]])
+		if tile.has("dash_followup_damage"):
+			lines.append("If you dashed or backstepped in the last %d beats, land a second hit for %d damage." % [
+				tile.dash_followup_beats, tile.dash_followup_damage])
+		if tile.has("long_critical_bonus"):
+			lines.append("From more than 210 units away, add %d percentage points to this shot's critical chance." % [
+				roundi(tile.long_critical_bonus * 100.0)])
 		if tile.has("splash"):
 			lines.append("Deal %d damage to other enemies within %d range of the target." % [tile.splash_damage, int(tile.splash)])
 		if tile.has("push"):

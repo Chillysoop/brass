@@ -14,6 +14,7 @@ func _initialize() -> void:
 	_check_defenses_and_seed()
 	_check_secondary_targets()
 	_check_starshot()
+	_check_starshot_tiles()
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
@@ -86,6 +87,53 @@ func _fight(hero: String, tiles: Array, seed_value: int, distance: float) -> Are
 	return sim
 
 
+func _check_starshot_tiles() -> void:
+	_check(is_equal_approx(ArenaSim.critical_chance("starshot", "parallax_shot", 210.0), 0.15)
+		and is_equal_approx(ArenaSim.critical_chance("starshot", "parallax_shot", 210.01), 0.50)
+		and is_equal_approx(ArenaSim.critical_chance("warden", "parallax_shot", 260.0), 0.25),
+		"Parallax adds twenty percentage points only beyond 210 units.")
+	var rng := RandomNumberGenerator.new()
+	var seed_value := -1
+	for candidate in range(32):
+		rng.seed = candidate ^ ArenaSim.CRITICAL_RNG_SALT
+		var roll := rng.randf()
+		if roll >= 0.30 and roll < 0.50:
+			seed_value = candidate
+			break
+	var precision := _fight("starshot", [{"id": "parallax_shot", "start": 0}], seed_value, 260.0)
+	var normal := _fight("starshot", [{"id": "shot", "start": 1}], seed_value, 260.0)
+	_to_beat(precision, 3)
+	_to_beat(normal, 3)
+	_check(seed_value >= 0 and _first_hit(precision).get("critical", false) and not _first_hit(normal).get("critical", false),
+		"The same roll becomes a critical hit at range with Parallax.")
+
+	var alone := _fight("starshot", [{"id": "backdraft_bolt", "start": 0}], 4, 260.0)
+	_to_beat(alone, 2)
+	_check(_hits(alone).size() == 1 and _followups(alone).is_empty(),
+		"Backdraft fires once on its own, before the built-in backstep.")
+	_check(alone.trace.any(func(event: Dictionary): return event.kind == "retreat" and event.tile == "backdraft_bolt"),
+		"Backdraft backsteps even with no prior dash.")
+	var retreat := _fight("starshot", [{"id": "retreat_shot", "start": 0}, {"id": "backdraft_bolt", "start": 2}], 0, 260.0)
+	_to_beat(retreat, 4)
+	var echo := _followups(retreat)
+	_check(echo.size() == 1 and echo[0].tile == "backdraft_bolt" and echo[0].amount == 7 and not echo[0].critical
+		and echo[0].tick == ArenaSim.TICKS_PER_BEAT * 4,
+		"A backstep two beats earlier adds a separately attributed, non-critical hit at the tile's right edge.")
+	var late := _fight("starshot", [{"id": "retreat_shot", "start": 0}, {"id": "backdraft_bolt", "start": 3}], 0, 260.0)
+	_to_beat(late, 5)
+	_check(_followups(late).is_empty(), "Backdraft expires when an extra beat separates it from the retreat.")
+	var backstep := _fight("starshot", [{"id": "shot", "start": 0}, {"id": "backdraft_bolt", "start": 2}], 4, 260.0)
+	_to_beat(backstep, 4)
+	_check(_followups(backstep).size() == 1, "Starshot's passive backstep can trigger Backdraft.")
+	var combo := [{"id": "spur", "start": 0}, {"id": "backdraft_bolt", "start": 2}]
+	var dash := _fight("starshot", combo, 0, 260.0)
+	var close := _fight("starshot", combo, 0, 54.0)
+	_to_beat(dash, 4)
+	_to_beat(close, 4)
+	_check(_followups(dash).size() == 1 and _followups(close).is_empty(),
+		"A successful forward dash enables Backdraft. Starting within striking distance does not count as a dash.")
+
+
 func _to_beat(sim: ArenaSim, beat: int, offset := 0) -> void:
 	while sim.tick < beat * ArenaSim.TICKS_PER_BEAT + offset and sim.outcome.is_empty():
 		sim.step()
@@ -93,6 +141,10 @@ func _to_beat(sim: ArenaSim, beat: int, offset := 0) -> void:
 
 func _hits(sim: ArenaSim) -> Array[Dictionary]:
 	return sim.trace.filter(func(event: Dictionary): return event.kind == "hit")
+
+
+func _followups(sim: ArenaSim) -> Array[Dictionary]:
+	return _hits(sim).filter(func(event: Dictionary): return event.get("dash_followup", false))
 
 
 func _first_hit(sim: ArenaSim) -> Dictionary:

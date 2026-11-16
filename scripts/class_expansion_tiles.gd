@@ -3,6 +3,7 @@ extends RefCounted
 const COMMON_IDS := [
 	"iron_arc", "iron_vow", "line_guard", "pilgrim_aid", "short_fuse", "rake", "furnace_burst", "tether_dart",
 	"bellows_strike", "lantern_shot", "slip_cut", "spur", "spark_shot", "crosscut", "tap_bolt", "stave_crush",
+	"backdraft_bolt", "parallax_shot",
 ]
 const UNCOMMON_IDS := [
 	"ward_lantern", "piercing_burst", "reverse_cut", "flare_mortar",
@@ -92,6 +93,17 @@ const SPECS := {
 		"label": "Stave Crush", "width": 3, "range": 185.0, "damage": 21, "rarity": "common",
 		"guard_break": 5, "targets": ENEMY_TARGETS, "icon": "battle",
 		"description": "Strip up to 5 Guard before the hit.",
+	},
+	"backdraft_bolt": {
+		"label": "Backdraft Bolt", "width": 2, "range": 520.0, "damage": 14, "rarity": "common",
+		"ranged": true, "retreat": 60.0, "dash_followup_damage": 7, "dash_followup_beats": 2,
+		"targets": ENEMY_TARGETS, "icon": "shot",
+		"description": "Fire and backstep up to 60 units. Dash or backstep in the prior 2 beats to fire a second hit for 7 damage.",
+	},
+	"parallax_shot": {
+		"label": "Parallax Shot", "width": 3, "range": 680.0, "damage": 19, "rarity": "common",
+		"ranged": true, "long_critical_bonus": 0.20, "targets": ENEMY_TARGETS, "icon": "shot",
+		"description": "From more than 210 units away, add 20 percentage points to this shot's critical chance.",
 	},
 	"ward_lantern": {
 		"label": "Ward Lantern", "width": 4, "range": 0.0, "damage": 0, "rarity": "uncommon",

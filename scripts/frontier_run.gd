@@ -21,6 +21,7 @@ const BOSS_RELICS := {
 	"tollkeeper": ["tollkeeper_signet", "bastion_medal", "guild_ledger", "tollkeeper_repair_kit"],
 	"brass_bellmaker": ["bellmaker_clapper", "bellmaker_long_echo", "bellmaker_resonant_plate"],
 }
+const STARSHOT_OPENING_TILES := ["retreat_shot", "spark_shot", "backdraft_bolt", "parallax_shot"]
 const EARLY_BUILD_DIRECTIONS := {
 	"warden": [
 		{"label": "Guard and counter", "opening": "iron_arc", "followup": "iron_vow"},
@@ -714,12 +715,18 @@ func _starter_lane(id: String) -> Array:
 
 func _starter_offers(hero_id: String, salt: int, shared := "shot") -> Array:
 	var offers := ["bash", shared]
+	if _is_brass_easy_starshot(hero_id):
+		offers[0] = _sample(STARSHOT_OPENING_TILES, 1, int(data.seed), salt + 41)[0]
 	var signature: String = ClassDecks.starter(hero_id)
 	if signature not in offers:
 		offers.append(signature)
 	else:
 		offers.append("slam" if shared == "shot" else "shot")
 	return _sample(offers, 3, int(data.seed), salt)
+
+
+func _is_brass_easy_starshot(hero_id: String) -> bool:
+	return hero_id == "starshot" and data.get("location") == "brass" and data.get("difficulty") == "easy"
 
 
 func available_nodes() -> Array:
@@ -2240,8 +2247,13 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 				repeat_pool.append(tile.id)
 	var owned := _owned_reward(repeat_pool, 83 + salt, false, rows)
 	var opening_pilot: bool = not directions.is_empty() and data.node.type == "opening"
+	var starshot_pilot := _is_brass_easy_starshot(hero_id)
+	var starshot_opening: bool = starshot_pilot and data.node.type == "opening"
+	var fresh_battle_draft: bool = starshot_pilot and data.node.type == "battle" \
+		and _rng(int(data.seed), _node_salt(87 + salt)).randi_range(0, 1) == 0
+	var prefer_new_tiles := opening_pilot or starshot_opening or fresh_battle_draft
 	var owned_hint := _copy_reward_hint(owned, rows) if not owned.is_empty() else ""
-	if not owned.is_empty() and (not opening_pilot or owned_hint == "Third copy"):
+	if not owned.is_empty() and (not prefer_new_tiles or owned_hint == "Third copy"):
 		rewards.append(owned)
 		hints[owned] = owned_hint
 	if not directions.is_empty():
@@ -2249,7 +2261,8 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 			rewards.append(signature_offer)
 		_add_early_build_offers(directions, held, opening_pilot, rewards, hints)
 	if lane == 0 and rewards.size() < 3 and (directions.is_empty() or opening_pilot or rewards.size() < 2):
-		var bridge := _relic_bridge(rewards)
+		var exclusions := rewards + held.keys() if starshot_opening else rewards
+		var bridge := _relic_bridge(exclusions)
 		if not bridge.is_empty():
 			rewards.append(bridge.tile)
 			hints[bridge.tile] = bridge.hint
@@ -2258,6 +2271,9 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 	if opening_pilot and rewards.size() < 3 and not owned.is_empty() and owned not in rewards:
 		rewards.append(owned)
 		hints[owned] = owned_hint
+	if starshot_opening and rewards.size() < 3:
+		var candidates := STARSHOT_OPENING_TILES.filter(func(id: String): return id in common and not held.has(id) and id not in rewards)
+		rewards.append_array(_sample(candidates, 1, int(data.seed), _node_salt(86 + salt)))
 	var rng := _rng(int(data.seed), _node_salt(84 + salt))
 	while rewards.size() < 3:
 		var roll := rng.randi_range(1, 100)
@@ -2272,8 +2288,9 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 			pool = common.duplicate()
 			for tile: String in rewards:
 				pool.erase(tile)
-		if not directions.is_empty():
-			var new_tiles := pool.filter(func(id: String): return not held.has(id))
+		if not directions.is_empty() or starshot_opening:
+			var new_tiles := pool.filter(func(id: String):
+				return not held.has(id) and (not starshot_opening or not held.has(ArenaSim.TILES[id].get("base_tile", id))))
 			if new_tiles.is_empty():
 				new_tiles = common.filter(func(id: String): return not held.has(id) and id not in rewards)
 			if not new_tiles.is_empty():
