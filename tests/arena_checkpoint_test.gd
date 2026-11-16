@@ -1,6 +1,7 @@
 extends SceneTree
 
 const ArenaScene = preload("res://arena.tscn")
+const ArenaSim = preload("res://scripts/arena_sim.gd")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 
 const SAVE_PATH := "user://arena-checkpoint-test.json"
@@ -25,6 +26,7 @@ func _run() -> void:
 		_check_camp_save(lab)
 		await _check_compact_reward_overlay(lab)
 		_check_defeat_animation(lab)
+		await _check_crowded_reward_drop(lab)
 	lab.queue_free()
 	await process_frame
 	for suffix: String in ["", ".bak", ".tmp"]:
@@ -232,6 +234,37 @@ func _check_defeat_animation(lab: Control) -> void:
 	_check(lab.arena.is_visible_in_tree() and lab.action.text == "See results"
 		and lab.sim.outcome == "defeat" and run.data.result == "defeat",
 		"Returning from Practice restores the original defeat arena.")
+
+
+func _check_crowded_reward_drop(lab: Control) -> void:
+	var run: FrontierRun = lab.run
+	if not _check(run.abandon_run() and run.start_run(42) and run.choose_hero("warden")
+		and run.choose_relic("pocket_bell") and run.choose_starter("bash"), "Start a clean run to exercise crowded drops."):
+		return
+	var equipped: Array = []
+	for start in range(ArenaSim.BEATS):
+		equipped.append(lab._entry("tap_bolt", start, "lowest_hp"))
+	run.loadout.lanes[0].assign(equipped)
+	run.loadout.storage[0].append(lab._entry("tap_bolt", 7, "farthest"))
+	run.loadout.suppressed.tap_bolt = true
+	if not _check(run.finish_combat(true, 100), "Finish the opening battle with a full sequence."):
+		return
+	lab.run_return()
+	await process_frame
+	lab._place({"id": "tap_bolt", "row": 0, "lane": -1, "start": 7}, 0, 4, true)
+	_check(run.data.phase == "reward" and lab.lanes[0][4].target == "farthest"
+		and lab.storage_rows[0][0].start == 7 and lab.storage_rows[0][0].target == "lowest_hp",
+		"A same-width drop from storage swaps into its original slot without claiming a reward.")
+	var id: String = run.data.offers.front()
+	lab._place({"id": id, "reward": true}, 0, 2, true)
+	var resumed := FrontierRun.new()
+	if not _check(resumed.load_save(SAVE_PATH) and resumed.data.phase == "map", "The reward drop advances and persists in one save."):
+		return
+	var received: Array = resumed.loadout.lanes[0]
+	var stowed: Array = resumed.loadout.storage[0]
+	_check(received.any(func(tile: Dictionary): return tile.id == id and tile.start == 2)
+		and stowed.size() == 1 + int(ArenaSim.TILES[id].width),
+		"A reward installs at the chosen slot and safely stows the tiles it displaces.")
 
 
 func _set_save_block(blocked: bool) -> bool:

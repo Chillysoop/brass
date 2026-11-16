@@ -1612,18 +1612,29 @@ func _show_drag_preview(board: Control, lane_index: int, top: int, start: int, d
 		var ghost := _add_drag_tile(card.get_meta("tile").id, moves[original], top, TEAL)
 		_slide_drag_ghost(ghost, card)
 	var swap_start: int = plan.get("swap", -1)
-	if swap_start >= 0 and source != null:
+	if swap_start >= 0:
 		var card: Control = cards[swap_start]
 		_fade_drag_card(card)
-		var ghost := _add_drag_tile(card.get_meta("tile").id, source.get_meta("tile").start, top, TEAL)
-		ghost.position = _lane_point(drag_overlay, source, Vector2.ZERO)
-		_slide_drag_ghost(ghost, card)
+		if source != null:
+			var ghost := _add_drag_tile(card.get_meta("tile").id, source.get_meta("tile").start, top, TEAL)
+			ghost.position = _lane_point(drag_overlay, source, Vector2.ZERO)
+			_slide_drag_ghost(ghost, card)
 	var stows: Array = plan.get("stows", [])
 	for stow: Dictionary in stows:
 		_fade_drag_card(cards[stow.start])
 	var caption := "No room" if plan.is_empty() else ""
+	if plan.is_empty():
+		if data.get("reward", false) and not _reward_can_target(data.id, lane_index):
+			caption = "Wrong hero"
+			_show_inventory_message("Place this reward on the highlighted hero's sequence or send it to storage.")
+		else:
+			_show_inventory_message("No room for this drop. Free a span in the sequence or storage.")
+	elif swap_start >= 0 and data.has("row"):
+		caption = "Swap"
+		_show_inventory_message("The equipped tile will move into the storage slot you dragged from.")
 	if not stows.is_empty():
 		caption = "%d to storage" % stows.size()
+		_show_inventory_message("Displaced tiles will move to storage.")
 	_add_drag_tile(data.id, start, top, RUST if plan.is_empty() else GOLD, caption)
 
 func _add_drag_tile(id: String, start: int, top: int, accent: Color, copy := "") -> Control:
@@ -1700,9 +1711,8 @@ func _notification(what: int) -> void:
 func _timeline_nudge_plan(lane_index: int, start: int, payload: Dictionary) -> Dictionary:
 	if not _can_edit_loadout():
 		return {}
-	if payload.get("reward", false):
-		return TilePacking.nudge_plan(lanes[lane_index], payload.id, start, ArenaSim.BEATS) \
-			if _reward_can_target(payload.id, lane_index) else {}
+	if payload.get("reward", false) and not _reward_can_target(payload.id, lane_index):
+		return {}
 	return TilePacking.timeline_drop_plan(lanes, storage_rows, lane_index, start, payload)
 
 func _can_place(payload: Dictionary, lane_index: int, start: int) -> bool:
@@ -1742,13 +1752,10 @@ func _place(payload: Dictionary, lane_index: int, start: int, nudge := false) ->
 	if swap_start >= 0:
 		var swapped := _take_displaced_tile(destination, swap_start)
 		swapped.start = payload.start
-		lanes[payload.lane].append(swapped)
-		lanes[payload.lane].sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
-	for stow: Dictionary in plan.get("stows", []):
-		var displaced := _take_displaced_tile(destination, stow.start)
-		displaced.start = stow.position
-		storage_rows[stow.row].append(displaced)
-		storage_rows[stow.row].sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
+		var previous: Array = storage_rows[payload.row] if payload.has("row") else lanes[payload.lane]
+		previous.append(swapped)
+		previous.sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
+	_apply_stows(destination, storage_rows, plan)
 	_apply_nudge(destination, plan)
 	destination.append(entry)
 	destination.sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
@@ -1758,7 +1765,7 @@ func _place(payload: Dictionary, lane_index: int, start: int, nudge := false) ->
 	_rebuild_loadout()
 	var touched: Array[Dictionary] = [{"row": -1, "lane": lane_index, "start": start}]
 	if swap_start >= 0:
-		touched.append({"row": -1, "lane": payload.lane, "start": payload.start})
+		touched.append({"row": payload.get("row", -1), "lane": payload.lane, "start": payload.start})
 	for position: int in plan.get("moves", {}).values():
 		touched.append({"row": -1, "lane": lane_index, "start": position})
 	for stow: Dictionary in plan.get("stows", []):
@@ -1770,6 +1777,14 @@ func _place(payload: Dictionary, lane_index: int, start: int, nudge := false) ->
 
 func _take_displaced_tile(items: Array, start: int) -> Dictionary:
 	return items.pop_at(items.find_custom(func(item: Dictionary): return item.start == start))
+
+func _apply_stows(items: Array, storage: Array, plan: Dictionary) -> void:
+	for stow: Dictionary in plan.get("stows", []):
+		var displaced := _take_displaced_tile(items, stow.start)
+		displaced.start = stow.position
+		var row: Array = storage[stow.row]
+		row.append(displaced)
+		row.sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
 
 func _apply_nudge(items: Array, plan: Dictionary) -> void:
 	var moves: Dictionary = plan.get("moves", {})
@@ -2598,12 +2613,14 @@ func _planned_reward_position(id: String, placement: Dictionary) -> Dictionary:
 	var rows: Array = run.loadout.storage if stored else run.loadout.lanes
 	if index < 0 or index >= rows.size():
 		return {}
-	return TilePacking.nudge_plan(rows[index], id, int(placement.start),
-		TilePacking.STORAGE_COLUMNS if stored else ArenaSim.BEATS)
+	if stored:
+		return TilePacking.nudge_plan(rows[index], id, int(placement.start), TilePacking.STORAGE_COLUMNS)
+	return TilePacking.timeline_drop_plan(rows, run.loadout.storage, index, int(placement.start), {"id": id, "reward": true})
 
 func _commit_placed_reward(id: String, placement: Dictionary, plan: Dictionary) -> bool:
 	var before: Dictionary = run.loadout.duplicate(true)
 	var items: Array = run.loadout.storage[int(placement.row)] if placement.has("row") else run.loadout.lanes[int(placement.lane)]
+	_apply_stows(items, run.loadout.storage, plan)
 	_apply_nudge(items, plan)
 	items.append(_entry(id, int(placement.start), ArenaSim.TILES[id].targets[0]))
 	items.sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)

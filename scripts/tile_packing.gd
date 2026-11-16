@@ -68,22 +68,32 @@ static func timeline_drop_plan(lanes: Array, storage: Array, lane_index: int, st
 	if start + width > ArenaSim.BEATS:
 		return {}
 	var items: Array = lanes[lane_index]
-	var source_lane: int = payload.get("lane", -1)
-	if source_lane < 0 or payload.has("row"):
+	var reward: bool = payload.get("reward", false)
+	var stored := not reward and payload.has("row")
+	var source_lane: int = payload.get("lane", -1) if not stored and not reward else -1
+	if not stored and source_lane < 0 and not reward:
 		return nudge_plan(items, id, start, ArenaSim.BEATS)
 	var source_start: int = payload.get("start", -1)
-	if source_lane >= lanes.size() or not lanes[source_lane].any(func(item: Dictionary):
-			return item.start == source_start and item.id == id):
-		return {}
+	var source_row: int = payload.get("row", -1) if stored else -1
 	var ignored := source_start if source_lane == lane_index else -1
-	for item: Dictionary in items:
-		if item.start == start and item.start != ignored and ArenaSim.TILES[item.id].width == width:
-			return {"start": start, "moves": {}, "swap": start}
+	if not reward:
+		var source_groups := storage if stored else lanes
+		var source_index := source_row if stored else source_lane
+		if source_index < 0 or source_index >= source_groups.size() or not source_groups[source_index].any(func(item: Dictionary):
+				return item.start == source_start and item.id == id):
+			return {}
+		for item: Dictionary in items:
+			if item.start == start and item.start != ignored and ArenaSim.TILES[item.id].width == width:
+				return {"start": start, "moves": {}, "swap": start}
 
 	var slide := nudge_plan(items, id, start, ArenaSim.BEATS, ignored)
 	if not slide.is_empty():
 		return slide
-	return _timeline_stow_plan(items, storage, id, start, ignored)
+	var available_storage := storage
+	if stored:
+		available_storage = storage.duplicate()
+		available_storage[source_row] = storage[source_row].filter(func(item: Dictionary): return item.start != source_start)
+	return _timeline_stow_plan(items, available_storage, id, start, ignored)
 
 
 static func _timeline_stow_plan(items: Array, storage: Array, id: String, start: int, ignored: int) -> Dictionary:
