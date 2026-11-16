@@ -1020,6 +1020,7 @@ func _check_opening_specialty_rewards() -> void:
 	run.profile.medium_unlocked = true
 	run.profile.hard_unlocked = true
 	run.profile.glass_medium_unlocked = true
+	run.profile.glass_hard_unlocked = true
 	run.profile.marks = 999
 	for hero_id: String in FrontierRun.HEROES:
 		if hero_id not in run.available_classes():
@@ -1042,9 +1043,10 @@ func _check_opening_specialty_rewards() -> void:
 				var offers: Array = run.data.offers.duplicate()
 				var specialties := _offered_gate_specialties(offers, hero_id)
 				check(offers.size() == 3 and offers.all(func(id: String): return offers.count(id) == 1) \
-					and not specialties.is_empty(), "%s must offer three distinct choices with a base class specialty." % context)
-				specialties.sort()
-				specialty_mixes[str(specialties)] = true
+					and not specialties.is_empty(), "%s must offer three distinct choices with a class specialty." % context)
+				var families := specialties.map(_gate_tile_family)
+				families.sort()
+				specialty_mixes[str(families)] = true
 				check(directions.all(func(direction: Dictionary): return direction.opening in offers),
 					"%s must retain both authored opening directions when applicable." % context)
 				if seed == 1:
@@ -1067,22 +1069,63 @@ func _check_opening_specialty_rewards() -> void:
 		if _equip_gate_starter(run, seed, "medium", "warden", "glass") and run.finish_combat(true, 100):
 			saw_non_specialty_draft = saw_non_specialty_draft or _offered_gate_specialties(run.data.offers, "warden").is_empty()
 	check(saw_non_specialty_draft, "The Brass opening guarantee should not apply to Glass Foundry.")
+	_check_gate_specialty_rarities(run, path)
 
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
 
 
-func _equip_gate_starter(run: FrontierRun, seed: int, difficulty: String, hero_id: String, region := "brass") -> bool:
+func _equip_gate_starter(run: FrontierRun, seed: int, difficulty: String, hero_id: String, region := "brass",
+		relic := "pocket_bell") -> bool:
 	if not run.data.is_empty() and not run.abandon_run():
 		return false
 	return run.start_run(seed, difficulty, region) and run.choose_preferred_hero(hero_id) \
-		and run.choose_relic("pocket_bell") and run.choose_starter(ClassDecks.starter(hero_id))
+		and run.choose_relic(relic) and run.choose_starter(ClassDecks.starter(hero_id))
 
 
 func _offered_gate_specialties(offers: Array, hero_id: String) -> Array:
 	var specialties := ClassDecks.specialties(hero_id)
-	return offers.filter(func(id: String): return id in specialties and ArenaSim.TILES[id].rarity == "common")
+	return offers.filter(func(id: String): return _gate_tile_family(id) in specialties)
+
+
+func _gate_tile_family(id: String) -> String:
+	var tile: Dictionary = ArenaSim.TILES[id]
+	return tile.get("base_tile", tile.get("family", id))
+
+
+func _check_gate_specialty_rarities(run: FrontierRun, path: String) -> void:
+	# The same Duelist setup in Glass has the same normal reward roll without the Brass specialty.
+	var fixtures := [
+		{"seed": 4, "difficulty": "medium", "rarity": "common", "relic": "pocket_bell"},
+		{"seed": 267, "difficulty": "hard", "rarity": "uncommon", "relic": "pocket_bell"},
+		{"seed": 798, "difficulty": "hard", "rarity": "rare", "relic": "pocket_bell"},
+		{"seed": 4, "difficulty": "medium", "rarity": "rare", "relic": "brass_metronome"},
+	]
+	for fixture: Dictionary in fixtures:
+		var before := _gate_pair_draft(run, fixture, "glass")
+		var after := _gate_pair_draft(run, fixture, "brass")
+		var context := "%s seed %d with %s" % [fixture.difficulty, fixture.seed, fixture.relic]
+		check(before.size() == 3 and _offered_gate_specialties(before, "duelist").is_empty() and after.size() == 3,
+			"%s must compare a normal draft with its Brass specialty version." % context)
+		var removed := before.filter(func(id: String): return id not in after)
+		var added := after.filter(func(id: String): return id not in before)
+		check(removed.size() == 1 and added.size() == 1 and ArenaSim.TILES[removed[0]].rarity == fixture.rarity \
+			and ArenaSim.TILES[added[0]].rarity == fixture.rarity and added == _offered_gate_specialties(after, "duelist"),
+			"%s must replace the least-rare eligible rolled card with a specialty of its original rarity." % context)
+		check("jab" in after and run.reward_hint("jab") == "Third copy",
+			"%s must keep the existing third-copy reward." % context)
+		if fixture.relic == "brass_metronome":
+			check("slam" in after and run.reward_hint("slam") == "Leave one beat empty before it",
+				"The relic's Common bridge stays even when the only available specialty replacement is Rare.")
+		check(run.load_save(path) and run.data.offers == after, "%s must preserve the rarity-protected reward on resume." % context)
+
+
+func _gate_pair_draft(run: FrontierRun, fixture: Dictionary, region: String) -> Array:
+	if not _equip_gate_starter(run, fixture.seed, fixture.difficulty, "duelist", region, fixture.relic):
+		return []
+	run.loadout.lanes[0] = _acquisition_pair("jab")
+	return run.data.offers.duplicate() if run.finish_combat(true, 100) else []
 
 
 func _check_acquisition_drafts() -> void:

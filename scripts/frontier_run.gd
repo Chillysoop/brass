@@ -2288,7 +2288,7 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 	var held := {}
 	for items: Array in rows:
 		for tile: Dictionary in items:
-			held[tile.id] = true
+			held[tile.id] = int(held.get(tile.id, 0)) + 1
 			var rarity: String = ArenaSim.TILES[tile.id].get("rarity", "common")
 			if not _can_draft_owned_tile(tile.id, hero_id):
 				continue
@@ -2320,13 +2320,6 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 			hints[bridge.tile] = bridge.hint
 	if not signature_offer.is_empty() and signature_offer not in rewards:
 		rewards.append(signature_offer)
-	var gate_specialty: bool = lane == 0 and data.node.type == "opening" \
-		and data.get("location") == "brass" and data.get("difficulty") in ["medium", "hard"]
-	if gate_specialty and rewards.size() < 3:
-		var candidates := specialties.filter(func(id: String): return not held.has(id))
-		var choice := _sample(candidates, 1, int(data.seed), _node_salt(86 + salt))
-		if not choice.is_empty() and choice[0] not in rewards:
-			rewards.append(choice[0])
 	if opening_pilot and rewards.size() < 3 and not owned.is_empty() and owned not in rewards:
 		rewards.append(owned)
 		hints[owned] = owned_hint
@@ -2335,6 +2328,7 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 		rewards.append_array(_sample(candidates, 1, int(data.seed), _node_salt(86 + salt)))
 	if recruit_draft >= 0 and rewards.size() < 3:
 		_reserve_recruit_specialty(lane, specialties, held, rewards)
+	var first_roll := rewards.size()
 	var rng := _rng(int(data.seed), _node_salt(84 + salt))
 	while rewards.size() < 3:
 		var roll := rng.randi_range(1, 100)
@@ -2357,7 +2351,50 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 			if not new_tiles.is_empty():
 				pool = new_tiles
 		rewards.append(pool[rng.randi_range(0, pool.size() - 1)])
+	if lane == 0 and data.node.type == "opening" and data.get("location") == "brass" \
+		and data.get("difficulty") in ["medium", "hard"]:
+		_reserve_gate_specialty(specialties, held, rewards, hints, first_roll)
 	return {"offers": _sample(rewards, 3, int(data.seed), _node_salt(85 + salt)), "hints": hints}
+
+
+func _reserve_gate_specialty(specialties: Array, held: Dictionary, rewards: Array, hints: Dictionary, first_roll: int) -> void:
+	var slot := -1
+	var preferred_tier := TILE_RARITIES.size()
+	var copy_slot := -1
+	for index in range(rewards.size() - 1, -1, -1):
+		var id: String = rewards[index]
+		if int(held.get(id, 0)) >= 2 and not TilePacking.next_options(id).is_empty():
+			continue
+		if index < first_roll:
+			if hints.get(id) == "Owned copy":
+				copy_slot = index
+			continue
+		var tier := TILE_RARITIES.find(ArenaSim.TILES[id].rarity)
+		if tier < preferred_tier:
+			slot = index
+			preferred_tier = tier
+	if slot < 0:
+		slot = copy_slot
+	if slot < 0:
+		return
+	var tier := TILE_RARITIES.find(ArenaSim.TILES[rewards[slot]].rarity)
+	var held_families := {}
+	for id: String in held:
+		held_families[ArenaSim.TILES[id].get("family", id)] = true
+	var families := specialties.filter(func(family: String):
+		return not held_families.has(family) and (tier == 0 or forge_family_available(family)))
+	var choice := _sample(families, 1, int(data.seed), _node_salt(86))
+	if choice.is_empty():
+		return
+	var family: String = choice[0]
+	if rewards.any(func(id: String): return ArenaSim.TILES[id].get("family", id) == family):
+		return
+	# The Gate can introduce a specialty's forge variant at the rolled rarity.
+	var options := [family] if tier == 0 else _class_forge_tier([family], tier)
+	var pick := _sample(options, 1, int(data.seed), _node_salt(88))
+	if not pick.is_empty():
+		hints.erase(rewards[slot])
+		rewards[slot] = pick[0]
 
 
 func _early_recruit_draft(lane: int) -> int:
