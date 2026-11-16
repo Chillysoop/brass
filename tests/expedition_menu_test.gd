@@ -38,6 +38,7 @@ func _run() -> void:
 		await _check_glass_hard_entry()
 		await _check_enchantment_reward()
 		await _check_class_roster()
+		await _check_save_slots()
 	game.queue_free()
 	await process_frame
 	for suffix in ["", ".tmp", ".bak"]:
@@ -48,6 +49,80 @@ func _run() -> void:
 	if failures.is_empty():
 		print("Expedition menu, saved run resume, and Aether Chart checks passed.")
 	quit(0 if failures.is_empty() else 1)
+
+
+func _check_save_slots() -> void:
+	var folder := "user://menu-slots-%d" % Time.get_ticks_usec()
+	var directory := ProjectSettings.globalize_path(folder)
+	_check(DirAccess.make_dir_absolute(directory) == OK, "Use a separate folder for the save slot test.")
+	var legacy := FrontierRun.new()
+	var old_path := folder.path_join("frontier-save.json")
+	legacy.load_save(old_path)
+	legacy.profile.marks = 37
+	legacy.profile.meta = ["stout_start"]
+	legacy.profile.hard_unlocked = true
+	_check(legacy.start_run(991) and legacy.choose_hero(legacy.data.offers[0]), "Write a legacy Slot 1 and backup.")
+	var run: FrontierRun = game.run
+	_check(run.load_active_save_slot(folder) and run.save_path == old_path and run.active_save_slot == 1,
+		"With no slot index, startup opens the existing Slot 1 file directly.")
+	game.run_menu()
+	await _press_named(menu, "NewGame")
+	_check(menu.find_children("NewGameSlot_*", "Button", true, false).size() == 3,
+		"New Game offers exactly three independent save slots.")
+	await _press_named(menu, "NewGameSlot_2")
+	var new_seed: int = run.data.get("seed", 0)
+	_check(run.active_save_slot == 2 and run.data.phase == "hero" and run.data.hp == 100
+		and run.profile == FrontierRun.DEFAULT_PROFILE, "A blank slot starts a fresh Brass Easy hero draft.")
+	game.run_save_title()
+	await _press_named(menu, "SaveSlots")
+	await _press_named(menu, "SaveSlot_3")
+	_check(run.active_save_slot == 3 and run.data.is_empty() and run.profile == FrontierRun.DEFAULT_PROFILE,
+		"Selecting the remaining blank slot starts with neither an expedition nor unlocked progress.")
+	_check(run.start_run(300), "Create an independent expedition in Slot 3.")
+	game.run_save_title()
+	await _press_named(menu, "SaveSlots")
+	await _press_named(menu, "SaveSlot_1")
+	_check(run.active_save_slot == 1 and run.data.seed == 991 and run.profile.marks == 37,
+		"Switching back restores the original expedition and Marks in Slot 1.")
+	var blocked_index := ProjectSettings.globalize_path(folder.path_join(FrontierRun.SLOT_INDEX_FILE + ".tmp"))
+	_check(DirAccess.make_dir_absolute(blocked_index) == OK, "Block the slot index write for the recovery check.")
+	_check(not run.start_new_game_in_slot(1, true, 1529) and not run.select_save_slot(3)
+		and run.active_save_slot == 1 and run.save_path == old_path and run.data.seed == 991 and run.profile.marks == 37,
+		"A failed slot switch or reset leaves the active profile and original checkpoint intact.")
+	_check(DirAccess.remove_absolute(blocked_index) == OK, "Unblock the slot index write.")
+	var restored := FrontierRun.new()
+	_check(restored.load_active_save_slot(folder) and restored.active_save_slot == 1 and restored.data.seed == 991,
+		"Restart still resolves to the original slot after a failed index write.")
+	game.run_menu()
+	await _press_named(menu, "NewGame")
+	await _press_named(menu, "NewGameSlot_1")
+	var confirmation := menu.find_child("ReplaceSaveSlot", true, false) as ConfirmationDialog
+	_check(confirmation != null and confirmation.visible and run.data.seed == 991 and run.profile.marks == 37,
+		"Choosing an occupied slot requires an explicit confirmation before the reset.")
+	if confirmation != null:
+		confirmation.confirmed.emit()
+		await process_frame
+		_check(run.active_save_slot == 1 and run.data.phase == "hero" and run.profile == FrontierRun.DEFAULT_PROFILE,
+			"Confirming an occupied slot resets all of that slot's progress.")
+		_check(run.save(), "Create a backup of the fresh profile.")
+		var primary := FileAccess.open(run.save_path, FileAccess.WRITE)
+		if primary != null:
+			primary.store_string("broken save")
+			primary.close()
+		var invalid_index := ConfigFile.new()
+		invalid_index.set_value("slots", "active", 8)
+		invalid_index.save(folder.path_join(FrontierRun.SLOT_INDEX_FILE))
+		_check(restored.load_active_save_slot(folder) and restored.active_save_slot == 1
+			and restored.data.phase == "hero" and restored.profile == FrontierRun.DEFAULT_PROFILE,
+			"The save and index backups recover the fresh profile without restoring its old unlocks.")
+		_check(restored.select_save_slot(2) and restored.data.seed == new_seed
+			and restored.select_save_slot(3) and restored.data.seed == 300,
+			"Resetting Slot 1 leaves Slot 2 and Slot 3 unchanged.")
+		_check(restored.load_active_save_slot(folder) and restored.active_save_slot == 3 and restored.data.seed == 300,
+			"The active slot persists across a restart.")
+	for name: String in DirAccess.get_files_at(directory):
+		DirAccess.remove_absolute(directory.path_join(name))
+	DirAccess.remove_absolute(directory)
 
 
 func _check_navigation() -> void:
@@ -189,8 +264,8 @@ func _check_practice_retry() -> void:
 	var resolved: Dictionary = run.data.duplicate(true)
 	var profile: Dictionary = run.profile.duplicate(true)
 	game._complete_result_animation()
-	game._open_review()
-	await _press_text(game.battle_review, "Retry in Practice")
+	var meter: Dictionary = game.combat_meter.snapshot()
+	await _press_text(game.arena_screen, "Retry in Practice")
 	_check(game.state == "setup" and not game.campaign and not game.fixture_picker.visible,
 		"Retry should open an editable practice with the expedition's inventory only.")
 	_check(game.sim.units == formation and game.lanes == original.lanes and game.storage_rows == original.storage,
@@ -203,11 +278,16 @@ func _check_practice_retry() -> void:
 			break
 	_check(run.data == resolved and run.profile == profile and run.loadout == original,
 		"Edits and combat in practice must preserve the expedition result, profile, and equipment.")
-	await _press_text(game.arena_screen, "Back to review")
-	_check(game.battle_review.visible and game.campaign and game.state == "finished" and game.lanes == original.lanes
-		and run.data == resolved, "Leaving practice restores the original fight review and equipment.")
+	await _press_text(game.arena_screen, "Back to battle result")
+	_check(game.arena.is_visible_in_tree() and game.campaign and game.state == "finished" and game.lanes == original.lanes
+		and run.data == resolved and game.combat_meter.snapshot() == meter,
+		"Leaving practice restores the original battlefield, equipment, and combat totals.")
 	if resolved.phase == "reward":
-		await _press_text(game.arena_screen, "Back to rewards")
+		game.run_menu()
+		var loaded: bool = run.load_save(save_path)
+		game.run_resume()
+		_check(loaded and game.combat_meter.snapshot() == meter,
+			"Resuming the saved reward preserves the original combat totals.")
 		await _press_named(game.frontier_screen, "RewardTile_" + str(run.data.offers.front()))
 		_check(run.data.phase == "map", "One reward selection claims the tile and returns to the route.")
 	run.abandon_run()

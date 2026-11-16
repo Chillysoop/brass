@@ -176,9 +176,14 @@ func _check_compact_reward_overlay(lab: Control) -> void:
 	if not _check(run.finish_combat(true, [81, 88, 91]) and run.reward_count() == 3, "The compact arena has three reward lanes."):
 		return
 	lab.run_return()
+	lab.combat_meter_toggle.set_pressed_no_signal(true)
+	lab.combat_meter_toggle.pressed.emit()
 	await process_frame
 	await process_frame
 	var visible_field: Rect2 = lab.arena.get_global_rect().intersection(root.get_visible_rect()).grow(1)
+	var meter: Rect2 = lab.combat_meter.get_global_rect()
+	_check(lab.combat_meter.is_visible_in_tree() and meter.position.x >= lab.arena.get_global_rect().end.x,
+		"The combat stats panel stays on the right of compact rewards.")
 	var field_top: float = visible_field.position.y
 	var expected_save_top_left: Vector2 = Vector2(lab.arena_screen.get_theme_constant("margin_left"),
 		lab.arena_screen.get_theme_constant("margin_top")) + lab.arena_screen.get_global_rect().position
@@ -211,17 +216,18 @@ func _check_defeat_animation(lab: Control) -> void:
 			unit.hp = 0
 	lab._physics_process(1.0 / 60.0)
 	_check(lab.result_banner.is_visible_in_tree() and lab.result_text.text.to_lower() == "defeat"
-		and not lab.battle_review.is_visible_in_tree(), "Defeat appears in the arena before Battle Review.")
+		and not lab.retry_button.is_visible_in_tree(), "Defeat appears in the arena before the result actions.")
 	lab._complete_result_animation()
-	_check(lab.battle_review.is_visible_in_tree() and run.data.phase == "result" and run.data.result == "defeat",
-		"Completing the defeat animation opens Battle Review with the saved result.")
-	_check(lab.action.text == "See results" and not lab.battle_review._close.visible,
-		"Campaign defeat review offers one exit to the results.")
-	lab.battle_review._retry.pressed.emit()
+	_check(lab.arena.is_visible_in_tree() and lab.combat_meter_toggle.is_visible_in_tree()
+		and run.data.phase == "result" and run.data.result == "defeat",
+		"The defeat state keeps the arena and stats available with the saved result.")
+	_check(lab.action.text == "See results", "Campaign defeat offers one exit to the results.")
+	lab.retry_button.pressed.emit()
 	_check(lab.state == "setup" and not lab.campaign, "Defeat can be retried in Practice.")
 	lab.return_button.pressed.emit()
-	_check(lab.battle_review.is_visible_in_tree() and lab.sim.outcome == "defeat" and run.data.result == "defeat",
-		"Returning from Practice restores the original defeat review.")
+	_check(lab.arena.is_visible_in_tree() and lab.action.text == "See results"
+		and lab.sim.outcome == "defeat" and run.data.result == "defeat",
+		"Returning from Practice restores the original defeat arena.")
 
 
 func _set_save_block(blocked: bool) -> bool:

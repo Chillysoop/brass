@@ -197,6 +197,8 @@ const DEFAULT_PROFILE := {
 }
 const NODES_PER_SEGMENT := 7
 const VERSION := 1
+const SAVE_SLOT_COUNT := 3
+const SLOT_INDEX_FILE := "frontier-slots.cfg"
 const SAVE_PHASES := ["hero", "relic", "starter", "recruit", "recruit_starter", "map", "combat", "reward",
 	"boss_relic", "enchantment", "shop", "event", "rest", "result"]
 
@@ -206,6 +208,128 @@ var profile: Dictionary = DEFAULT_PROFILE.duplicate(true)
 var save_path := "user://frontier-save.json"
 var save_error := ""
 var recovered_starter := ""
+var active_save_slot := 1
+var _slot_directory := "user://"
+var _slot_revisions: Array[int] = [0, 0, 0]
+
+
+func load_active_save_slot(directory := "user://") -> bool:
+	_slot_directory = directory
+	active_save_slot = 1
+	_slot_revisions.fill(0)
+	var index_path := _slot_directory.path_join(SLOT_INDEX_FILE)
+	for path: String in [index_path, index_path + ".bak"]:
+		var settings := ConfigFile.new()
+		if settings.load(path) != OK:
+			continue
+		var current: Variant = settings.get_value("slots", "active", 1)
+		var revisions: Variant = settings.get_value("slots", "revisions", [])
+		if not current is int or not _valid_slot(current) or not revisions is Array or revisions.size() != SAVE_SLOT_COUNT:
+			continue
+		if not revisions.all(func(value: Variant): return value is int and value >= 0):
+			continue
+		active_save_slot = current
+		_slot_revisions.assign(revisions)
+		break
+	return load_save(_slot_path(active_save_slot, _slot_revisions[active_save_slot - 1]))
+
+
+func save_slot_summary(slot: int) -> Dictionary:
+	if not _valid_slot(slot):
+		return {}
+	var path := _slot_path(slot, _slot_revisions[slot - 1])
+	var record := _read_save(path)
+	if record.is_empty():
+		record = _read_save(path + ".bak")
+	if record.is_empty():
+		return {"occupied": FileAccess.file_exists(path) or FileAccess.file_exists(path + ".bak"), "readable": false}
+	var saved_run: Dictionary = record.run
+	var saved_profile: Dictionary = record.profile
+	return {"occupied": true, "readable": true, "phase": saved_run.get("phase", ""),
+		"location": saved_run.get("location", "brass"), "difficulty": saved_run.get("difficulty", "easy"),
+		"hero": saved_run.get("hero", ""), "marks": int(saved_profile.get("marks", 0)),
+		"unlock_count": saved_profile.get("meta", []).size()}
+
+
+func select_save_slot(slot: int) -> bool:
+	if not _valid_slot(slot):
+		return false
+	if slot == active_save_slot and save_path == _slot_path(slot, _slot_revisions[slot - 1]):
+		return true
+	if not _publish_slot_index(slot, _slot_revisions):
+		return false
+	active_save_slot = slot
+	load_save(_slot_path(slot, _slot_revisions[slot - 1]))
+	return true
+
+
+func start_new_game_in_slot(slot: int, replace_existing := false, seed_value := 0) -> bool:
+	if not _valid_slot(slot) or (save_slot_summary(slot).occupied and not replace_existing):
+		return false
+	var revisions := _slot_revisions.duplicate()
+	var previous_slot_path := _slot_path(slot, revisions[slot - 1])
+	# Stage the fresh run under a distinct revision so its backup can never restore the prior profile.
+	revisions[slot - 1] += 1
+	var previous_path := save_path
+	var previous_run := data
+	var previous_inventory := loadout
+	var previous_profile := profile
+	var previous_recovery := recovered_starter
+	save_path = _slot_path(slot, revisions[slot - 1])
+	data = {}
+	loadout = {}
+	profile = DEFAULT_PROFILE.duplicate(true)
+	recovered_starter = ""
+	var staged := start_run(seed_value)
+	if not staged or not _publish_slot_index(slot, revisions, previous_slot_path):
+		if staged:
+			_remove_slot_revision(save_path)
+		save_path = previous_path
+		data = previous_run
+		loadout = previous_inventory
+		profile = previous_profile
+		recovered_starter = previous_recovery
+		return false
+	_slot_revisions = revisions
+	active_save_slot = slot
+	return true
+
+
+func _valid_slot(slot: int) -> bool:
+	return slot >= 1 and slot <= SAVE_SLOT_COUNT
+
+
+func _slot_path(slot: int, revision: int) -> String:
+	var stem := "frontier-save" if slot == 1 else "frontier-save-%d" % slot
+	if revision > 0:
+		stem += "-revision-%d" % revision
+	return _slot_directory.path_join(stem + ".json")
+
+
+func _publish_slot_index(slot: int, revisions: Array[int], obsolete_path := "") -> bool:
+	var settings := ConfigFile.new()
+	settings.set_value("slots", "active", slot)
+	settings.set_value("slots", "revisions", revisions)
+	var path := _slot_directory.path_join(SLOT_INDEX_FILE)
+	if not _write_slot_index(settings, path):
+		save_error = "Could not update the save slots."
+		return false
+	# Reclaim the prior revision once neither index points to it.
+	if _write_slot_index(settings, path + ".bak") and not obsolete_path.is_empty():
+		_remove_slot_revision(obsolete_path)
+	return true
+
+
+func _write_slot_index(settings: ConfigFile, path: String) -> bool:
+	var staging := path + ".tmp"
+	return settings.save(staging) == OK and DirAccess.rename_absolute(ProjectSettings.globalize_path(staging),
+		ProjectSettings.globalize_path(path)) == OK
+
+
+func _remove_slot_revision(path: String) -> void:
+	for suffix: String in ["", ".bak", ".tmp"]:
+		if FileAccess.file_exists(path + suffix):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
 
 
 func load_save(path := "user://frontier-save.json") -> bool:
@@ -626,6 +750,7 @@ func choose_node(id: String) -> bool:
 	data.visited.append(id)
 	data.node_notice = ""
 	data.erase("enchantment_notice")
+	data.erase("combat_stats")
 	data.erase("reward_placement")
 	data.erase("reward_hints")
 	data.erase("shop_class_offers")
@@ -1007,7 +1132,7 @@ func should_teach_timeline() -> bool:
 		and data.get("node", {}).get("type") == "opening" and not profile.get("timeline_intro_seen", false) and not profile.medium_unlocked
 
 
-func finish_combat(victory: bool, hp: Variant) -> bool:
+func finish_combat(victory: bool, hp: Variant, combat_stats := {}) -> bool:
 	if data.get("phase") != "combat":
 		return false
 	var remaining: Array = hp if hp is Array else [hp]
@@ -1015,6 +1140,8 @@ func finish_combat(victory: bool, hp: Variant) -> bool:
 		return false
 	var before := data.duplicate(true)
 	var before_profile := profile.duplicate(true)
+	if not combat_stats.is_empty():
+		data.combat_stats = combat_stats.duplicate(true)
 	if should_teach_timeline():
 		profile.timeline_intro_seen = true
 	for index in range(remaining.size()):

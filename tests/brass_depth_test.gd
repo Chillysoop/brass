@@ -158,7 +158,7 @@ func _check_marshal() -> void:
 		var sim := ArenaSim.new()
 		sim.start(lanes, "duo", {
 			"location": "brass", "difficulty": "medium", "encounter": "boss",
-			"segment": 2, "boss_id": "gilded_marshal", "seed": 13303, "relic": "pocket_bell",
+			"segment": 2, "boss_id": "gilded_marshal", "seed": 13304, "relic": "pocket_bell",
 			"heroes": [
 				{"id": build.heroes[0], "hp": 80, "max_hp": 100},
 				{"id": build.heroes[1], "hp": 80, "max_hp": 100},

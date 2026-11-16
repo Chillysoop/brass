@@ -12,6 +12,7 @@ const DEFINITIONS := {
 	"retreat": "Moves the attacker away from the target.",
 	"splash": "Deals damage to other enemies near the target.",
 	"burn": "Deals damage over the following beats.",
+	"critical hit": "The direct hit on the chosen target deals 1.5× damage before defenses. Most heroes have a 5% chance.",
 	"interrupt": "Cancels the target's current windup.",
 	"windup": "The time an attack spends preparing before it hits.",
 	"reach": "How far a tile can hit when it fires.",
@@ -27,6 +28,7 @@ const VARIANTS := {
 	"teleports": "teleport", "teleportation": "teleport",
 	"retreats": "retreat", "back away": "retreat",
 	"burns": "burn", "interrupts": "interrupt", "windups": "windup",
+	"critical chance": "critical hit", "critical hits": "critical hit", "crit": "critical hit", "crits": "critical hit",
 	"beats": "beat", "loops": "loop",
 }
 

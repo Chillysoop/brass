@@ -1,6 +1,7 @@
 extends Control
 
 const GameIcons = preload("res://scripts/game_icons.gd")
+const FrontierRun = preload("res://scripts/frontier_run.gd")
 
 signal start_requested(seed: int, difficulty: String, location: String)
 signal resume_requested
@@ -8,6 +9,8 @@ signal chart_requested
 signal practice_requested
 signal quit_requested
 signal page_changed(page: String, location: String)
+signal save_slot_requested(slot: int)
+signal new_game_requested(slot: int, replace_existing: bool)
 
 const INK := Color("#0d1826")
 const NAVY := Color("#172733")
@@ -82,6 +85,7 @@ func _show_page(page: String, location: String = "brass") -> void:
 	match _page:
 		"regions": _regions()
 		"difficulty": _difficulty()
+		"slots", "new_game": _save_slots(_page == "new_game")
 		_: _title()
 	_focus_current_page.call_deferred()
 	page_changed.emit(_page, _location)
@@ -96,7 +100,7 @@ func _unhandled_key_input(event: InputEvent) -> void:
 	if not is_visible_in_tree() or not event.is_action_pressed("ui_cancel"):
 		return
 	match _page:
-		"regions": _show_page("title")
+		"regions", "slots", "new_game": _show_page("title")
 		"difficulty": _show_page("regions", _location)
 		_: return
 	get_viewport().set_input_as_handled()
@@ -133,9 +137,14 @@ func _title() -> void:
 	var start := _button("New Expedition", func(): _show_page("regions", _latest_region()), not resumable)
 	GameIcons.decorate(start, "route", 24)
 	start.name = "NewExpedition"
+	start.tooltip_text = "Choose a new route with this slot’s Aether Marks and unlocks."
 	left.add_child(start)
 	if _focus_target == null:
 		_focus_target = start
+	var new_game := _button("New Game", func(): _show_page("new_game"))
+	new_game.name = "NewGame"
+	new_game.tooltip_text = "Start with no unlocks or Aether Marks in a save slot."
+	left.add_child(new_game)
 	var chart := _button("Aether Chart", func(): chart_requested.emit())
 	GameIcons.decorate(chart, "relic", 24)
 	chart.name = "AetherChart"
@@ -147,10 +156,98 @@ func _title() -> void:
 	var quit := _button("Quit", func(): quit_requested.emit(), false, true)
 	quit.name = "Quit"
 	left.add_child(quit)
-	var footer := _label("%d Aether Marks" % int(_run.profile.get("marks", 0)), 15, GOLD)
+	var footer := HBoxContainer.new()
+	footer.add_theme_constant_override("separation", 12)
 	rows.add_child(footer)
+	var choose_slots := _button("Save slots", func(): _show_page("slots"))
+	choose_slots.name = "SaveSlots"
+	choose_slots.custom_minimum_size.y = 36
+	footer.add_child(choose_slots)
+	var slot_status := _label("Slot %d  ·  %d Aether Marks" % [_run.active_save_slot, int(_run.profile.get("marks", 0))], 15, GOLD)
+	slot_status.name = "ActiveSaveSlot"
+	footer.add_child(slot_status)
 	if not _run.save_error.is_empty():
 		rows.add_child(_label(_run.save_error, 15, CORAL))
+
+
+func _save_slots(fresh_game: bool) -> void:
+	_backdrop("title-art.webp", "arena.webp", 0.27)
+	var layout := _body()
+	_header(layout, "New Game" if fresh_game else "Save slots", "Title", func(): _show_page("title"))
+	if fresh_game:
+		layout.add_child(_wrap("Start Brass Frontier Easy with fresh progress. Choose where to save it.", 18, MUTED))
+	var cards := HBoxContainer.new()
+	cards.add_theme_constant_override("separation", 15)
+	layout.add_child(cards)
+	for slot in range(1, FrontierRun.SAVE_SLOT_COUNT + 1):
+		var summary: Dictionary = _run.save_slot_summary(slot)
+		var current: bool = slot == _run.active_save_slot
+		var occupied: bool = summary.occupied
+		var contents := _card_copy(_card(cards, current), 320, true)
+		contents.add_child(_label("Slot %d" % slot, 32, IVORY, true))
+		contents.add_child(_label(_slot_status(summary) + ("  ·  Active" if current else ""), 16, TEAL if current else MUTED))
+		contents.add_child(_rule())
+		if summary.readable:
+			if not str(summary.phase).is_empty():
+				var region: Dictionary = REGIONS.get(summary.location, REGIONS.brass)
+				contents.add_child(_wrap("%s · %s" % [region.name, str(summary.difficulty).capitalize()], 18, IVORY))
+				var hero: Dictionary = FrontierRun.HEROES.get(summary.hero, {})
+				if not hero.is_empty():
+					contents.add_child(_label(hero.label, 17, MUTED))
+			contents.add_child(_label("%d Aether Marks" % summary.marks, 17, GOLD))
+			contents.add_child(_label("%d Aether unlocks" % summary.unlock_count, 16, MUTED))
+		elif occupied:
+			contents.add_child(_wrap("This save could not be read.", 17, CORAL))
+		var spacer := Control.new()
+		spacer.size_flags_vertical = SIZE_EXPAND_FILL
+		contents.add_child(spacer)
+		var caption := "Use slot"
+		if fresh_game:
+			caption = "Replace slot" if occupied else "Start New Game"
+		elif current:
+			caption = "Current slot"
+		var choose := _button(caption, func(): _choose_slot(slot, fresh_game, occupied), not occupied if fresh_game else current)
+		choose.name = "NewGameSlot_%d" % slot if fresh_game else "SaveSlot_%d" % slot
+		choose.disabled = current and not fresh_game
+		contents.add_child(choose)
+		if not choose.disabled and (_focus_target == null or (fresh_game and _focus_target.get_meta("occupied", true) and not occupied)):
+			choose.set_meta("occupied", occupied)
+			_focus_target = choose
+	if not _run.save_error.is_empty():
+		layout.add_child(_wrap(_run.save_error, 17, CORAL))
+
+
+func _slot_status(summary: Dictionary) -> String:
+	if not summary.occupied:
+		return "Empty"
+	if not summary.readable:
+		return "Unreadable save"
+	match summary.phase:
+		"": return "Progress saved"
+		"result": return "Expedition finished"
+	return "Expedition in progress"
+
+
+func _choose_slot(slot: int, fresh_game: bool, occupied: bool) -> void:
+	if not fresh_game:
+		save_slot_requested.emit(slot)
+		return
+	if not occupied:
+		new_game_requested.emit(slot, false)
+		return
+	var dialog := ConfirmationDialog.new()
+	dialog.name = "ReplaceSaveSlot"
+	dialog.title = "Replace Slot %d?" % slot
+	dialog.dialog_text = "The expedition, unlocks and Aether Marks in this slot will be replaced by a fresh game."
+	dialog.ok_button_text = "Replace slot"
+	dialog.confirmed.connect(func():
+		dialog.queue_free()
+		new_game_requested.emit(slot, true)
+	)
+	dialog.canceled.connect(dialog.queue_free)
+	add_child(dialog)
+	dialog.popup_centered()
+	dialog.get_cancel_button().grab_focus()
 
 
 func _regions() -> void:

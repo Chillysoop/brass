@@ -56,6 +56,12 @@ const ADMIRAL_SWEEP_BEATS := 6
 const ADMIRAL_SWEEP_RADIUS := 330.0
 const PRECISION_BONUS_RANGE := 210.0
 const PRECISION_SPACING := 245.0
+const BASE_CRITICAL_CHANCE := 0.05
+const CRITICAL_DAMAGE_MULTIPLIER := 1.5
+const STARSHOT_CRITICAL_CHANCE := 0.15
+const STARSHOT_LONG_CRITICAL_CHANCE := 0.30
+const STARSHOT_CRITICAL_STEP := 64.0
+const CRITICAL_RNG_SALT := 182827
 const DISPLACEMENT_BONUS_WINDOW := 3 * TICKS_PER_BEAT
 const COLLISION_WINDOW_TICKS := 24
 const BARRAGE_GUARD_BREAK := 8
@@ -142,7 +148,7 @@ const HERO_CLASSES := {
 	"cantor": {"label": "Cantor", "description": "Echo 3 guard to the lowest-HP ally when you grant guard, including yourself."},
 	"apothecary": {"label": "Apothecary", "description": "Your first tile hit each loop heals 2 HP. Excess healing becomes guard."},
 	"rune_smith": {"label": "Rune Smith", "description": "Finish a tile at least 3 beats wide to charge your next hit for 5 bonus damage."},
-	"starshot": {"label": "Starshot", "description": "Deal 5 bonus damage to targets more than 200 units away."},
+	"starshot": {"label": "Starshot", "description": "Ranged critical chance is 15%, rising to 30% beyond 210 units. The first critical shot each loop can dash back. Deal 5 extra damage beyond 200 units."},
 	"cinder_mage": {"label": "Cinder Mage", "description": "Once per loop, hitting a displaced enemy burns it for 6 damage."},
 	"duelist": {"label": "Duelist", "description": "Repeated hits on one target build up to 6 bonus damage. Resets when you switch."}
 }
@@ -497,6 +503,8 @@ var _overflow_healed := 0
 var _twin_bell_hits: Dictionary = {}
 var _healed_tiles: Dictionary = {}
 var _enemy_pursuit_sprints := false
+var _critical_seed := 0
+var _critical_streams: Dictionary = {}
 
 
 static func _static_init() -> void:
@@ -513,6 +521,14 @@ static func _static_init() -> void:
 
 static func is_ranged_tile(tile_id: String) -> bool:
 	return tile_id in RANGED_TILES or TILES.get(tile_id, {}).get("ranged", false)
+
+
+static func critical_chance(class_id: String, tile_id: String, distance: float) -> float:
+	if TILES.get(tile_id, {}).get("damage", 0) <= 0:
+		return 0.0
+	if class_id == "starshot" and is_ranged_tile(tile_id):
+		return STARSHOT_LONG_CRITICAL_CHANCE if distance > PRECISION_BONUS_RANGE else STARSHOT_CRITICAL_CHANCE
+	return BASE_CRITICAL_CHANCE
 
 
 static func is_blink_tile(tile_id: String) -> bool:
@@ -570,6 +586,8 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 	_twin_bell_hits.clear()
 	_healed_tiles.clear()
 	_reinforcement_wave.clear()
+	_critical_seed = int(options.get("seed", 0))
+	_critical_streams.clear()
 	_enemy_pursuit_sprints = not options.is_empty() and options.get("encounter") != "boss"
 	if not options.is_empty():
 		var reinforcements: Array = options.get("reinforcements", [])
@@ -617,6 +635,7 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 			var spacing := PRECISION_SPACING if has_precision else minf(ranged_reach * 0.65, PRECISION_SPACING)
 			unit.preferred_range = maxf(unit.preferred_range, minf(spacing, ranged_reach - 24.0))
 			unit["ranged_standoff"] = true
+			unit["ranged_reach"] = ranged_reach
 
 
 func _start_campaign(options: Dictionary) -> void:
@@ -1372,6 +1391,7 @@ func _activate_lanes() -> void:
 					_apply_mastery(actor, tile.id)
 				_apply_bastion_medal(actor, tile.id)
 				_apply_bellmaker_finishes(actor, tile.id)
+				_apply_starshot_critical_step(actor, tile.id)
 				_add_tile_visual_cue(actor, tile.id, origin, first_event)
 				if actor.get("class") == "rune_smith" and TILES[tile.id].width >= 3:
 					actor["rune_charged"] = true
@@ -1661,7 +1681,7 @@ func _prepare_siege_fuse(actor: Dictionary, target: Dictionary, tile_id: String)
 		enemy.prev_pos = destination
 		enemy["displaced_until"] = tick + DISPLACEMENT_BONUS_WINDOW
 		_emit("pull", "Siege Fuse draws %s toward %s." % [enemy.name, target.name], actor, enemy, "siege_fuse",
-			roundi(start.distance_to(destination)), start, destination)
+			roundi(start.distance_to(destination)), start, destination, {"source_tile": tile_id})
 		_break_displaced_relay_link(enemy, destination, actor)
 		count += 1
 	if count > 0:
@@ -2219,7 +2239,8 @@ func _track_collision_push(kind: String, actor: Dictionary, target: Dictionary, 
 		if target.get("collision_push", {}).has("tile"):
 			target.erase("collision_push")
 		return
-	var setup := {"source": actor.id, "until": tick + COLLISION_WINDOW_TICKS, "damage": bonus + (5 if passive else 0)}
+	var setup := {"source": actor.id, "source_tile": tile_id, "until": tick + COLLISION_WINDOW_TICKS,
+		"damage": bonus + (5 if passive else 0)}
 	if bonus > 0:
 		setup["tile"] = tile_id
 		setup["bonus"] = bonus
@@ -3114,7 +3135,8 @@ func _heal_guard_overflow(actor: Dictionary, tile_id: String, excess: int) -> vo
 	_overflow_healed += healed
 	recipient.hp += healed
 	var effect := "Overflow restored %d HP to %s" % [healed, recipient.name]
-	_emit("heal", effect + ".", actor, recipient, "overflow_chalice", healed)
+	_emit("heal", effect + ".", actor, recipient, "overflow_chalice", healed, Vector2.INF, Vector2.INF,
+		{"source_tile": tile_id})
 	_relic_proc("overflow_chalice", "Overflow Chalice", healed, actor, recipient, TILES[tile_id].label, _activation.beat, effect)
 
 
@@ -3131,13 +3153,48 @@ func _apply_tollkeeper_repair_kit(hero: Dictionary) -> void:
 	_relic_proc("tollkeeper_repair_kit", "Tollkeeper's Repair Kit", healed, hero, hero, "A fully blocked enemy hit", 0, effect)
 
 
-func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String, extra_hit := "") -> void:
+func _roll_critical(actor: Dictionary, target: Dictionary, tile_id: String) -> bool:
+	if _activation.get("actor") != actor.id or _activation.get("tile") != tile_id \
+			or _activation.get("target") != target.id or actor.side != "hero" or target.side != "enemy" \
+			or _activation.has("critical"):
+		return false
+	var chance := critical_chance(actor.get("class", ""), tile_id, _attack_origin(actor).distance_to(target.pos))
+	if chance <= 0.0:
+		return false
+	if not _critical_streams.has(actor.lane):
+		var stream := RandomNumberGenerator.new()
+		stream.seed = _critical_seed ^ CRITICAL_RNG_SALT ^ (actor.lane * 7919)
+		_critical_streams[actor.lane] = stream
+	var rng: RandomNumberGenerator = _critical_streams[actor.lane]
+	var critical := rng.randf() < chance
+	_activation["critical"] = critical
+	return critical
+
+
+func _apply_starshot_critical_step(actor: Dictionary, tile_id: String) -> void:
+	if actor.get("class") != "starshot" or not actor.get("ranged_standoff", false) \
+			or not _activation.get("critical_wounded", false) or not is_ranged_tile(tile_id) \
+			or _activation.has("attack_origin") or TILES[tile_id].has("retreat") or is_blink_tile(tile_id) \
+			or actor.get("critical_step_loop", -1) == _loop_index():
+		return
+	var target := _find_unit(_activation.target)
+	if target.is_empty() or target.hp <= 0:
+		return
+	var gap: float = actor.pos.distance_to(target.pos)
+	var distance := minf(STARSHOT_CRITICAL_STEP, actor.ranged_reach - gap - 24.0)
+	if distance >= 12.0 and _retreat_from(actor, target, tile_id, distance):
+		actor["critical_step_loop"] = _loop_index()
+
+
+func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String, extra_hit := "",
+		source_details: Dictionary = {}) -> void:
 	if target.hp <= 0:
 		return
+	var critical := false
 	if TILES.has(tile_id):
 		if extra_hit.is_empty():
 			amount += _mastery_hit(actor, target, tile_id)
-			amount = _class_attack_damage(actor, target, amount)
+			amount = _class_attack_damage(actor, target, tile_id, amount)
 			if not _activation.is_empty() and actor.side == "hero" and target.side == "enemy":
 				amount += _consume_arsenal_mark(actor, target, tile_id)
 				amount += _consume_cantor_mark(actor, target, tile_id)
@@ -3149,6 +3206,9 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 				if tile_id == _activation.tile and actor.id == _activation.actor and amount > 0:
 					amount += _timeline_relic_bonus(actor, target, tile_id)
 				_apply_barrage_rack(actor, target, tile_id)
+			critical = amount > 0 and _roll_critical(actor, target, tile_id)
+			if critical:
+				amount = roundi(amount * CRITICAL_DAMAGE_MULTIPLIER)
 		if target.get("marshal_plated", false) and actor.side == "hero":
 			amount = _marshal_damage(actor, target, amount, extra_hit.is_empty())
 		elif target.get("prism_warded", false) and actor.side == "hero":
@@ -3194,8 +3254,15 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 	elif tile_id == "sapper_blast":
 		action = "Mortar"
 	var blocked_text := " (%d blocked)" % blocked if blocked > 0 else ""
-	var details := "%s: %s hits %s for %d%s." % [actor.name, action, target.name, dealt, blocked_text]
-	_emit("hit", details, actor, target, tile_id, dealt, _attack_origin(actor))
+	var hit_verb := "critically hits" if critical else "hits"
+	var hit_message := "%s: %s %s %s for %d%s." % [actor.name, action, hit_verb, target.name, dealt, blocked_text]
+	var impact_details := source_details.duplicate()
+	impact_details["blocked"] = blocked
+	impact_details["critical"] = critical
+	_emit("hit", hit_message, actor, target, tile_id, dealt, _attack_origin(actor), Vector2.INF, impact_details)
+	if critical:
+		_activation["critical_wounded"] = dealt > 0
+		_activation.get_or_add("effect_details", []).append("Critical hit.")
 	if blocked > 0 and dealt == 0 and actor.side == "enemy" and target.side == "hero":
 		_apply_tollkeeper_repair_kit(target)
 	if dealt > 0 and target.hp > 0 and actor.side == "hero" and not str(target.intent).is_empty() \
@@ -3236,7 +3303,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		if target.has("relay_shield_sources"):
 			for guard_id: String in target.relay_shield_sources.duplicate():
 				_break_relay_link(_find_unit(guard_id))
-		_emit("defeat_unit", "%s falls." % target.name, actor, target, tile_id)
+		_emit("defeat_unit", "%s falls." % target.name, actor, target, tile_id, 0,
+			Vector2.INF, Vector2.INF, source_details)
 		if target.get("attack", {}).get("twin", false):
 			_rally_twin(target)
 	elif target.name == "The Tollkeeper" and target.hp * 2 <= target.max_hp and not target.get("enraged", false):
@@ -3692,7 +3760,7 @@ func _break_marshal_plate(marshal: Dictionary) -> void:
 		marshal.marshal_plate_integrity = 0
 
 
-func _class_attack_damage(actor: Dictionary, target: Dictionary, amount: int) -> int:
+func _class_attack_damage(actor: Dictionary, target: Dictionary, tile_id: String, amount: int) -> int:
 	match actor.get("class", ""):
 		"lancer":
 			if actor.get("travel", 0.0) >= 80.0:
@@ -3704,7 +3772,8 @@ func _class_attack_damage(actor: Dictionary, target: Dictionary, amount: int) ->
 				var healed := mini(2, actor.max_hp - actor.hp)
 				actor.hp += healed
 				if healed > 0:
-					_emit("heal", "Apothecary restores %d HP." % healed, actor, actor, "apothecary", healed)
+					_emit("heal", "Apothecary restores %d HP." % healed, actor, actor, "apothecary", healed,
+						Vector2.INF, Vector2.INF, {"source_tile": tile_id})
 				if healed < 2:
 					_guard(actor, 2 - healed, "apothecary")
 		"rune_smith":
@@ -3720,6 +3789,7 @@ func _class_attack_damage(actor: Dictionary, target: Dictionary, amount: int) ->
 			if impulse.length_squared() > 1.0 and actor.get("burn_loop", -1) != _loop_index():
 				actor["burn_loop"] = _loop_index()
 				target["burn_source"] = actor.id
+				target["burn_tile"] = tile_id
 				target["burn_tick"] = tick + TICKS_PER_BEAT
 				target["burn_left"] = 2
 		"duelist":
@@ -3741,7 +3811,7 @@ func _run_burns() -> void:
 			target.burn_left -= 1
 			target.burn_tick += TICKS_PER_BEAT
 			if not source.is_empty():
-				_damage(source, target, 3, "cinder_mage")
+				_damage(source, target, 3, "cinder_mage", "", {"source_tile": target.get("burn_tile", "")})
 		if target.hp > 0 and target.has("ember_burns"):
 			_tick_ember_burns(target)
 
@@ -3760,7 +3830,7 @@ func _tick_ember_burns(target: Dictionary) -> void:
 		if source.is_empty():
 			continue
 		var before: int = target.hp
-		_damage(source, target, burn.damage, "cinder_mage")
+		_damage(source, target, burn.damage, "cinder_mage", "", {"source_tile": burn.tile})
 		_emit("ember_tick", "%s burns %s for %d damage." % [TILES[burn.tile].label, target.name, before - int(target.hp)],
 			source, target, burn.tile, before - int(target.hp))
 		if target.hp <= 0:
@@ -3788,8 +3858,9 @@ func _breaker_collision(moving: Dictionary, other: Dictionary) -> void:
 		if not activation.is_empty():
 			activation.get_or_add("effect_details", []).append(message)
 			activation.reason = _activation_result(activation)
-	_damage(source, moving, setup.damage, "breaker")
-	_damage(source, other, setup.damage, "breaker")
+	var details := {"source_tile": setup.get("source_tile", "")}
+	_damage(source, moving, setup.damage, "breaker", "", details)
+	_damage(source, other, setup.damage, "breaker", "", details)
 
 
 func _find_unit(id: String) -> Dictionary:
@@ -3844,13 +3915,16 @@ func _beat() -> int:
 	return ceili(float(_tick_in_loop(tick)) / TICKS_PER_BEAT)
 
 
-func _emit(kind: String, message: String, actor: Dictionary = {}, target: Dictionary = {}, tile_id: String = "", amount: int = 0, start_position: Vector2 = Vector2.INF, end_position: Vector2 = Vector2.INF) -> void:
+func _emit(kind: String, message: String, actor: Dictionary = {}, target: Dictionary = {}, tile_id: String = "",
+		amount: int = 0, start_position: Vector2 = Vector2.INF, end_position: Vector2 = Vector2.INF,
+		details: Dictionary = {}) -> void:
 	var event := {
 		"kind": kind, "tick": tick, "beat": _beat(), "actor": actor.get("id", ""), "target": target.get("id", ""),
 		"tile": tile_id, "amount": amount, "message": message,
 		"from": actor.get("pos", Vector2.ZERO) if start_position == Vector2.INF else start_position,
 		"to": target.get("pos", Vector2.ZERO) if end_position == Vector2.INF else end_position
 	}
+	event.merge(details)
 	trace.append(event)
 	_events.append(event)
 	if not _activation.is_empty() and actor.get("id") == _activation.actor and tile_id == _activation.tile:

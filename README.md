@@ -6,6 +6,8 @@ The Windows playtest includes Easy, Medium, and Hard expeditions in Brass Fronti
 
 From the title screen, choose **New Expedition**, select **Brass Frontier**, and start on **Easy** to draft a hero, relic, and starting tile. You can enter an optional seed on the difficulty screen. Win the opening fight, pick rewards, then travel a seeded route through battles, elites, shops, events, and a rest site. Health, relics, gold, and tile layouts carry between stops. The game saves between fights and after loadout changes. **Continue** picks up from the saved checkpoint.
 
+**Save slots** switches among three independent profiles. **New Game** starts with fresh progress in the chosen slot. **New Expedition** uses the active slot's existing unlocks and Aether Marks. Earlier saves open in Slot 1.
+
 Each class has 18 Commons and eight Uncommons in its combat reward deck. Use **View class deck** on a hero or recruit card to inspect each tile and the class's signature Uncommon. After the victory animation, choose or skip a tile directly in the arena for each hero in party order. Rerolls start at 5 gold and double in price with each use until the next act. Tiles go to that hero's timeline when space allows, then to shared storage. The expedition saves after each pick. After the party takes its boss rewards, choose one of two starting loadouts for the new recruit. Each gives them their class starter and a second tile.
 
 In **Brass Frontier Medium**, the opening reward offers Warden a Guard or knockback direction, Hexwright a splash or protection direction, and Starshot a precision or mobile firing direction. Holding one of those tiles offers a complementary tile in a later Act I draft. You can still take other tiles and change direction as the run develops.
@@ -16,11 +18,13 @@ The Bellmaker alternates a close shockwave and a shot at the position it marked 
 
 Enemies fill a charge gauge above their heads before an attack. Tiles show damage and fire on their right edge. Each hero's timeline shows a portrait, live health, and targeting buttons. The left and right arrows select nearest and farthest. The solid and hollow hearts select highest and lowest HP. The **All** buttons apply the same rule to compatible tiles on the lane.
 
+Tiles pulse in their hero's color when they fire. Critical hits appear as larger gold damage numbers. Direct tile hits have a 5% chance to deal 1.5 times damage before Guard. Starshot's ranged attacks have a 15% chance, rising to 30% beyond 210 units. A ranged critical hit can trigger a backstep once each loop.
+
 Attacks have a ready pose and a release effect that follows their actual timing. Bash lunges, Slam drives down into a ripple, Shot recoils, Pull draws a tether, and Blink leaves a trail between its start and landing point. Tile upgrades vary the effect. Enemy windups and impacts distinguish moves such as charges, volleys, shields, and heals.
 
 Tile rarity runs gray, green, blue, purple, and gold from Common to Legendary. Hero badges identify who has a tile equipped or who receives a reward. In shared storage, a signature tile's badge identifies its class of origin.
 
-Open **Battle review** after a fight to inspect activations, misses, relic bonuses, and boss counters. Selecting an activation highlights the tile and its firing beat. Expedition defeats open the review automatically. **Retry in Practice** replays the original encounter with an editable copy of your equipment and pre-fight health.
+Open **Combat stats** during or after a fight to rank tiles by damage, assists, kills, or healing. Tiles receive one assist per enemy they damage or move before a different tile kills it. **Retry in Practice** replays the original encounter with an editable copy of your equipment and pre-fight health.
 
 Defeat the Tollkeeper on Easy to bank Aether Marks and unlock **Medium**. Open the **Aether Chart** from the title or after a run to inspect prerequisites and spend Marks on permanent upgrades between expeditions.
 

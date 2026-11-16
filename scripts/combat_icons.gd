@@ -16,6 +16,11 @@ const LABELS := {
 }
 const INK := Color("#102232")
 const VALUE := Color("#f0e5cf")
+const HERO_COLORS := [Color("#72e5d2"), Color("#c9adff"), Color("#ffc873")]
+
+
+static func hero_color(lane: int) -> Color:
+	return HERO_COLORS[posmod(lane, HERO_COLORS.size())]
 
 
 static func icon(id: String, extent := 18) -> Control:

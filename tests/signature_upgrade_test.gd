@@ -630,7 +630,8 @@ func _pull_fixture(id: String) -> ArenaSim:
 func _fixture(lanes: Array, hero_ids: Array, encounter := "opening") -> ArenaSim:
 	var heroes := hero_ids.map(func(id: String): return {"hero": id})
 	var sim := ArenaSim.new()
-	sim.start(lanes, "solo", {"encounter": encounter, "heroes": heroes, "difficulty": "hard", "segment": 3})
+	# Isolate the signature's base damage and follow-ups from critical rolls.
+	sim.start(lanes, "solo", {"encounter": encounter, "heroes": heroes, "difficulty": "hard", "segment": 3, "seed": 17})
 	for unit: Dictionary in sim.units:
 		unit.speed = 0.0
 		unit.next_attack = 99999

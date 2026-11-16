@@ -304,6 +304,18 @@ static func tile_stats(spec: Dictionary) -> String:
 	return " · ".join(stats)
 
 
+static func critical_tooltip(tile_id: String, hero_id := "") -> String:
+	var near := roundi(ArenaSim.critical_chance(hero_id, tile_id, 0.0) * 100.0)
+	if near == 0:
+		return ""
+	var multiplier := str(ArenaSim.CRITICAL_DAMAGE_MULTIPLIER)
+	var far := roundi(ArenaSim.critical_chance(hero_id, tile_id, INF) * 100.0)
+	if near != far:
+		return "%d%% critical chance, rising to %d%% beyond %d range. Critical hits deal %s× damage before defenses." % [
+			near, far, int(ArenaSim.PRECISION_BONUS_RANGE), multiplier]
+	return "Direct hits have a %d%% chance to deal %s× damage before defenses." % [near, multiplier]
+
+
 static func rarity_pips(spec: Dictionary) -> String:
 	return "•".repeat(maxi(1, RARITIES.find(spec.get("rarity", "common")) + 1))
 

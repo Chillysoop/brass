@@ -144,6 +144,14 @@ func configure(host: Control) -> void:
 	_expedition_menu.resume_requested.connect(_host.run_resume)
 	_expedition_menu.chart_requested.connect(_host.run_show_chart)
 	_expedition_menu.practice_requested.connect(_host.run_practice)
+	_expedition_menu.save_slot_requested.connect(func(slot: int):
+		if not _host.run_select_save_slot(slot):
+			_expedition_menu.render(_run, "slots")
+	)
+	_expedition_menu.new_game_requested.connect(func(slot: int, replace_existing: bool):
+		if not _host.run_start_new_game_slot(slot, replace_existing):
+			_expedition_menu.render(_run, "new_game")
+	)
 	_expedition_menu.quit_requested.connect(func(): get_tree().quit())
 	_aether_chart = AetherChartMenu.new()
 	_aether_chart.name = "AetherChartMenu"
@@ -515,6 +523,9 @@ func _show_class_deck(hero_id: String) -> void:
 			tile.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 			tile.size_flags_horizontal = SIZE_EXPAND_FILL
 			var tooltip: String = "%s · %s\n%s\n%s" % [_hero_name(hero_id), GameIcons.rarity_name(spec), GameIcons.tile_stats(spec), spec.description]
+			var critical := GameIcons.critical_tooltip(tile_id, hero_id)
+			if not critical.is_empty():
+				tooltip += "\n" + critical
 			tile.tooltip_text = TileKeywords.with_definitions(tooltip, spec.description)
 			tile.mouse_default_cursor_shape = CURSOR_POINTING_HAND
 			GameIcons.decorate(tile, GameIcons.tile(tile_id, spec), 18)
@@ -1403,7 +1414,7 @@ func _notice() -> Label:
 
 func _cards_row(parent: Control = null) -> HBoxContainer:
 	var row := HBoxContainer.new()
-	row.add_theme_constant_override("separation", 15)
+	row.add_theme_constant_override("separation", 9 if _battle_overlay else 15)
 	row.size_flags_vertical = SIZE_EXPAND_FILL
 	if parent == null:
 		parent = _layout
@@ -1488,7 +1499,12 @@ func _add_tile_header(card: VBoxContainer, id: String, spec: Dictionary, owner :
 	content.size_flags_vertical = SIZE_EXPAND_FILL
 	card.add_child(content)
 	card.move_child(content, description.get_index())
-	content.add_child(CombatIcons.tile_stats(spec, 14 if _battle_overlay else 16))
+	var stats := CombatIcons.tile_stats(spec, 14 if _battle_overlay else 16)
+	var attack := stats.get_node_or_null("AttackStat") as Control
+	if attack != null:
+		attack.tooltip_text += "\n" + GameIcons.critical_tooltip(id, owner)
+		attack.accessibility_name = attack.tooltip_text
+	content.add_child(stats)
 	description.reparent(content, false)
 	description.size_flags_vertical = SIZE_EXPAND_FILL
 	if _battle_overlay:
@@ -1572,7 +1588,7 @@ func _add_portrait(card: VBoxContainer, texture: Texture2D, height: int) -> void
 
 func _panel_stack(parent: Control, minimum: Vector2, expand := false) -> VBoxContainer:
 	var panel := PanelContainer.new()
-	panel.add_theme_stylebox_override("panel", _box(PANEL, EDGE, 9, 18))
+	panel.add_theme_stylebox_override("panel", _box(PANEL, EDGE, 9, 13 if _battle_overlay else 18))
 	panel.custom_minimum_size = minimum
 	if expand:
 		panel.size_flags_horizontal = SIZE_EXPAND_FILL

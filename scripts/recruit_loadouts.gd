@@ -40,7 +40,7 @@ const OPTIONS := {
 		"support": {"label": "Guard and Hammer", "description": "Build Guard before swinging at nearby enemies.", "companion": "guard"},
 	},
 	"starshot": {
-		"assault": {"label": "Firing Line", "description": "Take two shots at range and punish enemy windups.", "companion": "shot"},
+		"assault": {"label": "Firing Line", "description": "Take two shots at range for more critical hits.", "companion": "shot"},
 		"support": {"label": "Covering Fire", "description": "Protect the most injured hero, then fire at range.", "companion": "cover"},
 	},
 	"cinder_mage": {

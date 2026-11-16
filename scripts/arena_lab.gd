@@ -4,7 +4,7 @@ const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ArenaView = preload("res://scripts/arena_view.gd")
 const StorageScreen = preload("res://scripts/storage_screen.gd")
 const ForgeScreen = preload("res://scripts/forge_screen.gd")
-const BattleReview = preload("res://scripts/battle_review.gd")
+const CombatMeter = preload("res://scripts/combat_meter.gd")
 const GameIcons = preload("res://scripts/game_icons.gd")
 const CombatIcons = preload("res://scripts/combat_icons.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
@@ -69,6 +69,7 @@ var arsenal_button: Button
 var arsenal_panel: PanelContainer
 var arena
 var battle_stage: HBoxContainer
+var combat_sidebar: VBoxContainer
 var enemy_details: ScrollContainer
 var enemy_cards: VBoxContainer
 var enemy_card_names := {}
@@ -77,13 +78,14 @@ var battle_heading: Label
 var fixture_picker: OptionButton
 var speed_picker: OptionButton
 var action: Button
-var review_button: Button
-var battle_review: Control
-var reviewed_event: Dictionary = {}
+var combat_meter: CombatMeter
+var combat_meter_toggle: Button
+var retry_button: Button
+var combat_meter_open := false
 var battle_name := ""
 var battle_snapshot: Dictionary = {}
 var retry_options: Dictionary = {}
-var retry_review: Dictionary = {}
+var retry_result: Dictionary = {}
 var combat_save_pending := false
 var showing_battle_rewards := false
 var result_animation: Tween
@@ -101,6 +103,7 @@ var playheads: Array[ColorRect] = []
 var tile_cards: Array[Dictionary] = []
 var edge_tick := 0
 var edge_tiles: Dictionary = {}
+const TILE_PULSE_TICKS := 24
 var drag_board: Control
 var drag_overlay: Control
 var drag_pointer := Vector2.ZERO
@@ -111,7 +114,7 @@ func _ready() -> void:
 	theme = _theme()
 	_build()
 	_load_fixture("duo")
-	run.load_save()
+	run.load_active_save_slot()
 	run_menu()
 
 func _theme() -> Theme:
@@ -198,10 +201,15 @@ func _build() -> void:
 	storage_button.tooltip_text = "Drag tiles between storage and timelines."
 	reset_button = _button("Reset fight", _reset_fight)
 	return_button = _button("Title", _leave_arena)
-	review_button = _button("Battle review", _toggle_review)
-	GameIcons.decorate(review_button, "review", 18)
-	review_button.name = "OpenBattleReview"
-	review_button.hide()
+	combat_meter_toggle = _button("Combat stats", _toggle_combat_meter)
+	combat_meter_toggle.name = "CombatStatsToggle"
+	combat_meter_toggle.toggle_mode = true
+	combat_meter_toggle.tooltip_text = "Show or hide tile totals for damage, assists, kills, and healing."
+	GameIcons.decorate(combat_meter_toggle, "review", 18)
+	header.add_child(combat_meter_toggle)
+	retry_button = _button("Retry in Practice", _retry_in_practice)
+	retry_button.name = "RetryInPractice"
+	retry_button.tooltip_text = "Replay this fight with the original party, health, and equipment."
 	action = _button("Start battle", _action)
 	action.custom_minimum_size.x = 130
 	action.add_theme_stylebox_override("normal", _box(Color("#59462f"), GOLD))
@@ -216,16 +224,16 @@ func _build() -> void:
 	arena.custom_minimum_size.y = 290
 	arena.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	battle_stage.add_child(arena)
+	combat_sidebar = VBoxContainer.new()
+	combat_sidebar.name = "CombatSidebar"
+	combat_sidebar.custom_minimum_size.x = 245
+	battle_stage.add_child(combat_sidebar)
 	_build_enemy_details()
 	_build_result_banner()
-	battle_review = BattleReview.new()
-	battle_review.name = "BattleReview"
-	battle_review.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	battle_review.close_requested.connect(_close_review)
-	battle_review.retry_requested.connect(_retry_in_practice)
-	battle_review.event_selected.connect(_review_event)
-	battle_review.hide()
-	stack.add_child(battle_review)
+	combat_meter = CombatMeter.new()
+	combat_meter.name = "CombatMeter"
+	combat_meter.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	combat_sidebar.add_child(combat_meter)
 	var readout := HBoxContainer.new()
 	readout.add_theme_constant_override("separation", 16)
 	stack.add_child(readout)
@@ -283,7 +291,7 @@ func _build() -> void:
 	tray.add_child(arsenal_button)
 	tray.add_child(fixture_picker)
 	tray.add_child(speed_picker)
-	tray.add_child(review_button)
+	tray.add_child(retry_button)
 	tray.add_child(reset_button)
 	tray.add_child(return_button)
 	camp_button = _button("Forge selected", _open_camp_forge)
@@ -322,7 +330,8 @@ func _build_enemy_details() -> void:
 	enemy_details.name = "BattleEnemyDetails"
 	enemy_details.custom_minimum_size.x = 245
 	enemy_details.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	battle_stage.add_child(enemy_details)
+	enemy_details.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	combat_sidebar.add_child(enemy_details)
 	enemy_cards = VBoxContainer.new()
 	enemy_cards.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	enemy_cards.add_theme_constant_override("separation", 7)
@@ -434,8 +443,6 @@ func _complete_result_animation() -> void:
 	if campaign and state == "finished" and not combat_save_pending:
 		if sim.outcome == "victory" and run.has_combat_reward():
 			run_return()
-		elif sim.outcome == "defeat":
-			_open_review()
 	_update_controls()
 
 func _teaching_timeline() -> bool:
@@ -467,7 +474,6 @@ func _entry(id: String, start: int, target: String) -> Dictionary:
 	return {"id": id, "start": start, "target": target}
 
 func _reset_fight() -> void:
-	_close_review()
 	_hide_result_animation()
 	_clear_enemy_details()
 	arsenal_panel.hide()
@@ -475,6 +481,7 @@ func _reset_fight() -> void:
 	combat_save_pending = false
 	edge_tick = 0
 	edge_tiles.clear()
+	combat_meter.reset()
 	selected.clear()
 	pending_forge.clear()
 	_start_sim()
@@ -484,12 +491,6 @@ func _reset_fight() -> void:
 	_update_controls()
 
 func _action() -> void:
-	if battle_review.visible:
-		if campaign and sim.outcome == "defeat":
-			run_return()
-		else:
-			_close_review()
-		return
 	match state:
 		"setup":
 			if _editing_camp_forge():
@@ -506,6 +507,7 @@ func _action() -> void:
 			arsenal_panel.hide()
 			edge_tick = 0
 			edge_tiles.clear()
+			combat_meter.reset()
 			if campaign:
 				battle_name = FrontierScreen.battle_title(run.data.get("node", {}))
 				battle_snapshot = {
@@ -540,6 +542,7 @@ func _physics_process(_delta: float) -> void:
 	var first_activation: int = sim.activations.size()
 	for step_index in range(speed):
 		var events: Array = sim.step()
+		combat_meter.record(events, sim.units)
 		# At 2×, show the boundary for the frame even if it was the first of two steps.
 		if sim.tick % ArenaSim.TICKS_PER_BEAT == 0:
 			edge_tick = sim.tick
@@ -565,13 +568,12 @@ func _save_finished_battle() -> void:
 	var remaining_hp: Array[int] = []
 	for index in range(lanes.size()):
 		remaining_hp.append(sim.units[index].hp)
-	combat_save_pending = not run.finish_combat(sim.outcome == "victory", remaining_hp)
+	combat_save_pending = not run.finish_combat(sim.outcome == "victory", remaining_hp, combat_meter.snapshot())
 	if not combat_save_pending:
 		_animate_result()
 
 func _update_controls() -> void:
 	arena.playback_paused = state == "paused"
-	var reviewing := battle_review.visible
 	var animating := result_animation != null
 	action.text = {"setup": "Start battle", "running": "Pause", "paused": "Resume", "finished": "Edit loadout"}[state]
 	if campaign and (state == "finished" or not encounter_setup):
@@ -581,18 +583,22 @@ func _update_controls() -> void:
 			action.text = "Back to smith" if _traveling_smith_forge() else "Continue"
 	if _editing_camp_forge():
 		action.text = "Back to forge"
-	if reviewing and campaign:
-		action.text = "See results" if sim.outcome == "defeat" else "Back to rewards"
-	action.visible = not (campaign and animating) and (not showing_battle_rewards or reviewing) and (campaign or not reviewing)
+	if campaign and state == "finished" and sim.outcome == "defeat" and not combat_save_pending:
+		action.text = "See results"
+	action.visible = not (campaign and animating) and not showing_battle_rewards
 	save_title_button.visible = campaign and not combat_save_pending and not animating and state in ["setup", "finished"]
 	var battle_title := FrontierScreen.battle_title(run.data.get("node", {}))
 	battle_heading.text = battle_title if campaign and (encounter_setup or showing_battle_rewards) and not battle_title.is_empty() else "BRASS & AETHER"
-	enemy_details.visible = not reviewing and not showing_battle_rewards \
+	combat_meter_toggle.visible = not campaign or encounter_setup or showing_battle_rewards
+	combat_meter_toggle.set_pressed_no_signal(combat_meter_open)
+	combat_meter.visible = combat_meter_toggle.visible and combat_meter_open
+	enemy_details.visible = not combat_meter.visible and not showing_battle_rewards \
 		and ((campaign and encounter_setup) or not retry_options.is_empty()) and not enemy_card_names.is_empty()
+	combat_sidebar.visible = combat_meter.visible or enemy_details.visible
 	reset_button.visible = not campaign
 	fixture_picker.visible = not campaign and retry_options.is_empty()
 	return_button.visible = not campaign
-	return_button.text = "Back to review" if not retry_review.is_empty() else "Title"
+	return_button.text = "Back to battle result" if not retry_result.is_empty() else "Title"
 	camp_button.visible = camp_forge and not _editing_camp_forge()
 	fixture_picker.disabled = state != "setup"
 	storage_button.disabled = state != "setup"
@@ -602,18 +608,18 @@ func _update_controls() -> void:
 		enchantment_button.text = enchantment.label
 		enchantment_button.tooltip_text = enchantment.description + "\nAssign or move this enchantment in Tile storage."
 		GameIcons.decorate(enchantment_button, enchantment.icon, 18)
-	speed_picker.visible = not reviewing and (not campaign or (encounter_setup and state != "finished"))
-	review_button.visible = state == "finished" and not reviewing and not combat_save_pending \
-		and not str(sim.outcome).is_empty() and (not campaign or not animating)
+	speed_picker.visible = not campaign or (encounter_setup and state != "finished")
+	retry_button.visible = campaign and state == "finished" and not combat_save_pending \
+		and not animating and not battle_snapshot.is_empty() and not str(sim.outcome).is_empty()
 	palette.visible = state == "setup" and not campaign and retry_options.is_empty()
 	arsenal_button.visible = palette.visible
-	palette.get_parent().visible = not campaign or camp_forge or review_button.visible or speed_picker.visible
+	palette.get_parent().visible = not campaign or camp_forge or retry_button.visible or speed_picker.visible
 	setup_hint.visible = state == "setup"
 	var cycle := ArenaSim.LOOP_TICKS
 	var elapsed: int = sim.tick
 	var teaching := _teaching_timeline()
-	timeline_intro.visible = teaching and not reviewing and elapsed <= cycle and state != "finished"
-	var display_tick := int(reviewed_event.get("tick", 0)) if reviewing else (edge_tick if edge_tick > 0 else elapsed)
+	timeline_intro.visible = teaching and elapsed <= cycle and state != "finished"
+	var display_tick := edge_tick if edge_tick > 0 else elapsed
 	var progress := 0 if display_tick == 0 else 1 + (display_tick - 1) % cycle
 	var beat := ceili(float(progress) / ArenaSim.TICKS_PER_BEAT)
 	match state:
@@ -636,7 +642,7 @@ func _update_controls() -> void:
 			status.text = "%s %02d / 12 · %.1fs" % ["Paused" if state == "paused" else "Beat", beat, elapsed / 60.0]
 			if teaching and elapsed >= cycle:
 				status.text = "Loop %d · %s" % [1 + floori(float(maxi(0, display_tick - 1)) / cycle), status.text]
-	status.get_parent().visible = not reviewing and not status.text.is_empty()
+	status.get_parent().visible = not status.text.is_empty()
 	for lane_index in range(lane_health.size()):
 		var hero: Dictionary = sim.units[lane_index]
 		var health := lane_health[lane_index]
@@ -647,7 +653,7 @@ func _update_controls() -> void:
 		health.tooltip_text = "%s · %d / %d HP" % [hero.name, hero.hp, hero.max_hp]
 		health_label.text = "Fallen" if fallen else "%d/%d" % [hero.hp, hero.max_hp]
 		health_label.add_theme_color_override("font_color", RUST if fallen else MUTED)
-	if not reviewing and ((campaign and encounter_setup) or not retry_options.is_empty()):
+	if not showing_battle_rewards and ((campaign and encounter_setup) or not retry_options.is_empty()):
 		_update_colossus_status()
 		_update_relay_status()
 		_update_dock_status()
@@ -656,7 +662,7 @@ func _update_controls() -> void:
 		relay_status.hide()
 		dock_status.hide()
 	for head in playheads:
-		head.visible = state != "setup" and (not reviewing or not reviewed_event.is_empty())
+		head.visible = state != "setup"
 		var fraction := ArenaSim.loop_progress(display_tick)
 		head.anchor_left = fraction
 		head.anchor_right = fraction
@@ -667,55 +673,24 @@ func _update_controls() -> void:
 		for start: int in tile_cards[lane_index]:
 			var card: Control = tile_cards[lane_index][start]
 			var marker: Control = card.get_meta("timing_marker")
-			var tile: Dictionary = card.get_meta("tile")
-			var inspected: bool = reviewing and reviewed_event.get("lane", -1) == lane_index \
-				and reviewed_event.get("start", -1) == start and reviewed_event.get("tile", "") == tile.id
-			var fired := not reviewing and elapsed - int(edge_tiles.get(Vector2i(lane_index, start), -60)) <= 14
-			marker.visible = inspected or fired \
-				or (teaching and state == "setup" and lane_index == 0 and start == int(lanes[0][0].start))
-			marker.get_child(0).visible = not reviewing and marker.visible
-			card.modulate.a = 0.40 if fallen and not inspected else 1.0
+			var age := elapsed - int(edge_tiles.get(Vector2i(lane_index, start), -60))
+			var fired := age < TILE_PULSE_TICKS and (state in ["running", "paused"] or animating)
+			var teaching_edge: bool = teaching and state == "setup" and lane_index == 0 and start == int(lanes[0][0].start)
+			marker.visible = fired or teaching_edge
+			marker.modulate.a = 1.0 - smoothstep(0.0, float(TILE_PULSE_TICKS), float(age)) if fired else 1.0
+			card.modulate.a = 0.40 if fallen else 1.0
 			var back: Control = card.get_meta("tile_back")
 			back.modulate.a = card.modulate.a
 
-func _toggle_review() -> void:
-	if battle_review.visible:
-		_close_review()
-	else:
-		_open_review()
-
-func _open_review(previous_event := {}) -> void:
-	if state != "finished" or combat_save_pending:
-		return
-	_hide_result_animation()
-	arena.hide()
-	battle_stage.hide()
-	battle_review.open(sim.activations, sim.boss_events, sim.outcome, battle_name,
-		campaign and not battle_snapshot.is_empty(), not campaign, previous_event)
-	_update_controls()
-
-func _close_review() -> void:
-	if not battle_review.visible:
-		return
-	battle_review.hide()
-	reviewed_event.clear()
-	battle_stage.show()
-	arena.show()
-	_update_controls()
-	if review_button.is_visible_in_tree():
-		review_button.grab_focus()
-
-func _review_event(event: Dictionary) -> void:
-	reviewed_event = event.duplicate()
+func _toggle_combat_meter() -> void:
+	combat_meter_open = combat_meter_toggle.button_pressed
 	_update_controls()
 
 
 func _retry_in_practice() -> void:
-	if not campaign or battle_snapshot.is_empty():
+	if not campaign or state != "finished" or combat_save_pending or battle_snapshot.is_empty():
 		return
-	var focus := reviewed_event.duplicate()
-	_close_review()
-	retry_review = {"sim": sim, "focus": focus, "encounter_setup": encounter_setup}
+	retry_result = {"sim": sim, "meter": combat_meter.snapshot(), "encounter_setup": encounter_setup}
 	var practice := battle_snapshot.duplicate(true)
 	retry_options = practice.options
 	lanes = practice.lanes
@@ -727,16 +702,11 @@ func _retry_in_practice() -> void:
 	showing_battle_rewards = false
 	campaign = false
 	_reset_fight()
-	if focus.get("lane", -1) >= 0 and focus.get("start", -1) >= 0:
-		var card: Control = tile_cards[focus.lane].get(focus.start)
-		if card != null and card.get_meta("tile").id == focus.tile:
-			_select({"id": focus.tile, "lane": focus.lane, "start": focus.start})
 
-func _return_to_original_review() -> void:
-	var original := retry_review
-	retry_review = {}
+func _return_to_battle_result() -> void:
+	var original := retry_result
+	retry_result = {}
 	retry_options = {}
-	_close_review()
 	_hide_result_animation()
 	storage_screen.hide()
 	selected.clear()
@@ -746,6 +716,7 @@ func _return_to_original_review() -> void:
 	encounter_setup = original.encounter_setup
 	state = "finished"
 	sim = original.sim
+	combat_meter.restore(original.meter)
 	_read_run_loadout()
 	_clear_enemy_details()
 	arena.location = run.data.get("location", "brass")
@@ -755,7 +726,7 @@ func _return_to_original_review() -> void:
 		_show_battle_rewards()
 	else:
 		_rebuild_loadout()
-	_open_review(original.focus)
+		_update_controls()
 
 func _update_colossus_status() -> void:
 	colossus_status.hide()
@@ -1239,7 +1210,7 @@ func _build_lane(lane_index: int, row_height: int) -> void:
 	health_column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	health_column.add_theme_constant_override("separation", 2)
 	profile.add_child(health_column)
-	var hero_name := _label(hero.name, 15, TEAL)
+	var hero_name := _label(hero.name, 15, CombatIcons.hero_color(lane_index))
 	hero_name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	hero_name.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	var name_row := HBoxContainer.new()
@@ -1397,8 +1368,11 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	var marker := Panel.new()
 	marker.name = "TimingMarker"
 	marker.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var rim := _box(Color(1, 0.83, 0.50, 0.15), GOLD)
+	var pulse_color := CombatIcons.hero_color(lane_index)
+	var rim := _box(Color(pulse_color, 0.08), pulse_color)
 	rim.set_border_width_all(2)
+	rim.shadow_color = Color(pulse_color, 0.35)
+	rim.shadow_size = 3
 	marker.add_theme_stylebox_override("panel", rim)
 	board.add_child(marker)
 	marker.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -1409,7 +1383,7 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	marker.offset_top = offer_height + 1
 	marker.offset_bottom = -1
 	var firing_edge := ColorRect.new()
-	firing_edge.color = Color("#ffe2a4")
+	firing_edge.color = pulse_color.lightened(0.30)
 	firing_edge.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	marker.add_child(firing_edge)
 	firing_edge.set_anchors_and_offsets_preset(Control.PRESET_RIGHT_WIDE)
@@ -1502,6 +1476,9 @@ func _tile_tooltip(lane_index: int, item: Dictionary, tile: Dictionary) -> Strin
 		tooltip += " · " + target_caption
 	var enchantment := TileEnchantments.info(item.get("enchantment", ""))
 	var keyword_copy: String = GameIcons.tile_stats(tile) + "\n" + tile.description
+	var critical := GameIcons.critical_tooltip(item.id, owner)
+	if not critical.is_empty():
+		tooltip += "\n" + critical
 	if not enchantment.is_empty():
 		tooltip += "\n%s · %s" % [enchantment.label, enchantment.description]
 		keyword_copy += "\n" + enchantment.description
@@ -2186,7 +2163,6 @@ func _persist_inventory(before: Dictionary) -> bool:
 	return false
 
 func _show_frontier(page := "") -> void:
-	_close_review()
 	_hide_result_animation()
 	showing_battle_rewards = false
 	state = "setup"
@@ -2195,7 +2171,7 @@ func _show_frontier(page := "") -> void:
 	camp_forge = false
 	battle_snapshot.clear()
 	retry_options = {}
-	retry_review = {}
+	retry_result = {}
 	arena_screen.hide()
 	arsenal_panel.hide()
 	storage_screen.hide()
@@ -2213,10 +2189,12 @@ func _place_frontier_screen(parent: Control) -> void:
 		frontier_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 func _show_battle_rewards() -> void:
-	_close_review()
 	if not campaign or state != "finished":
 		run_show_arena()
 		state = "finished"
+		var saved_stats: Variant = run.data.get("combat_stats", {})
+		if saved_stats is Dictionary:
+			combat_meter.restore(saved_stats)
 		arena.reset_view(sim.units.filter(func(unit: Dictionary): return unit.side == "hero"), lanes)
 	else:
 		_read_run_loadout()
@@ -2239,13 +2217,25 @@ func _leave_arena() -> void:
 			run_return()
 		else:
 			_show_inventory_message(run.save_error)
-	elif not retry_review.is_empty():
-		_return_to_original_review()
+	elif not retry_result.is_empty():
+		_return_to_battle_result()
 	else:
 		run_menu()
 
 func run_menu() -> void:
 	_show_frontier("menu")
+
+func run_select_save_slot(slot: int) -> bool:
+	if not run.select_save_slot(slot):
+		return false
+	run_menu()
+	return true
+
+func run_start_new_game_slot(slot: int, replace_existing: bool) -> bool:
+	if not run.start_new_game_in_slot(slot, replace_existing):
+		return false
+	run_return()
+	return true
 
 func run_save_title() -> void:
 	if run.save():

@@ -84,7 +84,7 @@ const DECKS := {
 		"forge": ["bash", "slam", "guard"],
 	},
 	"starshot": {
-		"summary": "Long-range shots and marked targets",
+		"summary": "Long-range criticals and evasive movement",
 		"common": ["rivet_bolt", "retreat_shot", "signal_flare", "snap_shot", "shrapnel", "pull", "blink", "shot", "bash", "cover"],
 		"uncommon": ["sundering_bolt", "crossfire", "scattershot", "watchfire"],
 		"extra_common": ["short_fuse", "furnace_burst", "tether_dart", "lantern_shot", "slip_cut", "spark_shot", "tap_bolt", "line_guard"],

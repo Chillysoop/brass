@@ -75,6 +75,13 @@ func _run() -> void:
 	_check(lab.sim.tick == 2, "Pause should preserve the simulation tick.")
 	lab._action()
 	await process_frame
+	var first_pulse: ColorRect = lab.tile_cards[0].values().front().get_meta("timing_marker").get_child(0)
+	var second_pulse: ColorRect = lab.tile_cards[1].values().front().get_meta("timing_marker").get_child(0)
+	_check(first_pulse.color != second_pulse.color, "Pulses use distinct colors for the two hero lanes.")
+	_click(lab.combat_meter_toggle.get_global_rect().get_center())
+	await process_frame
+	_check(lab.combat_meter.visible and lab.arena.visible, "Toggle the meter without leaving live combat.")
+	_click(lab.combat_meter_toggle.get_global_rect().get_center())
 	for step_index in range(3000):
 		lab._physics_process(1.0 / 60.0)
 		if lab.sim.tick == 84:
@@ -86,20 +93,15 @@ func _run() -> void:
 			break
 	_check(lab.sim.outcome == "victory", "The full fight should finish through the arena controls.")
 	await process_frame
-	_click(lab.review_button.get_global_rect().get_center())
+	_click(lab.combat_meter_toggle.get_global_rect().get_center())
 	await process_frame
-	_check(lab.battle_review.visible and not lab.arena.visible, "Battle review should open from the finished fight.")
-	var reviewed: Dictionary = lab.reviewed_event
-	if reviewed.get("lane", -1) >= 0:
-		var card: Control = lab.tile_cards[reviewed.lane][reviewed.start]
-		_check(card.get_meta("timing_marker").visible, "Selecting a review event should highlight the exact tile.")
-	else:
-		_check(false, "Opening the review should select an activation when the fight has no boss events.")
-	var close: Button = lab.battle_review.find_child("CloseBattleReview", true, false)
-	if close != null:
-		_click(close.get_global_rect().get_center())
+	_check(lab.combat_meter.visible and lab.arena.visible and not lab.combat_meter.totals.ranked("damage").is_empty(),
+		"The right-side meter retains damage recorded while hidden and leaves the finished arena visible.")
+	lab.combat_meter.set_metric("kills")
+	_check(not lab.combat_meter.totals.ranked("kills").is_empty(), "Switching metrics shows the killing tiles.")
+	_click(lab.combat_meter_toggle.get_global_rect().get_center())
 	await process_frame
-	_check(not lab.battle_review.visible and lab.arena.visible, "Closing review should return to the finished arena.")
+	_check(not lab.combat_meter.visible and lab.arena.visible, "Closing the meter leaves the arena visible.")
 	lab._reset_fight()
 	_check(lab.state == "setup" and lab.lanes == original, "Reset should return to setup and retain the edited layout.")
 	lab._load_fixture("solo")
@@ -624,8 +626,7 @@ func _check_retry_boss_hud(lab: Control) -> void:
 				[lab._entry("shot", 4, "lowest_hp")]],
 			"storage": [[], [], []], "defaults": ["nearest", "farthest", "lowest_hp"], "suppressed": {},
 		}
-		lab._open_review()
-		lab.battle_review._retry.pressed.emit()
+		lab.retry_button.pressed.emit()
 		var cue: Label = lab.get(fixture.label)
 		_check(cue.visible and fixture.move in cue.text, "%s should show its boss guidance in Retry in Practice setup." % fixture.id)
 		lab.action.pressed.emit()

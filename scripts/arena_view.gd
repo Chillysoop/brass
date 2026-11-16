@@ -9,6 +9,8 @@ const EnemyChoreography = preload("res://scripts/enemy_attack_choreography.gd")
 const CombatSpritePose = preload("res://scripts/combat_sprite_pose.gd")
 const WORLD_SIZE := Vector2(1000.0, 520.0)
 const MAX_CASTS := 48
+const MAX_COMBAT_NUMBERS := 64
+const COMBAT_NUMBER_LIFETIME := 1.05
 const INK := Color("#182126")
 const FRAME := Color("#47534b")
 const SAND := Color("#be955f")
@@ -160,6 +162,8 @@ var _combat_sprites: Dictionary = {}
 var _gait_phases: Dictionary = {}
 var _gait_strengths: Dictionary = {}
 var _effects: Array[Dictionary] = []
+var _combat_numbers: Array[Dictionary] = []
+var _combat_number_font := SystemFont.new()
 var _attack_casts: Array[Dictionary] = []
 var _actor_casts: Dictionary = {}
 var _hero_clips: Array[Array] = []
@@ -172,6 +176,8 @@ var _animation_time := 0.0
 func _ready() -> void:
 	clip_contents = true
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_combat_number_font.font_names = PackedStringArray(["Segoe UI", "DejaVu Sans"])
+	_combat_number_font.font_weight = 800
 	custom_minimum_size.y = maxf(custom_minimum_size.y, 250.0)
 	for key in ARENA_PATHS:
 		var path: String = ARENA_PATHS[key]
@@ -186,6 +192,7 @@ func reset_view(units_data: Array, lanes: Array = [], reinforcement: Dictionary 
 	_reinforcement_warning = reinforcement
 	_windups.clear()
 	_effects.clear()
+	_combat_numbers.clear()
 	_attack_casts.clear()
 	_actor_casts.clear()
 	_hero_clips.clear()
@@ -241,6 +248,8 @@ func present(units_data: Array, events: Array, tick := 0, attack_cues: Array = [
 				_actor_casts.erase(oldest.actor)
 	for event in events:
 		var tile: String = event.get("tile", "")
+		if event.kind in ["hit", "heal"]:
+			_add_combat_number(event)
 		if tile == "relay_link_broken" and str(event.target).begins_with("crown_regent"):
 			continue
 		var kind: String = ENCOUNTER_EFFECTS.get(tile, event.get("kind", ""))
@@ -294,6 +303,12 @@ func _process(delta: float) -> void:
 		effect.age += delta
 		if effect.age >= EFFECT_LENGTHS[effect.kind]:
 			_effects.remove_at(index)
+		changed = true
+	for index in range(_combat_numbers.size() - 1, -1, -1):
+		var number := _combat_numbers[index]
+		number.age += delta
+		if number.age >= COMBAT_NUMBER_LIFETIME:
+			_combat_numbers.remove_at(index)
 		changed = true
 	for index in range(_attack_casts.size() - 1, -1, -1):
 		var cast := _attack_casts[index]
@@ -364,6 +379,8 @@ func _draw() -> void:
 					AttackAnimation.draw_secondary_contact(self, cast.profile, start, end, progress, cast_size)
 	for effect in _effects:
 		_draw_feedback(effect, field)
+	for number in _combat_numbers:
+		_draw_combat_number(number, field, sprite_scale)
 	_draw_marshal_cues(board)
 	if not _reinforcement_warning.is_empty():
 		_draw_reinforcement_countdown(board)
@@ -1189,21 +1206,24 @@ func _draw_feedback(effect: Dictionary, field: Rect2) -> void:
 	match kind:
 		"wreckmaster_slam_miss":
 			label = "SLAM MISSED"
-		"guard", "heal", "repair_heal":
+		"heal", "repair_heal":
+			return
+		"guard":
 			if effect.amount <= 0:
 				return
-			glyph = "guard" if kind == "guard" else "heal"
-			color = CombatIcons.PALETTE[glyph]
+			glyph = "guard"
+			color = CombatIcons.PALETTE.guard
 			label = str(effect.amount) if effect.tile == "relay_absorb" else "+%d" % effect.amount
-			shift = -22.0 if kind == "guard" else 22.0
+			shift = -22.0
 		"hit":
-			glyph = "burn" if effect.tile == "cinder_mage" else "attack"
-			color = CombatIcons.PALETTE["burn"] if glyph == "burn" else (GOLD if String(effect.actor).begins_with("hero") else ENEMY_COLOR.lightened(0.19))
-			label = str(effect.amount)
+			color = GOLD if str(effect.actor).begins_with("hero") else ENEMY_COLOR.lightened(0.19)
+			if effect.get("critical", false):
+				color = Color("#ffd15e")
 			var impact := point - Vector2(0.0, 16.0)
 			for index in range(4):
 				var ray := Vector2.RIGHT.rotated(index * TAU / 4.0 + 0.7)
 				draw_line(impact + ray * (4.0 + progress * 8.0), impact + ray * (10.0 + progress * 11.0), Color(color, opacity), 2.0, true)
+			return
 	var lift := 52.0 if kind == "marshal_plate_broken" else 24.0
 	var baseline := point + Vector2(shift, -lift - progress * 25.0)
 	if not glyph.is_empty():
@@ -1213,6 +1233,63 @@ func _draw_feedback(effect: Dictionary, field: Rect2) -> void:
 		CombatIcons.draw(self, glyph, center, 13.0, Color(color, opacity))
 		baseline.x += 7.5
 	_draw_centered(label, baseline, 15, Color(color, opacity))
+
+
+func _add_combat_number(event: Dictionary) -> void:
+	var healing: bool = event.kind == "heal"
+	var amount := int(event.amount)
+	if healing and amount <= 0:
+		return
+	var occupied := {}
+	for number in _combat_numbers:
+		if number.target == event.target and float(number.age) < 0.38:
+			occupied[number.slot] = true
+	var slot := 0
+	while occupied.has(slot):
+		slot += 1
+	var critical := bool(event.get("critical", false)) and amount > 0
+	var blocked := not healing and amount <= 0 and int(event.get("blocked", 0)) > 0
+	var against_hero := str(event.target).begins_with("hero_")
+	var label := str(amount)
+	var tone := Color("#fff0bf")
+	if healing:
+		label = "+%d" % amount
+		tone = Color("#9ef5ab")
+	elif blocked:
+		label = "BLOCK"
+		tone = Color("#a3dbff")
+	else:
+		if critical:
+			label += "!"
+		if against_hero:
+			tone = Color("#ff9885")
+		elif critical:
+			tone = Color("#ffe168")
+		elif event.tile == "cinder_mage":
+			tone = Color("#ffb772")
+	_combat_numbers.append({"label": label, "tone": tone, "slot": slot, "target": event.target,
+		"position": event.to, "age": 0.0, "size": 31 if critical else (17 if blocked else 23)})
+	if _combat_numbers.size() > MAX_COMBAT_NUMBERS:
+		_combat_numbers.pop_front()
+
+
+func _draw_combat_number(number: Dictionary, field: Rect2, unit_scale: float) -> void:
+	var progress := float(number.age) / COMBAT_NUMBER_LIFETIME
+	var opacity := 1.0 - smoothstep(0.48, 1.0, progress)
+	var lane_offsets := [0.0, -58.0, 58.0, -111.0, 111.0]
+	var shift: float = lane_offsets[posmod(number.slot, lane_offsets.size())]
+	var stack_height := minf(floorf(float(number.slot) / lane_offsets.size()), 3.0) * 28.0
+	var lift := clampf(unit_scale * 110.0, 44.0, 78.0) + 40.0 * progress + stack_height
+	var baseline := _project(number.position, field) + Vector2(shift * (1.0 + 0.18 * progress), -lift)
+	var pop := 1.0 + 0.18 * (1.0 - smoothstep(0.0, 0.21, progress))
+	var size_px := roundi(float(number.size) * pop)
+	var text: String = number.label
+	var width := _combat_number_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size_px).x
+	baseline.x = clampf(baseline.x, width * 0.5 + 6.0, maxf(width * 0.5 + 6.0, size.x - width * 0.5 - 6.0))
+	baseline.y = maxf(baseline.y, size_px + 5)
+	var position := baseline - Vector2(width * 0.5, 0.0)
+	draw_string_outline(_combat_number_font, position, text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size_px, 5, Color(INK, opacity))
+	draw_string(_combat_number_font, position, text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size_px, Color(number.tone, opacity))
 
 
 func _draw_arrow(from_point: Vector2, to_point: Vector2, color: Color) -> void:

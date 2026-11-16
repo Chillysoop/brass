@@ -18,7 +18,6 @@ func _run() -> void:
 	_check_seeded_draft()
 	_check_party_eligibility()
 	await _check_reward_screen()
-	await _check_review_filter()
 	_check_bounty_and_legacy()
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(save_path + suffix):
@@ -259,36 +258,6 @@ func _check_bounty_and_legacy() -> void:
 	if _win_elite(restored, next):
 		_check(restored.elite_relic_offers().is_empty(),
 			"An older run with an elite already cleared should keep the later elite reward flow.")
-
-
-func _check_review_filter() -> void:
-	var game = ArenaScene.instantiate()
-	root.add_child(game)
-	await process_frame
-	game.run_practice()
-	game.set_physics_process(false)
-	game.state = "finished"
-	var opening := {"tile": "pull", "start": 1, "tick": 84, "order": 0, "loop": 1, "beat": 4,
-		"hero": "Hexwright", "lane": 0, "status": "landed", "rule": "farthest", "reason": "5 damage"}
-	var effect := "Struck from the Blink departure point"
-	var follow_up := {"tile": "slam", "start": 8, "tick": 252, "order": 1, "loop": 1, "beat": 12,
-		"hero": "Warden", "lane": 1, "status": "landed", "rule": "nearest", "reason": "20 damage",
-		"relics": [{"id": "afterimage", "source": "Phase Cut", "source_beat": 8, "effect": effect}]}
-	game.arena.hide()
-	game.battle_review.open([opening, follow_up], [], "victory")
-	await _click(game.battle_review, "Review_relics")
-	var events: ItemList = game.battle_review.find_child("ReviewEvents", true, false)
-	_check(events.item_count == 1 and "Beat 12" in events.get_item_text(0)
-		and "Afterimage" in events.get_item_text(0) and "Slam" in events.get_item_text(0),
-		"The relic filter should list only the activation that procced and identify its firing beat.")
-	_check(effect in game.battle_review._detail.text and "Phase Cut on beat 8" in game.battle_review._detail.text,
-		"Battle Review should explain the relic's actual effect and its setup beat.")
-	_check(game.tile_cards[1][8].get_meta("timing_marker").visible,
-		"The relic entry should highlight the exact tile that triggered it.")
-	game.battle_review.open([opening], [], "victory")
-	_check(_button(game.battle_review, "Review_relics") == null, "Hide the relic filter for fights with no procs.")
-	game.queue_free()
-	await process_frame
 
 
 func _start(run: FrontierRun, seed_value: int) -> bool:

@@ -50,7 +50,7 @@ func _initialize() -> void:
 	_run(solo)
 	_check(solo.units.size() == 2, "Solo should spawn one hero and one enemy")
 	_check(solo.outcome == "victory", "Default solo should win")
-	_check(solo.tick >= 20 * 60 and solo.tick <= 45 * 60, "Default solo should resolve in the standard encounter window")
+	_check(solo.tick >= 18 * 60 and solo.tick <= 45 * 60, "Default solo should resolve in the standard encounter window with critical hits")
 	var empty := ArenaSim.new()
 	empty.start([[]], "solo")
 	_run(empty)
