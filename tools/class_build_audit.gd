@@ -327,7 +327,11 @@ func _expedition(class_id: String, seed_value: int, policy: String) -> Dictionar
 					break
 			"recruit_starter":
 				var lane: int = run.data.heroes.size()
-				var loadout := _recruit_loadout(run.recruit_loadout_offers(), policy, class_id) if lane == hero_lane else "assault"
+				var kits: Array = run.recruit_loadout_offers()
+				if kits.is_empty():
+					break
+				var ids := kits.map(func(kit: Dictionary): return kit.id)
+				var loadout := _recruit_loadout(kits, policy, class_id) if lane == hero_lane else _priority_pick(ids, ["assault", "support"])
 				if not run.choose_recruit_loadout(loadout):
 					break
 				row.drafts.append({"node": "Recruit", "kind": "loadout", "lane": lane, "pick": loadout, "tiles": _ids(run.loadout.lanes[lane])})
@@ -371,8 +375,6 @@ func _record_first_boss(run: FrontierRun, row: Dictionary) -> void:
 
 
 func _recruit_loadout(options: Array, policy: String, class_id: String) -> String:
-	if not as_recruit:
-		return "assault"
 	var top := -INF
 	var selected: String = options.front().id
 	for option: Dictionary in options:

@@ -1330,6 +1330,7 @@ func _check_hard_followup_rewards() -> void:
 	_check_hard_followup_route(run, false)
 	_check_hard_followup_route(run, true)
 	_check_hard_followup_single_copy(run)
+	_check_hard_followup_epic_copy(run)
 	_check_hard_followup_scope(run)
 	for base: String in [path, path + ".control", path + ".reroll"]:
 		for suffix in ["", ".bak", ".tmp"]:
@@ -1454,6 +1455,16 @@ func _check_hard_followup_single_copy(run: FrontierRun) -> void:
 	check("jab" in standard and "jab" not in run.data.offers and pick != "skip" \
 		and run.data.offers[standard.find("jab")] == pick and run.reward_hint("jab").is_empty(),
 		"Replace the routine second Jab in its own slot before touching the two rolled cards.")
+
+
+func _check_hard_followup_epic_copy(run: FrontierRun) -> void:
+	if not (_equip_gate_starter(run, 7, "hard", "duelist") and run.finish_combat(true, 100) and run.reward("skip")):
+		check(false, "Reach the Hard opening route before testing an Epic copy.")
+		return
+	run.loadout.lanes[0] = [{"id": "rail_shot", "start": 0, "target": "nearest"}]
+	var won := run.choose_node("1-2") and run.finish_combat(true, 100)
+	check(won and run.data.offers.size() == 3 and "rail_shot" in run.data.offers \
+		and run.reward_hint("rail_shot") == "Owned copy", "A same-rarity replacement cannot erase an Epic copy outside the normal roll tiers.")
 
 
 func _check_hard_followup_scope(run: FrontierRun) -> void:

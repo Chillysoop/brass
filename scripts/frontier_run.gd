@@ -395,6 +395,11 @@ func _valid_save_run(record: Dictionary, inventory: Dictionary) -> bool:
 		"recruit_starter":
 			if not HEROES.has(record.get("pending_recruit")):
 				return false
+			if record.has("recruit_kits"):
+				var kits: Variant = record.recruit_kits
+				if record.get("recruit_loadouts") != true or not _valid_id_list(kits, _recruit_kit_ids(record.pending_recruit), 2) \
+						or kits.size() != 2:
+					return false
 		"shop":
 			var stock: Variant = record.get("shop_stock", record.get("offers"))
 			if not record.get("shop_healed") is bool or not stock is Array:
@@ -412,10 +417,10 @@ func _valid_save_run(record: Dictionary, inventory: Dictionary) -> bool:
 	for field: String in ["layers", "visited", "relics", "offers"]:
 		if not record.get(field) is Array:
 			return false
-	if not _valid_enchantment_list(record.get("enchantments", []), TileEnchantments.IDS, 2) \
-			or not _valid_enchantment_list(record.get("enchantment_drafts", []), ENCHANTMENT_DRAFTS, 2):
+	if not _valid_id_list(record.get("enchantments", []), TileEnchantments.IDS, 2) \
+			or not _valid_id_list(record.get("enchantment_drafts", []), ENCHANTMENT_DRAFTS, 2):
 		return false
-	if phase == "enchantment" and not _valid_enchantment_list(record.offers, TileEnchantments.IDS, 3):
+	if phase == "enchantment" and not _valid_id_list(record.offers, TileEnchantments.IDS, 3):
 		return false
 	if record.layers.is_empty() or not _valid_save_node(record.get("node")):
 		return false
@@ -435,7 +440,7 @@ func _valid_save_run(record: Dictionary, inventory: Dictionary) -> bool:
 	return _valid_save_inventory(inventory)
 
 
-func _valid_enchantment_list(value: Variant, choices: Array, limit: int) -> bool:
+func _valid_id_list(value: Variant, choices: Array, limit: int) -> bool:
 	return value is Array and value.size() <= limit and value.all(func(id: Variant) -> bool:
 		return id is String and id in choices and value.count(id) == 1)
 
@@ -677,6 +682,7 @@ func choose_recruit(id: String) -> bool:
 	data.pending_recruit = id
 	data.phase = "recruit_starter"
 	data.recruit_loadouts = true
+	data.recruit_kits = _sample(_recruit_kit_ids(id), 2, int(data.seed), _node_salt(211 + HEROES.keys().find(id)))
 	data.offers = _starter_offers(id, _node_salt(93))
 	return _save_run_change(before)
 
@@ -690,7 +696,15 @@ func choose_recruit_starter(id: String) -> bool:
 func recruit_loadout_offers() -> Array:
 	if data.get("phase") != "recruit_starter" or not data.get("recruit_loadouts", false):
 		return []
-	return RecruitLoadouts.choices(data.pending_recruit)
+	var kits := {}
+	for kit: Dictionary in RecruitLoadouts.choices(data.pending_recruit):
+		kits[kit.id] = kit
+	var ids: Array = data.get("recruit_kits", ["assault", "support"])
+	return ids.map(func(id: String): return kits[id])
+
+
+func _recruit_kit_ids(hero_id: String) -> Array:
+	return RecruitLoadouts.choices(hero_id).map(func(kit: Dictionary): return kit.id)
 
 
 func choose_recruit_loadout(id: String) -> bool:
@@ -712,6 +726,7 @@ func _equip_recruit(tiles: Array) -> bool:
 	data.erase("pending_recruit")
 	data.erase("pending_recruit_mastery")
 	data.erase("recruit_loadouts")
+	data.erase("recruit_kits")
 	var lane := []
 	var beat := 0
 	for id: String in tiles:
@@ -2472,6 +2487,8 @@ func _reserve_early_class_tile(rewards: Array, held: Dictionary, hints: Dictiona
 	var original: String = rewards[slot]
 	var rarity: String = ArenaSim.TILES[original].rarity
 	var tier := TILE_RARITIES.find(rarity)
+	if tier < 0 or tier >= pools.size():
+		return
 	var other_families := rewards.map(_reward_family)
 	other_families.remove_at(slot)
 	var unavailable := held.keys().map(_reward_family) + other_families

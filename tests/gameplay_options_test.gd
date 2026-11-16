@@ -4,6 +4,7 @@ const Arena := preload("res://arena.tscn")
 const ArenaSim := preload("res://scripts/arena_sim.gd")
 const ClassDecks := preload("res://scripts/class_decks.gd")
 const FrontierRun := preload("res://scripts/frontier_run.gd")
+const RecruitLoadouts := preload("res://scripts/recruit_loadouts.gd")
 const BELLMAKER_SEED := 4
 const BOSS_ROW := FrontierRun.NODES_PER_SEGMENT - 1
 
@@ -24,9 +25,11 @@ func _run() -> void:
 	var mastered_class := await _check_bellmaker_unlock(game)
 	if not mastered_class.is_empty():
 		await _check_mastery_and_recruit(game, mastered_class)
+	_check_recruit_kit_catalog()
+	_check_seeded_recruit_kits()
 	game.queue_free()
 	await process_frame
-	for base: String in [save_path, save_path + ".legacy"]:
+	for base: String in [save_path, save_path + ".legacy", save_path + ".seeded"]:
 		for suffix in ["", ".tmp", ".bak"]:
 			if FileAccess.file_exists(base + suffix):
 				DirAccess.remove_absolute(ProjectSettings.globalize_path(base + suffix))
@@ -128,18 +131,26 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 	if not _check(run.choose_recruit(recruit), "Select a second hero after the Bellmaker."):
 		return
 	var kits := run.recruit_loadout_offers()
-	if not _check(kits.size() == 2 and kits[0].id == "assault" and kits[1].id == "support" and kits[0].tiles != kits[1].tiles,
+	if not _check(kits.size() == 2 and kits[0].id != kits[1].id and kits[0].tiles != kits[1].tiles,
 		"The recruit gets two mechanically distinct loadouts."):
 		return
 	var legacy := FrontierRun.new()
 	if _check(legacy.load_save(save_path), "Read a separate copy of the saved recruit draft."):
 		legacy.save_path = save_path + ".legacy"
+		legacy.data.erase("recruit_kits")
+		_check(legacy.save() and legacy.load_save(legacy.save_path) \
+			and legacy.recruit_loadout_offers() == RecruitLoadouts.choices(recruit).slice(0, 2),
+			"A pending two-kit save still shows its original Assault and Support cards in order.")
 		legacy.data.erase("recruit_loadouts")
 		_check(legacy.save() and legacy.load_save(legacy.save_path) and legacy.recruit_loadout_offers().is_empty()
 			and legacy.choose_recruit_starter(ClassDecks.starter(recruit)) and legacy.loadout.lanes[1].size() == 1,
 			"An existing one-tile recruit draft remains playable.")
 	if not _check(run.load_save(save_path) and run.recruit_loadout_offers() == kits, "The new recruit loadout draft survives restart."):
 		return
+	var unoffered := RecruitLoadouts.choices(recruit).filter(func(kit: Dictionary): return kit not in kits)
+	_check(unoffered.size() == 1 and not run.choose_recruit_loadout(unoffered[0].id) \
+		and run.recruit_loadout_offers() == kits and run.loadout.lanes.size() == 1,
+		"A known kit outside the saved pair cannot change the draft or roster.")
 	var lead: Array = run.loadout.lanes[0].duplicate(true)
 	game.run_return()
 	await process_frame
@@ -152,16 +163,16 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 		for index in mini(durations.size(), kit.tiles.size()):
 			_check(durations[index].get_child_count() == ArenaSim.TILES[kit.tiles[index]].width,
 				"Each occupied beat is represented by one duration square.")
-	if not _press(game.frontier_screen, "RecruitLoadout_support"):
+	if not _press(game.frontier_screen, "RecruitLoadout_" + str(kits[1].id)):
 		return
 	await process_frame
 	if not _check(run.data.phase == "map" and run.data.heroes.size() == 2 and run.loadout.lanes.size() == 2,
-		"Choosing support equips the recruit exactly once and returns to the map."):
+		"Choosing the second offered kit equips the recruit exactly once and returns to the map."):
 		return
 	var lane: Array = run.loadout.lanes[1]
 	_check(run.loadout.lanes[0] == lead and run.data.heroes[1].id == recruit and lane.size() == 2
-		and lane.map(func(tile: Dictionary): return tile.id) == kits[1].tiles and not run.choose_recruit_loadout("assault"),
-		"Only the selected support tiles are equipped and the lead timeline stays intact.")
+		and lane.map(func(tile: Dictionary): return tile.id) == kits[1].tiles and not run.choose_recruit_loadout(kits[0].id),
+		"Only the selected kit's tiles are equipped and the lead timeline stays intact.")
 	if lane.size() != 2:
 		return
 	_check(lane[0].start == 0 and lane[1].start == ArenaSim.TILES[lane[0].id].width
@@ -169,6 +180,97 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 		"The two recruit tiles share a timeline without overlapping or exceeding its length.")
 	var equipped := lane.duplicate(true)
 	_check(run.load_save(save_path) and run.loadout.lanes[1] == equipped, "The recruit retains both selected tiles after reloading.")
+
+
+func _check_recruit_kit_catalog() -> void:
+	for hero: String in FrontierRun.HEROES:
+		var options := RecruitLoadouts.choices(hero)
+		_check(options.map(func(kit: Dictionary): return kit.id) == ["assault", "support", "specialty"],
+			"Each kit has a stable ID for %s." % hero)
+		var timelines := {}
+		for kit: Dictionary in options:
+			var width := 0
+			var damage := 0
+			for id: String in kit.tiles:
+				var spec: Dictionary = ArenaSim.TILES.get(id, {})
+				if _check(not spec.is_empty() and not spec.targets.is_empty(), "%s can equip %s." % [hero, id]):
+					width += int(spec.width)
+					damage += int(spec.damage)
+			_check(kit.tiles.size() == 2 and not str(kit.label).is_empty() and not str(kit.description).is_empty() \
+				and width <= ArenaSim.BEATS and damage > 0, "%s's %s is a legal two-tile combat loadout." % [hero, kit.label])
+			timelines[str(kit.tiles)] = true
+		_check(timelines.size() == 3, "%s's three kits offer different sequences." % hero)
+
+
+func _check_seeded_recruit_kits() -> void:
+	var run := FrontierRun.new()
+	run.load_save(save_path + ".seeded")
+	run.profile.medium_unlocked = true
+	run.profile.hard_unlocked = true
+	var variants := [{}, {}]
+	var original: Array = []
+	for seed in range(1, 17):
+		var drafts := _draft_seeded_kits(run, seed, "brass")
+		if seed == 1:
+			original = drafts
+		for act in range(drafts.size()):
+			var pair: Array = drafts[act].kits.duplicate()
+			pair.sort()
+			variants[act][str(pair)] = true
+	_check(variants[0].size() == 3 and variants[1].size() == 3,
+		"All three kit pairs can appear in both the Act II and Act III recruit drafts.")
+	_check(_draft_seeded_kits(run, 1, "brass") == original and original.size() == 2,
+		"The same seed repeats both recruited classes and their ordered kit pairs.")
+	for region: String in ["glass", "crown", "moonwreck"]:
+		run.profile[region + "_hard_unlocked"] = true
+		_check(_draft_seeded_kits(run, 7, region).size() == 2,
+			"The %s region also rolls kits at both existing recruit checkpoints." % region)
+
+
+func _draft_seeded_kits(run: FrontierRun, seed: int, region: String) -> Array:
+	if not run.data.is_empty() and not run.abandon_run():
+		return []
+	if not _check(run.start_run(seed, "hard", region) and run.choose_preferred_hero("warden") and _finish_opening(run),
+		"Begin the Hard %s recruit fixture." % region):
+		return []
+	_check(run.recruit_loadout_offers().is_empty() and not run.data.has("recruit_kits"),
+		"The lead does not receive a recruit kit draft.")
+	var observed: Array = []
+	for act in range(1, 3):
+		var boss_row: int = FrontierRun.NODES_PER_SEGMENT * act - 1
+		run.data.node = run.data.layers[boss_row - 1][0]
+		var boss: Dictionary = run.data.layers[boss_row][0]
+		var hp: Array = run.data.heroes.map(func(hero: Dictionary): return hero.hp)
+		if not _check(run.choose_node(boss.id) and run.finish_combat(true, hp), "Win the Act %d boss." % act):
+			break
+		for _hero_index in range(act):
+			_check(run.reward("skip"), "Resolve each boss trophy before recruiting.")
+		if run.data.phase == "boss_relic":
+			_check(run.choose_boss_relic("skip"), "Resolve the intermediate boss relic before recruiting.")
+		if not _check(run.data.phase == "recruit" and not run.data.has("recruit_kits"), "Reach the new hero draft before its kits."):
+			break
+		var recruit: String = run.data.offers.front()
+		if not _check(run.choose_recruit(recruit), "Choose an offered recruit after Act %d." % act):
+			break
+		var kits := run.recruit_loadout_offers()
+		var ids := kits.map(func(kit: Dictionary): return kit.id)
+		if not _check(ids.size() == 2 and ids[0] != ids[1] and ids == run.data.recruit_kits \
+				and kits.all(func(kit: Dictionary): return kit in RecruitLoadouts.choices(recruit)),
+				"Act %d must offer exactly two different kits from the recruit's class." % act):
+			break
+		if not _check(run.load_save(run.save_path) and run.recruit_loadout_offers() == kits,
+			"Reload the same two pending kits in their original order at both recruit checkpoints."):
+			break
+		observed.append({"hero": recruit, "kits": ids})
+		var selected: Dictionary = kits[ids.find("specialty")] if "specialty" in ids else kits[0]
+		var previous_lanes: Array = run.loadout.lanes.duplicate(true)
+		if not _check(run.choose_recruit_loadout(selected.id) and run.load_save(run.save_path) and run.data.heroes.size() == act + 1 \
+				and run.loadout.lanes.slice(0, act) == previous_lanes \
+				and run.loadout.lanes[act].map(func(tile: Dictionary): return tile.id) == selected.tiles \
+				and not run.data.has("recruit_kits") and run.recruit_loadout_offers().is_empty(),
+			"Confirm the selected kit once and preserve its ordered tiles through reload."):
+			break
+	return observed
 
 
 func _finish_opening(run: FrontierRun) -> bool:

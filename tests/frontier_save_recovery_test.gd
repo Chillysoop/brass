@@ -10,6 +10,7 @@ var paths: Array[String] = []
 func _initialize() -> void:
 	_check_backup_recovery()
 	_check_failed_drafts()
+	_check_failed_recruit_kit()
 	_check_failed_boss_save()
 	_check_empty_timeline_recovery()
 	for path: String in paths:
@@ -75,6 +76,57 @@ func _check_failed_drafts() -> void:
 	_unblock_write(run)
 	_expect(run.choose_starter("bash") and run.data.relics == [relic] and run.loadout.lanes[0].size() == 1,
 		"Retrying both drafts equips one starter tile and grants one relic.")
+
+
+func _check_failed_recruit_kit() -> void:
+	var run := _fresh("recruit-kits")
+	run.profile.medium_unlocked = true
+	if not _expect(run.start_run(42, "medium") and run.choose_preferred_hero("warden") \
+			and run.choose_relic("pocket_bell") and run.choose_starter(ClassDecks.starter("warden")) \
+			and run.finish_combat(true, 88) and run.reward("skip"), "Reach the route with the lead's opening tile."):
+		return
+	var boss_row := FrontierRun.NODES_PER_SEGMENT - 1
+	run.data.node = run.data.layers[boss_row - 1][0]
+	if not _expect(run.choose_node(run.data.layers[boss_row][0].id) and run.finish_combat(true, 75) \
+			and run.reward("skip") and run.choose_boss_relic("skip"), "Reach the pending Act II recruit choice."):
+		return
+	var choice: String = run.data.offers.front()
+	var before := run.data.duplicate(true)
+	if not _block_write(run):
+		return
+	_expect(not run.choose_recruit(choice) and run.data == before and not run.data.has("recruit_kits"),
+		"A failed recruit selection keeps the draft and its available heroes intact.")
+	_unblock_write(run)
+	if not _expect(run.choose_recruit(choice), "Retry the same recruit selection once the save is writable."):
+		return
+	var kits := run.recruit_loadout_offers()
+	if not _expect(kits.size() == 2, "The resumed recruit has two kit choices."):
+		return
+	_check_invalid_kit_pairs(run)
+	var inventory := run.loadout.duplicate(true)
+	before = run.data.duplicate(true)
+	if not _block_write(run):
+		return
+	_expect(not run.choose_recruit_loadout(kits[0].id) and run.data == before and run.loadout == inventory \
+		and run.recruit_loadout_offers() == kits and not run.save_error.is_empty(),
+		"A failed kit write keeps the same ordered pair and no recruit tiles or hero are added.")
+	_unblock_write(run)
+	_expect(run.load_save(run.save_path) and run.recruit_loadout_offers() == kits \
+		and run.choose_recruit_loadout(kits[0].id) and not run.choose_recruit_loadout(kits[1].id) \
+		and run.loadout.lanes.size() == 2 and run.loadout.lanes[1].map(func(tile: Dictionary): return tile.id) == kits[0].tiles,
+		"Resume the pending draft and commit its exact selected tiles once.")
+
+
+func _check_invalid_kit_pairs(run: FrontierRun) -> void:
+	var path := run.save_path
+	var original := FileAccess.get_file_as_string(path)
+	var malformed: Dictionary = JSON.parse_string(original)
+	for bad_pair: Array in [["assault", "assault"], ["assault", "unknown"], ["specialty"]]:
+		malformed.run.recruit_kits = bad_pair
+		var restored := FrontierRun.new()
+		_expect(_overwrite(path, JSON.stringify(malformed)) and restored.load_save(path) \
+			and restored.data.phase == "recruit", "Invalid stored kit IDs fall back to the previous playable recruit checkpoint.")
+	_expect(_overwrite(path, original), "Restore the valid ordered kit pair for failed-write testing.")
 
 
 func _check_failed_boss_save() -> void:
