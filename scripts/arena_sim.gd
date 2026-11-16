@@ -14,6 +14,7 @@ const ApothecaryTiles = preload("res://scripts/apothecary_tiles.gd")
 const VanguardSpecialties = preload("res://scripts/vanguard_specialties.gd")
 const ArtificeSpecialties = preload("res://scripts/artifice_specialties.gd")
 const BrassRepairmaster = preload("res://scripts/brass_repairmaster.gd")
+const BrassVanguardCannon = preload("res://scripts/brass_vanguard_cannon.gd")
 const ClassRelicEffects = preload("res://scripts/class_relic_effects.gd")
 const PILOT_ENEMY_SCRIPTS := {
 	"brass": BrassVarietyEnemies, "glass": GlassPilotEnemies,
@@ -92,6 +93,7 @@ const TOLLKEEPER_REPAIR_CUE := "tollkeeper_repair"
 const BOSS_REVIEW_STAGES := {
 	"tollkeeper_repair": "start", "tollkeeper_repair_interrupted": "success", "tollkeeper_repair_separated": "success",
 	"repairmaster_dash": "start", "repairmaster_repair": "start", "repairmaster_interrupted": "success",
+	"brass_duo_disrupted": "success",
 	"marshal_plate": "start", "marshal_exposed": "progress", "marshal_shattered": "success",
 	"marshal_plate_worn": "progress", "marshal_sweep_weathered": "progress",
 	"marshal_pressure_break": "success", "marshal_defense_break": "success",
@@ -747,6 +749,8 @@ func _start_campaign(options: Dictionary) -> void:
 					_add_campaign_enemy("brass_bellmaker", Vector2(647, y), 0, health_scale, damage_scale)
 				"brass_repairmaster":
 					BrassRepairmaster.spawn(self, y, difficulty == "hard")
+				BrassVanguardCannon.BOSS_ID:
+					BrassVanguardCannon.spawn(self, y, encounter_seed)
 				"iron_regent":
 					_add_campaign_enemy("regent", Vector2(647, y))
 				"gilded_marshal":
@@ -858,6 +862,8 @@ func _reinforcement_spawn_position(enemy: Dictionary) -> Vector2:
 func _add_campaign_enemy(kind: String, position: Vector2, delay := 0, health_scale := 1.0, damage_scale := 1.0) -> void:
 	var source: Dictionary = CAMPAIGN_ENEMIES.get(kind, {})
 	var pilot: String = CORE_ENEMY_REGIONS.get(kind, "")
+	if source.is_empty():
+		source = BrassVanguardCannon.ENEMIES.get(kind, {})
 	if source.is_empty():
 		for region: String in PILOT_ENEMY_SCRIPTS:
 			source = PILOT_ENEMY_SCRIPTS[region].ENEMIES.get(kind, {})
@@ -2545,6 +2551,9 @@ func _run_enemies() -> void:
 			continue
 		if enemy.get("attack_id") == BrassRepairmaster.BOSS_ID and BrassRepairmaster.before_turn(self, enemy):
 			continue
+		var siege_duo: bool = enemy.get("attack_id") in [BrassVanguardCannon.VANGUARD, BrassVanguardCannon.CANNON]
+		if siege_duo and BrassVanguardCannon.interrupt_if_displaced(self, enemy):
+			continue
 		if enemy.get("sprite") == "tempered_colossus" and not enemy.colossus_shattered:
 			if tick > LOOP_TICKS and tick % LOOP_TICKS == 1:
 				_begin_forge_sweep(enemy)
@@ -2591,6 +2600,9 @@ func _run_enemies() -> void:
 			continue
 		var position: Vector2 = enemy.pos
 		var attack: Dictionary = enemy.get("attack", {})
+		if siege_duo:
+			BrassVanguardCannon.begin(self, enemy, target, attack)
+			continue
 		var pilot: Variant = PILOT_ENEMY_SCRIPTS.get(enemy.get("pilot_region", ""))
 		if pilot != null:
 			if pilot.begin(self, enemy, target, attack):
@@ -2649,7 +2661,7 @@ func _resolve_intent(enemy: Dictionary) -> void:
 		hit_point = enemy.blast_center
 		radius = enemy.blast_radius
 	elif locked_aim:
-		cue_origin = enemy.get("refraction_origin", origin)
+		cue_origin = enemy.get("pilot_aim_origin", enemy.get("refraction_origin", origin))
 		hit_point = cue_origin.move_toward(enemy.pilot_aim_point, float(attack.reach))
 	elif enemy.get("dock_winch_ally", "") != "":
 		target = _find_unit(enemy.dock_winch_ally)
@@ -2669,6 +2681,8 @@ func _resolve_intent(enemy: Dictionary) -> void:
 			continue
 		if event.kind == "miss":
 			missed = true
+		elif event.kind == BrassVanguardCannon.IMPACT:
+			hit_point = event.to
 		elif event.kind == "hit" or event.kind == "heal" or event.kind == "pull":
 			if impact_target.is_empty():
 				impact_target = event.target
@@ -2711,6 +2725,9 @@ func _resolve_enemy_attack(enemy: Dictionary) -> void:
 	var cue: String = enemy.get("intent_attack_id", "")
 	if cue in [BrassRepairmaster.DASH, BrassRepairmaster.REPAIR]:
 		BrassRepairmaster.resolve(self, enemy, _find_unit(intent), cue)
+		return
+	if cue in [BrassVanguardCannon.CHARGE, BrassVanguardCannon.SHOT]:
+		BrassVanguardCannon.resolve(self, enemy, _find_unit(intent), cue)
 		return
 	var special_intent: String = enemy.get("special_intent", "")
 	if not special_intent.is_empty():

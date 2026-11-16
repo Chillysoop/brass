@@ -12,6 +12,7 @@ var failures: Array[String] = []
 func _initialize() -> void:
 	var run := FrontierRun.new()
 	var brass_act_two_bosses := {}
+	var brass_act_three_bosses := {}
 	for seed_value in range(1, 129):
 		var layers := run._make_map(seed_value)
 		_check_map(layers)
@@ -40,7 +41,13 @@ func _initialize() -> void:
 		check(brass_hard.slice(0, 14) == _with_gate_link(brass_medium, brass_hard[14][0].id),
 			"Medium and Hard must pick the same Act II boss for a seed.")
 		_check_map(brass_medium, 2, brass_act_two.boss_id)
-		_check_map(brass_hard, 3, "iron_regent")
+		var brass_final: Dictionary = brass_hard.back()[0]
+		brass_act_three_bosses[brass_final.boss_id] = true
+		check(brass_final.boss_id in FrontierRun.BRASS_ACT_THREE_BOSSES
+			and brass_final.label == FrontierRun.BOSS_LABELS[brass_final.boss_id]
+			and brass_hard == run._make_map(seed_value, "hard"),
+			"Brass Hard must select a deterministic Act III finale with its matching name.")
+		_check_map(brass_hard, 3, brass_final.boss_id)
 		var crown := run._make_map(seed_value, "easy", "crown")
 		_check_map(crown, 1, "relay_captain")
 		check(crown == run._make_map(seed_value, "easy", "crown"), "Crown Relay maps must be deterministic.")
@@ -72,6 +79,8 @@ func _initialize() -> void:
 	check(run._make_map(1) != run._make_map(2), "Distinct seeds should vary routes.")
 	check(brass_act_two_bosses.size() == FrontierRun.BRASS_ACT_TWO_BOSSES.size(),
 		"Brass Act II must rotate through both bosses across new expeditions.")
+	check(brass_act_three_bosses.size() == FrontierRun.BRASS_ACT_THREE_BOSSES.size(),
+		"Brass Hard must rotate through both Act III finales across new expeditions.")
 
 	var path := "user://frontier-model-test-%d.json" % Time.get_ticks_usec()
 	check(not run.load_save(path), "A new save path should start empty.")
@@ -135,6 +144,7 @@ func _initialize() -> void:
 	check("gravity_hook" in resumed._normal_pool(), "Gravity Hook must stay eligible for future drafts.")
 	_check_medium(path)
 	_check_repairmaster_campaign()
+	_check_siege_vanguard_campaign()
 	_check_first_party_elite_class_relic()
 	_check_hard_and_glass(path)
 	_check_glass_hard(path)
@@ -389,6 +399,48 @@ func _check_repairmaster_campaign() -> void:
 		for suffix in ["", ".bak", ".tmp"]:
 			if FileAccess.file_exists(path + suffix):
 				DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
+
+
+func _check_siege_vanguard_campaign() -> void:
+	var path := "user://frontier-siege-vanguard-%d.json" % Time.get_ticks_usec()
+	var run := FrontierRun.new()
+	run.load_save(path)
+	run.profile.medium_unlocked = true
+	run.profile.hard_unlocked = true
+	var recruited := _equip_gate_starter(run, 3, "hard", "warden") \
+		and _recruit_at_next_boss(run) and _recruit_at_next_boss(run)
+	check(recruited, "Recruit both heroes through the seeded Siege Vanguard route.")
+	if recruited:
+		var finale: Dictionary = run.data.layers.back()[0]
+		check(finale.boss_id == "brass_vanguard_cannon", "Seed 3 selects the Siege Vanguard in Brass Hard.")
+		var restored := FrontierRun.new()
+		check(restored.load_save(path), "Reload the Act III map before traveling to the boss.")
+		# Existing runs keep their authored finale when their map is restored.
+		var legacy_finale: Dictionary = restored.data.layers.back()[0]
+		legacy_finale.boss_id = "iron_regent"
+		legacy_finale.label = FrontierRun.BOSS_LABELS.iron_regent
+		check(restored.save() and restored.load_save(path) and restored.data.layers.back()[0].boss_id == "iron_regent",
+			"An in-progress Brass Hard map retains its original Iron Regent after upgrading.")
+		_reach_boss(run)
+		var encounter := run.encounter()
+		check(run.is_final_boss() and encounter.boss_id == "brass_vanguard_cannon" and encounter.heroes.size() == 3,
+			"The Siege Vanguard opens through standard travel with three heroes as the final boss.")
+		check(restored.load_save(path) and restored.encounter() == encounter and restored.loadout.lanes == run.loadout.lanes,
+			"Resuming the Siege Vanguard preserves the encounter and all three timelines.")
+		var marks: int = restored.profile.marks
+		check(restored.finish_combat(true, [70, 65, 60]) and restored.reward_count() == 3,
+			"Defeating the Siege Vanguard offers a final trophy to every hero.")
+		for lane in range(3):
+			check(restored.reward_lane() == lane and restored.data.offers.size() == 3
+				and restored.data.offers.all(func(id: String): return ArenaSim.TILES[id].rarity == "legendary")
+				and restored.reward("skip"), "Each final trophy draft has three Legendaries.")
+		check(restored.data.phase == "result" and restored.data.result == "victory" and restored.profile.brass_hard_cleared
+			and restored.profile.marks == marks + 54, "The alternate finale grants the Brass Hard clear once.")
+		check(restored.load_save(path) and restored.profile.brass_hard_cleared and restored.profile.marks == marks + 54,
+			"Resuming a completed Siege Vanguard run keeps its Hard clear payout.")
+	for suffix in ["", ".bak", ".tmp"]:
+		if FileAccess.file_exists(path + suffix):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
 
 
 func _check_first_party_elite_class_relic() -> void:

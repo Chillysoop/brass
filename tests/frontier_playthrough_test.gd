@@ -138,15 +138,17 @@ func _run() -> void:
 	_check(game.run.finish_run(), "Close the Crown Relay Hard victory recap.")
 	var glass_hard_fights := _new_route_playthrough(game, "hard", "glass")
 	_check(game.run.finish_run(), "Close the Glass Foundry Hard victory recap.")
-	var hard_fights := _new_route_playthrough(game, "hard", "brass", 7)
+	var hard_fights := _new_route_playthrough(game, "hard", "brass", 7, "iron_regent")
+	_check(game.run.finish_run(), "Close the Iron Regent victory recap.")
+	var siege_fights := _new_route_playthrough(game, "hard", "brass", 18, "brass_vanguard_cannon")
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(save_path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path + suffix))
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Playthroughs passed: Brass Easy %d fights (%d HP), Medium %d (%d HP combined), Brass Hard %d, Glass Easy %d, Glass Medium %d, Glass Hard %d, Crown Easy %d, Crown Medium %d, Crown Hard %d, Moonwreck Easy %d, Moonwreck Medium %d, Moonwreck Hard %d." % [
-			battles, easy_hp, medium.fights, medium.hp, hard_fights, glass_fights, glass_medium_fights, glass_hard_fights, crown_fights, crown_medium_fights, crown_hard_fights, moonwreck_fights, moonwreck_medium_fights, moonwreck_hard_fights])
+		print("Playthroughs passed: Brass Easy %d fights (%d HP), Medium %d (%d HP combined), Brass Hard Regent %d, Siege %d, Glass Easy %d, Glass Medium %d, Glass Hard %d, Crown Easy %d, Crown Medium %d, Crown Hard %d, Moonwreck Easy %d, Moonwreck Medium %d, Moonwreck Hard %d." % [
+			battles, easy_hp, medium.fights, medium.hp, hard_fights, siege_fights, glass_fights, glass_medium_fights, glass_hard_fights, crown_fights, crown_medium_fights, crown_hard_fights, moonwreck_fights, moonwreck_medium_fights, moonwreck_hard_fights])
 	game.queue_free()
 	await process_frame
 	quit(0 if failures.is_empty() else 1)
@@ -271,7 +273,7 @@ func _check(condition: bool, message: String) -> void:
 	if not condition:
 		failures.append(message)
 
-func _new_route_playthrough(game: Control, difficulty: String, location: String, run_seed := 42) -> int:
+func _new_route_playthrough(game: Control, difficulty: String, location: String, run_seed := 42, brass_finale := "") -> int:
 	var run: RefCounted = game.run
 	var brass_hard := location == "brass" and difficulty == "hard"
 	game.run_start(run_seed, difficulty, location)
@@ -309,7 +311,8 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String,
 				_check(run.choose_starter(starter), "Equip the lead starter in %s %s." % [location, difficulty])
 			"boss_relic":
 				boss_drafts += 1
-				_check(run.choose_boss_relic("bastion_medal"), "Claim the Bastion Medal before recruiting on Hard.")
+				var relic: String = "bastion_medal" if "bastion_medal" in run.data.offers else run.data.offers[0]
+				_check(run.choose_boss_relic(relic), "Claim the Act I boss relic before recruiting on Hard.")
 			"recruit_starter":
 				var needs_bash: bool = crown_medium or ((crown_hard or moonwreck_hard) and run.data.heroes.size() == 3)
 				var recruit_tile := "bash" if needs_bash else "shot"
@@ -368,9 +371,16 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String,
 				if game.sim.outcome != "victory":
 					_check(false, "%s %s lost to %s after %d fights." % [location, difficulty, run.data.node.label, fights])
 					break
-				if final and difficulty == "hard" and location == "brass":
-					_check(game.sim.trace.any(func(event: Dictionary): return event.tile == "regent_shattered"),
-						"Three heroes should break the Iron Regent's seals during the test clear.")
+				if final and brass_hard:
+					_check(run.data.node.boss_id == brass_finale, "The Brass Hard fixture must reach its seeded finale.")
+					if brass_finale == "iron_regent":
+						_check(game.sim.trace.any(func(event: Dictionary): return event.tile == "regent_shattered"),
+							"Three heroes should break the Iron Regent's seals during the test clear.")
+					else:
+						var bosses: Array = game.sim.units.filter(func(unit: Dictionary): return unit.side == "enemy")
+						_check(bosses.map(func(unit: Dictionary): return unit.attack_id) == ["brass_vanguard", "brass_cannon"]
+							and bosses.all(func(unit: Dictionary): return unit.hp == 0),
+							"The full expedition must defeat both members of the Siege Vanguard.")
 				if final and location == "glass" and difficulty == "medium":
 					_check(game.sim.trace.any(func(event: Dictionary): return event.tile == "prism_shattered"),
 						"Both heroes should contribute to the Prism Warden's ward break.")

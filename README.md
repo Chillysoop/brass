@@ -80,7 +80,7 @@ Moonwreck Docks Medium adds Breakwater Gate and a second hero after the Wreckmas
 
 Moonwreck Docks Hard adds Blackwater Gate and a third hero after the Tidekeeper. The Drowned Admiral reels the party in before charging Undertow Sweep. Break its anchor with a push, reverse the undertow with a pull from a second hero, then interrupt the sweep with a push from the third. Stagger the tiles across all three timelines so they finish in that order before the sweep lands.
 
-Brass Frontier Hard has three legs. Recruit after the Act I and Act II bosses. When the Iron Regent raises its seals, land damaging hits from three different heroes within four beats to break them.
+Brass Frontier Hard has three legs. Recruit after the Act I and Act II bosses. The seed assigns either the Iron Regent or the Siege Vanguard as the finale. When the Regent raises its seals, land damaging hits from three different heroes within four beats to break them. The Siege Vanguard pairs a charging Vanguard Captain with a Siege Cannoneer that commits to a firing lane before releasing its shell. Each has its own health and attack cycle.
 
 The first two Brass Frontier Hard bosses offer each hero one class-signature Legendary alongside two regular Legendaries. The seed determines which of the hero's two signature branches appears. A paid reroll swaps to the other branch and refreshes the regular choices.
 

@@ -35,6 +35,12 @@ const DOCK_WINCH_COLOR := Color("#e6c193")
 const REPAIR_COLOR := Color("#a9e5bd")
 const REPAIRMASTER_DASH := "repairmaster_dash"
 const REPAIRMASTER_REPAIR := "repairmaster_repair"
+const VANGUARD_CHARGE := "brass_vanguard_charge"
+const CANNON_SHOT := "brass_cannon_shot"
+const VANGUARD_COLOR := Color("#ff9e7c")
+const CANNON_COLOR := Color("#ffe5ac")
+const CANNON_SMOKE := Color("#3d2b36")
+const CANNON_MUZZLE_OFFSET := Vector2(-0.66, -0.53)
 const ARENA_TEXTURES := {"glass": "glass_arena", "crown": "crown_arena", "moonwreck": "moonwreck_arena"}
 const ARENA_PATHS := {
 	"arena": "res://assets/arena.webp",
@@ -56,6 +62,7 @@ const EFFECT_LENGTHS := {
 	"repair_heal": 0.60,
 	"repair_interrupted": 0.65,
 	"repair_separated": 0.65,
+	"brass_cannon_impact": 0.55,
 	"marshal_plate_broken": 1.1,
 	"relay_interrupted": 0.65,
 	"relay_link_broken": 0.42,
@@ -118,6 +125,7 @@ const SIGNATURE_WINDUP_LABELS := {
 	"recruit": "SPRING WINDUP", "bruiser": "SHOVE", "veteran": "SABER SWING", "boss": "TOLL STRIKE",
 	"crown_page_advance": "ADVANCE", "relay_recruit": "BRACED", "relay_runner_press": "HEAVY WINDUP",
 	"dockhand_parry": "PARRY", "chain_warden": "CHAIN REEL", "glass_skirmisher_feint": "FEINT",
+	VANGUARD_CHARGE: "VANGUARD CHARGE", CANNON_SHOT: "CANNON SHOT",
 }
 const RELIC_EFFECTS := ["afterimage", "barrage_rack", "siege_fuse", "stepped_gear", "twin_bell", "switchback_lens",
 	"longshot_prism", "guard_relay", "flanking_standard"]
@@ -132,6 +140,7 @@ const ENCOUNTER_EFFECTS := {
 	"tollkeeper_repair_interrupted": "repair_interrupted",
 	"tollkeeper_repair_separated": "repair_separated",
 	"repairmaster_interrupted": "repair_interrupted",
+	"brass_duo_disrupted": "relay_interrupted",
 	"marshal_shattered": "marshal_plate_broken",
 	"marshal_pressure_break": "marshal_plate_broken",
 	"marshal_defense_break": "marshal_plate_broken",
@@ -362,10 +371,11 @@ func _register_movement_effect(kind: String, event: Dictionary) -> void:
 		_positions[event.actor] = event.from
 	if kind == "teleport":
 		_positions[event.actor] = event.to
-	elif kind == "charge" and (str(event.actor).begins_with("hero_") or event.get("tile", "") == REPAIRMASTER_DASH):
+	elif kind == "charge":
+		var enemy_charge: bool = event.get("tile", "") in [REPAIRMASTER_DASH, VANGUARD_CHARGE]
 		var route: PackedVector2Array = event.get("route", PackedVector2Array())
-		var step_count := 2 if event.get("tile", "") == REPAIRMASTER_DASH else 3
-		if route.size() >= step_count:
+		var step_count := 2 if enemy_charge else 3
+		if route.size() >= step_count and (enemy_charge or str(event.actor).begins_with("hero_")):
 			_positions[event.actor] = route[0]
 			_curved_charges[event.actor] = {"route": route, "age": 0.0}
 
@@ -422,11 +432,12 @@ func _draw() -> void:
 		var second: Vector2 = _positions.get(b.id, b.pos)
 		return first.y < second.y)
 	var hud_space: Array[Rect2] = []
+	var cannon_muzzles: Dictionary[String, Vector2] = {}
 	for unit in ordered_units:
 		if unit.hp <= 0:
 			continue
 		var point := _project(_positions.get(unit.id, unit.pos), field)
-		hud_space.append(_draw_unit(unit, point, sprite_scale))
+		hud_space.append(_draw_unit(unit, point, sprite_scale, cannon_muzzles))
 	_draw_repairmaster_cues(field)
 	for cast: Dictionary in _attack_casts:
 		if cast.tile in [REPAIRMASTER_DASH, REPAIRMASTER_REPAIR]:
@@ -439,6 +450,15 @@ func _draw() -> void:
 		var radius := clampf(float(cast.get("radius", 0.0)), 0.0, 240.0)
 		var progress := float(cast.age) / float(cast.lifetime)
 		var cast_size := clampf(sprite_scale * 61.0, 16.0, 39.0)
+		if cast.tile == CANNON_SHOT:
+			var muzzle: Vector2 = cannon_muzzles.get(cast.actor, start - Vector2(0, 28))
+			_draw_cannon_release(muzzle, target, progress)
+			continue
+		if cast.tile == VANGUARD_CHARGE:
+			if not cast.get("contact_points", []).is_empty():
+				var contact := _project(cast.contact_points[0], field)
+				_draw_vanguard_contact(contact, arrival.direction_to(contact), progress)
+			continue
 		AttackAnimation.draw_cast(self, cast.profile, start, target, arrival, progress,
 			cast_size, cast.get("landed", true), radius * field.size / WORLD_SIZE)
 		if radius <= 0.0 and cast.profile.style in ["pull", "bolt", "shot", "ward", "heal"]:
@@ -526,7 +546,8 @@ func _combat_sprite(id: String, key: String, texture: Texture2D, friendly: bool)
 	return _combat_sprites[id]
 
 
-func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> Rect2:
+func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float,
+		cannon_muzzles: Dictionary[String, Vector2]) -> Rect2:
 	var friendly: bool = unit.side == "hero"
 	var accent := HERO_COLOR if friendly else ENEMY_COLOR
 	if friendly and location == "glass":
@@ -543,8 +564,10 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> Rect2:
 		model_height = 218.0
 	elif art_key in ["marshal", "regent", "glass_twin", "ember_twin", "prism_warden", "relay_captain", "relay_marshal", "brass_bellmaker", "brass_tollkeeper", "brass_repairmaster", "glass_refraction_engine"]:
 		model_height = 191.0
-	elif art_key == "brass_captain":
+	elif art_key in ["brass_captain", "brass_vanguard"]:
 		model_height = 161.0
+	elif art_key == "brass_cannon":
+		model_height = 186.0
 	elif art_key == "brass_bruiser":
 		model_height = 145.0
 	elif art_key == "clockwork":
@@ -590,7 +613,13 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> Rect2:
 	_draw_ellipse(point + Vector2(1.5, 2.0), Vector2(radius * 1.2, radius * 0.36), Color(0.1, 0.09, 0.08, 0.43))
 	if texture:
 		var flip := 1.0 if (facing > 0.0) == friendly else -1.0
-		draw_set_transform(point + bounce, lean, Vector2(flip * (1.0 - pose.w * 0.67), 1.0 + pose.w))
+		var scale := Vector2(flip * (1.0 - pose.w * 0.67), 1.0 + pose.w)
+		var transform := Transform2D(lean, scale, 0.0, point + bounce)
+		if art_key == "brass_cannon":
+			arms = Vector3.ZERO
+			if cast.get("tile") == CANNON_SHOT:
+				cannon_muzzles[unit.id] = transform * (CANNON_MUZZLE_OFFSET * art_height)
+		draw_set_transform_matrix(transform)
 		var tint := RIGHT_RELAY_COLOR.lerp(Color.WHITE, 0.32) if unit.get("crown_role") == "relay_right" else Color.WHITE
 		_combat_sprite(unit.id, art_key, texture, friendly).draw(self, art_height,
 			CombatSpritePose.leg_pose(stride, motion * (1.0 - brace * 0.75), brace), arms, tint.lerp(GOLD, flash * 0.6))
@@ -641,6 +670,10 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> Rect2:
 		var retreating := attack_id == REPAIRMASTER_DASH
 		var repair_cycle := repairing or retreating
 		var charge_color := REPAIR_COLOR if repair_cycle else GOLD.lerp(ENEMY_COLOR, charge * charge)
+		if attack_id == VANGUARD_CHARGE:
+			charge_color = VANGUARD_COLOR
+		elif attack_id == CANNON_SHOT:
+			charge_color = CANNON_COLOR
 		draw_rect(gauge.grow(1), INK)
 		draw_rect(gauge, REPAIR_COLOR.darkened(0.76) if repair_cycle else Color("#593b29"))
 		draw_rect(Rect2(gauge.position, Vector2(gauge.size.x * charge, gauge.size.y)), charge_color)
@@ -671,7 +704,8 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> Rect2:
 		elif attack_id == "boss" and unit.get("enraged", false):
 			windup_label = "RALLY STRIKE"
 		if not windup_label.is_empty():
-			_draw_centered(windup_label, bar.get_center() - Vector2(0.0, 9.0), 12, WHITE)
+			var warning_color := charge_color if attack_id in [VANGUARD_CHARGE, CANNON_SHOT] else WHITE
+			_draw_centered(windup_label, bar.get_center() - Vector2(0.0, 9.0), 12, warning_color)
 		if special in ["powder_runner", "brass_pressure_sentinel"]:
 			var progress_count: int = unit.get("powder_hits", unit.get("pressure_vents", 0))
 			for index in range(2):
@@ -959,8 +993,13 @@ func _draw_intents(field: Rect2) -> void:
 				_draw_sweep_warning(start, radius)
 			continue
 		if unit.has("pilot_aim_point"):
-			var origin: Vector2 = unit.get("refraction_origin", unit.pos)
+			var origin: Vector2 = unit.get("pilot_aim_origin", unit.get("refraction_origin", unit.pos))
 			var endpoint := origin.move_toward(unit.pilot_aim_point, float(unit.attack.reach))
+			if attack_id in [VANGUARD_CHARGE, CANNON_SHOT]:
+				var progress: float = _windup_details(unit).get("charge", 0.0)
+				_draw_brass_duo_warning(origin, endpoint, float(unit.pilot_aim_width), field,
+					attack_id == CANNON_SHOT, progress)
+				continue
 			var edge := (endpoint - origin).normalized().orthogonal() * float(unit.pilot_aim_width)
 			var upper := _project(origin + edge, field)
 			var lower := _project(origin - edge, field)
@@ -1097,6 +1136,89 @@ func _draw_support_link(start: Vector2, end: Vector2, color: Color, icon := "gua
 		_draw_status_badge(icon, start.lerp(end, 0.50) + raised, color)
 	_draw_ellipse(end, Vector2(15.0, 7.0), Color("#254158", color.a * 0.44))
 	_draw_status_badge(icon, end + raised, color)
+
+
+func _draw_brass_duo_warning(origin: Vector2, endpoint: Vector2, half_width: float,
+		field: Rect2, cannon: bool, progress: float) -> void:
+	if endpoint.is_equal_approx(origin):
+		return
+	var heading := origin.direction_to(endpoint)
+	var edge := heading.orthogonal() * half_width
+	var first := _project(origin + edge, field)
+	var second := _project(origin - edge, field)
+	var first_end := _project(endpoint + edge, field)
+	var second_end := _project(endpoint - edge, field)
+	var start := _project(origin, field)
+	var end := _project(endpoint, field)
+	var tone := CANNON_COLOR if cannon else VANGUARD_COLOR
+	var outline := Color(CANNON_SMOKE if cannon else AIM_EDGE, 0.87)
+	var warning := Color(AIM_COLOR, 0.22 + progress * 0.14)
+	var lane := _project_lane_cap(origin, -heading, half_width, field)
+	var end_cap := _project_lane_cap(endpoint, heading, half_width, field)
+	lane.append_array(end_cap)
+	draw_colored_polygon(lane, warning)
+	if cannon:
+		for rail: Array in [[first, first_end], [second, second_end]]:
+			draw_line(rail[0], rail[1], outline, 5.4, true)
+			draw_line(rail[0], rail[1], tone, 2.1, true)
+		draw_polyline(end_cap, outline, 5.4, true)
+		draw_polyline(end_cap, tone, 2.1, true)
+		draw_dashed_line(start, end, Color(tone, 0.55 + progress * 0.28), 1.9, 7.0)
+	else:
+		for rail: Array in [[first, first_end], [second, second_end]]:
+			draw_dashed_line(rail[0], rail[1], outline, 5.2, 9.0)
+			draw_dashed_line(rail[0], rail[1], tone, 2.0, 9.0)
+		var direction := start.direction_to(end)
+		for fraction: float in [0.36, 0.65, 0.91]:
+			_draw_motion_chevron(start.lerp(end, fraction), direction, 12.0, tone, outline)
+
+
+func _project_lane_cap(center: Vector2, outward: Vector2, radius: float, field: Rect2) -> PackedVector2Array:
+	var points := PackedVector2Array()
+	for index in range(9):
+		var direction := outward.rotated(lerpf(-PI / 2.0, PI / 2.0, index / 8.0))
+		points.append(_project(center + direction * radius, field))
+	return points
+
+
+func _draw_cannon_release(muzzle: Vector2, target: Vector2, progress: float) -> void:
+	var contact := target - Vector2(0, 8)
+	var direction := muzzle.direction_to(contact)
+	var strength := 1.0 - smoothstep(0.0, 0.93, progress)
+	var tail := muzzle.lerp(contact, smoothstep(0.10, 1.0, progress) * 0.66)
+	var smoke := Color(CANNON_SMOKE, strength * 0.87)
+	draw_line(tail, contact, smoke, lerpf(11.0, 5.0, progress), true)
+	draw_line(tail, contact, Color(VANGUARD_COLOR, strength), 5.0, true)
+	draw_line(tail, contact, Color(CANNON_COLOR, strength), 2.6, true)
+	for puff in range(4):
+		var offset := -direction * float(puff) * 5.0 - Vector2(0, progress * (12.0 + puff * 3.0))
+		draw_circle(muzzle + offset, 4.8 + progress * 14.0, Color(smoke, strength * 0.40), true, -1, true)
+	var flash := 1.0 - smoothstep(0.06, 0.46, progress)
+	draw_circle(muzzle, 10.0 * flash, Color(VANGUARD_COLOR, flash), true, -1, true)
+	draw_circle(muzzle, 5.0 * flash, Color(CANNON_COLOR, flash), true, -1, true)
+
+
+func _draw_cannon_impact(center: Vector2, radius: Vector2, progress: float) -> void:
+	var opacity := 1.0 - smoothstep(0.12, 1.0, progress)
+	var expansion := sin(progress * PI * 0.5)
+	var dust := radius * lerpf(0.23, 1.0, expansion)
+	_draw_ellipse(center, dust, Color(CANNON_SMOKE, opacity * 0.28))
+	_draw_dashed_ellipse(center, dust, Color(CANNON_SMOKE, opacity * 0.94), 6.4)
+	_draw_dashed_ellipse(center, dust, Color(CANNON_COLOR, opacity), 2.8)
+	for index in range(8):
+		var ray := Vector2.RIGHT.rotated(index * TAU / 8.0 + 0.24)
+		var point := center + ray * radius * (0.27 + expansion * 0.69)
+		draw_line(point - ray * 9.0, point, Color(VANGUARD_COLOR, opacity), 3.0, true)
+
+
+func _draw_vanguard_contact(center: Vector2, approach: Vector2, progress: float) -> void:
+	var strike := center - Vector2(0, 13)
+	var opacity := 1.0 - progress
+	var facing := approach.angle()
+	for index in range(3):
+		var reach := 6.0 + index * 5.0 + progress * 10.0
+		draw_arc(strike, reach, facing - 0.87, facing + 0.87, 16, Color(AIM_EDGE, opacity), 4.5, true)
+		draw_arc(strike, reach, facing - 0.87, facing + 0.87, 16, Color(VANGUARD_COLOR, opacity), 2.2, true)
 
 
 func _draw_aim_warning(start: Vector2, end: Vector2, color: Color) -> void:
@@ -1270,7 +1392,8 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			if effect.tile == REPAIRMASTER_DASH:
 				_draw_retreat_path(from_point, to_point, progress)
 			else:
-				_draw_charge_path(_project_charge_path(effect, field), progress)
+				var tone := VANGUARD_COLOR if effect.tile == VANGUARD_CHARGE else Color("#ffda91")
+				_draw_charge_path(_project_charge_path(effect, field), progress, tone)
 			var route: PackedVector2Array = effect.get("route", PackedVector2Array())
 			var strike := int(effect.get("impact_index", -1))
 			if strike >= 0 and strike < route.size():
@@ -1279,6 +1402,10 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 				draw_arc(pivot, lerpf(6.0, 14.0, progress), 0.0, TAU, 20, Color("#ffe6ad", flash), 2.0, true)
 		"retreat":
 			_draw_retreat_path(from_point, to_point, progress)
+		"brass_cannon_impact":
+			var blast := float(effect.get("radius", 0.0)) * field.size / WORLD_SIZE
+			if blast.x > 0.0:
+				_draw_cannon_impact(to_point, blast, progress)
 		"ranged_followup_ready", "lance_return_ready":
 			var center := to_point - Vector2(0.0, 16.0)
 			var radius := lerpf(21.0, 8.0, progress)
@@ -1420,11 +1547,11 @@ func _project_charge_path(effect: Dictionary, field: Rect2) -> PackedVector2Arra
 	return points
 
 
-func _draw_charge_path(points: PackedVector2Array, progress: float) -> void:
+func _draw_charge_path(points: PackedVector2Array, progress: float, tone: Color) -> void:
 	if points.size() < 2:
 		return
 	var opacity := 1.0 - smoothstep(0.28, 1.0, progress)
-	var light := Color("#ffda91", opacity)
+	var light := Color(tone, opacity)
 	var edge := Color(INK, opacity * 0.90)
 	var landing := points[-1]
 	var direction := points[-2].direction_to(landing)

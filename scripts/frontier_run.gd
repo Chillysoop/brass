@@ -172,6 +172,7 @@ const LOCATION_LABELS := {"brass": "Brass Frontier", "glass": "Glass Foundry", "
 const BOSS_LABELS := {
 	"tollkeeper": "The Tollkeeper", "gilded_marshal": "The Gilded Marshal",
 	"brass_bellmaker": "The Bellmaker", "brass_repairmaster": "The Repairmaster",
+	"brass_vanguard_cannon": "The Siege Vanguard",
 	"iron_regent": "The Iron Regent", "crucible_twins": "The Crucible Twins", "prism_warden": "The Prism Warden",
 	"glass_refraction_engine": "The Refraction Engine",
 	"tempered_colossus": "The Tempered Colossus",
@@ -189,6 +190,7 @@ const GLASS_BOSS_SCOUTS := {
 }
 const BRASS_BOSSES := ["tollkeeper", "gilded_marshal", "iron_regent"]
 const BRASS_ACT_TWO_BOSSES := ["gilded_marshal", "brass_repairmaster"]
+const BRASS_ACT_THREE_BOSSES := ["brass_vanguard_cannon", "iron_regent"]
 const GLASS_BOSSES := ["crucible_twins", "prism_warden", "tempered_colossus"]
 const CROWN_BOSSES := ["relay_captain", "relay_marshal", "crown_regent"]
 const MOONWRECK_BOSSES := ["wreckmaster", "tidekeeper", "drowned_admiral"]
@@ -2193,6 +2195,8 @@ func _make_map(seed_value: int, difficulty := "easy", location := "brass") -> Ar
 		var boss_id: String = bosses[segment]
 		if location == "brass" and segment == 1:
 			boss_id = BRASS_ACT_TWO_BOSSES[_rng(seed_value, 689).randi_range(0, BRASS_ACT_TWO_BOSSES.size() - 1)]
+		elif location == "brass" and segment == 2:
+			boss_id = BRASS_ACT_THREE_BOSSES[_rng(seed_value, 691).randi_range(0, BRASS_ACT_THREE_BOSSES.size() - 1)]
 		_append_boss(layers, boss_id)
 	if "navigation" in profile.meta:
 		_add_navigation_events(layers, seed_value, seed_salt)
