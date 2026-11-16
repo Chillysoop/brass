@@ -82,6 +82,8 @@ Moonwreck Docks Hard adds Blackwater Gate and a third hero after the Tidekeeper.
 
 Brass Frontier Hard has three legs. Recruit after the Act I and Act II bosses. When the Iron Regent raises its seals, land damaging hits from three different heroes within four beats to break them.
 
+The first two Brass Frontier Hard bosses offer each hero one class-signature Legendary alongside two regular Legendaries. The seed determines which of the hero's two signature branches appears. A paid reroll swaps to the other branch and refreshes the regular choices.
+
 ## Arena practice
 
 1. Start with **Two heroes**. The preset schedules Hexwright's **Pull · Farthest** at beat 4 and Warden's **Bash · Nearest** at beat 6. Start the battle and watch the tether bring the distant clockwork within striking distance.

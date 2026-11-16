@@ -1438,9 +1438,10 @@ func reroll_reward() -> bool:
 		if not pools.has(tier):
 			pools[tier] = _class_reward_pool(hero, tier, rows)
 	var copy := _first_reroll_copy(hero, rows, pools, salt + 1) if count == 0 else ""
-	var replacements := _reroll_tiles(pools, salt, copy)
+	var signatures := _boss_signature_legendaries(hero)
+	var replacements := _reroll_tiles(pools, salt, copy, signatures)
 	if replacements.is_empty() and not copy.is_empty():
-		replacements = _reroll_tiles(pools, salt)
+		replacements = _reroll_tiles(pools, salt, "", signatures)
 	if replacements.is_empty():
 		return false
 	var hints := {}
@@ -1464,21 +1465,26 @@ func _first_reroll_copy(hero_id: String, rows: Array, pools: Dictionary, salt: i
 	return _owned_reward(eligible if new_to_draft.is_empty() else new_to_draft, salt, false, rows)
 
 
-func _reroll_tiles(pools: Dictionary, salt: int, copy := "") -> Array[String]:
+func _reroll_tiles(pools: Dictionary, salt: int, copy := "", signatures: Array = []) -> Array[String]:
 	var rng := _rng(int(data.seed), _node_salt(salt))
 	var replacements: Array[String] = []
+	var signature_slot: int = data.offers.find_custom(func(id: String): return id in signatures)
 	var copy_slot: int = data.offers.find(copy)
 	if copy_slot < 0 and not copy.is_empty():
 		var copy_rarity: String = ArenaSim.TILES[copy].rarity
 		copy_slot = data.offers.find_custom(func(id: String): return ArenaSim.TILES[id].rarity == copy_rarity)
 	for index in range(data.offers.size()):
+		var id: String = data.offers[index]
+		if index == signature_slot:
+			replacements.append(signatures[1] if id == signatures[0] else signatures[0])
+			continue
 		if index == copy_slot:
 			replacements.append(copy)
 			continue
-		var id: String = data.offers[index]
 		var tier := TILE_RARITIES.find(ArenaSim.TILES[id].rarity)
 		var pool: Array = pools[tier]
-		var unclaimed := pool.filter(func(tile: String): return tile != copy and tile not in replacements)
+		var unclaimed := pool.filter(func(tile: String):
+			return tile != copy and tile not in replacements and (signature_slot < 0 or tile not in signatures))
 		var fresh := unclaimed.filter(func(tile: String): return tile not in data.offers)
 		if fresh.is_empty():
 			fresh = unclaimed.filter(func(tile: String): return tile != id)
@@ -2284,7 +2290,12 @@ func _combat_reward_draft(kind: String, lane: int) -> Dictionary:
 	var salt := lane * 1069
 	if kind == "boss":
 		var legendary := _class_reward_pool(hero_id, 4, rows)
-		return {"offers": _sample(legendary, 3, int(data.seed), _node_salt(81 + salt)), "hints": {}}
+		var signatures := _boss_signature_legendaries(hero_id)
+		var ordinary := legendary.filter(func(id: String): return id not in signatures)
+		var offers := _sample(ordinary, 3 if signatures.is_empty() else 2, int(data.seed), _node_salt(81 + salt))
+		if not signatures.is_empty():
+			offers.append(_sample(signatures, 1, int(data.seed), _node_salt(203 + salt))[0])
+		return {"offers": offers, "hints": {}}
 	if kind == "elite":
 		var pool := _class_reward_pool(hero_id, 1, rows) + _class_reward_pool(hero_id, 2, rows) + _class_reward_pool(hero_id, 3, rows)
 		var fixed: Array = []
@@ -2308,6 +2319,14 @@ func _combat_reward_draft(kind: String, lane: int) -> Dictionary:
 		return {"offers": _sample(fixed, 3, int(data.seed), _node_salt(85 + salt)), "hints": hints}
 	var signature_offer := _signature_milestone_offer(kind, lane, hero_id, salt)
 	return _normal_reward_draft(lane, rows, signature_offer)
+
+
+func _boss_signature_legendaries(hero_id: String) -> Array:
+	if data.location != "brass" or data.difficulty != "hard" or data.segment not in [1, 2] \
+			or data.node.type != "boss" or is_final_boss():
+		return []
+	var tiers := TilePacking.forge_tiers(ClassDecks.signature(hero_id))
+	return [] if tiers.is_empty() else tiers.back()
 
 
 func _elite_signature_offer(hero_id: String, lane: int, salt: int) -> String:

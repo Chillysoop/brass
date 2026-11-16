@@ -154,6 +154,7 @@ func _initialize() -> void:
 	_check_rotating_lead_starters()
 	_check_opening_specialty_rewards()
 	_check_hard_followup_rewards()
+	_check_hard_intermediate_boss_drafts()
 	_check_later_act_specialties()
 	_check_acquisition_drafts()
 	_check_mobility_acquisition()
@@ -586,9 +587,14 @@ func _check_hard_and_glass(path: String) -> void:
 		var encounter := run.encounter()
 		check(encounter.boss_id == boss_id and encounter.heroes.size() == encounter.segment, "Hard must use the correct boss and party size for each leg.")
 		var remaining := [51, 66, 82].slice(0, encounter.heroes.size())
+		if encounter.segment == 2:
+			remaining[0] = 0
 		marks = run.profile.marks
-		run.finish_combat(true, remaining)
-		_finish_rewards(run, "skip")
+		check(run.finish_combat(true, remaining), "Complete the Hard boss fight.")
+		if run.is_final_boss():
+			_finish_rewards(run, "skip")
+		else:
+			_check_pending_intermediate_boss_drafts(run, path)
 		if boss_id == "tollkeeper":
 			check(run.data.phase == "boss_relic" and run.choose_boss_relic("skip"), "Brass Hard recruitment can proceed after skipping the boss relic.")
 		if boss_id == "iron_regent":
@@ -608,6 +614,114 @@ func _check_hard_and_glass(path: String) -> void:
 		check(team_size == encounter.segment + 1 and run.loadout.lanes.size() == team_size, "Each recruit must add exactly one lane.")
 		check(run.data.heroes[0].hp == remaining[0] and run.data.heroes.back().hp == run.data.heroes.back().max_hp,
 			"Recruitment must preserve party HP and add a full-HP hero.")
+
+
+func _check_pending_intermediate_boss_drafts(run: FrontierRun, path: String) -> void:
+	var restored := FrontierRun.new()
+	var offers: Array = run.data.offers.duplicate()
+	var remaining: Array = run.data.reward_remaining.duplicate(true)
+	var party: Array = run.data.heroes.duplicate(true)
+	check(run.reward_count() == party.size() and restored.load_save(path) and restored.reward_lane() == 0 \
+		and restored.data.heroes == party and restored.data.offers == offers and restored.data.reward_remaining == remaining,
+		"Both intermediate bosses save the visible and queued Legendary offers in order.")
+	if party.size() == 2 and restored.data.get("phase") == "reward":
+		_check_intermediate_boss_rerolls(restored, path, offers, remaining)
+		offers = restored.data.offers.duplicate()
+		check(run.load_save(path), "Resume the rerolled first draft with the second still queued.")
+	for lane in range(party.size()):
+		var ordered_offers: Array = offers if lane == 0 else remaining[lane - 1].offers
+		var signatures := _legendary_signature_offers(ordered_offers, party[lane].id)
+		check(run.reward_lane() == lane and run.data.offers == ordered_offers and signatures.size() == 1,
+			"Every current hero, including a fallen lead, receives their own Legendary signature draft.")
+		if signatures.is_empty() or not run.reward(signatures[0]):
+			check(false, "Claim the currently offered signature and advance the pending Hard boss draft.")
+			return
+		check(restored.load_save(path) and restored.data.phase == run.data.phase and restored.reward_lane() == run.reward_lane() \
+			and restored.data.offers == run.data.offers, "A claimed draft does not regenerate the next cards on reload.")
+
+
+func _check_intermediate_boss_rerolls(run: FrontierRun, path: String, original: Array, remaining: Array) -> void:
+	var hero: String = run.data.heroes[0].id
+	var gold: int = run.data.gold
+	var before: Array = original
+	for price in [5, 10]:
+		if not (run.reward_reroll_price() == price and run.reroll_reward()):
+			check(false, "Pay the correct price to reroll an intermediate boss draft.")
+			return
+		gold -= price
+		var after: Array = run.data.offers.duplicate()
+		check(after.size() == 3 and after[0] != after[1] and after[0] != before[0] and after[1] != before[1] \
+			and after.slice(0, 2).any(func(id: String): return id not in before) \
+			and after[2] != before[2] and _legendary_signature_offers(after, hero) == [after[2]] \
+			and after.all(func(id: String): return ArenaSim.TILES[id].rarity == "legendary"),
+			"A paid reroll refreshes both ordinary picks and trades the signature for its sibling.")
+		check(run.data.gold == gold and run.data.reward_remaining == remaining and run.load_save(path) \
+			and run.reward_reroll_price() == price * 2 and run.data.offers == after and run.data.reward_remaining == remaining,
+			"Reroll cost, visible order and the unopened hero's queued draft survive reload.")
+		before = after
+
+
+func _check_hard_intermediate_boss_drafts() -> void:
+	var run := FrontierRun.new()
+	var classes: Array = FrontierRun.HEROES.keys()
+	for index in range(classes.size()):
+		var hero: String = classes[index]
+		var signature := ClassDecks.signature(hero)
+		var legendaries: Array = TilePacking.forge_tiers(signature)[4]
+		check(legendaries.size() == 2 and legendaries[0] != legendaries[1],
+			"%s has two distinct Legendary signature variants." % hero)
+		for act in [1, 2]:
+			var seen_signatures := {}
+			var seen_other_offers := {}
+			for seed in range(1, 17):
+				var heroes: Array = [hero] if act == 1 else [classes[(index + 1) % classes.size()], hero]
+				_set_boss_draft_context(run, "brass", "hard", seed, act, heroes)
+				var lane: int = heroes.size() - 1
+				if seed % 2 == 0:
+					run.loadout.lanes[lane].append({"id": signature, "start": 0})
+				var draft := run._combat_reward_draft("boss", lane)
+				var offers: Array = draft.offers
+				var signatures := _legendary_signature_offers(offers, hero)
+				var other := offers.filter(func(id: String): return id not in legendaries)
+				var ordinary_pool := run._class_reward_pool(hero, 4, run._reward_inventory(lane))
+				ordinary_pool = ordinary_pool.filter(func(id: String): return id not in legendaries)
+				check(offers.size() == 3 and signatures == [offers[2]] and other.size() == 2 and other[0] != other[1] \
+					and other.all(func(id: String): return ArenaSim.TILES[id].rarity == "legendary") \
+					and other == run._sample(ordinary_pool, 2, seed, run._node_salt(81 + lane * 1069)) \
+					and draft == run._combat_reward_draft("boss", lane),
+					"%s Hard Act %d seed %d reserves one Legendary signature beside two distinct ordinary Legendaries." % [hero, act, seed])
+				for id: String in signatures:
+					seen_signatures[id] = true
+				seen_other_offers[other] = true
+			check(seen_signatures.has_all(legendaries) and seen_other_offers.size() > 1,
+				"%s Hard Act %d must rotate both Legendary branches and the ordinary pair across seeds." % [hero, act])
+
+	for region: String in ["brass", "glass", "crown", "moonwreck"]:
+		for difficulty: String in ["easy", "medium", "hard"]:
+			var acts := ["easy", "medium", "hard"].find(difficulty) + 1
+			for act in range(1, acts + 1):
+				if region == "brass" and difficulty == "hard" and act < acts:
+					continue
+				for seed in [3, 9, 42]:
+					_set_boss_draft_context(run, region, difficulty, seed, act, classes.slice(0, act))
+					for lane in range(act):
+						var pool := run._class_reward_pool(classes[lane], 4, run._reward_inventory(lane))
+						var ordinary := run._sample(pool, 3, seed, run._node_salt(81 + lane * 1069))
+						check(run._combat_reward_draft("boss", lane).offers == ordinary,
+							"%s %s Act %d should keep the ordinary Legendary draft and seed order." % [region, difficulty, act])
+
+
+func _set_boss_draft_context(run: FrontierRun, region: String, difficulty: String, seed: int, act: int, heroes: Array) -> void:
+	var layers := run._make_map(seed, difficulty, region)
+	run.data = {"location": region, "difficulty": difficulty, "seed": seed, "segment": act, "layers": layers,
+		"node": layers[act * FrontierRun.NODES_PER_SEGMENT - 1][0],
+		"heroes": heroes.map(func(id: String): return {"id": id})}
+	run.loadout = {"lanes": heroes.map(func(_id: String): return []), "storage": [[], [], []]}
+
+
+func _legendary_signature_offers(offers: Array, hero: String) -> Array:
+	var variants: Array = TilePacking.forge_tiers(ClassDecks.signature(hero))[4]
+	return offers.filter(func(id: String): return id in variants and ArenaSim.TILES[id].rarity == "legendary")
 
 
 func _check_glass_medium(path: String) -> void:

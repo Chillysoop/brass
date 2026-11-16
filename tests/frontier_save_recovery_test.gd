@@ -12,6 +12,7 @@ func _initialize() -> void:
 	_check_failed_drafts()
 	_check_failed_recruit_kit()
 	_check_failed_boss_save()
+	_check_failed_intermediate_boss_reward()
 	_check_empty_timeline_recovery()
 	for path: String in paths:
 		for suffix: String in ["", ".bak", ".tmp"]:
@@ -157,6 +158,61 @@ func _check_failed_boss_save() -> void:
 	_expect(restored.load_save(run.save_path) and restored.data.get("phase") == "reward" and restored.can_start("medium")
 		and int(restored.profile.marks) == int(before_profile.marks) + 19,
 		"The rerun of the save commits the legendary pick, Medium unlock, and one 19-Mark payout together.")
+
+
+func _check_failed_intermediate_boss_reward() -> void:
+	var run := _fresh("boss-party-rewards")
+	run.profile.medium_unlocked = true
+	run.profile.hard_unlocked = true
+	if not _expect(run.start_run(9, "hard") and run.choose_preferred_hero("warden") and run.choose_relic("pocket_bell") \
+		and run.choose_starter(ClassDecks.starter("warden")) and run.finish_combat(true, 100) and run.reward("skip") \
+		and _enter_act_boss(run, 1) and run.finish_combat(true, 80) and run.reward("skip") and run.choose_boss_relic("skip"),
+		"Reach the first Brass Hard recruit and keep the starter lane."):
+		return
+	var recruit: String = run.data.offers[0]
+	if not _expect(run.choose_recruit(recruit) and run.choose_recruit_starter(ClassDecks.starter(recruit)) \
+		and _enter_act_boss(run, 2) and run.finish_combat(true, [0, 60]) and run.reward_count() == 2,
+		"The Act II boss leaves two Legendary drafts, even with a fallen lead."):
+		return
+	var before := run.data.duplicate(true)
+	var profile := run.profile.duplicate(true)
+	var loadout := run.loadout.duplicate(true)
+	var legacy: Dictionary = JSON.parse_string(FileAccess.get_file_as_string(run.save_path))
+	if not _block_write(run):
+		return
+	_expect(not run.reroll_reward() and run.data == before and run.profile == profile and run.loadout == loadout,
+		"A failed reroll charges no gold and leaves both ordered boss drafts intact.")
+	_expect(not run.reward("skip") and run.data == before and run.profile == profile and run.loadout == loadout,
+		"A failed first boss pick does not advance the second queued draft or pay skip gold.")
+	_unblock_write(run)
+	var restore := FrontierRun.new()
+	var next: Array = before.reward_remaining[0].offers
+	_expect(restore.load_save(run.save_path) and restore.data.offers == before.offers and restore.reward("skip") \
+		and restore.reward_lane() == 1 and restore.data.offers == next,
+		"Resume and retry with the same first draft and exact next offers.")
+	_check_legacy_pending_boss_reward(run, legacy)
+
+
+func _check_legacy_pending_boss_reward(run: FrontierRun, legacy: Dictionary) -> void:
+	var lead_pool := run._class_reward_pool(run.data.heroes[0].id, 4, run._reward_inventory(0))
+	var recruit_pool := run._class_reward_pool(run.data.heroes[1].id, 4, run._reward_inventory(1))
+	var first := run._sample(lead_pool, 3, run.data.seed, run._node_salt(81))
+	var second := run._sample(recruit_pool, 3, run.data.seed, run._node_salt(81 + 1069))
+	legacy.run.offers = first
+	legacy.run.reward_remaining[0].offers = second
+	var path := run.save_path
+	if not _expect(_overwrite(path, JSON.stringify(legacy)) and run.load_save(path), "Read the legacy pending Hard boss save."):
+		return
+	_expect(run.data.offers == first and run.data.reward_remaining[0].offers == second and run.reroll_reward() \
+		and run.data.offers.size() == 3 and run.data.offers.all(func(id: String): return id in lead_pool) \
+		and run.data.reward_remaining[0].offers == second and run.reward("skip") and run.data.offers == second,
+		"A legacy pending boss keeps the saved ordinary drafts, including when rerolled or advanced.")
+
+
+func _enter_act_boss(run: FrontierRun, act: int) -> bool:
+	var row := act * FrontierRun.NODES_PER_SEGMENT - 1
+	run.data.node = run.data.layers[row - 1][0]
+	return run.choose_node(run.data.layers[row][0].id)
 
 
 func _check_empty_timeline_recovery() -> void:
