@@ -36,6 +36,10 @@ const MOTIF_COLORS := {
 	"runic_anvil": Color("#eaa160"), "horizon_round": Color("#8bd8f1"),
 	"cinder_wave": Color("#f18c66"), "needle_point": Color("#e6cafa"),
 	"backdraft_bolt": Color("#f99860"), "parallax_shot": Color("#c6b8ff"),
+	"reversal_plate": Color("#eaca82"), "rampart_rush": Color("#ef895a"),
+	"convergence_pulse": Color("#b48cf2"), "severing_tether": Color("#64cdd4"),
+	"tonic_dart": Color("#9de7a5"), "catalyst_flask": Color("#e2ca69"),
+	"pinpoint_lunge": Color("#f4e9b8"), "vanishing_cut": Color("#dc92c5"),
 }
 
 const MOTIF_VARIANTS := {
@@ -97,10 +101,11 @@ static func _style(base_id: String, tile: Dictionary) -> String:
 		return "blink"
 	if tile.get("charge", false) or base_id == "bulwark_charge":
 		return "dash"
-	if tile.has("pull") or base_id in ["pull", "gravity_hook", "hook_bash", "graviton", "event_horizon"]:
+	if tile.has("pull") or tile.has("convergence_damage_per_pull") or tile.has("isolation_damage") \
+			or base_id in ["pull", "gravity_hook", "hook_bash", "graviton", "event_horizon"]:
 		return "pull"
 	match base_id:
-		"bash", "shield_ram", "rebound", "shove", "shield_tap", "bellows_strike", "rampart_counter", "riposte":
+		"bash", "shield_ram", "rebound", "shove", "shield_tap", "bellows_strike", "rampart_counter", "riposte", "reversal_plate":
 			return "thrust"
 		"jab", "pike_thrust", "needle_point":
 			return "thrust"
@@ -108,7 +113,7 @@ static func _style(base_id: String, tile: Dictionary) -> String:
 			return "spin"
 		"meteor_seal", "meteor_volley", "flare_mortar", "short_fuse", "furnace_burst", "cinder_wave":
 			return "burst"
-		"rail_shot", "star_piercer", "rivet_bolt", "tap_bolt", "sundering_bolt", "spark_shot", "backdraft_bolt":
+		"rail_shot", "star_piercer", "rivet_bolt", "tap_bolt", "sundering_bolt", "spark_shot", "backdraft_bolt", "tonic_dart":
 			return "bolt"
 		"chorus_bolt":
 			return "ward" if tile.has("chorus_guard") else "mark"

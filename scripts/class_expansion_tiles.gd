@@ -4,6 +4,8 @@ const COMMON_IDS := [
 	"iron_arc", "iron_vow", "line_guard", "pilgrim_aid", "short_fuse", "rake", "furnace_burst", "tether_dart",
 	"bellows_strike", "lantern_shot", "slip_cut", "spur", "spark_shot", "crosscut", "tap_bolt", "stave_crush",
 	"backdraft_bolt", "parallax_shot",
+	"reversal_plate", "rampart_rush", "convergence_pulse", "severing_tether",
+	"tonic_dart", "catalyst_flask", "pinpoint_lunge", "vanishing_cut",
 ]
 const UNCOMMON_IDS := [
 	"ward_lantern", "piercing_burst", "reverse_cut", "flare_mortar",
@@ -104,6 +106,49 @@ const SPECS := {
 		"label": "Parallax Shot", "width": 3, "range": 680.0, "damage": 19, "rarity": "common",
 		"ranged": true, "long_critical_bonus": 0.20, "targets": ENEMY_TARGETS, "icon": "shot",
 		"description": "From more than 210 units away, add 20 percentage points to this shot's critical chance.",
+	},
+	"reversal_plate": {
+		"label": "Reversal Plate", "width": 2, "range": 160.0, "damage": 14, "rarity": "common",
+		"guard": 5, "recent_block_damage": 8, "recent_block_beats": 3, "targets": ENEMY_TARGETS, "icon": "guard",
+		"description": "Gain 5 Guard on hit. Deal 8 extra damage if your Guard absorbed an enemy hit in the last 3 beats.",
+	},
+	"rampart_rush": {
+		"label": "Rampart Rush", "width": 3, "range": 375.0, "damage": 16, "rarity": "common",
+		"charge": true, "push": 570.0, "sweep_push_radius": 120.0, "sweep_push_force": 390.0,
+		"guard": 4, "targets": ENEMY_TARGETS, "icon": "push",
+		"description": "Rush and knock back the target and other enemies within 120 units of the impact. Gain 4 Guard on hit.",
+	},
+	"convergence_pulse": {
+		"label": "Convergence Pulse", "short_label": "Convergence", "width": 3, "range": 475.0, "damage": 15, "rarity": "common",
+		"ranged": true, "convergence_radius": 210.0, "convergence_force": 620.0, "convergence_targets": 3,
+		"convergence_damage_per_pull": 4, "targets": ENEMY_TARGETS, "icon": "pull",
+		"description": "Draw up to 3 other enemies within 210 units toward the target. Deal 4 extra damage to the target for each enemy moved inward.",
+	},
+	"severing_tether": {
+		"label": "Severing Tether", "width": 2, "range": 465.0, "damage": 12, "rarity": "common",
+		"ranged": true, "isolation_pull_force": 675.0, "isolation_distance": 44.0, "isolation_damage": 7,
+		"targets": ENEMY_TARGETS, "icon": "pull",
+		"description": "Pull the target toward you. Deal 7 extra damage if the pull moves it at least 44 units farther from its nearest ally.",
+	},
+	"tonic_dart": {
+		"label": "Tonic Dart", "width": 2, "range": 450.0, "damage": 10, "rarity": "common",
+		"ranged": true, "heal": 4, "guard": 1, "heal_overflow_on_hit": true, "targets": ENEMY_TARGETS, "icon": "rest",
+		"description": "On hit, give 1 Guard to the living hero missing the most HP. Once per fight, if they are injured, also restore up to 4 HP and convert leftover healing to Guard.",
+	},
+	"catalyst_flask": {
+		"label": "Catalyst Flask", "width": 3, "range": 410.0, "damage": 15, "rarity": "common",
+		"ranged": true, "splash": 110.0, "splash_damage": 6, "healing_damage_bonus": 4, "targets": ENEMY_TARGETS, "icon": "area",
+		"description": "Splash other enemies within 110 units for 6 damage. If a hero has already regained HP this loop, the hit and splash deal 4 more damage.",
+	},
+	"pinpoint_lunge": {
+		"label": "Pinpoint Lunge", "width": 2, "range": 335.0, "damage": 13, "rarity": "common",
+		"charge": true, "repeat_target_damage": 6, "targets": ENEMY_TARGETS, "icon": "battle",
+		"description": "Rush the target if the path is clear. Deal 6 extra damage if the last attack you landed hit the same enemy.",
+	},
+	"vanishing_cut": {
+		"label": "Vanishing Cut", "width": 3, "range": 420.0, "damage": 15, "rarity": "common",
+		"blink_strike": true, "low_hp_bonus": 6, "duel_kill_bonus": 7, "targets": ENEMY_TARGETS, "icon": "teleport",
+		"description": "Blink beside the target and strike. Deal 6 extra damage below half HP. On kill, your next hit on another enemy within 12 beats deals 7 extra damage.",
 	},
 	"ward_lantern": {
 		"label": "Ward Lantern", "width": 4, "range": 0.0, "damage": 0, "rarity": "uncommon",

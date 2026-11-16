@@ -21,7 +21,6 @@ const BOSS_RELICS := {
 	"tollkeeper": ["tollkeeper_signet", "bastion_medal", "guild_ledger", "tollkeeper_repair_kit"],
 	"brass_bellmaker": ["bellmaker_clapper", "bellmaker_long_echo", "bellmaker_resonant_plate"],
 }
-const STARSHOT_SPECIALTIES := ["retreat_shot", "spark_shot", "backdraft_bolt", "parallax_shot"]
 const EARLY_BUILD_DIRECTIONS := {
 	"warden": [
 		{"label": "Guard and counter", "opening": "iron_arc", "followup": "iron_vow"},
@@ -715,8 +714,12 @@ func _starter_lane(id: String) -> Array:
 
 func _starter_offers(hero_id: String, salt: int, shared := "shot") -> Array:
 	var offers := ["bash", shared]
-	if _is_brass_easy_starshot(hero_id):
-		offers[0] = _sample(STARSHOT_SPECIALTIES, 1, int(data.seed), salt + 41)[0]
+	var specialties := ClassDecks.specialties(hero_id)
+	if _is_brass_easy() and not specialties.is_empty():
+		var relic: String = data.relics.front()
+		if hero_id == "starshot" or (shared == "shot" and relic not in BUILD_RELICS and not forge_family_available("shot")):
+			var slot := 0 if hero_id == "starshot" else 1
+			offers[slot] = _sample(specialties, 1, int(data.seed), salt + 41)[0]
 	var signature: String = ClassDecks.starter(hero_id)
 	if signature not in offers:
 		offers.append(signature)
@@ -725,8 +728,8 @@ func _starter_offers(hero_id: String, salt: int, shared := "shot") -> Array:
 	return _sample(offers, 3, int(data.seed), salt)
 
 
-func _is_brass_easy_starshot(hero_id: String) -> bool:
-	return hero_id == "starshot" and data.get("location") == "brass" and data.get("difficulty") == "easy"
+func _is_brass_easy() -> bool:
+	return data.get("location") == "brass" and data.get("difficulty") == "easy"
 
 
 func available_nodes() -> Array:
@@ -2247,11 +2250,13 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 				repeat_pool.append(tile.id)
 	var owned := _owned_reward(repeat_pool, 83 + salt, false, rows)
 	var opening_pilot: bool = not directions.is_empty() and data.node.type == "opening"
-	var starshot_pilot := _is_brass_easy_starshot(hero_id)
-	var starshot_opening: bool = starshot_pilot and data.node.type == "opening"
-	var fresh_battle_draft: bool = starshot_pilot and data.node.type == "battle" \
+	var specialties := ClassDecks.specialties(hero_id)
+	var specialty_start := _is_brass_easy() and not specialties.is_empty()
+	var specialty_opening: bool = specialty_start and data.node.type == "opening"
+	var starshot_opening := specialty_opening and hero_id == "starshot"
+	var fresh_battle_draft: bool = specialty_start and hero_id == "starshot" and data.node.type == "battle" \
 		and _rng(int(data.seed), _node_salt(87 + salt)).randi_range(0, 1) == 0
-	var recruit_draft := _early_starshot_recruit_draft(lane, hero_id)
+	var recruit_draft := _early_recruit_draft(lane) if not specialties.is_empty() else -1
 	var prefer_new_tiles := opening_pilot or starshot_opening or fresh_battle_draft or recruit_draft == 1
 	var owned_hint := _copy_reward_hint(owned, rows) if not owned.is_empty() else ""
 	if not owned.is_empty() and (not prefer_new_tiles or owned_hint == "Third copy"):
@@ -2272,11 +2277,11 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 	if opening_pilot and rewards.size() < 3 and not owned.is_empty() and owned not in rewards:
 		rewards.append(owned)
 		hints[owned] = owned_hint
-	if starshot_opening and rewards.size() < 3:
-		var candidates := STARSHOT_SPECIALTIES.filter(func(id: String): return id in common and not held.has(id) and id not in rewards)
+	if specialty_opening and rewards.size() < 3:
+		var candidates := specialties.filter(func(id: String): return not held.has(id) and id not in rewards)
 		rewards.append_array(_sample(candidates, 1, int(data.seed), _node_salt(86 + salt)))
 	if recruit_draft >= 0 and rewards.size() < 3:
-		_reserve_starshot_recruit_specialty(held, rewards)
+		_reserve_recruit_specialty(specialties, held, rewards)
 	var rng := _rng(int(data.seed), _node_salt(84 + salt))
 	while rewards.size() < 3:
 		var roll := rng.randi_range(1, 100)
@@ -2302,8 +2307,8 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 	return {"offers": _sample(rewards, 3, int(data.seed), _node_salt(85 + salt)), "hints": hints}
 
 
-func _early_starshot_recruit_draft(lane: int, hero_id: String) -> int:
-	if lane != 1 or hero_id != "starshot" or data.get("location") != "brass" or data.get("difficulty") != "medium" \
+func _early_recruit_draft(lane: int) -> int:
+	if lane != 1 or data.get("location") != "brass" or data.get("difficulty") != "medium" \
 		or data.node.type != "battle" or int(data.node.row) < NODES_PER_SEGMENT:
 		return -1
 	var prior_battles := 0
@@ -2315,17 +2320,17 @@ func _early_starshot_recruit_draft(lane: int, hero_id: String) -> int:
 	return prior_battles
 
 
-func _reserve_starshot_recruit_specialty(held: Dictionary, rewards: Array) -> void:
+func _reserve_recruit_specialty(specialties: Array, held: Dictionary, rewards: Array) -> void:
 	var held_families := {}
 	for id: String in held:
 		held_families[ArenaSim.TILES[id].get("family", id)] = true
-	var previous := str(data.get("starshot_recruit_specialty", ""))
-	var options := STARSHOT_SPECIALTIES.filter(func(id: String):
+	var previous := str(data.get("recruit_specialty", data.get("starshot_recruit_specialty", "")))
+	var options := specialties.filter(func(id: String):
 		return id != previous and not held_families.has(id) and id not in rewards)
 	var choice := _sample(options, 1, int(data.seed), _node_salt(1155))
 	if not choice.is_empty():
 		rewards.append(choice[0])
-		data.starshot_recruit_specialty = choice[0]
+		data.recruit_specialty = choice[0]
 
 
 func _early_build_directions(lane: int, hero_id: String) -> Array:

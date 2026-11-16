@@ -11,6 +11,13 @@ const ORIGINAL_STARTERS := {
 	"wayfarer": "blink", "lancer": "retreat_shot", "cantor": "signal_flare", "apothecary": "snap_shot",
 	"rune_smith": "slam", "starshot": "rivet_bolt", "cinder_mage": "shrapnel", "duelist": "jab",
 }
+const EXCLUSIVE_COMMONS := {
+	"warden": ["reversal_plate", "rampart_rush"],
+	"hexwright": ["convergence_pulse", "severing_tether"],
+	"apothecary": ["tonic_dart", "catalyst_flask"],
+	"starshot": ["backdraft_bolt", "parallax_shot"],
+	"duelist": ["pinpoint_lunge", "vanishing_cut"],
+}
 
 var failures: Array[String] = []
 var save_path := "user://party-reward-test-%d.json" % Time.get_ticks_usec()
@@ -27,10 +34,12 @@ func _run() -> void:
 	game.set_physics_process(false)
 	game.run.load_save(save_path)
 	_check_class_decks()
-	_check_starshot_opening_drafts()
+	for hero_id: String in EXCLUSIVE_COMMONS:
+		_check_specialty_opening_drafts(hero_id)
 	_check_signature_elite_progression()
 	_check_signature_milestones()
-	_check_starshot_recruit_drafts()
+	_check_recruit_specialty_drafts("starshot", "assault")
+	_check_recruit_specialty_drafts("hexwright", "support")
 	await _check_medium_rewards(game)
 	game.queue_free()
 	await process_frame
@@ -58,7 +67,8 @@ func _check_class_decks() -> void:
 		var common: Array = ClassDecks.common(class_id)
 		var uncommon: Array = ClassDecks.uncommon(class_id)
 		var signature := ClassDecks.signature(class_id)
-		var expansion_common_count := 10 if class_id == "starshot" else 8
+		var exclusive: Array = EXCLUSIVE_COMMONS.get(class_id, [])
+		var expansion_common_count := 8 + exclusive.size()
 		var common_count := 10 + expansion_common_count
 		_check(common.size() == common_count and common.all(func(id: String):
 			return common.count(id) == 1 and ArenaSim.TILES.has(id) \
@@ -73,6 +83,18 @@ func _check_class_decks() -> void:
 			"%s should gain %d extra Commons and four extra Uncommons." % [class_id, expansion_common_count])
 		_check(uncommon.filter(func(id: String): return signature_owners.has(id)) == [signature],
 			"%s should list only its own signature." % class_id)
+		var specialties := ClassDecks.specialties(class_id)
+		_check(specialties.size() == (0 if exclusive.is_empty() else 4) and exclusive.all(func(id: String):
+			return id in specialties), "%s should have its own specialty list." % class_id)
+		for id: String in specialties:
+			var tier_sizes := TilePacking.forge_tiers(id).map(func(tier: Array): return tier.size())
+			var family: String = ArenaSim.TILES.get(id, {}).get("family", "")
+			_check(id in common and run.forge_family_available(family) and tier_sizes == [1, 2, 2, 2, 2],
+				"%s must draft %s as a Common with both forge paths through Legendary." % [class_id, id])
+		for owner: String in EXCLUSIVE_COMMONS:
+			for id: String in EXCLUSIVE_COMMONS[owner]:
+				_check((id in common) == (owner == class_id),
+					"%s should appear only in %s's Common deck." % [id, owner])
 		common.sort()
 		var key := str(common)
 		_check(not distinct_pools.has(key), "%s needs its own Common deck." % class_id)
@@ -109,43 +131,54 @@ func _check_class_decks() -> void:
 		run.abandon_run()
 
 
-func _check_starshot_opening_drafts() -> void:
+func _check_specialty_opening_drafts(hero_id: String) -> void:
 	var run := FrontierRun.new()
 	run.load_save(save_path)
-	var specialties := ["retreat_shot", "spark_shot", "backdraft_bolt", "parallax_shot"]
+	var specialties := ClassDecks.specialties(hero_id)
+	var is_starshot := hero_id == "starshot"
+	var original := ClassDecks.starter(hero_id)
 	var seen_starters := {}
 	var seen_rewards := {}
 	var regular_drafts_without_copy := 0
 	for seed_value: int in [2, 5, 7, 9, 11, 13, 16, 17]:
-		var started := run.start_run(seed_value) and run.choose_hero("starshot") and run.choose_relic("pocket_bell")
-		_check(started, "Seed %d must offer a fresh Easy Starshot opening." % seed_value)
+		var started := run.start_run(seed_value)
+		run.data.offers = [hero_id]
+		started = started and run.choose_hero(hero_id) and run.choose_relic("pocket_bell")
+		_check(started, "Seed %d must offer an Easy opening for %s." % [seed_value, hero_id])
 		if not started:
 			run.abandon_run()
 			continue
 		var starter_offers: Array = run.data.offers
 		var starter_specialties := starter_offers.filter(func(id: String): return id in specialties)
-		_check(starter_offers.size() == 3 and "rivet_bolt" in starter_offers and "shot" in starter_offers \
-			and starter_specialties.size() == 1, "Starshot's starter draft should include one rotating specialty.")
-		var starter: String = starter_specialties.front() if not starter_specialties.is_empty() else "rivet_bolt"
+		var shared := "shot" if is_starshot else "bash"
+		_check(starter_offers.size() == 3 and original in starter_offers and shared in starter_offers \
+			and starter_specialties.size() == 1, "%s's starter draft should include one rotating specialty." % hero_id)
+		var starter: String = starter_specialties.front() if not starter_specialties.is_empty() else original
 		seen_starters[starter] = true
 		var rewarded := run.choose_starter(starter) and run.finish_combat(true, run.data.heroes[0].max_hp)
-		_check(rewarded, "Starshot should reach the first reward normally.")
+		_check(rewarded, "%s should reach the first reward normally." % hero_id)
 		var reward_offers: Array = run.data.offers
-		var reward_specialties := reward_offers.filter(func(id: String): return id in specialties)
+		var reward_specialties := reward_offers.filter(func(id: String): return id in specialties and id != starter)
 		_check(reward_offers.size() == 3 and reward_offers.all(func(id: String): return reward_offers.count(id) == 1) \
-			and not reward_offers.any(func(id: String): return ArenaSim.TILES[id].get("base_tile", id) == starter) \
-			and not reward_specialties.is_empty(), "Starshot's opening win should draft three distinct tiles, including a new specialty.")
+			and not reward_specialties.is_empty(), "%s's opening win should offer three distinct tiles and a new specialty." % hero_id)
+		if is_starshot:
+			_check(not reward_offers.any(func(id: String): return ArenaSim.TILES[id].get("base_tile", id) == starter),
+				"Starshot's Easy opening win should offer new tile families.")
+		else:
+			_check(starter in reward_offers and run.reward_hint(starter) == "Owned copy",
+				"%s's opening win should still offer a second copy of the chosen starter." % hero_id)
 		for id: String in reward_specialties:
 			seen_rewards[id] = true
 		run.data.node.type = "battle"
-		if starter not in run._standard_rewards():
+		if is_starshot and starter not in run._standard_rewards():
 			regular_drafts_without_copy += 1
 		run.loadout.storage[0].append(run.loadout.lanes[0][0].duplicate())
-		_check(starter in run._standard_rewards(), "An owned pair should keep its upgrade opportunity in a later draft.")
+		_check(starter in run._standard_rewards() and run.reward_hint(starter) == "Third copy",
+			"An owned pair should keep its upgrade opportunity in a later draft.")
 		run.abandon_run()
-	_check(seen_starters.size() >= 3 and seen_rewards.size() >= 3,
-		"Starshot should see different specialties across Easy openings.")
-	_check(regular_drafts_without_copy > 0, "Starshot's ordinary battles should sometimes draft without a guaranteed second copy.")
+	_check(seen_starters.size() >= 3 and seen_rewards.size() >= 3, "%s should see rotating Easy specialties." % hero_id)
+	if is_starshot:
+		_check(regular_drafts_without_copy > 0, "Starshot should sometimes see an ordinary draft without a second copy.")
 
 
 func _check_signature_elite_progression() -> void:
@@ -253,7 +286,7 @@ func _draft_offers_rare(run: FrontierRun, signature: String) -> bool:
 	return run.data.offers.any(func(id: String): return id in TilePacking.next_options(signature))
 
 
-func _check_starshot_recruit_drafts() -> void:
+func _check_recruit_specialty_drafts(recruit: String, loadout_choice: String) -> void:
 	var run := FrontierRun.new()
 	run.load_save(save_path)
 	run.profile.medium_unlocked = true
@@ -263,34 +296,43 @@ func _check_starshot_recruit_drafts() -> void:
 		and run.choose_starter(ClassDecks.starter("warden")) and run.finish_combat(true, 100) and run.reward("skip")
 	_enter_boss(run, false)
 	started = started and run.finish_combat(true, 100) and run.reward("skip") and run.choose_boss_relic("skip")
-	run.data.offers = ["starshot"]
-	started = started and run.choose_recruit("starshot") and run.choose_recruit_loadout("assault")
-	_check(started and not run.data.has("starshot_recruit_specialty"), "A new Medium recruit starts without specialty history.")
+	run.data.offers = [recruit]
+	started = started and run.choose_recruit(recruit) and run.choose_recruit_loadout(loadout_choice)
+	_check(started and not run.data.has("recruit_specialty"), "A new Medium recruit starts without specialty history.")
 	if not started:
 		run.abandon_run()
 		return
 
 	# Keep two specialties eligible while testing ownership of a Common and an upgraded family.
-	var parallax_upgrade: String = TilePacking.next_options("parallax_shot")[0]
-	run.loadout.lanes[1].append(_signature_tile("backdraft_bolt", 4))
-	run.loadout.lanes[1].append(_signature_tile(parallax_upgrade, 6))
-	run.loadout.storage[0].append(_signature_tile("rivet_bolt", 0))
-	var eligible := ["retreat_shot", "spark_shot"]
+	var specialties := ClassDecks.specialties(recruit)
+	var upgrade: String = TilePacking.next_options(specialties[3])[0]
+	var lane: Array = run.loadout.lanes[1]
+	var last: Dictionary = lane.back()
+	var start: int = last.start + ArenaSim.TILES[last.id].width
+	lane.append(_signature_tile(specialties[2], start))
+	lane.append(_signature_tile(upgrade, start + ArenaSim.TILES[specialties[2]].width))
+	var starter := ClassDecks.starter(recruit)
+	run.loadout.storage[0].append(_signature_tile(starter, 0))
+	var eligible := specialties.slice(0, 2)
 	var reached_gate := run.choose_node("7-1") and run.finish_combat(true, [100, 100]) and run.reward("skip")
-	_check(reached_gate and run.reward_lane() == 1, "A Medium Upper Gate win must open Starshot's recruit draft.")
+	_check(reached_gate and run.reward_lane() == 1, "A Medium Upper Gate win must open %s's recruit draft." % recruit)
 	if not reached_gate:
 		run.abandon_run()
 		return
-	var first: String = run.data.get("starshot_recruit_specialty", "")
+	var first: String = run.data.get("recruit_specialty", "")
 	_check(first in eligible and first in run.data.offers and run.data.offers.size() == 3,
-		"The Upper Gate draft reserves a class specialty from a family Starshot does not own.")
-	_check(_draft_offers_rare(run, ClassDecks.signature("starshot")) and "rivet_bolt" in run.data.offers \
-		and run.reward_hint("rivet_bolt") == "Third copy",
-		"The reserved specialty must fit beside Starshot's Rare signature and third-copy upgrade.")
+		"The Upper Gate draft reserves a class specialty from a family %s does not own." % recruit)
+	_check(_draft_offers_rare(run, ClassDecks.signature(recruit)) and starter in run.data.offers \
+		and run.reward_hint(starter) == "Third copy",
+		"The reserved specialty must fit beside %s's Rare signature and third-copy upgrade." % recruit)
 	var gate_offers: Array = run.data.offers.duplicate()
 	_check(run.load_save(save_path) and run.reward_lane() == 1 and run.data.offers == gate_offers \
-		and run.data.get("starshot_recruit_specialty") == first,
+		and run.data.get("recruit_specialty") == first,
 		"Resuming a pending recruit draft must preserve its exact offers and specialty history.")
+	if recruit == "starshot":
+		run.data.starshot_recruit_specialty = first
+		run.data.erase("recruit_specialty")
+		_check(run.save() and run.load_save(save_path), "An older save can still carry Starshot's original specialty history.")
 
 	# Seed 1 allows an event and a shop between the gate and the second ordinary battle.
 	var reached_second := run.reward("skip") and run.choose_node("8-0") and run.event_choice(0) \
@@ -300,16 +342,16 @@ func _check_starshot_recruit_drafts() -> void:
 	if not reached_second:
 		run.abandon_run()
 		return
-	var second: String = run.data.get("starshot_recruit_specialty", "")
+	var second: String = run.data.get("recruit_specialty", "")
 	_check(second in eligible and second != first and second in run.data.offers,
 		"The second battle reserves a different unowned specialty even after the first one was skipped.")
-	_check("rivet_bolt" in run.data.offers and run.reward_hint("rivet_bolt") == "Third copy",
+	_check(starter in run.data.offers and run.reward_hint(starter) == "Third copy",
 		"The second battle also preserves an owned pair's upgrade opportunity.")
 	var reached_third := run.reward("skip") and run.choose_node("11-0") and run.finish_combat(true, [100, 100]) \
 		and run.reward("skip")
 	_check(reached_third and run.reward_lane() == 1 and run.data.offers.size() == 3 \
-		and run.data.get("starshot_recruit_specialty") == second,
-		"Later battle drafts are generated without reserving another Starshot specialty.")
+		and run.data.get("recruit_specialty") == second,
+		"Later battle drafts are generated without reserving another recruit specialty.")
 	run.abandon_run()
 
 

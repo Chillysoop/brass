@@ -1,0 +1,566 @@
+extends SceneTree
+
+# From the repository root:
+# godot --headless --path . --script tools/class_build_audit.gd -- --output=class-audit.json
+# Options: --difficulty=easy, --through-marshal, --as-recruit, --seeds=1,2,3, --classes=warden,hexwright
+# The default Medium audit stops after the first boss. The recruit audit samples natural
+# offers and continues through the Marshal. All runs use fresh scratch saves, Preferred
+# Hero access, Pocket Bell, and the same route policy. Drafts repack equipped tiles,
+# stow displaced tiles, and skip rerolls and forges.
+
+const FrontierRun = preload("res://scripts/frontier_run.gd")
+const ArenaSim = preload("res://scripts/arena_sim.gd")
+const TilePacking = preload("res://scripts/tile_packing.gd")
+
+const POLICIES := {
+	"warden": ["guard", "knockback"],
+	"hexwright": ["cluster", "isolate"],
+	"duelist": ["quick", "finisher"],
+	"apothecary": ["sustain", "tempo"],
+	"starshot": ["mobile", "precision"],
+}
+const ROUTE_PRIORITY := ["elite", "battle", "shop", "event", "rest", "boss"]
+const ELITE_RELIC_PRIORITY := ["barrage_rack", "twin_bell", "longshot_prism", "siege_fuse", "switchback_lens", "afterimage"]
+const BOSS_RELIC_PRIORITY := ["tollkeeper_signet", "bellmaker_long_echo", "bellmaker_resonant_plate"]
+const SPECIALTIES := {
+	"warden": ["iron_vow", "bellows_strike", "reversal_plate", "rampart_rush"],
+	"hexwright": ["shrapnel", "tether_dart", "convergence_pulse", "severing_tether"],
+	"duelist": ["finishing_cut", "slip_cut", "pinpoint_lunge", "vanishing_cut"],
+	"apothecary": ["pilgrim_aid", "lantern_shot", "tonic_dart", "catalyst_flask"],
+	"starshot": ["retreat_shot", "spark_shot", "backdraft_bolt", "parallax_shot"],
+}
+
+var scratch := ""
+var difficulty := "medium"
+var through_marshal := false
+var as_recruit := false
+
+
+func _initialize() -> void:
+	call_deferred("_run")
+
+
+func _run() -> void:
+	var seeds: Array = range(1, 9)
+	var classes: Array = POLICIES.keys()
+	var output := ""
+	for arg: String in OS.get_cmdline_user_args():
+		if arg.begins_with("--output="):
+			output = arg.trim_prefix("--output=")
+		elif arg.begins_with("--seeds="):
+			seeds = Array(arg.trim_prefix("--seeds=").split(",")).map(func(value: String): return int(value))
+		elif arg.begins_with("--classes="):
+			classes = Array(arg.trim_prefix("--classes=").split(","))
+		elif arg.begins_with("--difficulty="):
+			difficulty = arg.trim_prefix("--difficulty=")
+		elif arg == "--through-marshal":
+			through_marshal = true
+		elif arg == "--as-recruit":
+			as_recruit = true
+			through_marshal = true
+		else:
+			printerr("Unknown audit argument: ", arg)
+			quit(2)
+			return
+	var valid_seeds := not seeds.is_empty() and seeds.all(func(seed_value: int): return seed_value > 0)
+	var valid_classes := not classes.is_empty() and classes.all(func(class_id: String): return class_id in POLICIES)
+	var valid_scope := difficulty in ["easy", "medium"] and (not through_marshal or difficulty == "medium")
+	if not valid_seeds or not valid_classes or not valid_scope:
+		printerr("Expected positive seeds, supported starter classes, and an Easy or Medium scope.")
+		quit(2)
+		return
+	var temp := OS.get_environment("TEMP")
+	if temp.is_empty():
+		temp = OS.get_environment("TMPDIR")
+	if temp.is_empty():
+		temp = OS.get_user_data_dir()
+	scratch = temp.path_join("brass-class-audit-%d-%d" % [OS.get_process_id(), Time.get_ticks_usec()])
+	if DirAccess.make_dir_recursive_absolute(scratch) != OK:
+		printerr("Cannot create scratch saves at ", scratch)
+		quit(2)
+		return
+	var rows: Array = []
+	var summary := {}
+	for class_id: String in classes:
+		var eligible := seeds.filter(func(seed_value: int): return not as_recruit or _natural_recruit_offer(class_id, seed_value))
+		if eligible.is_empty():
+			printerr("No eligible seeds for ", class_id)
+			quit(2)
+			return
+		var class_runs := []
+		for seed_value: int in eligible:
+			for policy: String in POLICIES[class_id]:
+				var row := _expedition(class_id, seed_value, policy)
+				class_runs.append(row)
+				var ending: Array = [] if row.fights.is_empty() else row.fights.back().hp
+				print("%-11s %3d %-10s %-10s %s | %s" % [class_id, seed_value, policy, row.result, ending, ", ".join(row.final)])
+		rows.append_array(class_runs)
+		summary[class_id] = _summarize(class_id, class_runs)
+	if not output.is_empty():
+		var file := FileAccess.open(output, FileAccess.WRITE)
+		if file == null:
+			printerr("Cannot write audit output: ", output)
+			quit(2)
+			return
+		file.store_string(JSON.stringify({"difficulty": difficulty, "through_marshal": through_marshal, "as_recruit": as_recruit,
+			"seeds": seeds, "specialties": SPECIALTIES, "summary": summary, "runs": rows}, "\t"))
+	quit(1 if rows.any(func(row: Dictionary): return row.result == "incomplete") else 0)
+
+
+func _summarize(class_id: String, rows: Array) -> Dictionary:
+	var early := []
+	for index in range(3):
+		early.append({"drafts": 0, "specialty_offered": 0, "specialty_picked": 0})
+	var wins := 0
+	var final_overlap := 0.0
+	var paired_builds := 0
+	var different_families := 0
+	for index in range(rows.size()):
+		var row: Dictionary = rows[index]
+		wins += int(row.result == "victory")
+		var draft_index := 0
+		for draft: Dictionary in row.drafts:
+			if draft.kind != "reward" or draft.lane != row.lane or draft.encounter not in ["opening", "battle"]:
+				continue
+			var counts: Dictionary = early[draft_index]
+			counts.drafts += 1
+			counts.specialty_offered += int(draft.offers.any(func(id: String): return _family(id) in SPECIALTIES[class_id]))
+			counts.specialty_picked += int(_family(draft.pick) in SPECIALTIES[class_id])
+			draft_index += 1
+			if draft_index >= early.size():
+				break
+		if index % 2 != 0 or row.final.is_empty() or rows[index + 1].final.is_empty():
+			continue
+		var first := _families(row.final)
+		var second := _families(rows[index + 1].final)
+		var shared := first.keys().filter(func(id: String): return second.has(id)).size()
+		var union := first.size() + second.size() - shared
+		final_overlap += float(shared) / union
+		paired_builds += 1
+		different_families += int(shared < union)
+	var overlap := final_overlap / maxi(1, paired_builds)
+	print("%s summary: %d/%d wins, early specialty drafts %s, mean final family overlap %.3f across %d paired seeds" % [
+		class_id, wins, rows.size(), early, overlap, paired_builds])
+	return {"wins": wins, "total": rows.size(), "early_drafts": early, "paired_final_builds": paired_builds,
+		"paired_final_family_overlap": overlap, "different_final_families": different_families}
+
+
+func _families(ids: Array) -> Dictionary:
+	var result := {}
+	for id: String in ids:
+		result[_family(id)] = true
+	return result
+
+
+func _family(id: String) -> String:
+	return ArenaSim.TILES.get(id, {}).get("family", id)
+
+
+func _lead_for(class_id: String) -> String:
+	if not as_recruit:
+		return class_id
+	return "warden" if class_id == "starshot" else "starshot"
+
+
+func _natural_recruit_offer(class_id: String, seed_value: int) -> bool:
+	var probe := FrontierRun.new()
+	probe.save_path = scratch.path_join("offer-%s-%d.json" % [class_id, seed_value])
+	probe.profile.medium_unlocked = true
+	if not probe.start_run(seed_value, difficulty) or not probe.choose_preferred_hero(_lead_for(class_id)):
+		return false
+	probe.data.node = probe.data.layers[FrontierRun.NODES_PER_SEGMENT - 1][0]
+	probe._start_recruitment()
+	return class_id in probe.data.offers
+
+
+func _expedition(class_id: String, seed_value: int, policy: String) -> Dictionary:
+	var run := FrontierRun.new()
+	run.save_path = scratch.path_join("%s-%d-%s.json" % [class_id, seed_value, policy])
+	run.profile.medium_unlocked = true
+	var lead := _lead_for(class_id)
+	var hero_lane := 1 if as_recruit else 0
+	var lead_policy: String = POLICIES[lead][0] if as_recruit else policy
+	var row := {"class": class_id, "seed": seed_value, "policy": policy, "lane": hero_lane, "result": "incomplete", "phase": "",
+		"drafts": [], "fights": [], "route": [], "starter_trials": [], "final": [], "partner": "", "relics": []}
+	if not run.start_run(seed_value, difficulty) or not run.choose_preferred_hero(lead) or not run.choose_relic("pocket_bell"):
+		return row
+	var starters: Array = run.data.offers.duplicate()
+	var starter: String = _best_tile(starters, lead_policy, lead, true)
+	row.drafts.append({"node": "Start", "kind": "starter", "lane": 0, "hero": lead, "offers": starters, "pick": starter})
+	if not run.choose_starter(starter):
+		return row
+	if not as_recruit and policy == POLICIES[class_id][0]:
+		row.starter_trials = _starter_trials(run.encounter(), starters)
+	for step in range(75):
+		match run.data.phase:
+			"combat":
+				var encounter := run.encounter()
+				var fight := _fight(run.loadout.lanes, encounter)
+				fight.node = run.data.node.label
+				fight.row = run.data.node.row
+				row.fights.append(fight)
+				if fight.result.is_empty() or not run.finish_combat(fight.result == "victory", fight.hp):
+					break
+				if encounter.encounter == "boss" and not through_marshal:
+					row.result = fight.result
+					break
+			"reward":
+				var relics := run.elite_relic_offers().map(func(offer: Dictionary): return offer.id)
+				if not relics.is_empty() and not run.choose_elite_relic(_priority_pick(relics, ELITE_RELIC_PRIORITY)):
+					break
+				var lane := maxi(0, run.reward_lane())
+				var draft_policy := policy if lane == hero_lane else lead_policy if lane == 0 else "partner"
+				if not _claim_tile(run, lane, draft_policy, row):
+					break
+			"map":
+				var options := run.available_nodes()
+				if options.is_empty():
+					break
+				var node := _choose_node(options)
+				row.route.append(node.id)
+				if not run.choose_node(node.id):
+					break
+			"boss_relic":
+				if not run.choose_boss_relic(_priority_pick(run.data.offers, BOSS_RELIC_PRIORITY)):
+					break
+			"recruit":
+				var recruit := class_id if as_recruit else _priority_pick(run.data.offers, ["warden", "hexwright", "apothecary", "starshot", "duelist"])
+				row.partner = lead if as_recruit else recruit
+				if not run.choose_recruit(recruit):
+					break
+			"recruit_starter":
+				var loadout := _recruit_loadout(run.recruit_loadout_offers(), policy, class_id)
+				if not run.choose_recruit_loadout(loadout):
+					break
+				row.drafts.append({"node": "Recruit", "kind": "loadout", "lane": 1, "pick": loadout, "tiles": _ids(run.loadout.lanes[1])})
+			"shop":
+				if run.data.heroes.any(func(hero: Dictionary): return hero.hp <= hero.max_hp - 15):
+					run.shop_heal()
+				if not run.leave_node():
+					break
+			"rest":
+				if not run.rest("heal"):
+					break
+			"event":
+				if run.mystery_kind() == "class_cache":
+					if not run.mystery_choose_cache_category("damage"):
+						break
+				elif not run.leave_node():
+					break
+			"result":
+				row.result = run.data.result
+				break
+			_:
+				break
+	row.phase = run.data.phase
+	if hero_lane < run.loadout.lanes.size():
+		row.final = _ids(run.loadout.lanes[hero_lane])
+	row.relics = run.data.relics.duplicate()
+	return row
+
+
+func _recruit_loadout(options: Array, policy: String, class_id: String) -> String:
+	if not as_recruit:
+		return "assault"
+	var top := -INF
+	var selected: String = options.front().id
+	for option: Dictionary in options:
+		var score := _build_score(option.tiles, policy, class_id)
+		if score > top:
+			top = score
+			selected = option.id
+	return selected
+
+
+func _choose_node(options: Array) -> Dictionary:
+	for kind: String in ROUTE_PRIORITY:
+		for node: Dictionary in options:
+			if node.type == kind:
+				return node
+	return options.front()
+
+
+func _starter_trials(encounter: Dictionary, starters: Array) -> Array:
+	var trials := []
+	for id: String in starters:
+		var fight := _fight([[_entry(id, 0)]], encounter)
+		trials.append({"id": id, "result": fight.result, "hp": fight.hp[0], "ticks": fight.ticks,
+			"misses": fight.actors[0].misses})
+	return trials
+
+
+func _fight(lanes: Array, encounter: Dictionary) -> Dictionary:
+	var sim := ArenaSim.new()
+	sim.start(lanes, "solo", encounter)
+	while sim.outcome.is_empty() and sim.tick < 12000:
+		sim.step()
+	var actors := []
+	var hp := []
+	for lane in range(lanes.size()):
+		var actor: Dictionary = sim.units[lane]
+		hp.append(int(actor.hp))
+		var stats := {"tiles": lanes[lane].duplicate(true), "damage": 0, "activation": 0, "damaging": 0, "misses": 0,
+			"first_damage_tick": -1, "guard": 0, "healing": 0, "criticals": 0, "parallax_criticals": 0,
+			"backdraft_hits": 0, "pushes": 0, "pulls": 0, "retreats": 0, "duel_kill_followups": 0,
+			"damage_by_tile": {}, "healing_by_tile": {}}
+		for activation: Dictionary in sim.activations:
+			if int(activation.lane) != lane or activation.status == "unavailable":
+				continue
+			stats.activation += 1
+			stats.damaging += int(activation.damage > 0)
+			stats.misses += int(activation.status == "miss")
+		for event: Dictionary in sim.trace:
+			if event.actor != actor.id:
+				continue
+			match event.kind:
+				"hit":
+					if int(event.amount) <= 0:
+						continue
+					stats.damage += int(event.amount)
+					stats.damage_by_tile[event.tile] = stats.damage_by_tile.get(event.tile, 0) + int(event.amount)
+					if stats.first_damage_tick < 0:
+						stats.first_damage_tick = event.tick
+					stats.backdraft_hits += int(event.get("dash_followup", false))
+					if event.get("critical", false):
+						stats.criticals += 1
+						var spec: Dictionary = ArenaSim.TILES.get(event.tile, {})
+						if spec.has("long_critical_bonus") and event.from.distance_to(event.to) > ArenaSim.PRECISION_BONUS_RANGE:
+							stats.parallax_criticals += 1
+				"guard":
+					stats.guard += int(event.amount)
+				"heal":
+					stats.healing += int(event.amount)
+					stats.healing_by_tile[event.tile] = stats.healing_by_tile.get(event.tile, 0) + int(event.amount)
+				"push":
+					stats.pushes += 1
+				"pull":
+					stats.pulls += 1
+				"retreat":
+					stats.retreats += 1
+				"duel_kill_spent":
+					stats.duel_kill_followups += 1
+		actors.append(stats)
+	return {"result": sim.outcome, "hp": hp, "ticks": sim.tick, "kind": encounter.encounter,
+		"segment": encounter.segment, "boss": encounter.boss_id, "actors": actors}
+
+
+func _claim_tile(run: FrontierRun, lane: int, policy: String, row: Dictionary) -> bool:
+	var offers: Array = run.data.offers.duplicate()
+	var class_id: String = run.data.heroes[lane].id
+	var inventory := []
+	for items: Array in run._reward_inventory(lane):
+		inventory.append_array(_ids(items))
+	var hints := {}
+	for id: String in offers:
+		if not run.reward_hint(id).is_empty():
+			hints[id] = run.reward_hint(id)
+	var draft := {"node": run.data.node.label, "kind": "reward", "encounter": run.data.node.type,
+		"segment": run.data.segment, "lane": lane, "hero": class_id, "offers": offers, "hints": hints, "owned": inventory, "pick": "skip"}
+	row.drafts.append(draft)
+	if run.is_final_boss():
+		draft.pick = offers.front()
+		return run.reward(draft.pick)
+	var current := _ids(run.loadout.lanes[lane])
+	var current_score := _build_score(current, policy, class_id)
+	var best_gain := 0.1
+	var best_build := []
+	for id: String in offers:
+		var candidate := _best_build(current + [id], policy, class_id)
+		var gain := _build_score(candidate, policy, class_id) - current_score
+		if gain > best_gain:
+			best_gain = gain
+			best_build = candidate
+			draft.pick = id
+	if draft.pick == "skip":
+		return run.reward("skip")
+	var displaced := current + [draft.pick]
+	for id: String in best_build:
+		displaced.erase(id)
+	for id: String in displaced:
+		_stow(run.loadout.storage, id)
+	var entries := []
+	var beat := 0
+	var slot := -1
+	for id: String in best_build:
+		if slot < 0 and id == draft.pick:
+			slot = beat
+		entries.append(_entry(id, beat))
+		beat += int(ArenaSim.TILES[id].width)
+	run.loadout.lanes[lane] = entries
+	draft.equipped = best_build
+	return slot >= 0 and run.reward(draft.pick, {"lane": lane, "start": slot, "id": draft.pick})
+
+
+func _entry(id: String, start: int) -> Dictionary:
+	return {"id": id, "start": start, "target": ArenaSim.TILES[id].targets[0]}
+
+
+func _stow(storage: Array, id: String) -> void:
+	for items: Array in storage:
+		for start in range(TilePacking.STORAGE_COLUMNS):
+			if TilePacking.can_place(items, id, start, TilePacking.STORAGE_COLUMNS):
+				items.append(_entry(id, start))
+				return
+
+
+func _ids(row: Array) -> Array:
+	return row.map(func(item: Dictionary): return item.id)
+
+
+func _priority_pick(offers: Array, priorities: Array) -> String:
+	for id: String in priorities:
+		if id in offers:
+			return id
+	return offers.front()
+
+
+func _best_tile(offers: Array, policy: String, class_id: String, damaging: bool) -> String:
+	var top := -INF
+	var pick: String = offers.front()
+	for id: String in offers:
+		if damaging and int(ArenaSim.TILES[id].damage) <= 0:
+			continue
+		var width: int = ArenaSim.TILES[id].width
+		var score := _tile_score(id, policy, class_id) / sqrt(float(width))
+		if score > top:
+			pick = id
+			top = score
+	return pick
+
+
+func _best_build(pool: Array, policy: String, class_id: String) -> Array:
+	var best_score := -INF
+	var best := []
+	# The last entry is the candidate reward. A rearrangement alone cannot claim it.
+	var candidate_bit := 1 << (pool.size() - 1)
+	for mask in range(candidate_bit, candidate_bit << 1):
+		var candidate := []
+		var width := 0
+		for index in range(pool.size()):
+			if (mask & (1 << index)) == 0:
+				continue
+			var id: String = pool[index]
+			candidate.append(id)
+			width += int(ArenaSim.TILES[id].width)
+			if width > ArenaSim.BEATS:
+				break
+		if width > ArenaSim.BEATS:
+			continue
+		_order_tiles(candidate, policy)
+		var score := _build_score(candidate, policy, class_id)
+		if score > best_score:
+			best_score = score
+			best = candidate
+	return best
+
+
+func _order_tiles(ids: Array, policy: String) -> void:
+	var lanes := ["mobile", "cluster", "guard", "sustain", "tempo"]
+	if policy not in lanes:
+		return
+	# Place a setup tile immediately before each matching payoff when both fit.
+	for payoff in ids.duplicate():
+		var spec: Dictionary = ArenaSim.TILES[payoff]
+		var setup := &""
+		match policy:
+			"mobile":
+				if spec.has("dash_followup_damage"):
+					setup = &"retreat"
+			"cluster":
+				if spec.has("displaced_bonus"):
+					setup = &"pull"
+			"guard":
+				if spec.has("guard_bonus"):
+					setup = &"guard"
+			"sustain", "tempo":
+				if spec.has("healing_damage_bonus"):
+					setup = &"heal"
+		if setup.is_empty():
+			continue
+		var producer := ids.find_custom(func(id: String): return id != payoff and float(ArenaSim.TILES[id].get(setup, 0)) > 0)
+		if producer < 0:
+			continue
+		var id: String = ids.pop_at(producer)
+		ids.insert(ids.find(payoff), id)
+
+
+func _build_score(ids: Array, policy: String, class_id: String) -> float:
+	var score := 0.0
+	var prior: String = ""
+	for id: String in ids:
+		score += _tile_score(id, policy, class_id)
+		if not prior.is_empty():
+			var setup: Dictionary = ArenaSim.TILES[prior]
+			var payoff: Dictionary = ArenaSim.TILES[id]
+			if payoff.has("dash_followup_damage") and int(payoff.width) <= int(payoff.dash_followup_beats):
+				var chance := 0.0
+				if setup.has("retreat") or setup.get("charge", false):
+					chance = 0.80
+				elif ArenaSim.is_ranged_tile(prior):
+					chance = 0.60 * ArenaSim.critical_chance(class_id, prior, ArenaSim.PRECISION_BONUS_RANGE + 1.0)
+				score += chance * float(payoff.dash_followup_damage)
+			if payoff.has("displaced_bonus") and int(payoff.width) <= 3 \
+					and (setup.has("pull") or setup.has("push") or setup.has("isolation_pull_force")):
+				score += float(payoff.displaced_bonus) * 0.65
+			if payoff.has("guard_bonus") and float(setup.get("guard", 0)) > 0:
+				score += float(payoff.guard_bonus) * 0.55
+			if payoff.has("healing_damage_bonus") and float(setup.get("heal", 0)) > 0:
+				score += float(payoff.healing_damage_bonus) * 0.50
+		prior = id
+	return score
+
+
+func _tile_score(id: String, policy: String, class_id: String) -> float:
+	var tile: Dictionary = ArenaSim.TILES[id]
+	var damage := float(tile.damage)
+	var ranged := ArenaSim.is_ranged_tile(id)
+	var guard := float(tile.get("guard", 0)) + 0.9 * float(tile.get("ally_guard", 0))
+	var heal := float(tile.get("heal", 0))
+	var low_target := float(tile.get("low_hp_bonus", 0))
+	var splash := float(tile.get("splash_damage", 0))
+	var displaced := float(tile.get("displaced_bonus", 0))
+	var pulling := float(tile.get("pull", tile.get("isolation_pull_force", 0)))
+	var pushing := float(tile.get("push", 0)) + 0.3 * float(tile.get("sweep_push_force", 0))
+	var displacement := pulling + pushing
+	var mark := float(tile.get("mark_bonus", 0))
+	var movement_attack: bool = tile.get("charge", false) or tile.get("blink_strike", false)
+	var hit_factor := 1.0 if ranged else 0.88 if movement_attack else 0.74
+	var score := damage * hit_factor + guard * 0.63 + heal * 0.8 + low_target * 0.35
+	score += splash * 0.43 + mark * 0.68 + float(tile.get("windup_bonus", 0)) * 0.55
+	score += float(tile.get("recent_block_damage", 0)) * (0.75 if policy == "guard" else 0.45)
+	score += float(tile.get("convergence_damage_per_pull", 0)) * (1.5 if policy == "cluster" else 0.65)
+	score += float(tile.get("isolation_damage", 0)) * (0.72 if policy == "isolate" else 0.35)
+	score += float(tile.get("repeat_target_damage", 0)) * (0.76 if policy == "quick" else 0.55)
+	score += float(tile.get("duel_kill_bonus", 0)) * (0.80 if policy == "finisher" else 0.30)
+	score += float(tile.get("distance_bonus", 0)) * (1.18 if policy == "precision" else 0.66)
+	score += (2.0 if ranged and damage > 0.0 else 0.0) + minf(2.5, displacement / 180.0)
+	if tile.has("long_critical_bonus"):
+		var long_range_frequency := 0.8 if policy == "precision" else 0.4
+		score += (damage + 5.0) * (ArenaSim.CRITICAL_DAMAGE_MULTIPLIER - 1.0) * float(tile.long_critical_bonus) * long_range_frequency
+	match policy:
+		"guard":
+			score += guard * 0.9 + float(tile.get("guard_bonus", 0)) * 0.78
+		"knockback":
+			score += minf(10.0, pushing / 50.0) + displaced * 0.48
+		"cluster":
+			score += splash * 0.88 + displaced * 0.38
+		"isolate":
+			score += minf(10.0, pulling / 46.0) + displaced * 0.68 + guard * 0.32
+		"quick", "tempo":
+			if damage > 0.0:
+				score += (5.0 if int(tile.width) == 1 else 2.5 if int(tile.width) == 2 else 0.0) + mark * 0.22
+		"finisher":
+			score += low_target * 1.1 + damage * 0.18
+		"sustain":
+			score += guard * 0.75 + heal * 1.0 + (3.0 if ranged and damage > 0.0 else 0.0)
+		"mobile":
+			if tile.has("retreat") or tile.get("charge", false) or tile.get("blink_strike", false) or tile.get("family") == "blink":
+				score += 9.0
+		"precision":
+			if not tile.has("long_critical_bonus") and ("critical" in str(tile.description).to_lower() or "long-range" in str(tile.description).to_lower()):
+				score += 7.0
+		"partner":
+			score += guard * 0.7 + minf(6.0, displacement / 60.0)
+	if class_id == "apothecary" and damage > 0.0:
+		score += 1.5
+	return score

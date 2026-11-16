@@ -1,12 +1,21 @@
 extends RefCounted
 
+const SPECIALTY_COMMONS := {
+	"warden": ["iron_vow", "bellows_strike", "reversal_plate", "rampart_rush"],
+	"hexwright": ["shrapnel", "tether_dart", "convergence_pulse", "severing_tether"],
+	"apothecary": ["pilgrim_aid", "lantern_shot", "tonic_dart", "catalyst_flask"],
+	"starshot": ["retreat_shot", "spark_shot", "backdraft_bolt", "parallax_shot"],
+	"duelist": ["finishing_cut", "slip_cut", "pinpoint_lunge", "vanishing_cut"],
+}
+
 # The first core Common is also a starter option.
 const DECKS := {
 	"warden": {
 		"summary": "Shield strikes and knockback",
 		"common": ["shield_tap", "bash", "brace", "guard", "pike_thrust", "shove", "sweep", "shot", "cover", "first_aid"],
 		"uncommon": ["shoulder_check", "bulwark_bell", "field_dressing", "hook_sweep"],
-		"extra_common": ["iron_arc", "iron_vow", "line_guard", "pilgrim_aid", "rake", "bellows_strike", "spur", "stave_crush"],
+		"extra_common": ["iron_arc", "iron_vow", "line_guard", "pilgrim_aid", "rake", "bellows_strike", "spur", "stave_crush",
+			"reversal_plate", "rampart_rush"],
 		"signature": "rampart_counter",
 		"extra_uncommon": ["ward_lantern", "piercing_burst", "reverse_cut"],
 		"forge": ["bash", "guard"],
@@ -33,7 +42,8 @@ const DECKS := {
 		"summary": "Pull enemies into clustered attacks",
 		"common": ["grapple", "pull", "sweep", "shrapnel", "signal_flare", "blink", "pike_thrust", "shot", "bash", "brace"],
 		"uncommon": ["hook_sweep", "watchfire", "scattershot", "shoulder_check"],
-		"extra_common": ["line_guard", "short_fuse", "rake", "furnace_burst", "tether_dart", "bellows_strike", "lantern_shot", "spark_shot"],
+		"extra_common": ["line_guard", "short_fuse", "rake", "furnace_burst", "tether_dart", "bellows_strike", "lantern_shot", "spark_shot",
+			"convergence_pulse", "severing_tether"],
 		"signature": "gravity_spike",
 		"extra_uncommon": ["ward_lantern", "piercing_burst", "flare_mortar"],
 		"forge": ["bash", "blink", "slam"],
@@ -69,7 +79,8 @@ const DECKS := {
 		"summary": "Quick attacks, healing, and sustain",
 		"common": ["snap_shot", "first_aid", "finishing_cut", "jab", "cover", "shield_tap", "grapple", "guard", "shot", "bash"],
 		"uncommon": ["field_dressing", "bulwark_bell", "sundering_bolt", "hook_sweep"],
-		"extra_common": ["iron_arc", "iron_vow", "line_guard", "pilgrim_aid", "lantern_shot", "slip_cut", "crosscut", "tap_bolt"],
+		"extra_common": ["iron_arc", "iron_vow", "line_guard", "pilgrim_aid", "lantern_shot", "slip_cut", "crosscut", "tap_bolt",
+			"tonic_dart", "catalyst_flask"],
 		"signature": "triage_kit",
 		"extra_uncommon": ["ward_lantern", "reverse_cut", "flare_mortar"],
 		"forge": ["bash", "guard"],
@@ -106,7 +117,8 @@ const DECKS := {
 		"summary": "Quick hits on one target and finishing blows",
 		"common": ["jab", "finishing_cut", "shield_tap", "pike_thrust", "snap_shot", "blink", "signal_flare", "grapple", "shot", "bash"],
 		"uncommon": ["shoulder_check", "sundering_bolt", "hook_sweep", "crossfire"],
-		"extra_common": ["iron_arc", "iron_vow", "rake", "slip_cut", "spur", "crosscut", "tap_bolt", "stave_crush"],
+		"extra_common": ["iron_arc", "iron_vow", "rake", "slip_cut", "spur", "crosscut", "tap_bolt", "stave_crush",
+			"pinpoint_lunge", "vanishing_cut"],
 		"signature": "needle_point",
 		"extra_uncommon": ["ward_lantern", "reverse_cut", "flare_mortar"],
 		"forge": ["bash", "blink", "shot"],
@@ -117,6 +129,10 @@ const DECKS := {
 static func common(hero_id: String) -> Array:
 	var deck := _deck(hero_id)
 	return deck.common + deck.extra_common
+
+
+static func specialties(hero_id: String) -> Array:
+	return SPECIALTY_COMMONS.get(hero_id, [])
 
 
 static func uncommon(hero_id: String) -> Array:

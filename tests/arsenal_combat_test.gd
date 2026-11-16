@@ -15,6 +15,8 @@ func _initialize() -> void:
 	_check_class_attack_bonuses()
 	_check_class_support()
 	_check_displacement_window()
+	_check_convergence_pulse()
+	_check_severing_tether()
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
@@ -164,10 +166,67 @@ func _check_displacement_window() -> void:
 			"Rake gets its displacement bonus through the third beat, then it expires.")
 
 
-func _sim(lanes: Array) -> ArenaSim:
+func _check_convergence_pulse() -> void:
+	var id := "convergence_pulse"
+	var tile: Dictionary = ArenaSim.TILES[id]
+	var sim := _sim([[_tile(id, 0)]], "hexwright")
+	sim.units[0].pos = Vector2(170, 265)
+	var target: Dictionary = sim.units[1]
+	var resistant := _add_still_scout(sim, Vector2(375, 180))
+	resistant.attack.displacement = 0.0
+	var south := _add_still_scout(sim, Vector2(375, 355))
+	var east := _add_still_scout(sim, Vector2(475, 265))
+	var beyond_cap := _add_still_scout(sim, Vector2(495, 370))
+	var outside := _add_still_scout(sim, Vector2(650, 265))
+	var edge: int = tile.width * BEAT
+	_advance(sim, edge - 1)
+	_check(sim.activations.is_empty() and target.hp == target.max_hp and south.impulse == Vector2.ZERO,
+		"Convergence Pulse never pulls or deals damage before the tile's right edge.")
+	sim.step()
+	var hit_damage: int = tile.damage + 2 * int(tile.convergence_damage_per_pull)
+	_check(sim.activations[-1].tick == edge and sim.activations[-1].damage == hit_damage \
+		and target.hp == target.max_hp - hit_damage and target.impulse == Vector2.ZERO,
+		"Convergence Pulse adds damage to the primary hit for each successful additional pull at the right edge.")
+	_check(south.impulse.y < 0 and east.impulse.x < 0 and south.hp == south.max_hp and east.hp == east.max_hp,
+		"Convergence Pulse gathers surrounding foes toward its target without damaging them.")
+	_check(resistant.impulse == Vector2.ZERO and beyond_cap.impulse == Vector2.ZERO and outside.impulse == Vector2.ZERO,
+		"Convergence Pulse respects displacement resistance, the target cap, and the radius.")
+	var solo := _sim([[_tile(id, 0)]], "hexwright")
+	_advance(solo, edge)
+	_check(solo.activations[-1].damage == tile.damage, "Convergence Pulse keeps its base damage against a lone enemy.")
+
+
+func _check_severing_tether() -> void:
+	var id := "severing_tether"
+	var tile: Dictionary = ArenaSim.TILES[id]
+	var edge: int = tile.width * BEAT
+	for ally_offset: Vector2 in [Vector2(-90, 0), Vector2.ZERO, Vector2(90, 0), Vector2(-60, 150)]:
+		var sim := _sim([[_tile(id, 0, "highest_hp")]], "hexwright")
+		sim.units[0].pos = Vector2(170, 265)
+		var target: Dictionary = sim.units[1]
+		if not ally_offset.is_zero_approx():
+			_add_still_scout(sim, target.pos + ally_offset)
+		_advance(sim, edge - 1)
+		_check(sim.activations.is_empty() and target.impulse == Vector2.ZERO,
+			"Severing Tether waits for its right edge.")
+		sim.step()
+		var expected: int = tile.damage + (int(tile.isolation_damage) if ally_offset.x > 0.0 else 0)
+		_check(sim.activations[-1].tick == edge and target.hp == target.max_hp - expected and target.impulse.x < 0,
+			"Severing Tether adds damage only if the pull separates the target enough from its nearest living ally.")
+
+
+func _add_still_scout(sim: ArenaSim, position: Vector2) -> Dictionary:
+	sim._add_campaign_enemy("scout", position)
+	var scout: Dictionary = sim.units.back()
+	scout.speed = 0.0
+	scout.next_attack = 99999
+	return scout
+
+
+func _sim(lanes: Array, lead_class := "warden") -> ArenaSim:
 	var heroes: Array = []
 	for index in range(lanes.size()):
-		heroes.append({"hero": "warden"})
+		heroes.append({"hero": lead_class if index == 0 else "warden"})
 	var sim := ArenaSim.new()
 	sim.start(lanes, "solo", {"encounter": "opening", "heroes": heroes})
 	for unit: Dictionary in sim.units:

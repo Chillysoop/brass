@@ -303,7 +303,8 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String,
 				boss_drafts += 1
 				_check(run.choose_boss_relic("bastion_medal"), "Claim the Bastion Medal before recruiting on Hard.")
 			"recruit_starter":
-				var recruit_tile := "bash" if moonwreck_hard and run.data.heroes.size() == 3 else "shot"
+				var needs_bash: bool = crown_medium or ((crown_hard or moonwreck_hard) and run.data.heroes.size() == 3)
+				var recruit_tile := "bash" if needs_bash else "shot"
 				_check(run.choose_starter(recruit_tile), "Equip the recruited hero.")
 				if glass_hard or crown_medium or crown_hard or moonwreck_medium or moonwreck_hard:
 					var saved := FrontierRun.new()
@@ -410,7 +411,9 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String,
 					priorities = ["dawn_bastion", "event_horizon", "shield_ram", "hook_bash", "scattershot", "finishing_cut", "slam", "guard", "shot", "bash"]
 				while run.data.phase == "reward":
 					var chosen: String = _preferred_offer(run.data.offers, priorities)
-					if (crown_medium or crown_hard or moonwreck_hard) and _pull_tiles(game).size() < (2 if crown_hard else 1):
+					if (crown_medium or crown_hard) and _pull_tiles(game).count("hook_bash") < (2 if crown_hard else 1):
+						chosen = _preferred_offer(run.data.offers, ["hook_bash", "pull", "grapple"], chosen)
+					elif moonwreck_hard and _pull_tiles(game).is_empty():
 						chosen = _preferred_offer(run.data.offers, ["pull", "grapple", "hook_bash"], chosen)
 					if not _claim_tile_for_build(game, chosen) and not _skip_reward(game):
 						break
@@ -650,9 +653,10 @@ func _claim_tile_for_build(game: Control, id: String) -> bool:
 		return true
 	game.run_return()
 	var run_data: Dictionary = game.run.data
-	if id == "bash" and run_data.location == "crown" and int(run_data.segment) >= 2:
-		var hooks_needed := 2 if int(run_data.segment) == 3 else 1
-		# The Marshal needs a strong pull. The Regent needs one on each side.
+	if id == "bash" and run_data.location == "crown" \
+			and (run_data.difficulty == "medium" or int(run_data.segment) >= 2):
+		var hooks_needed := 2 if run_data.difficulty == "hard" else 1
+		# Forge a strong pull from the opening Bash copies. Hard needs another for the Regent.
 		if _pull_tiles(game).count("hook_bash") < hooks_needed:
 			game.forge_choose("hook_bash")
 			if not game.run.data.has("reward_combine"):

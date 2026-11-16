@@ -9,6 +9,8 @@ const BrassVarietyEnemies = preload("res://scripts/brass_variety_enemies.gd")
 const CrownVarietyEnemies = preload("res://scripts/crown_variety_enemies.gd")
 const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 const ClassMasteries = preload("res://scripts/class_masteries.gd")
+const StarterSpecialtyEffects = preload("res://scripts/starter_specialty_effects.gd")
+const ApothecaryTiles = preload("res://scripts/apothecary_tiles.gd")
 const PILOT_ENEMY_SCRIPTS := {
 	"brass": BrassVarietyEnemies, "glass": GlassPilotEnemies,
 	"crown": CrownVarietyEnemies, "moonwreck": MoonPilotEnemies,
@@ -502,6 +504,7 @@ var _spent_timeline_relics: Dictionary = {}
 var _overflow_healed := 0
 var _twin_bell_hits: Dictionary = {}
 var _healed_tiles: Dictionary = {}
+var _last_party_heal_loop := -1
 var _enemy_pursuit_sprints := false
 var _critical_seed := 0
 var _critical_streams: Dictionary = {}
@@ -590,6 +593,7 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 	_overflow_healed = 0
 	_twin_bell_hits.clear()
 	_healed_tiles.clear()
+	_last_party_heal_loop = -1
 	_reinforcement_wave.clear()
 	_critical_seed = int(options.get("seed", 0))
 	_critical_streams.clear()
@@ -1549,7 +1553,7 @@ func _record_mastery(message: String) -> void:
 func _add_tile_visual_cue(actor: Dictionary, tile_id: String, origin: Vector2, first_event: int) -> void:
 	var target := _find_unit(_activation.target)
 	var tile: Dictionary = TILES[tile_id]
-	var radius: float = tile.get("radius", tile.get("splash", tile.get("guard_radius", 0.0)))
+	var radius: float = tile.get("radius", tile.get("splash", tile.get("convergence_radius", tile.get("guard_radius", 0.0))))
 	var impact: Vector2 = target.get("pos", origin)
 	var anchored := false
 	var contact_points: Array[Vector2] = []
@@ -1792,6 +1796,13 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 	var impact: Vector2 = target.pos
 	_prepare_siege_fuse(actor, target, tile_id)
 	var damage: int = tile.damage + _distance_bonus(actor, target, tile)
+	var healing_bonus := int(tile.get("healing_damage_bonus", 0)) if _last_party_heal_loop == _loop_index() else 0
+	damage += healing_bonus
+	if tile.has("recent_block_damage") and tick - int(actor.get("last_guard_block_tick", -LOOP_TICKS)) \
+			<= int(tile.recent_block_beats) * TICKS_PER_BEAT:
+		damage += int(tile.recent_block_damage)
+	if actor.get("last_primary_tile_target", "") == target.id:
+		damage += int(tile.get("repeat_target_damage", 0))
 	if target.hp * 2 < target.max_hp:
 		damage += int(tile.get("low_hp_bonus", 0))
 	if not str(target.intent).is_empty() and target.intent_tick >= tick:
@@ -1810,13 +1821,14 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 	var pull_first: bool = tile.get("pull_before_hit", false)
 	if pull_first:
 		_pull_toward(actor, target, tile_id, _attack_origin(actor), tile.pull)
+	damage += StarterSpecialtyEffects.hexwright_pull_bonus(self, actor, target, tile_id, tile)
 	_strip_guard(actor, target, tile_id, int(tile.get("guard_break", 0)))
 	_damage(actor, target, damage, tile_id)
 	if tile.has("dash_followup_damage") and target.hp > 0:
 		var last_dash := int(actor.get("last_dash_tick", -1))
 		if last_dash >= 0 and last_dash < tick and tick - last_dash <= int(tile.dash_followup_beats) * TICKS_PER_BEAT:
 			_damage(actor, target, int(tile.dash_followup_damage), tile_id, "Backdraft", {"dash_followup": true})
-	_apply_splash(actor, target, tile_id, tile)
+	_apply_splash(actor, target, tile_id, tile, healing_bonus)
 	if target.hp > 0:
 		if tile.has("push"):
 			var moved := _displace("push", actor, target, tile_id, target.pos - _attack_origin(actor), tile.push)
@@ -1837,7 +1849,9 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 	if tile.has("retreat") and _retreat_from(actor, target, tile_id, tile.retreat):
 		if tile.has("ranged_followup_bonus"):
 			_prime_ranged_followup(actor, tile_id, tile)
-	if tile.has("guard"):
+	if tile.get("heal_overflow_on_hit", false):
+		ApothecaryTiles.apply_tonic(self, actor, tile_id, tile)
+	elif tile.has("guard"):
 		_apply_arsenal_support(actor, _arsenal_support_target(actor, tile), tile_id, tile)
 	if tile.has("ally_guard"):
 		_guard_from_tile(actor, _weakest_other_ally(actor), tile.ally_guard, tile_id)
@@ -1960,7 +1974,7 @@ func _distance_bonus(actor: Dictionary, target: Dictionary, tile: Dictionary) ->
 	return 0
 
 
-func _apply_splash(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
+func _apply_splash(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary, bonus := 0) -> void:
 	if not tile.has("splash"):
 		return
 	var neighbors := _splash_neighbors(actor, target, tile.splash)
@@ -1968,7 +1982,7 @@ func _apply_splash(actor: Dictionary, target: Dictionary, tile_id: String, tile:
 		_sort_by_distance(neighbors, target.pos)
 		neighbors.resize(mini(neighbors.size(), tile.splash_targets))
 	for enemy: Dictionary in neighbors:
-		_damage(actor, enemy, tile.splash_damage, tile_id)
+		_damage(actor, enemy, tile.splash_damage + bonus, tile_id)
 
 
 func _splash_neighbors(actor: Dictionary, target: Dictionary, radius: float) -> Array[Dictionary]:
@@ -3252,8 +3266,9 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		amount = maxi(0, amount - 6)
 	var blocked := mini(amount, target.guard)
 	target.guard -= blocked
-	if blocked > 0 and actor.side == "enemy" and target.side == "hero" and _has_relic(target, "bridgeplate"):
-		if int(target.get("bridgeplate_used_loop", -1)) != _loop_index():
+	if blocked > 0 and actor.side == "enemy" and target.side == "hero":
+		target["last_guard_block_tick"] = tick
+		if _has_relic(target, "bridgeplate") and int(target.get("bridgeplate_used_loop", -1)) != _loop_index():
 			target["bridgeplate_ready_loop"] = _loop_index()
 	var dealt := mini(amount - blocked, target.hp)
 	target.hp -= dealt
@@ -3940,6 +3955,8 @@ func _emit(kind: String, message: String, actor: Dictionary = {}, target: Dictio
 	event.merge(details)
 	trace.append(event)
 	_events.append(event)
+	if kind == "heal" and amount > 0 and target.get("side") == "hero":
+		_last_party_heal_loop = _loop_index()
 	if not _activation.is_empty() and actor.get("id") == _activation.actor and tile_id == _activation.tile:
 		match kind:
 			"miss":
@@ -3947,8 +3964,10 @@ func _emit(kind: String, message: String, actor: Dictionary = {}, target: Dictio
 				_activation.reason = message.get_slice(": ", 1)
 			"hit":
 				_activation.damage += amount
-				if _activation.get("enchantment") == "splash" and target.id == _activation.target:
-					_activation["primary_hit"] = true
+				if target.id == _activation.target:
+					actor["last_primary_tile_target"] = target.id
+					if _activation.get("enchantment") == "splash":
+						_activation["primary_hit"] = true
 			"guard":
 				_activation.guard += amount
 				if actor.id != target.id and TILES[tile_id].has("ally_guard"):

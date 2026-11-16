@@ -8,6 +8,8 @@ const TECHNIQUE_GAINS := {
 	"low_hp_bonus": 3, "guard_break": 3, "guard": 2, "mark_bonus": 2, "splash_damage": 2,
 	"splash": 12.0, "push": 38.0, "pull": 38.0, "retreat": 10.0,
 	"dash_followup_damage": 2, "long_critical_bonus": 0.05,
+	"recent_block_damage": 2, "repeat_target_damage": 2, "duel_kill_bonus": 2,
+	"convergence_damage_per_pull": 1, "isolation_damage": 2, "healing_damage_bonus": 1,
 }
 const AUTHORED_SIGNATURES := {
 	"rampart_counter": {
@@ -252,6 +254,8 @@ static func _upgrade(id: String, base: Dictionary, tier: int, ranks: int, techni
 			for field: String in TECHNIQUE_GAINS:
 				if tile.has(field):
 					tile[field] += TECHNIQUE_GAINS[field] * ranks
+			if tile.get("heal_overflow_on_hit", false):
+				tile.heal += ranks * 2
 			for force: String in ["push", "pull"]:
 				if tile.has(force):
 					tile[force] = minf(tile[force], 1000.0)
@@ -300,8 +304,15 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 		if tile.has("long_critical_bonus"):
 			lines.append("From more than 210 units away, add %d percentage points to this shot's critical chance." % [
 				roundi(tile.long_critical_bonus * 100.0)])
+		if tile.has("recent_block_damage"):
+			lines.append("Deal %d extra damage if your Guard absorbed an enemy hit in the last %d beats." % [
+				tile.recent_block_damage, tile.recent_block_beats])
+		if tile.has("repeat_target_damage"):
+			lines.append("Deal %d extra damage if the last attack you landed hit the same enemy." % tile.repeat_target_damage)
 		if tile.has("splash"):
 			lines.append("Deal %d damage to other enemies within %d range of the target." % [tile.splash_damage, int(tile.splash)])
+		if tile.has("healing_damage_bonus"):
+			lines.append("If a hero has already regained HP this loop, the hit and splash deal %d more damage." % tile.healing_damage_bonus)
 		if tile.has("push"):
 			lines.append("Push the target with %d force." % int(tile.push))
 		if tile.has("collision_bonus"):
@@ -314,6 +325,12 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 		if tile.has("cluster_pull_radius"):
 			lines.append("Pull other enemies within %d range toward the impact point with %d force." % [
 				int(tile.cluster_pull_radius), int(tile.cluster_pull_force)])
+		if tile.has("convergence_damage_per_pull"):
+			lines.append("Draw up to %d other enemies within %d units toward the target. Deal %d extra damage to the target for each enemy moved inward." % [
+				tile.convergence_targets, int(tile.convergence_radius), tile.convergence_damage_per_pull])
+		if tile.has("isolation_damage"):
+			lines.append("Pull the target toward you. Deal %d extra damage if the pull moves it at least %d units farther from its nearest ally." % [
+				tile.isolation_damage, int(tile.isolation_distance)])
 		if tile.has("retreat"):
 			lines.append("Back away by up to %d." % int(tile.retreat))
 		if tile.has("ranged_followup_bonus"):
@@ -351,7 +368,11 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 				burn_target, tile.ember_burn_damage, tile.ember_burn_ticks])
 	if tile.has("ally_guard"):
 		lines.append("On hit, give %d Guard to the living ally with the lowest HP. Gain it yourself if no ally is alive." % tile.ally_guard)
-	if tile.has("guard"):
+	var healing_dart: bool = tile.get("heal_overflow_on_hit", false)
+	if healing_dart:
+		lines.append("On hit, give %d Guard to the living hero missing the most HP. Once per fight, if they are injured, also restore up to %d HP and convert leftover healing to Guard." % [
+			tile.guard, tile.heal])
+	elif tile.has("guard"):
 		var when := " on hit." if tile.damage > 0 else "."
 		match tile.get("support", ""):
 			"party":
@@ -363,7 +384,7 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 	if tile.has("bastion_block_threshold"):
 		lines.append("On hit, ready a ward for %d beats. Absorb at least %d damage with Guard from a single enemy hit to give each living hero %d Guard once." % [
 			tile.bastion_beats, tile.bastion_block_threshold, tile.bastion_party_guard])
-	if tile.has("heal"):
+	if tile.has("heal") and not healing_dart:
 		var recipient := "yourself"
 		if tile.get("party_heal", false):
 			recipient = "each living hero"
