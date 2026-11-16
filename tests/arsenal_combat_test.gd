@@ -9,7 +9,9 @@ var failures: Array[String] = []
 func _initialize() -> void:
 	_check_mark()
 	_check_retreat()
+	_check_retreat_clearance()
 	_check_travel_tiles()
+	_check_curved_lunge()
 	_check_support()
 	_check_windup()
 	_check_class_attack_bonuses()
@@ -64,6 +66,32 @@ func _check_retreat() -> void:
 		"Retreat Shot must deal damage from the original point, then create distance.")
 
 
+func _check_retreat_clearance() -> void:
+	var corner := _sim([[_tile("retreat_shot", 0)]])
+	corner.units[0].pos = Vector2(73, 265)
+	corner.units[1].pos = Vector2(280, 265)
+	_advance(corner, 2 * BEAT - 1)
+	_check(corner.units[0].pos == Vector2(73, 265), "A retreat does not begin before its shot resolves.")
+	corner.step()
+	var events := corner.trace.filter(func(event: Dictionary): return event.tile == "retreat_shot")
+	_check(events.size() == 2 and events[0].kind == "hit" and events[1].kind == "retreat"
+		and events[0].from == events[1].from and events[1].tick == 2 * BEAT
+		and absf(corner.units[0].pos.y - 265.0) > 60.0
+		and corner.units[0].pos.distance_to(corner.units[1].pos) > 231.0,
+		"A wall-clipped retreat should peel sideways to open more distance and still fire from its departure.")
+	var blocked := _sim([[_tile("retreat_shot", 0)], []])
+	blocked.units[0].pos = Vector2(200, 265)
+	blocked.units[1].pos = Vector2(140, 265)
+	blocked.units[2].pos = Vector2(390, 265)
+	_advance(blocked, 2 * BEAT)
+	var landing: Vector2 = blocked.units[0].pos
+	var clearance: float = blocked.units[0].radius + blocked.units[1].radius + 3.0
+	var closest := Geometry2D.get_closest_point_to_segment(blocked.units[1].pos, Vector2(200, 265), landing)
+	_check(landing.distance_to(blocked.units[2].pos) > 240.0
+		and closest.distance_to(blocked.units[1].pos) >= clearance - 0.01,
+		"A body behind the hero should prompt a clearer retreat without crossing that body.")
+
+
 func _check_travel_tiles() -> void:
 	var dash := _sim([[_tile("shoulder_check", 0)], []])
 	dash.units[0].pos = Vector2(200, 265)
@@ -85,6 +113,47 @@ func _check_travel_tiles() -> void:
 	_check(teleports.size() == 1 and teleports[0].tick == 3 * BEAT
 		and blink.units[0].pos.x > blink.units[1].pos.x and blink.units[0].pos.x > 750.0,
 		"Blink crosses more than half the arena and lands behind its target on the tile edge.")
+
+
+func _check_curved_lunge() -> void:
+	for id in ["pinpoint_lunge", "pinpoint_lunge_upgrade_uncommon_technique"]:
+		var sim := _sim([[_tile(id, 0)], []], "duelist")
+		var origin := Vector2(200, 265)
+		var hero: Dictionary = sim.units[0]
+		var blocker: Dictionary = sim.units[1]
+		var target: Dictionary = sim.units[2]
+		hero.pos = origin
+		blocker.pos = Vector2(330, 265)
+		target.pos = Vector2(500, 265)
+		var release: int = ArenaSim.TILES[id].width * BEAT
+		_advance(sim, release - 1)
+		_check(hero.pos == origin and target.hp == target.max_hp,
+			"Pinpoint Lunge cannot start moving or deal damage before the right edge.")
+		sim.step()
+		var steps := sim.trace.filter(func(event: Dictionary): return event.tile == id and event.kind == "charge")
+		_check(steps.size() == 1 and steps[0].tick == release and steps[0].from == origin and steps[0].to == hero.pos
+			and target.hp < target.max_hp and blocker.hp == blocker.max_hp,
+			"Pinpoint Lunge should release an actual curved path and strike only the target, including after a forge upgrade.")
+		if steps.is_empty():
+			continue
+		var route: PackedVector2Array = steps[0].route
+		_check(route.size() > 3 and route[0] == origin and route[-1] == hero.pos and hero.pos.x > target.pos.x
+			and sim._free_position(hero.pos, hero), "The lunge should land behind a clear shoulder after taking the curve.")
+		for index in range(1, route.size()):
+			var point := route[index]
+			_check(point.is_equal_approx(sim._bounded(point, hero.radius)), "The lunge path must stay within the arena.")
+			for other in [blocker, target]:
+				var closest := Geometry2D.get_closest_point_to_segment(other.pos, route[index - 1], point)
+				_check(closest.distance_to(other.pos) >= hero.radius + other.radius + 2.95,
+					"Each segment of the curved route must clear living bodies.")
+	var fallback := _sim([[_tile("pinpoint_lunge", 0)], []], "duelist")
+	fallback.units[0].pos = Vector2(215, 49)
+	fallback.units[1].pos = Vector2(337, 134)
+	fallback.units[2].pos = Vector2(490, 50)
+	_advance(fallback, 2 * BEAT)
+	var charges := fallback.trace.filter(func(event: Dictionary): return event.kind == "charge" and event.tile == "pinpoint_lunge")
+	_check(charges.size() == 1 and charges[0].route.size() == 2 and fallback.units[2].hp < fallback.units[2].max_hp,
+		"Pinpoint Lunge should keep the original straight approach when bodies and a wall rule out both curves.")
 
 
 func _check_support() -> void:

@@ -105,7 +105,9 @@ static func _style(base_id: String, tile: Dictionary) -> String:
 		if int(tile.get("heal", 0)) > 0:
 			return "heal"
 		return "ward" if tile.get("support", "self") != "self" else "guard"
-	if tile.get("family", "") == "blink" or tile.get("blink_strike", false) or tile.has("blink_on_hit_retreat"):
+	if tile.has("blink_on_hit_retreat"):
+		return "shot"
+	if tile.get("family", "") == "blink" or tile.get("blink_strike", false):
 		return "blink"
 	if tile.get("charge", false) or base_id == "bulwark_charge":
 		return "dash"

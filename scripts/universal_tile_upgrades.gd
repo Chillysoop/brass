@@ -290,7 +290,9 @@ static func _upgrade(id: String, base: Dictionary, tier: int, ranks: int, techni
 static func _describe_upgrade(tile: Dictionary) -> String:
 	var lines := PackedStringArray()
 	if tile.damage > 0:
-		if tile.get("charge", false):
+		if tile.get("flank_charge", false):
+			lines.append("Curve around the target when there is room, or rush directly.")
+		elif tile.get("charge", false):
 			lines.append("Rush the target if the path is clear.")
 		if tile.get("blink_strike", false):
 			lines.append("Blink beside the target and strike if there is a clear landing.")

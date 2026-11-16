@@ -15,6 +15,7 @@ const CRITICAL_NUMBER_LIFETIME := 1.55
 const COMBAT_NUMBER_RISE := 23.0
 const COMBAT_NUMBER_PADDING := 6.0
 const COMBAT_NUMBER_POP := 1.16
+const CURVED_CHARGE_SECONDS := 0.11
 const INK := Color("#182126")
 const FRAME := Color("#47534b")
 const SAND := Color("#be955f")
@@ -42,7 +43,7 @@ const ARENA_PATHS := {
 const EFFECT_LENGTHS := {
 	"pull": 0.42,
 	"push": 0.33,
-	"teleport": 0.45,
+	"teleport": 0.56,
 	"veil_echo": 0.38,
 	"hit": 0.38,
 	"guard": 0.36,
@@ -67,11 +68,11 @@ const EFFECT_LENGTHS := {
 	"stepped_gear": 0.32,
 	"twin_bell": 0.46,
 	"guard_relay": 0.48,
-	"flanking_standard": 0.38,
+	"flanking_standard": 0.60,
 	"switchback_lens": 0.36,
 	"longshot_prism": 0.38,
-	"retreat": 0.30,
-	"charge": 0.36,
+	"retreat": 0.46,
+	"charge": 0.50,
 	"mark": 0.36,
 	"mark_spent": 0.32,
 	"guard_break": 0.34,
@@ -166,6 +167,7 @@ var _reinforcement_warning: Dictionary = {}
 var location := "brass"
 var _textures: Dictionary = {}
 var _positions: Dictionary = {}
+var _curved_charges: Dictionary = {}
 var _sprite_geometry: Dictionary = {}
 var _combat_sprites: Dictionary = {}
 var _gait_phases: Dictionary = {}
@@ -218,6 +220,7 @@ func reset_view(units_data: Array, lanes: Array = [], reinforcement: Dictionary 
 				"profile": _hero_profile(entry.id)})
 		_hero_clips.append(clips)
 	_positions.clear()
+	_curved_charges.clear()
 	_combat_sprites.clear()
 	_gait_phases.clear()
 	_gait_strengths.clear()
@@ -242,7 +245,6 @@ func present(units_data: Array, events: Array, tick := 0, attack_cues: Array = [
 			var started := int(unit.get("intent_start_tick", previous.x if finish <= previous.y else tick))
 			if previous != Vector2i(started, finish):
 				_windups[unit.id] = Vector2i(started, finish)
-	var cast_tiles := {}
 	for cue: Dictionary in attack_cues:
 		var profile := _hero_profile(cue.tile) if cue.kind == "hero_cast" else _enemy_profile(cue.tile, cue.get("attack", {}))
 		var effect := cue.duplicate()
@@ -251,7 +253,6 @@ func present(units_data: Array, events: Array, tick := 0, attack_cues: Array = [
 		effect["lifetime"] = AttackAnimation.lifetime(profile)
 		_attack_casts.append(effect)
 		_actor_casts[cue.actor] = effect
-		cast_tiles[cue.actor] = cue.tile
 		if _attack_casts.size() > MAX_CASTS:
 			var oldest: Dictionary = _attack_casts.pop_front()
 			if _actor_casts.get(oldest.actor, {}) == oldest:
@@ -274,10 +275,10 @@ func present(units_data: Array, events: Array, tick := 0, attack_cues: Array = [
 				var older := _effects[index]
 				if older.target == event.target and FLOATING_CUES.has(older.kind):
 					_effects.remove_at(index)
-		if kind == "teleport":
-			_positions[event.actor] = event.to
-			if cast_tiles.get(event.actor, "") == tile:
-				continue
+		if kind in ["charge", "retreat", "teleport"]:
+			_register_movement_effect(kind, event)
+		elif kind in ["push", "pull"] and _curved_charges.erase(event.target):
+			_positions[event.target] = event.from
 		var effect: Dictionary = event.duplicate()
 		effect["kind"] = kind
 		effect["age"] = 0.0
@@ -298,6 +299,12 @@ func _process(delta: float) -> void:
 	var blend := 1.0 - exp(-delta * 29.0)
 	for unit in units:
 		var position: Vector2 = unit.pos
+		var charge: Dictionary = _curved_charges.get(unit.id, {})
+		if not charge.is_empty():
+			_positions[unit.id] = _advance_curved_charge(unit.id, position, charge, delta)
+			_update_gait(unit, Vector2.ZERO, delta)
+			changed = true
+			continue
 		var previous: Vector2 = _positions.get(unit.id, position)
 		var traveled := Vector2.ZERO
 		if previous.distance_squared_to(position) > 0.005:
@@ -335,6 +342,32 @@ func _process(delta: float) -> void:
 		queue_redraw()
 
 
+func _register_movement_effect(kind: String, event: Dictionary) -> void:
+	if _curved_charges.erase(event.actor):
+		_positions[event.actor] = event.from
+	if kind == "teleport":
+		_positions[event.actor] = event.to
+	elif kind == "charge" and str(event.actor).begins_with("hero_"):
+		var route: PackedVector2Array = event.get("route", PackedVector2Array())
+		if route.size() > 2:
+			_positions[event.actor] = route[0]
+			_curved_charges[event.actor] = {"route": route, "age": 0.0}
+
+
+func _advance_curved_charge(actor: String, position: Vector2, charge: Dictionary, delta: float) -> Vector2:
+	charge.age += delta
+	var progress := float(charge.age) / CURVED_CHARGE_SECONDS
+	if progress >= 1.0:
+		_curved_charges.erase(actor)
+		return position
+	var route: PackedVector2Array = charge.route
+	var sample := ease(progress, 0.68) * (route.size() - 1)
+	var index := mini(floori(sample), route.size() - 2)
+	var point := route[index].lerp(route[index + 1], sample - index)
+	# The simulation can walk on from the landing while the rendering catches up.
+	return point + (position - route[-1]) * smoothstep(0.63, 1.0, progress)
+
+
 func _update_gait(unit: Dictionary, traveled: Vector2, delta: float) -> void:
 	var drive: Vector2 = unit.get("drive_velocity", Vector2.ZERO)
 	var driven := maxf(0.0, traveled.dot(drive.normalized()))
@@ -368,7 +401,10 @@ func _draw() -> void:
 		_draw_ground_effect(effect, field)
 	_draw_afterimages(field, sprite_scale)
 	var ordered_units := units.duplicate()
-	ordered_units.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.pos.y < b.pos.y)
+	ordered_units.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
+		var first: Vector2 = _positions.get(a.id, a.pos)
+		var second: Vector2 = _positions.get(b.id, b.pos)
+		return first.y < second.y)
 	var hud_space: Array[Rect2] = []
 	for unit in ordered_units:
 		if unit.hp <= 0:
@@ -425,6 +461,8 @@ func _sprite_facing(unit: Dictionary, cast: Dictionary) -> float:
 		var origin: Vector2 = cast.get("strike_from", cast.from)
 		if cast.get("profile", {}).get("style", "") in ["blink", "dash"]:
 			origin = cast.get("arrival", origin)
+			if _curved_charges.has(unit.id):
+				origin = _positions.get(unit.id, origin)
 		var direction: Vector2 = cast.to - origin
 		if absf(direction.x) > 8.0:
 			for target: Dictionary in units:
@@ -1106,12 +1144,7 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 					var end := from_point.lerp(to_point, 0.52 + progress * 0.31) + offset
 					draw_line(start, end, Color(color, opacity * 0.85), 2.4, true)
 		"teleport":
-			draw_dashed_line(from_point, to_point, Color(TELEPORT_COLOR, opacity * 0.75), 2.0, 6.0)
-			draw_arc(from_point, 7.0 + progress * 18.0, 0.0, TAU, 24, Color(TELEPORT_COLOR, opacity), 2.0, true)
-			draw_arc(to_point, 8.0 + opacity * 14.0, 0.0, TAU, 24, Color(TELEPORT_COLOR, opacity), 2.0, true)
-			for index in range(5):
-				var ray := Vector2.RIGHT.rotated(index * TAU / 5.0 + progress * 1.7)
-				draw_circle(to_point + ray * (8.0 + progress * 27.0), 2.2 * opacity, Color(TELEPORT_COLOR, opacity), true, -1.0, true)
+			AttackAnimation.draw_blink_transition(self, from_point, to_point, progress)
 		"veil_echo":
 			var lift := Vector2(0, -18)
 			var departure := from_point + lift
@@ -1120,16 +1153,10 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			draw_arc(departure, 9.0 + progress * 11.0, 0.0, TAU, 24, Color(TELEPORT_COLOR, opacity), 2.0, true)
 			draw_dashed_line(departure, tip, Color(TELEPORT_COLOR, opacity * 0.85), 2.0, 6.0)
 			draw_circle(tip, 3.5 * opacity, Color(WHITE, opacity), true, -1.0, true)
-		"charge", "retreat":
-			var accent := GOLD if kind == "charge" else HERO_COLOR
-			var direction := from_point.direction_to(to_point)
-			var cross := direction.orthogonal()
-			for streak in range(3):
-				var offset := cross * float(streak - 1) * 6.0 - Vector2(0, 12)
-				var start := from_point.lerp(to_point, 0.11 * streak + progress * 0.42)
-				var finish := start.move_toward(to_point, minf(72.0, from_point.distance_to(to_point) * 0.40))
-				draw_line(start + offset, finish + offset, Color(accent, opacity * 0.75), 2.4, true)
-			_draw_ellipse(to_point, Vector2(8.0 + progress * 18.0, 4.0 + progress * 8.0), Color(accent, opacity * 0.20))
+		"charge":
+			_draw_charge_path(_project_charge_path(effect, field), progress)
+		"retreat":
+			_draw_retreat_path(from_point, to_point, progress)
 		"ranged_followup_ready", "lance_return_ready":
 			var center := to_point - Vector2(0.0, 16.0)
 			var radius := lerpf(21.0, 8.0, progress)
@@ -1198,13 +1225,6 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			draw_line(from_point + height, to_point + height, Color(color, opacity * 0.38), 2.0, true)
 			for center: Vector2 in [from_point + height, to_point + height]:
 				draw_arc(center, lerpf(9.0, 25.0, progress), 0.0, TAU, 24, color, 2.5, true)
-		"flanking_standard":
-			var center := to_point - Vector2(0.0, 15.0)
-			var radius := lerpf(33.0, 11.0, progress)
-			var angle := from_point.direction_to(to_point).angle()
-			for side in range(2):
-				var start := angle + side * PI - 0.62
-				draw_arc(center, radius, start, start + 1.24, 12, Color(GOLD, opacity), 3.0, true)
 		"switchback_lens":
 			var radius := lerpf(28.0, 13.0, progress)
 			for index in range(2):
@@ -1253,8 +1273,81 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			_draw_ellipse(from_point, impact_radius, Color(ENEMY_COLOR, opacity * 0.22))
 
 
+func _project_charge_path(effect: Dictionary, field: Rect2) -> PackedVector2Array:
+	var route: PackedVector2Array = effect.get("route", PackedVector2Array())
+	if route.size() < 2:
+		route = PackedVector2Array([effect.from, effect.to])
+	var points := PackedVector2Array()
+	for world_point: Vector2 in route:
+		var point := _project(world_point, field)
+		if points.is_empty() or points[-1].distance_squared_to(point) >= 1.0:
+			points.append(point)
+	return points
+
+
+func _draw_charge_path(points: PackedVector2Array, progress: float) -> void:
+	if points.size() < 2:
+		return
+	var opacity := 1.0 - smoothstep(0.28, 1.0, progress)
+	var light := Color("#ffda91", opacity)
+	var edge := Color(INK, opacity * 0.90)
+	var landing := points[-1]
+	var direction := points[-2].direction_to(landing)
+	var pulse := lerpf(9.0, 18.0, progress)
+	_draw_ellipse(landing, Vector2(pulse, pulse * 0.43), Color(light, opacity * 0.30))
+	draw_polyline(points, edge, 7.5, true)
+	draw_polyline(points, light, 3.1, true)
+	_draw_motion_chevron(landing, direction, 11.0, light, edge)
+
+
+func _draw_retreat_path(departure: Vector2, landing: Vector2, progress: float) -> void:
+	var length := departure.distance_to(landing)
+	if length < 1.0:
+		return
+	var opacity := 1.0 - smoothstep(0.22, 1.0, progress)
+	var light := Color("#a2efe1", opacity)
+	var edge := Color(INK, opacity * 0.90)
+	var direction := departure.direction_to(landing)
+	var pulse := lerpf(7.0, 15.0, progress)
+	_draw_ellipse(landing, Vector2(pulse, pulse * 0.43), Color(light, opacity * 0.28))
+	draw_dashed_line(departure, landing, edge, 5.6, 5.0)
+	draw_dashed_line(departure, landing, light, 2.1, 5.0)
+	var arrow_size := clampf(length * 0.15, 4.0, 8.0)
+	if length >= 15.0:
+		_draw_motion_chevron(departure.lerp(landing, 0.52), direction, arrow_size, light, edge)
+	_draw_motion_chevron(landing, direction, arrow_size, light, edge)
+
+
+func _flanking_approaches(effect: Dictionary, field: Rect2) -> Array[Vector2]:
+	var scale := field.size / WORLD_SIZE
+	var current: Vector2 = effect.from - effect.to
+	var previous: Vector2 = effect.get("previous_direction", Vector2.ZERO)
+	return [(current * scale).normalized(), (previous * scale).normalized()]
+
+
+func _draw_flanking_arrows(effect: Dictionary, field: Rect2, progress: float) -> void:
+	var target := _project(effect.to, field) - Vector2(0.0, 10.0)
+	var opacity := 1.0 - smoothstep(0.28, 1.0, progress)
+	var radius := lerpf(33.0, 21.0, smoothstep(0.0, 0.48, progress))
+	for approach: Vector2 in _flanking_approaches(effect, field):
+		if not approach.is_zero_approx():
+			_draw_motion_chevron(target + approach * radius, -approach, 11.0,
+				Color("#ffe6ad", opacity), Color(INK, opacity * 0.94))
+
+
+func _draw_motion_chevron(tip: Vector2, direction: Vector2, length: float, light: Color, edge: Color) -> void:
+	var back := tip - direction * length
+	var arm := direction.orthogonal() * length * 0.58
+	var points := PackedVector2Array([back + arm, tip, back - arm])
+	draw_polyline(points, edge, 6.1, true)
+	draw_polyline(points, light, 2.8, true)
+
+
 func _draw_feedback(effect: Dictionary, field: Rect2) -> void:
 	var kind: String = effect.kind
+	if kind == "flanking_standard":
+		_draw_flanking_arrows(effect, field, float(effect.age) / float(EFFECT_LENGTHS[kind]))
+		return
 	if kind not in ["hit", "miss", "wreckmaster_slam_miss"] and not FLOATING_CUES.has(kind):
 		return
 	var from_drone := kind in ["repair_interrupted", "repair_separated"]

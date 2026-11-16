@@ -60,6 +60,8 @@ func _run() -> void:
 	_check_ranged_standoff(view)
 	_check_limb_pose(view)
 	_check_fast_windup(view)
+	_check_movement_paths(view)
+	_check_fast_mobility(view)
 	view.queue_free()
 	for failure: String in _failures:
 		printerr(failure)
@@ -101,6 +103,92 @@ func _check_fast_windup(view: ArenaView) -> void:
 	view.present(sim.units, [], 106, [], 3)
 	_expect(not view._windups.has(enemy.id) and not view._actor_casts.has(enemy.id),
 		"Canceling a windup must clear the warning without inventing a release.")
+
+
+func _check_movement_paths(view: ArenaView) -> void:
+	var field := Rect2(40, 65, 800, 260)
+	var departure := Vector2(310, 270)
+	var shoulder := Vector2(432, 211)
+	var landing := Vector2(514, 278)
+	var route := PackedVector2Array([departure, shoulder, landing])
+	var path := view._project_charge_path({"from": departure, "to": landing, "route": route}, field)
+	_expect(path.size() == 3 and path[0].is_equal_approx(Vector2(288, 200))
+		and path[1].is_equal_approx(Vector2(385.6, 170.5)) and path[2].is_equal_approx(Vector2(451.2, 204)),
+		"A curved charge cue keeps the actual bend and landing on a scaled battlefield.")
+	_expect(view._project_charge_path({"from": departure, "to": departure}, field).size() == 1,
+		"A charge with no movement cannot invent a path.")
+
+	var flank := {"kind": "relic_proc", "tile": "flanking_standard", "actor": "hero_2", "target": "rival",
+		"from": departure, "to": landing, "previous_direction": Vector2(0.36, -0.93).normalized()}
+	var approaches := view._flanking_approaches(flank, field)
+	var scale := field.size / ArenaView.WORLD_SIZE
+	_expect(approaches[0].is_equal_approx(((departure - landing) * scale).normalized())
+		and approaches[1].is_equal_approx((flank.previous_direction * scale).normalized())
+		and not approaches[0].is_equal_approx(-approaches[1]), "The flank draws the two recorded angles, including a non-mirrored attack.")
+	view.reset_view([])
+	view.present([], [flank], 63, [], 3)
+	view._process(0.33)
+	_expect(view._effects.size() == 1 and view._effects[0].kind == "flanking_standard",
+		"The flank has a legible lifetime even at 3× speed.")
+	view._process(0.31)
+	_expect(view._effects.is_empty(), "A flank cue expires on its presentation clock.")
+
+
+func _check_fast_mobility(view: ArenaView) -> void:
+	var movement_types := {"blink": "teleport", "veil_step": "teleport", "backdraft_bolt": "retreat", "pinpoint_lunge": "charge"}
+	for multiplier in [2, 3]:
+		for id: String in movement_types:
+			var lanes := [[{"id": id, "start": 0}]]
+			var sim := _range_fixture("duelist" if id == "pinpoint_lunge" else "wayfarer", lanes[0])
+			var hero: Dictionary = sim.units[0]
+			hero.speed = 0.0
+			var origin: Vector2 = hero.pos
+			var kind: String = movement_types[id]
+			view.reset_view(sim.units, lanes)
+			var edge: int = ArenaSim.TILES[id].width * ArenaSim.TICKS_PER_BEAT
+			while sim.tick < edge - 1:
+				var events := sim.step()
+				view.present(sim.units, events, sim.tick, sim.visual_cues, multiplier)
+			_expect(view._effects.is_empty() and view._attack_casts.is_empty(),
+				"%s cannot show its movement or attack before the firing edge at %d×." % [id, multiplier])
+			var events := sim.step()
+			view.present(sim.units, events, sim.tick, sim.visual_cues, multiplier)
+			var motion := view._effects.filter(func(effect: Dictionary): return effect.kind == kind)
+			_expect(motion.size() == 1 and motion[0].from == origin and motion[0].to == hero.pos and hero.pos != origin,
+				"%s shows exactly one resolved movement between its real endpoints at %d×." % [id, multiplier])
+			if id == "veil_step":
+				var cast: Dictionary = view._actor_casts.get(hero.id, {})
+				_expect(not cast.is_empty() and cast.profile.style == "shot" and cast.strike_from == origin
+					and cast.arrival == hero.pos, "Veil Step shows a shot from before the blink alongside its portal cue.")
+			if id == "pinpoint_lunge" and motion.size() == 1:
+				_check_curved_charge_sprite(view, sim, motion[0], multiplier)
+			view._process(0.30)
+			_expect(view._effects.any(func(effect: Dictionary): return effect.kind == kind),
+				"%s's movement survives the same real-time display window at %d×." % [id, multiplier])
+
+
+func _check_curved_charge_sprite(view: ArenaView, sim: ArenaSim, motion: Dictionary, multiplier: int) -> void:
+	var hero: Dictionary = sim.units[0]
+	_expect(view._positions[hero.id] == motion.from and sim.activations[0].tick == motion.tick
+		and sim.activations[0].damage > 0, "The curved sprite starts at departure while the hit records at the tile edge.")
+	var cast: Dictionary = view._actor_casts[hero.id]
+	_expect(view._sprite_facing(hero, cast) == signf(cast.to.x - motion.from.x),
+		"A charging hero faces its target from the visible part of the route.")
+	view._process(ArenaView.CURVED_CHARGE_SECONDS * 0.5)
+	var midpoint: Vector2 = view._positions[hero.id]
+	var straight := Geometry2D.get_closest_point_to_segment(midpoint, motion.from, motion.to)
+	_expect(midpoint.distance_to(straight) > 8.0, "The sprite follows the curved route around the target at %d×." % multiplier)
+	if multiplier == 3:
+		hero.pos += Vector2(30.0, 26.0)
+		var blink := {"kind": "teleport", "tile": "blink", "actor": hero.id, "target": sim.units[1].id,
+			"from": motion.to, "to": hero.pos}
+		view.present(sim.units, [blink], sim.tick + 1, [], multiplier)
+	else:
+		hero.pos += Vector2(3.0, 1.0)
+		view.present(sim.units, [], sim.tick + 1, [], multiplier)
+		view._process(ArenaView.CURVED_CHARGE_SECONDS * 0.56)
+	_expect(not view._curved_charges.has(hero.id) and view._positions[hero.id] == hero.pos,
+		"The curved sprite reconciles with the latest position after ongoing movement or a new blink.")
 
 
 func _check_ranged_standoff(view: ArenaView) -> void:

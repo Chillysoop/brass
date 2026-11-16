@@ -144,8 +144,8 @@ const SPECS := {
 	},
 	"pinpoint_lunge": {
 		"label": "Pinpoint Lunge", "width": 2, "range": 335.0, "damage": 13, "rarity": "common",
-		"charge": true, "repeat_target_damage": 6, "targets": ENEMY_TARGETS, "icon": "battle",
-		"description": "Rush the target if the path is clear. Deal 6 extra damage if the last attack you landed hit the same enemy.",
+		"charge": true, "flank_charge": true, "repeat_target_damage": 6, "targets": ENEMY_TARGETS, "icon": "battle",
+		"description": "Curve around the target when there is room, or rush directly. Deal 6 extra damage if your last landed attack hit the same enemy.",
 	},
 	"vanishing_cut": {
 		"label": "Vanishing Cut", "width": 3, "range": 420.0, "damage": 15, "rarity": "common",

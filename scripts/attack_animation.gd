@@ -180,39 +180,32 @@ static func draw_cast(canvas: CanvasItem, profile: Dictionary, start: Vector2, t
 				var joint := hook.lerp(anchor, (i + progress) / (n + 1.0))
 				_diamond(canvas, joint, size * 0.11, ink, 1.5)
 		"dash", "blink":
-			var last := arrival if not start.is_equal_approx(arrival) else start.move_toward(target, size * 0.72)
-			if style == "blink":
-				_draw_blink(canvas, start, last, size, progress, hit, ink, light)
-			else:
-				for i in range(n):
-					var across := normal * (i - (n - 1) * 0.5) * size * 0.18
-					_line(canvas, start.lerp(last, progress * 0.72) + lift + across, last + lift + across, outline, ink, light, 1.5)
-			if hit and not target.is_equal_approx(last):
-				_sparks(canvas, end_chest, direction.angle(), size * 0.66, n + 2, expansion, ink)
+			if hit:
+				_sparks(canvas, end_chest, arrival.direction_to(target).angle(), size * 0.66, n + 2, expansion, ink)
 		"guard", "ward", "heal", "mark", "mine":
 			_draw_glyph(canvas, style, start, target if hit else start, lift, size, variant, n, progress, ink, light)
 
 
-static func _draw_blink(canvas: CanvasItem, start: Vector2, arrival: Vector2, size: float, progress: float,
-		hit: bool, ink: Color, light: Color) -> void:
-	var trail_alpha := 1.0 - progress
-	var edge := Color("#392557", maxf(0.0, trail_alpha * 0.84))
-	var portal_radius := Vector2(size * 0.92, size * 0.40)
-	var departure := portal_radius * lerpf(1.08, 0.23, progress)
-	_ellipse(canvas, start, departure, 0.0, TAU, edge, 5.0)
-	_ellipse(canvas, start, departure, 0.0, TAU, ink, 2.9)
-	_diamond(canvas, start - Vector2(0.0, size * 0.53), size * 0.28 * trail_alpha, light, 2.0)
-	if not hit:
+static func draw_blink_transition(canvas: CanvasItem, start: Vector2, arrival: Vector2, progress: float) -> void:
+	if start.distance_squared_to(arrival) < 1.0:
 		return
-	var arrival_ring := portal_radius * lerpf(0.44, 1.37, progress)
-	_ellipse(canvas, arrival, arrival_ring, 0.0, TAU, edge, 5.2)
-	_ellipse(canvas, arrival, arrival_ring, 0.0, TAU, Color("#e9d6ff", trail_alpha), 3.0)
-	_ellipse(canvas, arrival, arrival_ring * 0.68, 0.0, TAU, ink, 1.7)
-	var trail_height := Vector2(0.0, -size * 0.63)
-	var tail := start.lerp(arrival, progress * 0.78) + trail_height
-	canvas.draw_dashed_line(tail, arrival + trail_height, edge, 3.8, maxf(3.0, size * 0.22))
-	canvas.draw_dashed_line(tail, arrival + trail_height, light, 1.9, maxf(3.0, size * 0.22))
-	_sparks(canvas, arrival - Vector2(0.0, size * 0.32), 0.6, size * 0.57, 7, progress, ink)
+	var opacity := 1.0 - smoothstep(0.30, 1.0, progress)
+	var edge := Color("#382154", opacity * 0.95)
+	var violet := Color("#cfafff", opacity)
+	var light := Color("#f2e5ff", opacity)
+	var lift := Vector2(0.0, -11.0)
+	canvas.draw_dashed_line(start + lift, arrival + lift, edge, 5.4, 7.0)
+	canvas.draw_dashed_line(start + lift, arrival + lift, violet, 2.1, 7.0)
+	var portal := Vector2(19.0, 8.0)
+	var departure := portal * lerpf(1.12, 0.54, progress)
+	_ellipse(canvas, start, departure, 0.0, TAU, edge, 5.8)
+	_ellipse(canvas, start, departure, 0.0, TAU, violet, 2.6)
+	_diamond(canvas, start + lift, 6.5, violet, 2.3)
+	var landing := portal * lerpf(0.83, 1.53, progress)
+	_ellipse(canvas, arrival, landing, 0.0, TAU, edge, 6.5)
+	_ellipse(canvas, arrival, landing, 0.0, TAU, light, 3.3)
+	_ellipse(canvas, arrival, landing * 0.70, 0.0, TAU, violet, 2.0)
+	_sparks(canvas, arrival + lift * 0.55, 0.6, 16.0, 6, progress, light)
 
 
 static func _draw_skyline(canvas: CanvasItem, start: Vector2, target_chest: Vector2, size: float, progress: float,

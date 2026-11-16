@@ -177,6 +177,7 @@ func _check_flanking_standard() -> void:
 	var procs := _procs(sim, "flanking_standard")
 	_check(procs.size() == 1 and procs[0].amount == ArenaSim.FLANKING_STANDARD_DAMAGE and procs[0].tick == 4 * BEAT
 		and procs[0].lane == 1 and procs[0].source_tile == "shot" and procs[0].from == sim.units[1].pos
+		and procs[0].previous_direction.is_equal_approx(Vector2.LEFT)
 		and sim.activations[-1].relics[0].source_beat == 2 and sim.units[2].hp < control.units[2].hp,
 		"Opposite-side strikes within exactly two beats should add damage to the second hit and identify both tiles.")
 	_advance(sim, 8 * BEAT)
@@ -210,6 +211,14 @@ func _check_flanking_standard() -> void:
 	procs = _procs(blink, "flanking_standard")
 	_check(procs.size() == 1 and procs[0].source_tile == "blink" and procs[0].from == blink.units[1].pos,
 		"Blink can complete a flank from its landing position when both heroes started in front.")
+	var lunge := _sim("flanking_standard", [[_tile("shot", 0)], [_tile("pinpoint_lunge", 2)]])
+	lunge.units[0].pos = Vector2(330, 265)
+	lunge.units[1].pos = Vector2(200, 265)
+	_advance(lunge, 4 * BEAT)
+	procs = _procs(lunge, "flanking_standard")
+	_check(procs.size() == 1 and procs[0].source_tile == "pinpoint_lunge" and procs[0].from == lunge.units[1].pos
+		and procs[0].previous_direction.is_equal_approx(Vector2.LEFT),
+		"A clear Pinpoint Lunge should complete the flank from its swept landing and report the earlier strike direction.")
 
 
 func _flank_fixture(lanes: Array) -> ArenaSim:

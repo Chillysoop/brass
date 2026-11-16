@@ -1717,8 +1717,8 @@ func _siege_pull_landing(enemy: Dictionary, center: Vector2) -> Vector2:
 	return _slide_landing(enemy, end)
 
 
-func _slide_landing(mover: Dictionary, end: Vector2) -> Vector2:
-	var start: Vector2 = mover.pos
+func _slide_landing(mover: Dictionary, end: Vector2, origin: Vector2 = Vector2.INF) -> Vector2:
+	var start: Vector2 = mover.pos if origin == Vector2.INF else origin
 	if end.is_equal_approx(start):
 		return start
 	var fraction := 1.0
@@ -1975,17 +1975,29 @@ func _retreat_from(actor: Dictionary, target: Dictionary, tile_id: String, dista
 	var away := threat.direction_to(start)
 	if away.is_zero_approx():
 		away = Vector2.LEFT
-	for angle in [0.0, 0.55, -0.55, 1.05, -1.05]:
+	var angles: Array[float] = [0.0, 0.55, -0.55, 1.05, -1.05]
+	var look_for_clearer_path: bool = actor.side == "hero"
+	if look_for_clearer_path:
+		angles.append_array([PI * 0.5, -PI * 0.5])
+	var best_landing := start
+	var best_clearance := start.distance_squared_to(threat)
+	for angle in angles:
 		var destination := _bounded(start + away.rotated(angle) * distance, actor.radius)
 		var landing := _slide_landing(actor, destination)
-		if landing.distance_squared_to(threat) <= start.distance_squared_to(threat) or landing.distance_squared_to(start) < 1.0:
+		var clearance := landing.distance_squared_to(threat)
+		if clearance <= best_clearance or landing.distance_squared_to(start) < 1.0:
 			continue
-		actor.pos = landing
-		actor.prev_pos = landing
-		actor["last_dash_tick"] = tick
-		_emit("retreat", "%s retreats from %s." % [actor.name, target.name], actor, target, tile_id, 0, start, landing)
-		return true
-	return false
+		best_landing = landing
+		best_clearance = clearance
+		if not look_for_clearer_path or (angle == 0.0 and landing.is_equal_approx(start + away * distance)):
+			break
+	if best_landing == start:
+		return false
+	actor.pos = best_landing
+	actor.prev_pos = best_landing
+	actor["last_dash_tick"] = tick
+	_emit("retreat", "%s retreats from %s." % [actor.name, target.name], actor, target, tile_id, 0, start, best_landing)
+	return true
 
 
 func _prime_ranged_followup(actor: Dictionary, tile_id: String, tile: Dictionary) -> void:
@@ -2225,19 +2237,51 @@ func _charge(actor: Dictionary, target: Dictionary, tile_id: String) -> bool:
 	var distance := origin.distance_to(destination)
 	if distance <= clearance:
 		return true
-	# A body in the direct path can leave a clear approach to either flank.
-	var flank := acos(clearance / distance)
-	for angle in [0.0, flank * 0.5, -flank * 0.5, flank, -flank]:
-		var landing := _bounded(destination - direction.rotated(angle) * clearance, actor.radius)
-		if not _free_position(landing, actor) or not _slide_landing(actor, landing).is_equal_approx(landing):
+	var route := PackedVector2Array()
+	if TILES[tile_id].get("flank_charge", false) and distance >= clearance + 56.0:
+		route = _curved_charge_route(actor, origin, destination, direction, clearance)
+	if route.is_empty():
+		# A body in the direct path can leave a clear approach to either flank.
+		var flank := acos(clearance / distance)
+		for angle in [0.0, flank * 0.5, -flank * 0.5, flank, -flank]:
+			var candidate := _bounded(destination - direction.rotated(angle) * clearance, actor.radius)
+			if _free_position(candidate, actor) and _slide_landing(actor, candidate).is_equal_approx(candidate):
+				route = PackedVector2Array([origin, candidate])
+				break
+	if route.is_empty():
+		return false
+	var landing := route[-1]
+	actor.pos = landing
+	actor.impulse = Vector2.ZERO
+	if landing.distance_squared_to(origin) >= 1.0:
+		actor["last_dash_tick"] = tick
+	_emit("charge", "%s dashes toward %s." % [actor.name, target.name], actor, target, tile_id, 0, origin, landing,
+		{"route": route})
+	return true
+
+
+func _curved_charge_route(actor: Dictionary, origin: Vector2, target: Vector2, direction: Vector2, clearance: float) -> PackedVector2Array:
+	const SEGMENTS := 8
+	var normal := Vector2(-direction.y, direction.x)
+	if normal.y * (ARENA_SIZE.y * 0.5 - target.y) < 0.0:
+		normal = -normal
+	for side_sign in [1.0, -1.0]:
+		var side := normal * float(side_sign)
+		var landing := target + (direction * 0.58 + side * 0.82).normalized() * clearance
+		if not _free_position(landing, actor):
 			continue
-		actor.pos = landing
-		actor.impulse = Vector2.ZERO
-		if landing.distance_squared_to(origin) >= 1.0:
-			actor["last_dash_tick"] = tick
-		_emit("charge", "%s dashes toward %s." % [actor.name, target.name], actor, target, tile_id, 0, origin, landing)
-		return true
-	return false
+		var bend := origin.lerp(target, 0.58) + side * maxf(108.0, clearance * 2.1)
+		var route := PackedVector2Array([origin])
+		for index in range(1, SEGMENTS + 1):
+			var phase := float(index) / SEGMENTS
+			var point := origin.lerp(bend, phase).lerp(bend.lerp(landing, phase), phase)
+			if not _bounded(point, actor.radius).is_equal_approx(point) \
+					or not _slide_landing(actor, point, route[-1]).is_equal_approx(point):
+				break
+			route.append(point)
+		if route.size() == SEGMENTS + 1:
+			return route
+	return PackedVector2Array()
 
 
 func _displace(kind: String, actor: Dictionary, target: Dictionary, tile_id: String, offset: Vector2, force: float) -> bool:
@@ -3712,7 +3756,8 @@ func _flanking_standard_bonus(actor: Dictionary, target: Dictionary, tile_id: St
 		return 0
 	_spent_timeline_relics["flanking_standard"] = true
 	return _relic_proc("flanking_standard", "Flanking Standard", FLANKING_STANDARD_DAMAGE,
-		actor, target, previous.source, previous.beat, "+%d damage from opposite sides" % FLANKING_STANDARD_DAMAGE, origin)
+		actor, target, previous.source, previous.beat, "+%d damage from opposite sides" % FLANKING_STANDARD_DAMAGE, origin,
+		{"previous_direction": previous.direction})
 
 
 func _stepped_gear_bonus(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
@@ -3764,9 +3809,9 @@ func _has_gap_before_activation() -> bool:
 
 
 func _relic_proc(id: String, label: String, amount: int, actor: Dictionary, target: Dictionary, source: String,
-		source_beat := 0, effect := "", origin := Vector2.INF) -> int:
+		source_beat := 0, effect := "", origin := Vector2.INF, details: Dictionary = {}) -> int:
 	var message := effect if not effect.is_empty() else "+%d damage" % amount
-	_emit("relic_proc", "%s · %s" % [label, message], actor, target, id, amount, origin)
+	_emit("relic_proc", "%s · %s" % [label, message], actor, target, id, amount, origin, Vector2.INF, details)
 	if not _activation.is_empty():
 		var proc := {"id": id, "amount": amount, "target_name": target.name, "source": source, "source_beat": source_beat}
 		if not effect.is_empty():
