@@ -43,6 +43,7 @@ const EFFECT_LENGTHS := {
 	"pull": 0.42,
 	"push": 0.33,
 	"teleport": 0.45,
+	"veil_echo": 0.38,
 	"hit": 0.38,
 	"guard": 0.36,
 	"miss": 0.42,
@@ -1108,6 +1109,14 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			for index in range(5):
 				var ray := Vector2.RIGHT.rotated(index * TAU / 5.0 + progress * 1.7)
 				draw_circle(to_point + ray * (8.0 + progress * 27.0), 2.2 * opacity, Color(TELEPORT_COLOR, opacity), true, -1.0, true)
+		"veil_echo":
+			var lift := Vector2(0, -18)
+			var departure := from_point + lift
+			var impact := to_point + lift
+			var tip := departure.lerp(impact, clampf(progress * 2.6, 0.0, 1.0))
+			draw_arc(departure, 9.0 + progress * 11.0, 0.0, TAU, 24, Color(TELEPORT_COLOR, opacity), 2.0, true)
+			draw_dashed_line(departure, tip, Color(TELEPORT_COLOR, opacity * 0.85), 2.0, 6.0)
+			draw_circle(tip, 3.5 * opacity, Color(WHITE, opacity), true, -1.0, true)
 		"charge", "retreat":
 			var accent := GOLD if kind == "charge" else HERO_COLOR
 			var direction := from_point.direction_to(to_point)

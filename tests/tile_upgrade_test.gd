@@ -27,6 +27,7 @@ func _run() -> void:
 	await _check_enchanted_tile_movement(game)
 	await _check_distributed_storage(game)
 	await _check_alternate_copies(game)
+	await _check_authored_forge_choices(game)
 	game.queue_free()
 	await process_frame
 	for suffix in ["", ".tmp", ".bak"]:
@@ -286,6 +287,64 @@ func _check_alternate_copies(game: Control) -> void:
 	_check(game.storage_screen.visible and restored.load_save(save_path)
 		and restored.loadout.lanes[0] == expected_manual and restored.loadout.storage == storage,
 		"Retry consumes the selected copy and the alternate pair in one saved operation.")
+
+
+func _check_authored_forge_choices(game: Control) -> void:
+	var run := FrontierRun.new()
+	game.run = run
+	run.save_path = save_path
+	var source := "reversal_plate"
+	var choices := ["reversal_plate_upgrade_uncommon_power", "reversal_plate_upgrade_uncommon_technique"]
+	var paths := ["Retaliation", "Fellow Guard"]
+	var tiers := TilePacking.forge_tiers(source)
+	if not _check(tiers.map(func(tier: Array): return tier.size()) == [1, 2, 2, 2, 2]
+		and tiers[0] == [source] and tiers[1] == choices, "Reversal Plate keeps one Common and two named options per rarity."):
+		return
+	for branch in range(choices.size()):
+		var labels := "camp forge" if branch == 0 else "reward combine"
+		if not _check(run.start_run(42), "Start the %s fixture." % labels):
+			return
+		run.data.offers = ["warden"]
+		if not _check(run.choose_hero("warden") and run.choose_relic("pocket_bell") and run.choose_starter("shield_tap"),
+			"Equip Warden in the %s fixture." % labels):
+			return
+		if branch == 0:
+			run.data.node = run.data.layers[FrontierRun.NODES_PER_SEGMENT - 2][0]
+			run.data.phase = "rest"
+			run.loadout.storage[0] = [_tile(source, 0)]
+			game.run_rest_forge()
+			game.storage_pick(0, game.storage_rows[0][0])
+			await _click(game.storage_screen, "StorageForgeSelected")
+		else:
+			run.loadout.lanes[0] = [_tile(source, 0), _tile(source, 2)]
+			if not _check(run.finish_combat(true, 100) and source in run.data.offers,
+				"The opening reward offers the held Reversal Plate pair its third copy."):
+				return
+			game.run_return()
+			await _click(game.frontier_screen, "RewardTile_" + source)
+		var forge: Control = game.forge_screen
+		if not _check(forge.visible and forge._source_id == source and forge._next_ids == choices,
+			"The %s opens the same Reversal Plate option IDs." % labels):
+			return
+		for index in range(choices.size()):
+			var option: Button = forge._cards[choices[index]]
+			_check(option.is_visible_in_tree() and option.text == paths[index]
+				and ArenaSim.TILES[choices[index]].upgrade_path == paths[index],
+				"The %s displays Reversal Plate's %s path label." % [labels, paths[index]])
+		var choice: String = choices[branch]
+		await _click(forge, str(forge._cards[choice].name))
+		await _click(forge, str(forge._confirm.name))
+		var restored := FrontierRun.new()
+		if not _check(restored.load_save(save_path) and restored.data.phase == "map",
+			"The confirmed %s path saves and returns to the map." % labels):
+			return
+		var family: Array[String] = []
+		for row: Array in restored.loadout.lanes + restored.loadout.storage:
+			for tile: Dictionary in row:
+				if ArenaSim.TILES[tile.id].get("family") == source:
+					family.append(tile.id)
+		_check(family == [choice], "Reload keeps exactly the %s path chosen in the %s." % [paths[branch], labels])
+		run.abandon_run()
 
 
 func _tile(id: String, start: int, target := "nearest") -> Dictionary:

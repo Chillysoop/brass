@@ -1,5 +1,7 @@
 extends RefCounted
 
+const MartialSpecialtyUpgrades = preload("res://scripts/martial_specialty_upgrades.gd")
+const ArcaneSpecialtyUpgrades = preload("res://scripts/arcane_specialty_upgrades.gd")
 const RARITIES := ["common", "uncommon", "rare", "epic", "legendary"]
 const RANKS := ["I", "II", "III", "IV"]
 const CORE_PULL_FORCE := {"pull": 735.0, "gravity_hook": 935.0}
@@ -7,12 +9,6 @@ const TECHNIQUE_GAINS := {
 	"guard_bonus": 3, "displaced_bonus": 3, "distance_bonus": 3, "windup_bonus": 3,
 	"low_hp_bonus": 3, "guard_break": 3, "guard": 2, "mark_bonus": 2, "splash_damage": 2,
 	"splash": 12.0, "push": 38.0, "pull": 38.0, "retreat": 10.0,
-	"dash_followup_damage": 2, "long_critical_bonus": 0.05,
-	"recent_block_damage": 2, "repeat_target_damage": 2, "duel_kill_bonus": 2,
-	"convergence_damage_per_pull": 1, "isolation_damage": 2, "healing_damage_bonus": 1,
-	"intercept_guard": 2, "block_wave_damage": 2, "charge_path_damage": 2, "collision_bonus": 2, "lance_return_bonus": 2,
-	"harmony_guard": 1, "chorus_echo_damage": 2, "rune_quick_bonus": 1, "rune_heavy_bonus": 2,
-	"teleport_followup_damage": 2, "blink_on_hit_retreat": 10.0, "ember_burn_damage": 1,
 }
 const AUTHORED_SIGNATURES := {
 	"rampart_counter": {
@@ -195,6 +191,8 @@ const AUTHORED_SIGNATURES := {
 	},
 }
 
+static var _specialty_paths: Dictionary = MartialSpecialtyUpgrades.PATHS.merged(ArcaneSpecialtyUpgrades.PATHS)
+
 
 static func build(base_tiles: Dictionary) -> Dictionary:
 	var specs := {}
@@ -228,8 +226,21 @@ static func _upgrade(id: String, base: Dictionary, tier: int, ranks: int, techni
 	var tile := base.duplicate()
 	tile.base_tile = id
 	tile.rarity = RARITIES[tier]
+	var choice := "technique" if technique else "power"
+	if _specialty_paths.has(id):
+		var path: Dictionary = _specialty_paths[id][choice]
+		tile.merge(path.get("properties", {}), true)
+		for field: String in path.gains:
+			tile[field] = tile.get(field, 0) + path.gains[field] * ranks
+		for force: String in ["push", "pull"]:
+			if tile.has(force):
+				tile[force] = minf(tile[force], 1000.0)
+		tile.upgrade_path = path.label
+		tile.short_label = path.get("short_label", path.label)
+		tile.label = "%s · %s %s" % [base.label, path.label, RANKS[ranks - 1]]
+		tile.description = _describe_upgrade(tile)
+		return tile
 	if AUTHORED_SIGNATURES.has(id):
-		var choice := "technique" if technique else "power"
 		if id == "rampart_counter" and not technique:
 			tile.erase("guard_bonus")
 		if (id == "horizon_round" and not technique) or id in ["ghost_volley", "chorus_bolt"]:
@@ -257,8 +268,6 @@ static func _upgrade(id: String, base: Dictionary, tier: int, ranks: int, techni
 			for field: String in TECHNIQUE_GAINS:
 				if tile.has(field):
 					tile[field] += TECHNIQUE_GAINS[field] * ranks
-			if tile.get("heal_overflow_on_hit", false):
-				tile.heal += ranks * 2
 			for force: String in ["push", "pull"]:
 				if tile.has(force):
 					tile[force] = minf(tile[force], 1000.0)
@@ -287,6 +296,8 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 			lines.append("Blink beside the target and strike if there is a clear landing.")
 		if tile.has("blink_on_hit_retreat"):
 			lines.append("Fire a shot, then blink up to %d units away from the target if there is room." % int(tile.blink_on_hit_retreat))
+		if tile.has("blink_echo_damage"):
+			lines.append("A successful blink leaves an afterimage that shoots the same enemy for %d damage if it survives." % tile.blink_echo_damage)
 		if tile.has("teleport_followup_damage"):
 			lines.append("Deal %d extra damage if you successfully teleported in the previous %d beats." % [
 				tile.teleport_followup_damage, tile.teleport_followup_beats])
@@ -332,7 +343,9 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 		if tile.has("collision_bonus"):
 			lines.append("If the pushed target collides with another enemy shortly afterward, deal %d extra collision damage to both." % tile.collision_bonus)
 		if tile.has("collision_chain_push"):
-			lines.append("Knock the second enemy onward for one more collision.")
+			var hops := int(tile.get("collision_chain_hops", 1))
+			lines.append("Knock each new enemy onward for up to %d more collisions." % hops if hops > 1
+				else "Knock the second enemy onward for one more collision.")
 		if tile.has("sweep_push_radius"):
 			lines.append("Push other enemies within %d range of the impact away from you with %d force." % [
 				int(tile.sweep_push_radius), int(tile.sweep_push_force)])
@@ -372,8 +385,10 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 			lines.append("Mark the target for %d beats. The next hit on it from another hero gives all living heroes %d Guard." % [
 				tile.chorus_guard_beats, tile.chorus_guard])
 		if tile.has("chorus_echo_damage"):
-			lines.append("Within %d beats, another hero can hit the target to echo %d damage to its nearest other enemy within %d units." % [
-				tile.chorus_echo_beats, tile.chorus_echo_damage, int(tile.chorus_echo_radius)])
+			var echoes := int(tile.get("chorus_echo_charges", 1))
+			var trigger := "up to %d other heroes can each hit" % echoes if echoes > 1 else "another hero can hit"
+			lines.append("Within %d beats, %s the target to echo %d damage to its nearest other enemy within %d units." % [
+				tile.chorus_echo_beats, trigger, tile.chorus_echo_damage, int(tile.chorus_echo_radius)])
 		if tile.has("lance_travel_bonus"):
 			lines.append("Gain up to %d damage for walking 80 units. Hitting with this upgrade resets the distance." % tile.lance_travel_bonus)
 		if tile.has("lance_return_bonus"):

@@ -1866,7 +1866,13 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 		if tile.has("lance_return_bonus"):
 			_prime_return_charge(actor, tile_id, tile)
 	if tile.has("blink_on_hit_retreat"):
-		_blink_to_target(actor, target, tile_id, tile.blink_on_hit_retreat, false)
+		var departure: Vector2 = actor.pos
+		var blinked := _blink_to_target(actor, target, tile_id, tile.blink_on_hit_retreat, false)
+		if blinked and target.hp > 0 and tile.has("blink_echo_damage"):
+			_emit("veil_echo", "%s's afterimage fires." % actor.name, actor, target, tile_id,
+				tile.blink_echo_damage, departure, target.pos)
+			_damage(actor, target, tile.blink_echo_damage, tile_id, "Afterimage shot",
+				{"veil_echo": true, "strike_origin": departure})
 	if tile.get("heal_overflow_on_hit", false):
 		ApothecaryTiles.apply_tonic(self, actor, tile_id, tile)
 	elif tile.has("guard"):
@@ -3314,7 +3320,8 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 	var impact_details := source_details.duplicate()
 	impact_details["blocked"] = blocked
 	impact_details["critical"] = critical
-	_emit("hit", hit_message, actor, target, tile_id, dealt, _attack_origin(actor), Vector2.INF, impact_details)
+	var strike_origin: Vector2 = source_details.get("strike_origin", _attack_origin(actor))
+	_emit("hit", hit_message, actor, target, tile_id, dealt, strike_origin, Vector2.INF, impact_details)
 	if critical:
 		_activation["critical_wounded"] = dealt > 0
 		_activation.get_or_add("effect_details", []).append("Critical hit.")
@@ -3898,7 +3905,7 @@ func _breaker_collision(moving: Dictionary, other: Dictionary) -> void:
 	var setup: Dictionary = moving.get("collision_push", {})
 	if moving.hp <= 0 or other.hp <= 0 or moving.side != other.side or tick > setup.get("until", -1):
 		return
-	if other.id == setup.get("collision_origin", ""):
+	if other.id in setup.get("collision_visited", []):
 		return
 	var impulse: Vector2 = moving.impulse
 	var contact: Vector2 = other.pos - moving.pos
@@ -3912,7 +3919,8 @@ func _breaker_collision(moving: Dictionary, other: Dictionary) -> void:
 		var message := "%s knocks %s into %s, adding %d collision damage to each." % [
 			TILES[setup.tile].label, moving.name, other.name, setup.bonus,
 		]
-		_emit("hammer_collision", message, source, other, setup.tile, setup.bonus, moving.pos, other.pos)
+		_emit("hammer_collision", message, source, other, setup.tile, setup.bonus, moving.pos, other.pos,
+			{"collision_depth": int(setup.get("collision_depth", 0))})
 		var activation: Dictionary = setup.activation
 		if not activation.is_empty():
 			activation.get_or_add("effect_details", []).append(message)

@@ -60,7 +60,8 @@ static func apply_harmony_guard(sim, actor: Dictionary, tile_id: String, tile: D
 static func prime_echo(sim, actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
 	var beats: int = tile.chorus_echo_beats
 	target["chorus_echo"] = {"marker": actor.id, "tile": tile_id, "expires": sim.tick + beats * sim.TICKS_PER_BEAT,
-		"damage": tile.chorus_echo_damage, "reach": tile.chorus_echo_radius}
+		"damage": tile.chorus_echo_damage, "reach": tile.chorus_echo_radius,
+		"remaining": int(tile.get("chorus_echo_charges", 1)), "contributors": []}
 	sim._emit("mark", "%s sets an echo on %s for %d beats." % [tile.label, target.name, beats],
 		actor, target, tile_id, tile.chorus_echo_damage)
 
@@ -72,15 +73,19 @@ static func resolve_ally_echo(sim, actor: Dictionary, target: Dictionary) -> voi
 	if echo.expires < sim.tick:
 		target.erase("chorus_echo")
 		return
-	if echo.marker == actor.id:
+	if echo.marker == actor.id or actor.id in echo.contributors:
 		return
 	var marker: Dictionary = sim._find_unit(echo.marker)
 	var nearby: Array[Dictionary] = sim._splash_neighbors(actor, target, echo.reach)
 	if marker.is_empty() or nearby.is_empty():
 		return
 	sim._sort_by_distance(nearby, target.pos)
-	target.erase("chorus_echo")
-	sim._damage(marker, nearby.front(), echo.damage, echo.tile, "Echo Chime", {"chorus_echo": true})
+	echo.contributors.append(actor.id)
+	echo.remaining -= 1
+	if echo.remaining <= 0:
+		target.erase("chorus_echo")
+	sim._damage(marker, nearby.front(), echo.damage, echo.tile, "Echo Chime",
+		{"chorus_echo": true, "echo_trigger": actor.id, "echo_index": echo.contributors.size()})
 
 
 static func is_burning(enemy: Dictionary) -> bool:

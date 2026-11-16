@@ -103,6 +103,8 @@ func _check_class_decks() -> void:
 			for id: String in EXCLUSIVE_COMMONS[owner]:
 				_check((id in common) == (owner == class_id),
 					"%s should appear only in %s's Common deck." % [id, owner])
+		for id: String in exclusive:
+			_check_specialty_paths(id)
 		common.sort()
 		var key := str(common)
 		_check(not distinct_pools.has(key), "%s needs its own Common deck." % class_id)
@@ -137,6 +139,22 @@ func _check_class_decks() -> void:
 				break
 		_check(seen.size() == class_pool.size(), "%s must be able to draw every class tile across seeded victories." % class_id)
 		run.abandon_run()
+
+
+func _check_specialty_paths(id: String) -> void:
+	var tiers := TilePacking.forge_tiers(id)
+	var base: Dictionary = ArenaSim.TILES[id]
+	var path_names: Array = tiers[1].map(func(variant: String): return ArenaSim.TILES[variant].get("upgrade_path", ""))
+	_check(path_names.size() == 2 and not path_names.has("") and path_names[0] != path_names[1],
+		"%s needs two named specialty paths." % id)
+	for tier in range(1, tiers.size()):
+		var next: Array = tiers[tier + 1] if tier + 1 < tiers.size() else []
+		for index in range(tiers[tier].size()):
+			var variant: String = tiers[tier][index]
+			var tile: Dictionary = ArenaSim.TILES[variant]
+			_check(tile.get("upgrade_path") == path_names[index] and tile.width == base.width and tile.targets == base.targets
+				and tile.damage > base.damage and TilePacking.next_options(variant) == next,
+				"%s should preserve its named path, timing, targets, and access to both next forms." % variant)
 
 
 func _check_specialty_opening_drafts(hero_id: String) -> void:

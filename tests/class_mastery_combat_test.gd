@@ -23,8 +23,10 @@ func _initialize() -> void:
 	_check_warden_tiles()
 	_check_duelist_tiles()
 	_check_cantor_specialties()
+	_check_second_voice()
 	_check_rune_specialties()
 	_check_wayfarer_specialties()
+	_check_phantom_step()
 	_check_cinder_specialties()
 	for failure in failures:
 		printerr(failure)
@@ -286,6 +288,34 @@ func _check_cantor_specialties() -> void:
 	_check(_tile_events(chime, "echo_chime", "hit", 5 * beat).is_empty(), "Echo Chime is spent after its first allied echo.")
 
 
+func _check_second_voice() -> void:
+	var id := "echo_chime_upgrade_uncommon_technique"
+	var spec: Dictionary = ArenaSim.TILES[id]
+	var beat := ArenaSim.TICKS_PER_BEAT
+	var expiry: int = spec.width + spec.chorus_echo_beats
+	var party := [{"id": "cantor"}, {"id": "warden"}, {"id": "duelist"}]
+	var first_ally := [_tile("snap_shot", 2), _tile("snap_shot", 3)]
+	var chime := _campaign_sandbox([[_tile(id, 0)], first_ally,
+		[_tile("snap_shot", expiry - 1), _tile("snap_shot", expiry)]], party)
+	_step_to(chime, expiry * beat + beat)
+	var echoes := chime.trace.filter(func(event: Dictionary): return event.get("chorus_echo", false))
+	_check(echoes.map(func(event: Dictionary): return event.tick) == [3 * beat, expiry * beat],
+		"Second Voice accepts two different allies and can trigger at the original deadline.")
+	_check(echoes.map(func(event: Dictionary): return event.echo_trigger) == [chime.units[1].id, chime.units[2].id],
+		"Second Voice cannot use the same ally's repeat hit as a second voice.")
+	for event: Dictionary in echoes:
+		_check(event.actor == chime.units[0].id and event.tile == id and event.target == chime.units[4].id
+			and event.amount == spec.chorus_echo_damage and not event.critical,
+			"Each echo credits Second Voice and hits a neighboring enemy for its stated damage.")
+
+	var late := _campaign_sandbox([[_tile(id, 0)], first_ally, [_tile("snap_shot", expiry)]], party)
+	_step_to(late, (expiry + 1) * beat)
+	_check(_tile_events(late, id, "hit", 3 * beat).size() == 1
+		and _tile_events(late, "snap_shot", "hit", (expiry + 1) * beat).size() == 1
+		and _tile_events(late, id, "hit", (expiry + 1) * beat).is_empty(),
+		"A late ally can land its attack, but the first echo did not refresh Second Voice's deadline.")
+
+
 func _check_rune_specialties() -> void:
 	var beat := ArenaSim.TICKS_PER_BEAT
 	var quick: int = ArenaSim.TILES.snap_shot.damage
@@ -331,12 +361,38 @@ func _check_wayfarer_specialties() -> void:
 	_check(shot.size() == 1 and shot[0].from.is_equal_approx(origin) and blink.size() == 1
 		and blink[0].to.distance_to(sim.units[1].pos) > origin.distance_to(sim.units[1].pos),
 		"Veil Step attacks from the starting point, then teleports away.")
+	_check(_tile_events(sim, "veil_step", "veil_echo", 2 * beat).is_empty(), "Common Veil Step has no afterimage shot.")
 	_step_to(sim, 7 * beat)
 	var dart: Dictionary = ArenaSim.TILES.mirror_dart
 	_check_direct_hit(sim, "mirror_dart", 5 * beat, sim.units[1].id, dart.damage + dart.teleport_followup_damage,
 		"Mirror Dart uses a real teleport within its window")
 	_check_direct_hit(sim, "mirror_dart", 7 * beat, sim.units[1].id, dart.damage,
 		"Mirror Dart loses the teleport bonus after the window")
+
+
+func _check_phantom_step() -> void:
+	var id := "veil_step_upgrade_uncommon_technique"
+	var spec: Dictionary = ArenaSim.TILES[id]
+	var edge: int = spec.width * ArenaSim.TICKS_PER_BEAT
+	var sim := _fixture("wayfarer", "", [_tile(id, 0)])
+	var origin: Vector2 = sim.units[0].pos
+	_step_to(sim, edge - 1)
+	_check(sim.activations.is_empty() and sim.units[0].pos.is_equal_approx(origin),
+		"Phantom Step cannot attack, blink, or fire its afterimage before its right edge.")
+	sim.step()
+	var hits := _tile_events(sim, id, "hit", edge)
+	var blinks := _tile_events(sim, id, "teleport", edge)
+	var echoes := _tile_events(sim, id, "veil_echo", edge)
+	_check(hits.size() == 2 and blinks.size() == 1 and echoes.size() == 1
+		and sim.trace.find(hits[0]) < sim.trace.find(blinks[0]) and sim.trace.find(blinks[0]) < sim.trace.find(echoes[0])
+		and sim.trace.find(echoes[0]) < sim.trace.find(hits[1]),
+		"Phantom Step's shot, blink, and damaging afterimage happen in order at the same tile boundary.")
+	if hits.size() == 2 and echoes.size() == 1:
+		_check(hits[0].from.is_equal_approx(origin) and hits[0].amount == _critical_damage(hits[0], spec.damage)
+			and echoes[0].from.is_equal_approx(origin) and hits[1].from.is_equal_approx(origin)
+			and hits[1].target == hits[0].target and hits[1].get("veil_echo", false)
+			and not hits[1].critical and hits[1].amount == spec.blink_echo_damage,
+			"Phantom Step credits its extra shot from the departure point for its stated damage.")
 
 
 func _check_cinder_specialties() -> void:

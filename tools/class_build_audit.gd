@@ -3,15 +3,17 @@ extends SceneTree
 # From the repository root:
 # godot --headless --path . --script tools/class_build_audit.gd -- --output=class-audit.json
 # Options: --difficulty=easy|medium|hard, --through-marshal, --as-recruit,
-# --seeds=1,2,3, --classes=warden,hexwright
+# --seeds=1,2,3, --classes=warden,hexwright, --upgrades
 # Medium stops at the first boss by default. Hard continues to the final boss.
 # Recruit audits consider natural class offers for the final party slot.
 # Audits including a locked class buy the complete class roster in scratch saves.
-# All drafts repack equipped tiles, stow displaced tiles, and skip rerolls and forges.
+# Drafts repack equipped tiles and skip rerolls. --upgrades additionally weighs
+# duplicate copies, combines through legal placements, and forges at healthy camps.
 
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
+const REST_FORGE_HEALTH := 0.70
 
 const POLICIES := {
 	"warden": ["guard", "knockback"],
@@ -51,6 +53,7 @@ var difficulty := "medium"
 var through_marshal := false
 var as_recruit := false
 var unlock_roster := false
+var audit_upgrades := false
 
 
 func _initialize() -> void:
@@ -75,6 +78,8 @@ func _run() -> void:
 		elif arg == "--as-recruit":
 			as_recruit = true
 			through_marshal = true
+		elif arg == "--upgrades":
+			audit_upgrades = true
 		else:
 			printerr("Unknown audit argument: ", arg)
 			quit(2)
@@ -121,7 +126,8 @@ func _run() -> void:
 			quit(2)
 			return
 		file.store_string(JSON.stringify({"difficulty": difficulty, "through_marshal": through_marshal, "as_recruit": as_recruit,
-			"unlocked_roster": unlock_roster, "seeds": seeds, "specialties": SPECIALTIES, "summary": summary, "runs": rows}, "\t"))
+			"unlocked_roster": unlock_roster, "upgrades": audit_upgrades, "seeds": seeds, "specialties": SPECIALTIES,
+			"summary": summary, "runs": rows}, "\t"))
 	quit(1 if rows.any(func(row: Dictionary): return row.result == "incomplete") else 0)
 
 
@@ -134,10 +140,19 @@ func _summarize(class_id: String, rows: Array) -> Dictionary:
 	var paired_builds := 0
 	var different_families := 0
 	var reached := 0
+	var upgrade_methods := {}
+	var upgrade_tiers := {}
+	var upgrade_branches := {}
+	var paired_branch_overlap := 0.0
 	for index in range(rows.size()):
 		var row: Dictionary = rows[index]
 		wins += int(row.result == "victory")
 		reached += int(not row.final.is_empty())
+		for upgrade: Dictionary in row.upgrades:
+			if upgrade.lane == row.lane:
+				_count(upgrade_methods, upgrade.method)
+				_count(upgrade_tiers, upgrade.tier)
+				_count(upgrade_branches, upgrade.branch)
 		var draft_index := 0
 		for draft: Dictionary in row.drafts:
 			if draft.kind != "reward" or draft.lane != row.lane or draft.encounter not in ["opening", "battle"]:
@@ -156,13 +171,23 @@ func _summarize(class_id: String, rows: Array) -> Dictionary:
 		var shared := first.keys().filter(func(id: String): return second.has(id)).size()
 		var union := first.size() + second.size() - shared
 		final_overlap += float(shared) / union
+		var old_branches := _branched_families(row.final)
+		var other_branches := _branched_families(rows[index + 1].final)
+		var shared_branches := old_branches.keys().filter(func(key: String): return other_branches.has(key)).size()
+		paired_branch_overlap += float(shared_branches) / (old_branches.size() + other_branches.size() - shared_branches)
 		paired_builds += 1
 		different_families += int(shared < union)
 	var overlap := final_overlap / maxi(1, paired_builds)
 	print("%s summary: %d/%d wins, early specialty drafts %s, mean final family overlap %.3f across %d paired seeds" % [
 		class_id, wins, rows.size(), early, overlap, paired_builds])
+	var branch_overlap := paired_branch_overlap / maxi(1, paired_builds)
+	if audit_upgrades:
+		print("  upgrades %s, tiers %s, branches %s, paired family and branch overlap %.3f" % [
+			upgrade_methods, upgrade_tiers, upgrade_branches, branch_overlap])
 	return {"wins": wins, "total": rows.size(), "reached_class": reached, "early_drafts": early, "paired_final_builds": paired_builds,
-		"paired_final_family_overlap": overlap, "different_final_families": different_families}
+		"paired_final_family_overlap": overlap, "different_final_families": different_families,
+		"paired_final_branch_overlap": branch_overlap, "upgrade_methods": upgrade_methods, "upgrade_tiers": upgrade_tiers,
+		"upgrade_branches": upgrade_branches}
 
 
 func _families(ids: Array) -> Dictionary:
@@ -174,6 +199,24 @@ func _families(ids: Array) -> Dictionary:
 
 func _family(id: String) -> String:
 	return ArenaSim.TILES.get(id, {}).get("family", id)
+
+
+func _branched_families(ids: Array) -> Dictionary:
+	var result := {}
+	for id: String in ids:
+		result["%s:%s" % [_family(id), _upgrade_branch(id)]] = true
+	return result
+
+
+func _upgrade_branch(id: String) -> String:
+	for tier: Array in TilePacking.forge_tiers(id):
+		if tier.size() == 2 and id in tier:
+			return "power" if tier[0] == id else "technique"
+	return "base"
+
+
+func _count(counts: Dictionary, key: String, amount := 1) -> void:
+	counts[key] = int(counts.get(key, 0)) + amount
 
 
 func _lead_for(class_id: String) -> String:
@@ -227,7 +270,8 @@ func _expedition(class_id: String, seed_value: int, policy: String) -> Dictionar
 	var hero_lane := _hero_lane()
 	var lead_policy: String = POLICIES[lead][0] if as_recruit else policy
 	var row := {"class": class_id, "seed": seed_value, "policy": policy, "lane": hero_lane, "result": "incomplete", "phase": "",
-		"drafts": [], "fights": [], "route": [], "starter_trials": [], "final": [], "partner": "", "relics": []}
+		"drafts": [], "fights": [], "route": [], "starter_trials": [], "final": [], "partner": "", "relics": [],
+		"upgrades": [], "rests": []}
 	if not _setup_profile(run) or not run.start_run(seed_value, difficulty) \
 			or not run.choose_preferred_hero(lead) or not run.choose_relic("pocket_bell"):
 		return row
@@ -287,7 +331,7 @@ func _expedition(class_id: String, seed_value: int, policy: String) -> Dictionar
 				if not run.leave_node():
 					break
 			"rest":
-				if not run.rest("heal"):
+				if not _rest(run, row, policy, lead_policy):
 					break
 			"event":
 				if run.mystery_kind() == "class_cache":
@@ -350,22 +394,28 @@ func _fight(lanes: Array, encounter: Dictionary) -> Dictionary:
 		var stats := {"tiles": lanes[lane].duplicate(true), "damage": 0, "activation": 0, "damaging": 0, "misses": 0,
 			"first_damage_tick": -1, "guard": 0, "healing": 0, "criticals": 0, "parallax_criticals": 0,
 			"backdraft_hits": 0, "pushes": 0, "pulls": 0, "retreats": 0, "duel_kill_followups": 0,
-			"damage_by_tile": {}, "healing_by_tile": {}}
+			"damage_by_tile": {}, "healing_by_tile": {}, "activations_by_tile": {}, "landed_by_tile": {}, "effect_events_by_tile": {}}
 		for activation: Dictionary in sim.activations:
 			if int(activation.lane) != lane or activation.status == "unavailable":
 				continue
 			stats.activation += 1
+			_count(stats.activations_by_tile, activation.tile)
+			if activation.status == "landed":
+				_count(stats.landed_by_tile, activation.tile)
 			stats.damaging += int(activation.damage > 0)
 			stats.misses += int(activation.status == "miss")
 		for event: Dictionary in sim.trace:
 			if event.actor != actor.id:
 				continue
+			var source: String = event.get("source_tile", event.tile) if audit_upgrades else event.tile
+			if audit_upgrades and ArenaSim.TILES.has(source):
+				_record_effect(stats.effect_events_by_tile, source, event)
 			match event.kind:
 				"hit":
 					if int(event.amount) <= 0:
 						continue
 					stats.damage += int(event.amount)
-					stats.damage_by_tile[event.tile] = stats.damage_by_tile.get(event.tile, 0) + int(event.amount)
+					_count(stats.damage_by_tile, source, int(event.amount))
 					if stats.first_damage_tick < 0:
 						stats.first_damage_tick = event.tick
 					stats.backdraft_hits += int(event.get("dash_followup", false))
@@ -378,7 +428,7 @@ func _fight(lanes: Array, encounter: Dictionary) -> Dictionary:
 					stats.guard += int(event.amount)
 				"heal":
 					stats.healing += int(event.amount)
-					stats.healing_by_tile[event.tile] = stats.healing_by_tile.get(event.tile, 0) + int(event.amount)
+					_count(stats.healing_by_tile, source, int(event.amount))
 				"push":
 					stats.pushes += 1
 				"pull":
@@ -390,6 +440,23 @@ func _fight(lanes: Array, encounter: Dictionary) -> Dictionary:
 		actors.append(stats)
 	return {"result": sim.outcome, "hp": hp, "ticks": sim.tick, "kind": encounter.encounter,
 		"segment": encounter.segment, "boss": encounter.boss_id, "actors": actors}
+
+
+func _record_effect(effects: Dictionary, source: String, event: Dictionary) -> void:
+	var kind: String = event.kind
+	if kind == "hit":
+		if event.get("dash_followup", false):
+			_count(effects.get_or_add(source, {}), "dash_followup_hit")
+		if event.get("critical", false):
+			_count(effects.get_or_add(source, {}), "critical_hit")
+		if event.get("veil_echo", false):
+			_count(effects.get_or_add(source, {}), "veil_echo_hit")
+		if event.get("chorus_echo", false):
+			_count(effects.get_or_add(source, {}), "chorus_echo_hit")
+	elif kind not in ["miss", "intent", "movement", "death"]:
+		_count(effects.get_or_add(source, {}), kind)
+		if kind == "hammer_collision" and event.has("collision_depth"):
+			_count(effects.get_or_add(source, {}), "hammer_collision_depth_%d" % int(event.collision_depth))
 
 
 func _claim_tile(run: FrontierRun, lane: int, policy: String, row: Dictionary) -> bool:
@@ -412,6 +479,7 @@ func _claim_tile(run: FrontierRun, lane: int, policy: String, row: Dictionary) -
 	var current_score := _build_score(current, policy, class_id)
 	var best_gain := 0.1
 	var best_build := []
+	var alternate := {}
 	for id: String in offers:
 		var candidate := _best_build(current + [id], policy, class_id)
 		var gain := _build_score(candidate, policy, class_id) - current_score
@@ -419,8 +487,25 @@ func _claim_tile(run: FrontierRun, lane: int, policy: String, row: Dictionary) -
 			best_gain = gain
 			best_build = candidate
 			draft.pick = id
+			alternate = {}
+		if audit_upgrades:
+			var progression := _reward_progression(run, lane, id, policy, class_id)
+			if not progression.is_empty() and progression.gain > best_gain:
+				best_gain = progression.gain
+				draft.pick = id
+				alternate = progression
 	if draft.pick == "skip":
 		return run.reward("skip")
+	if alternate.has("plan"):
+		return _claim_reward_merge(run, draft, row, alternate, policy, class_id)
+	if alternate.has("stash"):
+		var before := run.loadout.duplicate(true)
+		var placement := _stow(run.loadout.storage, draft.pick)
+		if not placement.is_empty() and run.reward(draft.pick, placement):
+			draft.stored = placement
+			return true
+		run.loadout = before
+		return false
 	var displaced := current + [draft.pick]
 	for id: String in best_build:
 		displaced.erase(id)
@@ -439,16 +524,155 @@ func _claim_tile(run: FrontierRun, lane: int, policy: String, row: Dictionary) -
 	return slot >= 0 and run.reward(draft.pick, {"lane": lane, "start": slot, "id": draft.pick})
 
 
+func _reward_progression(run: FrontierRun, lane: int, id: String, policy: String, class_id: String) -> Dictionary:
+	var copies := TilePacking.find_copies(run.loadout.lanes, run.loadout.storage, id, [lane])
+	if copies.size() >= 2:
+		return _merge_choice(run, lane, id, copies, 2, policy, class_id)
+	if copies.size() == 1 and not _storage_placement(run.loadout.storage, id).is_empty():
+		var spec: Dictionary = ArenaSim.TILES[id]
+		# Store a matching second copy when there is no stronger immediate improvement.
+		return {"stash": true, "gain": 3.5 + float(spec.width) * 0.75}
+	return {}
+
+
+func _merge_choice(run: FrontierRun, lane: int, id: String, copies: Array, count: int, policy: String, class_id: String) -> Dictionary:
+	var current: Array = run.loadout.lanes[lane]
+	var before := _build_score(_ids(current), policy, class_id)
+	var best := {}
+	var fitting := []
+	for upgrade: String in TilePacking.next_options(id):
+		var plan := TilePacking.combine_plan(run.loadout.lanes, run.loadout.storage, copies, count, upgrade, [lane], count == 3)
+		if plan.is_empty():
+			continue
+		fitting.append(upgrade)
+		var build := _ids(current)
+		for copy: Dictionary in plan.copies:
+			if not copy.has("row"):
+				build.erase(id)
+		if not plan.destination.has("row"):
+			build.append(upgrade)
+		var freed := float(3 * int(ArenaSim.TILES[id].width) - int(ArenaSim.TILES[upgrade].width))
+		var gain := _build_score(build, policy, class_id) - before + 4.0 + maxf(0, freed)
+		if best.is_empty() or gain > best.gain:
+			best = {"tile": upgrade, "plan": plan, "gain": gain}
+	if not best.is_empty():
+		best.fitting = fitting
+	return best
+
+
+func _claim_reward_merge(run: FrontierRun, draft: Dictionary, row: Dictionary, chosen: Dictionary, policy: String, class_id: String) -> bool:
+	var source: String = draft.pick
+	var lane: int = draft.lane
+	var checkpoint := run.loadout.duplicate(true)
+	# Alternate equivalent entry paths across seeds. Keep the third reward as a tile
+	# only if it fits and the resulting inventory still has a legal three-copy plan.
+	if int(row.seed) % 2 == 0:
+		var stored := _stow(run.loadout.storage, source)
+		if not stored.is_empty():
+			var copies := TilePacking.find_copies(run.loadout.lanes, run.loadout.storage, source, [lane], stored)
+			var inventory_choice := _merge_choice(run, lane, source, copies, 3, policy, class_id)
+			if not inventory_choice.is_empty() and inventory_choice.tile == chosen.tile:
+				if not run.reward(source, stored):
+					run.loadout = checkpoint
+					return false
+				return _commit_merge(run, row, draft, inventory_choice, "inventory_combine")
+		run.loadout = checkpoint
+	return _commit_merge(run, row, draft, chosen, "reward_combine")
+
+
+func _commit_merge(run: FrontierRun, row: Dictionary, draft: Dictionary, choice: Dictionary, method: String) -> bool:
+	var checkpoint := run.loadout.duplicate(true)
+	var upgrade: String = choice.tile
+	var plan: Dictionary = choice.plan
+	if not TilePacking.apply_combination(run.loadout.lanes, run.loadout.storage, plan.copies, plan.destination,
+			upgrade, ArenaSim.TILES[upgrade].targets[0]):
+		return false
+	var placement: Dictionary = plan.destination.duplicate()
+	placement.id = upgrade
+	if placement.has("row"):
+		placement.erase("lane")
+	var committed := run.reward(draft.pick, placement) if method == "reward_combine" else run.save()
+	if not committed:
+		run.loadout = checkpoint
+		return false
+	draft.upgrade = upgrade
+	_record_upgrade(row, method, draft.pick, upgrade, draft.lane, draft.node, choice.fitting, placement)
+	return true
+
+
+func _rest(run: FrontierRun, row: Dictionary, policy: String, lead_policy: String) -> bool:
+	var healthy: bool = run.data.heroes.all(func(hero: Dictionary): return float(hero.hp) >= float(hero.max_hp) * REST_FORGE_HEALTH)
+	var forge := _camp_choice(run, int(row.lane), policy, lead_policy) if audit_upgrades and healthy else {}
+	var node: String = run.data.node.label
+	if forge.is_empty():
+		row.rests.append({"node": node, "action": "heal"})
+		return run.rest("heal")
+	var checkpoint := run.loadout.duplicate(true)
+	var item: Dictionary = run.loadout.lanes[forge.lane][forge.index]
+	var source: String = item.id
+	var upgrade: String = forge.tile
+	item.id = upgrade
+	if item.target not in ArenaSim.TILES[upgrade].targets:
+		item.target = ArenaSim.TILES[upgrade].targets[0]
+	if not run.rest("forge", "%s upgraded to %s." % [ArenaSim.TILES[source].label, ArenaSim.TILES[upgrade].label]):
+		run.loadout = checkpoint
+		return false
+	row.rests.append({"node": node, "action": "forge"})
+	_record_upgrade(row, "camp_forge", source, upgrade, forge.lane, node, forge.fitting,
+		{"id": upgrade, "lane": forge.lane, "start": item.start})
+	return true
+
+
+func _camp_choice(run: FrontierRun, target_lane: int, policy: String, lead_policy: String) -> Dictionary:
+	var best := {}
+	var best_gain := 0.1
+	for lane in range(run.loadout.lanes.size()):
+		var items: Array = run.loadout.lanes[lane]
+		var class_id: String = run.data.heroes[lane].id
+		var lane_policy := policy if lane == target_lane else lead_policy if lane == 0 else "partner"
+		var current := _ids(items)
+		var before := _build_score(current, lane_policy, class_id)
+		for index in range(items.size()):
+			var item: Dictionary = items[index]
+			if not run.forge_family_available(_family(item.id)):
+				continue
+			var fitting := TilePacking.next_options(item.id).filter(func(id: String):
+				return TilePacking.can_place(items, id, item.start, ArenaSim.BEATS, item.start))
+			for upgrade: String in fitting:
+				var candidate := current.duplicate()
+				candidate[index] = upgrade
+				var gain := _build_score(candidate, lane_policy, class_id) - before
+				if gain > best_gain:
+					best_gain = gain
+					best = {"lane": lane, "index": index, "tile": upgrade, "fitting": fitting}
+	return best
+
+
+func _record_upgrade(row: Dictionary, method: String, source: String, upgrade: String, lane: int, node: String,
+		fitting: Array, placement: Dictionary) -> void:
+	row.upgrades.append({"method": method, "source": source, "tile": upgrade, "family": _family(upgrade),
+		"from_tier": ArenaSim.TILES[source].rarity, "tier": ArenaSim.TILES[upgrade].rarity, "branch": _upgrade_branch(upgrade),
+		"path": ArenaSim.TILES[upgrade].get("upgrade_path", ""), "lane": lane, "node": node,
+		"fitting": fitting, "placement": placement})
+
+
 func _entry(id: String, start: int) -> Dictionary:
 	return {"id": id, "start": start, "target": ArenaSim.TILES[id].targets[0]}
 
 
-func _stow(storage: Array, id: String) -> void:
-	for items: Array in storage:
+func _storage_placement(storage: Array, id: String) -> Dictionary:
+	for row in range(storage.size()):
 		for start in range(TilePacking.STORAGE_COLUMNS):
-			if TilePacking.can_place(items, id, start, TilePacking.STORAGE_COLUMNS):
-				items.append(_entry(id, start))
-				return
+			if TilePacking.can_place(storage[row], id, start, TilePacking.STORAGE_COLUMNS):
+				return {"row": row, "start": start, "id": id}
+	return {}
+
+
+func _stow(storage: Array, id: String) -> Dictionary:
+	var placement := _storage_placement(storage, id)
+	if not placement.is_empty():
+		storage[placement.row].append(_entry(id, placement.start))
+	return placement
 
 
 func _ids(row: Array) -> Array:

@@ -94,11 +94,13 @@ static func _charge_path(sim, actor: Dictionary, target: Dictionary, tile_id: St
 
 
 static func chain_collision(sim, source: Dictionary, moving: Dictionary, other: Dictionary, setup: Dictionary) -> void:
-	if setup.get("relayed", false) or other.hp <= 0:
+	if other.hp <= 0:
 		return
 	var tile_id: String = setup.get("source_tile", "")
-	var force: float = sim.TILES.get(tile_id, {}).get("collision_chain_push", 0.0)
-	if force <= 0.0:
+	var tile: Dictionary = sim.TILES.get(tile_id, {})
+	var force: float = tile.get("collision_chain_push", 0.0)
+	var remaining := int(setup.get("remaining_hops", tile.get("collision_chain_hops", 1)))
+	if force <= 0.0 or remaining <= 0:
 		return
 	var offset: Vector2 = other.pos - moving.pos
 	if offset.is_zero_approx():
@@ -107,5 +109,6 @@ static func chain_collision(sim, source: Dictionary, moving: Dictionary, other: 
 	sim._displace("push", source, other, tile_id, offset, force)
 	var relay: Dictionary = other.get("collision_push", {})
 	if not relay.is_empty() and not is_same(previous, relay):
-		relay["relayed"] = true
-		relay["collision_origin"] = moving.id
+		relay["remaining_hops"] = remaining - 1
+		relay["collision_depth"] = int(setup.get("collision_depth", 0)) + 1
+		relay["collision_visited"] = setup.get("collision_visited", [moving.id]) + [other.id]

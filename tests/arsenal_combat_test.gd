@@ -20,6 +20,7 @@ func _initialize() -> void:
 	_check_aegis_intercept()
 	_check_shieldshock()
 	_check_domino_maul()
+	_check_ricochet()
 	_check_impact_driver()
 	_check_lancer_specialties()
 	for failure in failures:
@@ -278,6 +279,22 @@ func _check_domino_maul() -> void:
 	_check(contacts.size() == 2 and contacts[0].target == second.id and contacts[1].target == third.id
 		and third.hp < third.max_hp and fourth.hp == fourth.max_hp,
 		"Domino Maul's second enemy can collide with a third enemy without relaying a second time.")
+
+
+func _check_ricochet() -> void:
+	var id := "domino_maul_upgrade_uncommon_technique"
+	var sim := _sim([[_tile(id, 0)]], "breaker")
+	sim.units[0].pos = Vector2(170, 265)
+	sim.units[1].pos = Vector2(280, 265)
+	var ordered: Array[String] = []
+	for x in [345, 420, 495]:
+		ordered.append(_add_still_scout(sim, Vector2(x, 265)).id)
+	var fifth := _add_still_scout(sim, Vector2(570, 265))
+	_advance(sim, 5 * BEAT)
+	var contacts := sim.trace.filter(func(event: Dictionary): return event.kind == "hammer_collision" and event.tile == id)
+	_check(contacts.map(func(event: Dictionary): return event.collision_depth) == [0, 1, 2]
+		and contacts.map(func(event: Dictionary): return event.target) == ordered and fifth.hp == fifth.max_hp,
+		"Ricochet relays through one additional distinct enemy and then ends the chain.")
 
 
 func _check_impact_driver() -> void:
