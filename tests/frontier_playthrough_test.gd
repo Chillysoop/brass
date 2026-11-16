@@ -28,12 +28,12 @@ func _run() -> void:
 		match run.data.phase:
 			"combat":
 				game.run_show_arena()
-				_check(game.timeline_intro.visible == (battles == 0), "Teach the timeline in the first opening battle only.")
+				_check(game.setup_hint.text.begins_with("Drag Bash") == (battles == 0), "Teach dragging the starter in the first opening battle only.")
 				_check(not game.result_banner.visible, "The result stays hidden during setup.")
 				if battles == 0:
 					game._place({"id": "bash", "lane": 0, "start": 0}, 0, 1)
-					_check(game.lanes[0][0].start == 1 and "beat 3" in game.setup_hint.text,
-						"Moving the starter should update the lesson to the tile's actual firing beat.")
+					_check(game.lanes[0][0].start == 1 and "right edge" in game.setup_hint.text,
+						"Moving the starter preserves the lesson about the tile's right edge.")
 					game._place({"id": "bash", "lane": 0, "start": 1}, 0, 0)
 				game._action()
 				_check(game.state == "running", "The battle starts without requiring a timeline edit.")
@@ -46,15 +46,16 @@ func _run() -> void:
 						if game.sim.tick == 2 * ArenaSim.TICKS_PER_BEAT + 2:
 							var card: Control = game.tile_cards[0][0]
 							firing_edge_seen = card.get_meta("timing_marker").visible
-						second_loop_seen = second_loop_seen or game.status.text.begins_with("Loop 2")
+						if game.sim.tick == ArenaSim.LOOP_TICKS + 2:
+							second_loop_seen = is_equal_approx(game.playheads[0].anchor_left, ArenaSim.loop_progress(2))
 					if game.state == "finished":
 						break
 				_check(game.sim.outcome == "victory", "Win %s (%d HP)" % [run.data.node.label, run.data.hp])
-				_check(game.result_banner.visible and game.result_text.text == "VICTORY" and not game.timeline_intro.visible,
-					"A win shows the victory cue and retires the opening lesson.")
+				_check(game.result_banner.visible and game.result_text.text == "VICTORY",
+					"A win shows the victory cue.")
 				if battles == 0:
 					_check(firing_edge_seen and second_loop_seen,
-						"The first battle holds the firing-edge highlight and names the first loop reset.")
+						"The first battle holds the firing-edge highlight and resets the playhead for the second loop.")
 					var resumed := FrontierRun.new()
 					_check(resumed.load_save(save_path) and resumed.profile.timeline_intro_seen,
 						"The opening lesson completion survives a reload before the first reward.")

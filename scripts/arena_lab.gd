@@ -1,5 +1,12 @@
 extends Control
 
+class SequenceTileButton extends Button:
+	var preview: Callable
+
+	func _make_custom_tooltip(_for_text: String) -> Object:
+		return preview.call()
+
+
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ArenaView = preload("res://scripts/arena_view.gd")
 const StorageScreen = preload("res://scripts/storage_screen.gd")
@@ -76,7 +83,8 @@ var enemy_card_names := {}
 var save_title_button: Button
 var battle_heading: Label
 var fixture_picker: OptionButton
-var speed_picker: OptionButton
+var speed_controls: HBoxContainer
+var speed_buttons: Array[Button] = []
 var action: Button
 var combat_meter: CombatMeter
 var combat_meter_toggle: Button
@@ -90,8 +98,6 @@ var combat_save_pending := false
 var showing_battle_rewards := false
 var result_animation: Tween
 var result_text: Label
-var status: Label
-var timeline_intro: Label
 var result_banner: PanelContainer
 var lane_health: Array[ProgressBar] = []
 var lane_health_labels: Array[Label] = []
@@ -108,7 +114,7 @@ var drag_board: Control
 var drag_overlay: Control
 var drag_pointer := Vector2.ZERO
 var drag_preview_key: Array = []
-var faded_cards: Array[Control] = []
+var faded_cards: Dictionary = {}
 
 func _ready() -> void:
 	theme = _theme()
@@ -192,10 +198,7 @@ func _build() -> void:
 	fixture_picker.add_item("Blink forge practice")
 	fixture_picker.add_item("Shot and Guard practice")
 	fixture_picker.item_selected.connect(func(index: int): _load_fixture(["duo", "solo", "forge", "blink_forge", "build_forge"][index]))
-	speed_picker = OptionButton.new()
-	speed_picker.add_item("1× speed")
-	speed_picker.add_item("2× speed")
-	speed_picker.item_selected.connect(func(index: int): speed = index + 1)
+	_build_speed_controls(header)
 	storage_button = _button("Tile storage", _toggle_storage)
 	GameIcons.decorate(storage_button, "forge", 18)
 	storage_button.tooltip_text = "Drag tiles between storage and timelines."
@@ -234,18 +237,6 @@ func _build() -> void:
 	combat_meter.name = "CombatMeter"
 	combat_meter.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	combat_sidebar.add_child(combat_meter)
-	var readout := HBoxContainer.new()
-	readout.add_theme_constant_override("separation", 16)
-	stack.add_child(readout)
-	status = _label("", 15, GOLD)
-	status.custom_minimum_size.x = 150
-	readout.add_child(status)
-	timeline_intro = _label("Heroes move on their own. Tiles fire at their right edge. The 12 beats repeat.", 17, TEAL)
-	timeline_intro.name = "TimelineIntro"
-	timeline_intro.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	timeline_intro.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	timeline_intro.hide()
-	readout.add_child(timeline_intro)
 	colossus_status = _label("", 15, GOLD)
 	colossus_status.name = "ColossusStatus"
 	colossus_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -263,10 +254,8 @@ func _build() -> void:
 	stack.add_child(dock_status)
 	var sequence_bar := HBoxContainer.new()
 	stack.add_child(sequence_bar)
-	var sequence_label := _label("Timeline", 15, GOLD)
-	sequence_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	sequence_bar.add_child(sequence_label)
 	relic_strip = HBoxContainer.new()
+	relic_strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	relic_strip.add_theme_constant_override("separation", 5)
 	sequence_bar.add_child(relic_strip)
 	enchantment_button = _button("", _toggle_storage)
@@ -290,7 +279,6 @@ func _build() -> void:
 	arsenal_button.tooltip_text = "Browse and equip combat tiles in Arena Practice."
 	tray.add_child(arsenal_button)
 	tray.add_child(fixture_picker)
-	tray.add_child(speed_picker)
 	tray.add_child(retry_button)
 	tray.add_child(reset_button)
 	tray.add_child(return_button)
@@ -324,6 +312,45 @@ func _build() -> void:
 	add_child(frontier_screen)
 	frontier_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	frontier_screen.configure(self)
+
+func _build_speed_controls(header: HBoxContainer) -> void:
+	speed_controls = HBoxContainer.new()
+	speed_controls.name = "CombatSpeed"
+	speed_controls.add_theme_constant_override("separation", 3)
+	header.add_child(speed_controls)
+	var group := ButtonGroup.new()
+	for multiplier in range(1, 4):
+		var button := _button("", func(): speed = multiplier)
+		button.name = "CombatSpeed%dx" % multiplier
+		button.toggle_mode = true
+		button.button_group = group
+		button.custom_minimum_size = Vector2(36, 32)
+		button.tooltip_text = "%d× combat speed" % multiplier
+		button.accessibility_name = button.tooltip_text
+		button.add_theme_stylebox_override("pressed", _box(Color("#59462f"), GOLD))
+		button.add_theme_stylebox_override("hover_pressed", _box(Color("#635237"), GOLD))
+		speed_controls.add_child(button)
+		var glyph := Control.new()
+		glyph.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		button.add_child(glyph)
+		glyph.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		glyph.draw.connect(_draw_speed_icon.bind(glyph, multiplier))
+		glyph.resized.connect(glyph.queue_redraw)
+		speed_buttons.append(button)
+	speed_buttons[speed - 1].set_pressed_no_signal(true)
+
+
+func _draw_speed_icon(glyph: Control, multiplier: int) -> void:
+	const TRIANGLE_SIZE := Vector2(7, 10)
+	const SPACING := 9.0
+	var row_width := TRIANGLE_SIZE.x + (multiplier - 1) * SPACING
+	var first := (glyph.size - Vector2(row_width, TRIANGLE_SIZE.y)) / 2.0
+	for index in range(multiplier):
+		var point := first + Vector2(index * SPACING, 0)
+		glyph.draw_colored_polygon(PackedVector2Array([
+			point, point + Vector2(TRIANGLE_SIZE.x, TRIANGLE_SIZE.y * 0.5), point + Vector2(0, TRIANGLE_SIZE.y)
+		]), CREAM)
+
 
 func _build_enemy_details() -> void:
 	enemy_details = ScrollContainer.new()
@@ -543,7 +570,7 @@ func _physics_process(_delta: float) -> void:
 	for step_index in range(speed):
 		var events: Array = sim.step()
 		combat_meter.record(events, sim.units)
-		# At 2×, show the boundary for the frame even if it was the first of two steps.
+		# At higher speeds, show the boundary for the frame even if a later step passes it.
 		if sim.tick % ArenaSim.TICKS_PER_BEAT == 0:
 			edge_tick = sim.tick
 		arena.present(sim.units, events, sim.tick, sim.visual_cues, speed, sim.pending_reinforcement())
@@ -585,6 +612,7 @@ func _update_controls() -> void:
 		action.text = "Back to forge"
 	if campaign and state == "finished" and sim.outcome == "defeat" and not combat_save_pending:
 		action.text = "See results"
+	action.tooltip_text = run.save_error if combat_save_pending else ""
 	action.visible = not (campaign and animating) and not showing_battle_rewards
 	save_title_button.visible = campaign and not combat_save_pending and not animating and state in ["setup", "finished"]
 	var battle_title := FrontierScreen.battle_title(run.data.get("node", {}))
@@ -594,55 +622,34 @@ func _update_controls() -> void:
 	combat_meter.visible = combat_meter_toggle.visible and combat_meter_open
 	enemy_details.visible = not combat_meter.visible and not showing_battle_rewards \
 		and ((campaign and encounter_setup) or not retry_options.is_empty()) and not enemy_card_names.is_empty()
-	combat_sidebar.visible = combat_meter.visible or enemy_details.visible
+	combat_sidebar.visible = combat_meter.visible or enemy_details.visible or _placing_battle_reward()
 	reset_button.visible = not campaign
 	fixture_picker.visible = not campaign and retry_options.is_empty()
 	return_button.visible = not campaign
 	return_button.text = "Back to battle result" if not retry_result.is_empty() else "Title"
 	camp_button.visible = camp_forge and not _editing_camp_forge()
 	fixture_picker.disabled = state != "setup"
-	storage_button.disabled = state != "setup"
+	storage_button.disabled = not _can_edit_loadout()
+	storage_button.visible = not _placing_battle_reward()
 	var enchantment := TileEnchantments.info(_active_enchantment())
 	enchantment_button.visible = state == "setup" and not enchantment.is_empty()
 	if enchantment_button.visible:
 		enchantment_button.text = enchantment.label
 		enchantment_button.tooltip_text = enchantment.description + "\nAssign or move this enchantment in Tile storage."
 		GameIcons.decorate(enchantment_button, enchantment.icon, 18)
-	speed_picker.visible = not campaign or (encounter_setup and state != "finished")
+	speed_controls.visible = not campaign or (encounter_setup and state != "finished")
+	var speed_button := speed_buttons[speed - 1]
+	if not speed_button.button_pressed:
+		speed_button.set_pressed_no_signal(true)
 	retry_button.visible = campaign and state == "finished" and not combat_save_pending \
 		and not animating and not battle_snapshot.is_empty() and not str(sim.outcome).is_empty()
 	palette.visible = state == "setup" and not campaign and retry_options.is_empty()
 	arsenal_button.visible = palette.visible
-	palette.get_parent().visible = not campaign or camp_forge or retry_button.visible or speed_picker.visible
+	palette.get_parent().visible = not campaign or camp_forge or retry_button.visible
 	setup_hint.visible = state == "setup"
-	var cycle := ArenaSim.LOOP_TICKS
 	var elapsed: int = sim.tick
 	var teaching := _teaching_timeline()
-	timeline_intro.visible = teaching and elapsed <= cycle and state != "finished"
 	var display_tick := edge_tick if edge_tick > 0 else elapsed
-	var progress := 0 if display_tick == 0 else 1 + (display_tick - 1) % cycle
-	var beat := ceili(float(progress) / ArenaSim.TICKS_PER_BEAT)
-	match state:
-		"setup":
-			status.text = "PRE-FIGHT SETUP" if not campaign or encounter_setup else "MANAGE TILES"
-			if teaching:
-				status.text = "FIRST BATTLE"
-			if _traveling_smith_forge():
-				status.text = "TRAVELING SMITH"
-			if not retry_options.is_empty():
-				status.text = "PRACTICE · " + battle_name
-		"finished":
-			status.text = "" if showing_battle_rewards else ("Victory" if sim.outcome == "victory" else "Defeat")
-			if combat_save_pending:
-				status.text = "%s Retry to save this battle result." % run.save_error
-			elif campaign and not showing_battle_rewards and sim.outcome == "victory" and run.data.node.type == "boss":
-				var leg := int(run.data.get("segment", 1))
-				status.text = run.data.node_notice if run.is_final_boss() else "Leg %d cleared" % leg
-		_:
-			status.text = "%s %02d / 12 · %.1fs" % ["Paused" if state == "paused" else "Beat", beat, elapsed / 60.0]
-			if teaching and elapsed >= cycle:
-				status.text = "Loop %d · %s" % [1 + floori(float(maxi(0, display_tick - 1)) / cycle), status.text]
-	status.get_parent().visible = not status.text.is_empty()
 	for lane_index in range(lane_health.size()):
 		var hero: Dictionary = sim.units[lane_index]
 		var health := lane_health[lane_index]
@@ -1025,7 +1032,7 @@ func _rebuild_loadout() -> void:
 	elif state == "setup" and _teaching_timeline() and not lanes[0].is_empty():
 		var starter: Dictionary = lanes[0][0]
 		var tile: Dictionary = ArenaSim.TILES[starter.id]
-		setup_hint.text = "Drag %s to change its timing. It fires on beat %d here." % [tile.label, starter.start + tile.width]
+		setup_hint.text = "Drag %s to change its timing. Tiles fire at their right edge." % tile.label
 	else:
 		setup_hint.text = "Drag tiles to slide neighbors aside. Tiles fire at their right edge."
 	if storage_screen.visible:
@@ -1158,18 +1165,20 @@ func _rebuild_relic_strip() -> void:
 		var relic: Dictionary = FrontierRun.RELICS.get(id, {})
 		if relic.is_empty():
 			continue
-		var badge := Button.new()
-		GameIcons.decorate(badge, GameIcons.relic(id), 18)
-		badge.custom_minimum_size = Vector2(30, 30)
+		var badge := TextureRect.new()
+		badge.texture = GameIcons.icon(GameIcons.relic(id))
+		badge.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		badge.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		badge.custom_minimum_size = Vector2(28, 28)
+		badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		badge.tooltip_text = "%s\n%s" % [relic.label, relic.description]
-		badge.focus_mode = Control.FOCUS_NONE
-		badge.mouse_default_cursor_shape = Control.CURSOR_HELP
+		badge.accessibility_name = relic.label
 		relic_strip.add_child(badge)
 		relic_badges[id] = badge
 
 
 func _pulse_relic(id: String) -> void:
-	var badge: Button = relic_badges.get(id)
+	var badge: TextureRect = relic_badges.get(id)
 	if not is_instance_valid(badge):
 		return
 	if relic_pulses.has(id) and relic_pulses[id].is_running():
@@ -1258,7 +1267,7 @@ func _build_lane(lane_index: int, row_height: int) -> void:
 	var board := Control.new()
 	var cards := {}
 	tile_cards.append(cards)
-	var offers: Array = _combine_offers(lanes[lane_index]) if state == "setup" else []
+	var offers: Array = _combine_offers(lanes[lane_index]) if _can_edit_loadout() else []
 	var offer_height := 0 if offers.is_empty() else 33
 	board.custom_minimum_size.y = row_height + offer_height
 	board.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -1273,7 +1282,7 @@ func _build_lane(lane_index: int, row_height: int) -> void:
 	for beat in range(ArenaSim.BEATS):
 		var cell := _button(str(beat + 1), func(): _place_selected(lane_index, beat))
 		cell.tooltip_text = "Place at beat %d" % (beat + 1)
-		cell.disabled = state != "setup"
+		cell.disabled = not _can_edit_loadout()
 		cell.add_theme_font_size_override("font_size", 12)
 		cell.add_theme_color_override("font_color", MUTED)
 		_add_span(board, cell, beat, 1, offer_height, 0)
@@ -1312,7 +1321,11 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	card.set_meta("tile", item)
 	tile_cards[lane_index][item.start] = card
 	var tile_title: String = tile.get("short_label", tile.label)
-	var name_button := _button(tile_title, func(): _select(payload))
+	var name_button := SequenceTileButton.new()
+	name_button.text = tile_title
+	name_button.pressed.connect(func(): _select(payload))
+	var class_id := _lane_hero_class(lane_index)
+	name_button.preview = frontier_screen.tile_hover_card.bind(item.id, class_id, item.get("enchantment", ""))
 	var icon_key := GameIcons.tile(item.id, tile)
 	GameIcons.decorate(name_button, icon_key, 15 if tile.width == 1 else 20)
 	name_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
@@ -1338,9 +1351,9 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	name_button.tooltip_text = _tile_tooltip(lane_index, item, tile)
 	var metric := CombatIcons.tile_corner_stat(tile)
 	_style_tile_button(name_button, tile, tint, active, 16, tile.width == 1, not metric.is_empty())
-	name_button.disabled = state != "setup"
+	name_button.disabled = not _can_edit_loadout()
 	card.add_child(name_button)
-	_add_tile_badges(name_button, tile, _lane_hero_class(lane_index))
+	_add_tile_badges(name_button, tile, class_id)
 	_add_enchantment_badge(name_button, item)
 	CombatIcons.add_tile_corner(name_button, metric)
 	_drag_source(name_button, payload, board, lane_index, offer_height)
@@ -1444,7 +1457,7 @@ func _target_buttons(rules: Array, current: String, choose: Callable, all := fal
 		button.toggle_mode = true
 		button.button_group = group
 		button.set_pressed_no_signal(current == rule)
-		button.disabled = state != "setup" or rules.size() == 1
+		button.disabled = not _can_edit_loadout() or rules.size() == 1
 		button.custom_minimum_size = Vector2(16, 22)
 		button.add_theme_font_size_override("font_size", 13)
 		button.tooltip_text = LABELS[rule] + (" · all compatible tiles" if all else "")
@@ -1467,9 +1480,8 @@ func _tile_tooltip(lane_index: int, item: Dictionary, tile: Dictionary) -> Strin
 	var identity := "Equipped by %s" % sim.units[lane_index].name
 	if not origin.is_empty() and origin != owner:
 		identity += " · %s signature" % GameIcons.hero_label(origin)
-	var tooltip := "%s · %s · %s\n%s\n%s\nFires on beat %d" % [
-		tile.label, GameIcons.rarity_name(tile), GameIcons.tile_stats(tile), identity, tile.description,
-		item.start + tile.width
+	var tooltip := "%s · %s · %s\n%s\n%s" % [
+		tile.label, GameIcons.rarity_name(tile), GameIcons.tile_stats(tile), identity, tile.description
 	]
 	var target_caption := _setup_target_caption(lane_index, item, rule)
 	if not target_caption.is_empty():
@@ -1482,7 +1494,7 @@ func _tile_tooltip(lane_index: int, item: Dictionary, tile: Dictionary) -> Strin
 	if not enchantment.is_empty():
 		tooltip += "\n%s · %s" % [enchantment.label, enchantment.description]
 		keyword_copy += "\n" + enchantment.description
-	return TileKeywords.with_definitions(tooltip, keyword_copy)
+	return TileKeywords.with_definitions(tooltip, keyword_copy, FrontierScreen.TILE_DESCRIPTION_EXCLUSIONS)
 
 
 func _setup_target_caption(lane_index: int, item: Dictionary, rule: String) -> String:
@@ -1517,7 +1529,7 @@ func _set_all(lane_index: int, rule: String) -> void:
 	]
 
 func _select(payload: Dictionary) -> void:
-	if state != "setup":
+	if not _can_edit_loadout():
 		return
 	selected = {} if selected == payload else payload.duplicate()
 	_rebuild_loadout()
@@ -1532,7 +1544,7 @@ func _select(payload: Dictionary) -> void:
 
 func _drag_source(control: Control, payload: Dictionary, board: Control = null, lane_index := -1, top := 0) -> void:
 	var get_data := func(point: Vector2):
-		if state != "setup":
+		if not _can_edit_loadout():
 			return null
 		var tile: Dictionary = ArenaSim.TILES[payload.id]
 		var drag := payload.duplicate()
@@ -1560,7 +1572,7 @@ func _drop_destination(control: Control, board: Control, lane_index: int, top: i
 		return clampi(floori(at.x * ArenaSim.BEATS / board.size.x) - int(data.get("grab_offset", 0)), 0, ArenaSim.BEATS - width)
 	control.set_drag_forwarding(get_data,
 		func(_point: Vector2, data: Variant) -> bool:
-			if not data is Dictionary or state != "setup":
+			if not data is Dictionary or not _can_edit_loadout():
 				return false
 			var start: int = drop_start.call(data)
 			if start < 0:
@@ -1584,47 +1596,82 @@ func _show_drag_preview(board: Control, lane_index: int, top: int, start: int, d
 	drag_board = board
 	drag_overlay = Control.new()
 	drag_overlay.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	drag_overlay.z_index = 2
 	board.add_child(drag_overlay)
 	drag_overlay.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	var cards: Dictionary = tile_cards[lane_index]
 	var source_lane := int(data.get("lane", -1))
+	var source: Control = null
 	if source_lane >= 0 and source_lane < tile_cards.size() and tile_cards[source_lane].has(data.get("start", -1)):
-		_fade_drag_card(tile_cards[source_lane][data.start])
+		source = tile_cards[source_lane][data.start]
+		_fade_drag_card(source)
 	var moves: Dictionary = plan.get("moves", {})
 	for original: int in moves:
 		var card: Control = cards[original]
 		_fade_drag_card(card)
-		_add_drag_tile(card.get_meta("tile").id, moves[original], top, TEAL)
-	_add_drag_tile(data.id, start, top, RUST if plan.is_empty() else GOLD, "No room" if plan.is_empty() else "")
+		var ghost := _add_drag_tile(card.get_meta("tile").id, moves[original], top, TEAL)
+		_slide_drag_ghost(ghost, card)
+	var swap_start: int = plan.get("swap", -1)
+	if swap_start >= 0 and source != null:
+		var card: Control = cards[swap_start]
+		_fade_drag_card(card)
+		var ghost := _add_drag_tile(card.get_meta("tile").id, source.get_meta("tile").start, top, TEAL)
+		ghost.position = _lane_point(drag_overlay, source, Vector2.ZERO)
+		_slide_drag_ghost(ghost, card)
+	var stows: Array = plan.get("stows", [])
+	for stow: Dictionary in stows:
+		_fade_drag_card(cards[stow.start])
+	var caption := "No room" if plan.is_empty() else ""
+	if not stows.is_empty():
+		caption = "%d to storage" % stows.size()
+	_add_drag_tile(data.id, start, top, RUST if plan.is_empty() else GOLD, caption)
 
-func _add_drag_tile(id: String, start: int, top: int, accent: Color, copy := "") -> void:
+func _add_drag_tile(id: String, start: int, top: int, accent: Color, copy := "") -> Control:
 	var tile: Dictionary = ArenaSim.TILES[id]
 	var ghost := PanelContainer.new()
 	ghost.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	ghost.add_theme_stylebox_override("panel", _box(Color("#20323e"), accent))
 	_add_span(drag_overlay, ghost, start, tile.width, top + 1, -1)
 	ghost.offset_right = 0
-	var firing_beat := start + int(tile.width)
-	var timing := "Beat %d" % firing_beat if tile.width == 1 else "%s · Beat %d" % [tile.label, firing_beat]
-	var caption := _label(timing if copy.is_empty() else copy, 13, accent)
+	var contents := HBoxContainer.new()
+	contents.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	contents.add_theme_constant_override("separation", 4)
+	ghost.add_child(contents)
+	if copy.is_empty():
+		var art := TextureRect.new()
+		art.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		art.texture = GameIcons.icon(GameIcons.tile(id, tile))
+		art.custom_minimum_size = Vector2(16, 16)
+		art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		contents.add_child(art)
+	var caption := _label(tile.get("short_label", tile.label) if copy.is_empty() else copy, 13, accent)
 	caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	caption.vertical_alignment = VERTICAL_ALIGNMENT_CENTER
 	caption.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	caption.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	ghost.add_child(caption)
+	caption.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	contents.add_child(caption)
+	return ghost
+
+func _slide_drag_ghost(ghost: Control, source: Control) -> void:
+	var destination := ghost.position
+	ghost.position = _lane_point(drag_overlay, source, Vector2.ZERO)
+	ghost.create_tween().tween_property(ghost, "position", destination, 0.16) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_OUT)
 
 func _fade_drag_card(card: Control) -> void:
+	faded_cards[card] = card.modulate.a
 	card.modulate.a = 0.16
-	faded_cards.append(card)
 	var tile_back: Control = card.get_meta("tile_back", null)
 	if tile_back != null:
+		faded_cards[tile_back] = tile_back.modulate.a
 		tile_back.modulate.a = 0.16
-		faded_cards.append(tile_back)
 
 func _clear_drag_preview() -> void:
 	for card in faded_cards:
 		if is_instance_valid(card):
-			card.modulate.a = 1.0
+			card.modulate.a = faded_cards[card]
 	faded_cards.clear()
 	if is_instance_valid(drag_overlay):
 		drag_overlay.hide()
@@ -1651,14 +1698,16 @@ func _notification(what: int) -> void:
 		_clear_drag_preview()
 
 func _timeline_nudge_plan(lane_index: int, start: int, payload: Dictionary) -> Dictionary:
-	if state != "setup":
+	if not _can_edit_loadout():
 		return {}
-	var ignored: int = payload.get("start", -1) if payload.get("lane", -1) == lane_index else -1
-	return TilePacking.nudge_plan(lanes[lane_index], payload.get("id", ""), start, ArenaSim.BEATS, ignored)
+	if payload.get("reward", false):
+		return TilePacking.nudge_plan(lanes[lane_index], payload.id, start, ArenaSim.BEATS) \
+			if _reward_can_target(payload.id, lane_index) else {}
+	return TilePacking.timeline_drop_plan(lanes, storage_rows, lane_index, start, payload)
 
 func _can_place(payload: Dictionary, lane_index: int, start: int) -> bool:
 	var ignored: int = payload.get("start", -1) if payload.get("lane", -1) == lane_index else -1
-	return state == "setup" and TilePacking.can_place(lanes[lane_index], payload.get("id", ""), start, ArenaSim.BEATS, ignored)
+	return _can_edit_loadout() and TilePacking.can_place(lanes[lane_index], payload.get("id", ""), start, ArenaSim.BEATS, ignored)
 
 func _place_selected(lane_index: int, beat: int) -> void:
 	if selected.is_empty():
@@ -1668,8 +1717,14 @@ func _place_selected(lane_index: int, beat: int) -> void:
 
 func _place(payload: Dictionary, lane_index: int, start: int, nudge := false) -> void:
 	var plan := _timeline_nudge_plan(lane_index, start, payload) if nudge else {}
+	if payload.get("reward", false):
+		if not plan.is_empty():
+			_drop_reward_on_timeline(payload.id, lane_index, start, plan)
+		return
 	if (nudge and plan.is_empty()) or (not nudge and not _can_place(payload, lane_index, start)):
-		setup_hint.text = "That tile overlaps another tile or extends beyond beat 12."
+		setup_hint.text = "No room for that tile."
+		return
+	if payload.get("lane", -1) == lane_index and payload.get("start", -1) == start:
 		return
 	var before := _inventory_checkpoint()
 	var valid: Array = sim.target_rules(payload.id)
@@ -1682,13 +1737,39 @@ func _place(payload: Dictionary, lane_index: int, start: int, nudge := false) ->
 		entry.start = start
 	else:
 		suppressed_combines.erase(payload.id)
-	_apply_nudge(lanes[lane_index], plan)
-	lanes[lane_index].append(entry)
-	lanes[lane_index].sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
+	var destination: Array = lanes[lane_index]
+	var swap_start: int = plan.get("swap", -1)
+	if swap_start >= 0:
+		var swapped := _take_displaced_tile(destination, swap_start)
+		swapped.start = payload.start
+		lanes[payload.lane].append(swapped)
+		lanes[payload.lane].sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
+	for stow: Dictionary in plan.get("stows", []):
+		var displaced := _take_displaced_tile(destination, stow.start)
+		displaced.start = stow.position
+		storage_rows[stow.row].append(displaced)
+		storage_rows[stow.row].sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
+	_apply_nudge(destination, plan)
+	destination.append(entry)
+	destination.sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
 	if not _persist_inventory(before):
 		return
 	selected.clear()
 	_rebuild_loadout()
+	var touched: Array[Dictionary] = [{"row": -1, "lane": lane_index, "start": start}]
+	if swap_start >= 0:
+		touched.append({"row": -1, "lane": payload.lane, "start": payload.start})
+	for position: int in plan.get("moves", {}).values():
+		touched.append({"row": -1, "lane": lane_index, "start": position})
+	for stow: Dictionary in plan.get("stows", []):
+		touched.append({"row": stow.row, "lane": -1, "start": stow.position})
+	for slot: Dictionary in touched:
+		open_new_tile_combine(slot.row, slot.lane, slot.start)
+		if forge_screen.visible:
+			break
+
+func _take_displaced_tile(items: Array, start: int) -> Dictionary:
+	return items.pop_at(items.find_custom(func(item: Dictionary): return item.start == start))
 
 func _apply_nudge(items: Array, plan: Dictionary) -> void:
 	var moves: Dictionary = plan.get("moves", {})
@@ -1713,7 +1794,7 @@ func _confirm_discard() -> void:
 
 func _can_discard_selected() -> bool:
 	var item := _selected_tile()
-	if state != "setup" or item.is_empty():
+	if not _can_edit_loadout() or item.is_empty():
 		return false
 	if _editing_camp_forge() and is_same(item, pending_forge.camp_tile):
 		_show_inventory_message("Return to the forge before discarding the tile you are upgrading.")
@@ -1800,7 +1881,7 @@ func _enchantment_controls() -> Dictionary:
 	return {"id": id, "host": tile_spec(host.get("id", "")).get("label", ""), "eligible": eligible, "button": caption}
 
 func storage_enchant_selected() -> void:
-	if state != "setup" or not storage_screen.visible:
+	if not _can_edit_loadout() or not storage_screen.visible:
 		return
 	var id := _active_enchantment()
 	var item := _selected_tile()
@@ -1822,10 +1903,10 @@ func storage_pick(row: int, item: Dictionary) -> void:
 
 func storage_can_place(row: int, start: int, payload: Dictionary) -> bool:
 	var ignored: int = payload.get("start", -1) if payload.get("row", -1) == row else -1
-	return state == "setup" and TilePacking.can_place(storage_rows[row], payload.get("id", ""), start, TilePacking.STORAGE_COLUMNS, ignored)
+	return _can_edit_loadout() and TilePacking.can_place(storage_rows[row], payload.get("id", ""), start, TilePacking.STORAGE_COLUMNS, ignored)
 
 func storage_nudge_plan(row: int, start: int, payload: Dictionary) -> Dictionary:
-	if state != "setup":
+	if not _can_edit_loadout() or (payload.get("reward", false) and not _reward_can_target(payload.id, -1)):
 		return {}
 	var ignored: int = payload.get("start", -1) if payload.get("row", -1) == row else -1
 	return TilePacking.nudge_plan(storage_rows[row], payload.get("id", ""), start, TilePacking.STORAGE_COLUMNS, ignored)
@@ -1834,6 +1915,10 @@ func storage_place(row: int, start: int, payload: Dictionary, nudge := false) ->
 	var plan := storage_nudge_plan(row, start, payload) if nudge else {}
 	if (nudge and plan.is_empty()) or (not nudge and not storage_can_place(row, start, payload)):
 		storage_screen.show_message("That tile needs a clear span in one row.")
+		return
+	if payload.get("reward", false):
+		if not _place_battle_reward(payload.id, {"row": row, "start": start}, plan):
+			storage_screen.show_message(run.save_error if not run.save_error.is_empty() else "That reward could not be placed.")
 		return
 	var before := _inventory_checkpoint()
 	var valid: Array = ArenaSim.TILES[payload.id].targets
@@ -1852,6 +1937,7 @@ func storage_place(row: int, start: int, payload: Dictionary, nudge := false) ->
 		return
 	selected.clear()
 	_rebuild_loadout()
+	open_new_tile_combine(row, -1, start)
 
 func storage_send_to_timeline() -> void:
 	if selected.has("row"):
@@ -1876,7 +1962,7 @@ func _selected_combine_copies() -> Array:
 	return TilePacking.find_copies(lanes, storage_rows, selected.id, range(lanes.size()), selected)
 
 func storage_combine_selected() -> void:
-	if state != "setup" or not storage_screen.visible:
+	if not _can_edit_loadout() or not storage_screen.visible:
 		return
 	var copies := _selected_combine_copies()
 	if copies.size() < 3:
@@ -1900,7 +1986,7 @@ func _commit_inventory_combine(id: String) -> void:
 		forge_screen.show_error(run.save_error)
 		return
 	selected.clear()
-	forge_close()
+	_after_forge_upgrade()
 	if not notice.is_empty():
 		_show_inventory_message(notice)
 
@@ -1931,7 +2017,7 @@ func _combine_offers(items: Array) -> Array[Dictionary]:
 	return TilePacking.offers(items, suppressed_combines)
 
 func _offer_combine(row: int, lane: int, start: int, accept: bool) -> void:
-	if state != "setup":
+	if not _can_edit_loadout():
 		return
 	var items: Array = storage_rows[row] if row >= 0 else lanes[lane]
 	for offer in _combine_offers(items):
@@ -1948,6 +2034,13 @@ func _offer_combine(row: int, lane: int, start: int, accept: bool) -> void:
 			decline_dialog.canceled.connect(_cancel_decline, CONNECT_ONE_SHOT)
 			decline_dialog.popup_centered()
 		return
+
+func open_new_tile_combine(row: int, lane: int, start: int) -> void:
+	var items: Array = storage_rows[row] if row >= 0 else lanes[lane]
+	for offer: Dictionary in _combine_offers(items):
+		if start >= offer.start and start < offer.start + offer.width:
+			_offer_combine(row, lane, offer.start, true)
+			return
 
 func _cancel_decline() -> void:
 	if decline_dialog.confirmed.is_connected(_decline_combine):
@@ -2003,7 +2096,7 @@ func forge_choose(id: String) -> void:
 		forge_screen.show_error(run.save_error)
 		return
 	selected.clear()
-	forge_close()
+	_after_forge_upgrade()
 	if not notice.is_empty():
 		_show_inventory_message(notice)
 
@@ -2076,18 +2169,6 @@ func forge_owner() -> String:
 		return _lane_hero_class(source.lane)
 	var source: Dictionary = pending_forge.get("camp", pending_forge)
 	return _lane_hero_class(source.get("lane", -1))
-
-func forge_firing_beat(id: String) -> int:
-	if pending_forge.has("reward"):
-		var destination: Dictionary = _reward_upgrade_plan(pending_forge.copies, id).get("destination", {})
-		return 0 if destination.is_empty() or destination.has("row") else int(destination.start) + int(ArenaSim.TILES[id].width)
-	if pending_forge.has("inventory_copies"):
-		var destination: Dictionary = _inventory_upgrade_plan(id).get("destination", {})
-		return 0 if destination.is_empty() or destination.has("row") else int(destination.start) + int(ArenaSim.TILES[id].width)
-	if pending_forge.has("camp"):
-		var source: Dictionary = pending_forge.camp
-		return 0 if source.has("row") else int(source.start) + int(ArenaSim.TILES[id].width)
-	return 0 if int(pending_forge.row) >= 0 else int(pending_forge.offer.start) + int(ArenaSim.TILES[id].width)
 
 func forge_close() -> void:
 	if pending_forge.has("reward"):
@@ -2174,6 +2255,7 @@ func _show_frontier(page := "") -> void:
 	retry_result = {}
 	arena_screen.hide()
 	arsenal_panel.hide()
+	_set_reward_storage(false)
 	storage_screen.hide()
 	forge_screen.hide()
 	pending_forge.clear()
@@ -2188,6 +2270,15 @@ func _place_frontier_screen(parent: Control) -> void:
 		frontier_screen.reparent(parent, false)
 		frontier_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
+func _set_reward_storage(docked: bool) -> void:
+	var parent: Control = combat_sidebar if docked else arena
+	if storage_screen.get_parent() != parent:
+		storage_screen.reparent(parent, false)
+		storage_screen.set_docked(docked)
+		if not docked:
+			storage_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	storage_screen.visible = docked
+
 func _show_battle_rewards() -> void:
 	if not campaign or state != "finished":
 		run_show_arena()
@@ -2198,11 +2289,12 @@ func _show_battle_rewards() -> void:
 		arena.reset_view(sim.units.filter(func(unit: Dictionary): return unit.side == "hero"), lanes)
 	else:
 		_read_run_loadout()
-		_rebuild_loadout()
 	if _open_reward_combine():
 		arena_screen.hide()
 		return
 	showing_battle_rewards = true
+	_set_reward_storage(_placing_battle_reward())
+	_rebuild_loadout()
 	arena_screen.show()
 	battle_stage.show()
 	arena.show()
@@ -2276,21 +2368,34 @@ func run_practice() -> void:
 	fixture_picker.select(0)
 	_load_fixture("duo")
 
-func run_show_arena() -> void:
+func run_show_arena(empty_arena := false) -> void:
 	showing_battle_rewards = false
 	campaign = true
-	encounter_setup = run.data.phase == "combat"
+	encounter_setup = not empty_arena and run.data.phase == "combat"
 	_read_run_loadout()
 	frontier_screen.hide()
+	_set_reward_storage(false)
 	storage_screen.hide()
 	forge_screen.hide()
 	arena_screen.show()
 	battle_stage.show()
 	_reset_fight()
+	if empty_arena:
+		arena.reset_view([], lanes)
 
 func run_rest_forge() -> void:
 	camp_forge = true
-	run_show_arena()
+	run_show_arena(true)
+	_open_storage()
+
+func _after_forge_upgrade() -> void:
+	if campaign:
+		camp_forge = camp_forge and (run.data.phase == "rest" or _traveling_smith_forge())
+		run_show_arena(true)
+	else:
+		forge_close()
+		arena.reset_view([], lanes)
+	_open_storage()
 
 func run_open_enchantment_loadout() -> void:
 	run_show_arena()
@@ -2342,7 +2447,7 @@ func _commit_camp_forge(id: String) -> void:
 	var source: Dictionary = pending_forge.camp
 	if _traveling_smith_forge():
 		if run.choose_mystery_upgrade(source, id):
-			run_return()
+			_after_forge_upgrade()
 		else:
 			forge_screen.show_error(run.save_error if not run.save_error.is_empty() else "This tile cannot use that upgrade. Make room or choose another tile.")
 		return
@@ -2365,7 +2470,7 @@ func _commit_camp_forge(id: String) -> void:
 				notice += "\n%s returned to storage." % TileEnchantments.info(enchantment).label
 			suppressed_combines.erase(id)
 			if run.rest("forge", notice):
-				run_return()
+				_after_forge_upgrade()
 			else:
 				_restore_inventory(before)
 				forge_screen.show_error(run.save_error)
@@ -2444,17 +2549,82 @@ func _claim_loot(id: String, commit: Callable, reward_lane := -1) -> bool:
 		run.loadout.suppressed[id] = true
 	return false
 
+func _placing_battle_reward() -> bool:
+	return showing_battle_rewards and run.has_combat_reward() and not run.is_final_boss() and run.elite_relic_offers().is_empty()
+
+func _can_edit_loadout() -> bool:
+	return state == "setup" or _placing_battle_reward()
+
+func _reward_can_target(id: String, lane: int) -> bool:
+	return _placing_battle_reward() and id in run.data.offers and _pending_reward_id().is_empty() \
+		and (lane < 0 or run.reward_lane() in [-1, lane])
+
+func _drop_reward_on_timeline(id: String, lane: int, start: int, plan: Dictionary) -> bool:
+	if _place_battle_reward(id, {"lane": lane, "start": start}, plan):
+		return true
+	_show_inventory_message(run.save_error if not run.save_error.is_empty() else "That reward could not be placed.")
+	return false
+
+func run_send_reward_to_storage(id: String) -> bool:
+	if not _reward_can_target(id, -1):
+		return false
+	for row in range(storage_rows.size()):
+		for column in range(TilePacking.STORAGE_COLUMNS):
+			if TilePacking.can_place(storage_rows[row], id, column, TilePacking.STORAGE_COLUMNS):
+				return _place_battle_reward(id, {"row": row, "start": column}, {"moves": {}})
+	if run_can_combine_reward(id) and _begin_reward_combine(id, {"row": -1, "start": -1}):
+		run_return()
+		return true
+	return false
+
+func _place_battle_reward(id: String, placement: Dictionary, plan: Dictionary) -> bool:
+	if plan.is_empty() or not _reward_can_target(id, int(placement.get("lane", -1))):
+		return false
+	var claimed: bool
+	if run_can_combine_reward(id):
+		claimed = _begin_reward_combine(id, placement)
+	else:
+		claimed = _commit_placed_reward(id, placement, plan)
+	if claimed:
+		selected.clear()
+		run_return()
+	return claimed
+
+func _planned_reward_position(id: String, placement: Dictionary) -> Dictionary:
+	var stored := placement.has("row")
+	var index := int(placement.get("row", -1) if stored else placement.get("lane", -1))
+	var rows: Array = run.loadout.storage if stored else run.loadout.lanes
+	if index < 0 or index >= rows.size():
+		return {}
+	return TilePacking.nudge_plan(rows[index], id, int(placement.start),
+		TilePacking.STORAGE_COLUMNS if stored else ArenaSim.BEATS)
+
+func _commit_placed_reward(id: String, placement: Dictionary, plan: Dictionary) -> bool:
+	var before: Dictionary = run.loadout.duplicate(true)
+	var items: Array = run.loadout.storage[int(placement.row)] if placement.has("row") else run.loadout.lanes[int(placement.lane)]
+	_apply_nudge(items, plan)
+	items.append(_entry(id, int(placement.start), ArenaSim.TILES[id].targets[0]))
+	items.sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
+	run.loadout.suppressed.erase(id)
+	if run.reward(id, _reward_placement(id, placement)):
+		return true
+	_restore_inventory(before)
+	return false
+
+func _begin_reward_combine(id: String, placement := {}) -> bool:
+	run.data.reward_combine = {"id": id, "placement": placement}
+	if run.save():
+		return true
+	run.data.erase("reward_combine")
+	return false
+
 func run_claim_reward(id: String) -> bool:
 	if not _pending_reward_id().is_empty():
 		return false
 	if id == "skip" or run.is_final_boss():
 		return run.reward(id)
 	if run_can_combine_reward(id):
-		run.data.reward_combine = {"id": id}
-		if run.save():
-			return true
-		run.data.erase("reward_combine")
-		return false
+		return _begin_reward_combine(id)
 	return _claim_loot(id, run.reward, run.reward_lane())
 
 func _pending_reward_id() -> String:
@@ -2487,12 +2657,21 @@ func _open_reward_combine() -> bool:
 		return false
 	pending_forge = {"reward": id, "copies": _reward_combine_copies(id)}
 	frontier_screen.hide()
-	forge_screen.open(id, 3, true, not _loot_destination(id, run.reward_lane()).is_empty())
+	var placement: Dictionary = run.data.reward_combine.get("placement", {})
+	var can_keep := not _loot_destination(id, run.reward_lane()).is_empty() if placement.is_empty() \
+		else not _planned_reward_position(id, placement).is_empty()
+	forge_screen.open(id, 3, true, can_keep)
 	return true
 
 func run_keep_reward_tile() -> bool:
 	var id := _pending_reward_id()
-	if id.is_empty() or _loot_destination(id, run.reward_lane()).is_empty():
+	if id.is_empty():
+		return false
+	var placement: Dictionary = run.data.reward_combine.get("placement", {})
+	if not placement.is_empty():
+		var plan := _planned_reward_position(id, placement)
+		return not plan.is_empty() and _finish_reward_combine(func(): return _commit_placed_reward(id, placement, plan))
+	if _loot_destination(id, run.reward_lane()).is_empty():
 		return false
 	return _finish_reward_combine(func(): return _claim_loot(id, run.reward, run.reward_lane()))
 
@@ -2513,16 +2692,18 @@ func _claim_reward_upgrade(id: String) -> void:
 		run.loadout.suppressed.erase(id)
 		if not notice.is_empty():
 			run.data.enchantment_notice = notice
-		return run.reward(source_id, _reward_placement(id, plan.destination))
-	)
+		return run.reward(source_id, _reward_placement(id, plan.destination)), true)
 
-func _finish_reward_combine(claim: Callable) -> bool:
+func _finish_reward_combine(claim: Callable, review_upgrade := false) -> bool:
 	var pending: Dictionary = run.data.reward_combine
 	var inventory: Dictionary = run.loadout.duplicate(true)
 	var previous_notice: String = run.data.get("enchantment_notice", "")
 	run.data.erase("reward_combine")
 	if claim.call():
-		run_return()
+		if review_upgrade:
+			_after_forge_upgrade()
+		else:
+			run_return()
 		return true
 	run.data.reward_combine = pending
 	if previous_notice.is_empty():

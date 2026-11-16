@@ -35,7 +35,7 @@ const VARIANTS := {
 static var _matcher := _create_matcher()
 
 
-static func description(value: String, font_size: int, color: Color) -> RichTextLabel:
+static func description(value: String, font_size: int, color: Color, excluded_terms: Array[String] = []) -> RichTextLabel:
 	var label := RichTextLabel.new()
 	label.fit_content = true
 	label.scroll_active = false
@@ -43,17 +43,20 @@ static func description(value: String, font_size: int, color: Color) -> RichText
 	label.focus_mode = Control.FOCUS_NONE
 	label.add_theme_font_size_override("normal_font_size", font_size)
 	label.add_theme_color_override("default_color", color)
-	set_description(label, value)
+	set_description(label, value, excluded_terms)
 	return label
 
 
-static func set_description(label: RichTextLabel, value: String) -> void:
+static func set_description(label: RichTextLabel, value: String, excluded_terms: Array[String] = []) -> void:
 	label.clear()
 	var offset := 0
 	for keyword: RegExMatch in _matcher.search_all(value):
+		var term := _term(keyword)
+		if term in excluded_terms:
+			continue
 		label.add_text(value.substr(offset, keyword.get_start() - offset))
 		label.push_color(HINT_COLOR)
-		label.push_hint(DEFINITIONS[_term(keyword)])
+		label.push_hint(DEFINITIONS[term])
 		label.add_text(keyword.get_string())
 		label.pop()
 		label.pop()
@@ -61,12 +64,12 @@ static func set_description(label: RichTextLabel, value: String) -> void:
 	label.add_text(value.substr(offset))
 
 
-static func with_definitions(tooltip: String, copy: String) -> String:
+static func with_definitions(tooltip: String, copy: String, excluded_terms: Array[String] = []) -> String:
 	var terms := PackedStringArray()
 	var seen := {}
 	for keyword: RegExMatch in _matcher.search_all(copy):
 		var term := _term(keyword)
-		if not seen.has(term):
+		if term not in excluded_terms and not seen.has(term):
 			terms.append("%s · %s" % [term.capitalize(), DEFINITIONS[term]])
 			seen[term] = true
 	return tooltip if terms.is_empty() else tooltip + "\n\n" + "\n".join(terms)

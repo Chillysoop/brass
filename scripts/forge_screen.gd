@@ -28,6 +28,7 @@ var _cards: Dictionary = {}
 var _title: Label
 var _subtitle: Label
 var _owner_slot: HBoxContainer
+var _board: Panel
 var _columns: HBoxContainer
 var _links: Control
 var _detail_name: Label
@@ -40,6 +41,8 @@ var _edit_layout: Button
 var _keep_reward: Button
 var _save_reward: Button
 var _error: Label
+var _merge_intro: Panel
+var _merge_tween: Tween
 
 
 func configure(host: Control) -> void:
@@ -49,13 +52,14 @@ func configure(host: Control) -> void:
 
 
 func open(source_id: String, copies := 3, reward := false, can_keep_reward := false, inspected := "") -> void:
+	_clear_merge_intro()
 	_source_id = source_id
 	_tiers = TilePacking.forge_tiers(source_id)
 	_next_ids = TilePacking.next_options(source_id)
 	_is_combine = copies == 3
 	var source: Dictionary = _host.tile_spec(source_id)
-	_title.text = "Combine tiles" if reward else "Tile forge"
-	_subtitle.text = "Combine 3 × %s" % source.label if _is_combine else "Upgrade %s" % source.label
+	_title.text = "Upgrade ready!" if _is_combine else "Tile forge"
+	_subtitle.text = ("Choose an upgrade path for %s" if _is_combine else "Upgrade %s") % source.label
 	if reward:
 		_subtitle.text = "%s · uses the reward and two owned copies" % _subtitle.text
 	for child in _owner_slot.get_children():
@@ -84,7 +88,11 @@ func open(source_id: String, copies := 3, reward := false, can_keep_reward := fa
 	_inspect(focus_id)
 	show()
 	_links.queue_redraw()
-	(_cards[focus_id] as Button).grab_focus()
+	if _is_combine and not _next_ids.is_empty():
+		_show_merge_intro(source)
+		(_cards[_next_ids.front()] as Button).grab_focus()
+	else:
+		(_cards[focus_id] as Button).grab_focus()
 
 
 func show_error(message: String) -> void:
@@ -137,17 +145,17 @@ func _build() -> void:
 	_subtitle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	source_row.add_child(_subtitle)
 
-	var board := Panel.new()
-	board.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	board.custom_minimum_size.y = 360
-	board.add_theme_stylebox_override("panel", _box(Color("#132029"), EDGE))
-	layout.add_child(board)
+	_board = Panel.new()
+	_board.size_flags_vertical = Control.SIZE_EXPAND_FILL
+	_board.custom_minimum_size.y = 360
+	_board.add_theme_stylebox_override("panel", _box(Color("#132029"), EDGE))
+	layout.add_child(_board)
 	_links = Control.new()
 	_links.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_links.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_links.draw.connect(_draw_links)
 	_links.resized.connect(_links.queue_redraw)
-	board.add_child(_links)
+	_board.add_child(_links)
 
 	var board_margin := MarginContainer.new()
 	board_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
@@ -155,7 +163,7 @@ func _build() -> void:
 	board_margin.add_theme_constant_override("margin_right", 22)
 	board_margin.add_theme_constant_override("margin_top", 24)
 	board_margin.add_theme_constant_override("margin_bottom", 24)
-	board.add_child(board_margin)
+	_board.add_child(board_margin)
 	_columns = HBoxContainer.new()
 	_columns.add_theme_constant_override("separation", 30)
 	board_margin.add_child(_columns)
@@ -212,6 +220,84 @@ func _build() -> void:
 	_error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	layout.add_child(_error)
 	_error.hide()
+
+
+func _show_merge_intro(source: Dictionary) -> void:
+	const TILE_SIZE := Vector2(118, 84)
+	const SEPARATION := 17.0
+	_merge_intro = Panel.new()
+	_merge_intro.name = "ForgeMergeIntro"
+	_merge_intro.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_merge_intro.add_theme_stylebox_override("panel", _box(Color("#18242a"), GOLD))
+	_board.add_child(_merge_intro)
+	_merge_intro.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var center := CenterContainer.new()
+	center.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	_merge_intro.add_child(center)
+	center.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	var stage := Control.new()
+	stage.name = "MatchingTiles"
+	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	stage.custom_minimum_size = Vector2(TILE_SIZE.x * 3 + SEPARATION * 2, TILE_SIZE.y)
+	center.add_child(stage)
+	var rarity := GameIcons.rarity(source)
+	var tiles: Array[PanelContainer] = []
+	var art := GameIcons.icon(GameIcons.tile(_source_id, source))
+	for index in range(3):
+		var tile := PanelContainer.new()
+		tile.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		tile.position.x = index * (TILE_SIZE.x + SEPARATION)
+		tile.size = TILE_SIZE
+		tile.pivot_offset = TILE_SIZE * 0.5
+		var frame := _box(PANEL.lerp(rarity, 0.14), rarity, 2)
+		frame.border_width_top = 4
+		tile.add_theme_stylebox_override("panel", frame)
+		stage.add_child(tile)
+		tiles.append(tile)
+		var contents := VBoxContainer.new()
+		contents.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		contents.alignment = BoxContainer.ALIGNMENT_CENTER
+		contents.add_theme_constant_override("separation", 3)
+		tile.add_child(contents)
+		var glyph := TextureRect.new()
+		glyph.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		glyph.custom_minimum_size.y = 30
+		glyph.texture = art
+		glyph.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		glyph.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		contents.add_child(glyph)
+		var label := _label(source.label, 13, CREAM)
+		label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		contents.add_child(label)
+	var merged := tiles[1]
+	stage.move_child(merged, -1)
+	var glow := merged.get_theme_stylebox("panel") as StyleBoxFlat
+	_merge_tween = create_tween()
+	_merge_tween.tween_interval(0.10)
+	_merge_tween.tween_property(tiles[0], "position", merged.position, 0.24) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	_merge_tween.parallel().tween_property(tiles[2], "position", merged.position, 0.24) \
+		.set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+	for index in [0, 2]:
+		_merge_tween.parallel().tween_property(tiles[index], "modulate:a", 0.0, 0.10).set_delay(0.14)
+	_merge_tween.tween_property(merged, "scale", Vector2.ONE * 1.16, 0.075)
+	_merge_tween.parallel().tween_property(glow, "bg_color", Color("#725631"), 0.075)
+	_merge_tween.tween_property(merged, "scale", Vector2.ONE, 0.10)
+	_merge_tween.tween_property(_merge_intro, "modulate:a", 0.0, 0.12)
+	_merge_tween.tween_callback(func():
+		_merge_tween = null
+		_clear_merge_intro())
+
+
+func _clear_merge_intro() -> void:
+	if _merge_tween != null:
+		_merge_tween.kill()
+		_merge_tween = null
+	if _merge_intro != null:
+		_board.remove_child(_merge_intro)
+		_merge_intro.queue_free()
+		_merge_intro = null
 
 
 func _add_tier(tier: int) -> void:
@@ -279,6 +365,7 @@ func _draw_links() -> void:
 
 
 func _inspect(id: String) -> void:
+	_clear_merge_intro()
 	_inspected_id = id
 	var tile: Dictionary = _host.tile_spec(id)
 	var rarity := GameIcons.rarity_name(tile)
@@ -297,10 +384,6 @@ func _inspect(id: String) -> void:
 		tier.accessibility_name = rarity + ". " + tier.tooltip_text
 	_detail_stats.add_child(tier)
 	_detail_stats.add_child(CombatIcons.tile_stats(tile))
-	if can_choose and fits:
-		var beat: int = _host.forge_firing_beat(id)
-		if beat > 0:
-			_detail_stats.add_child(CombatIcons.stat("windup", str(beat), 16, "Fires on beat %d." % beat))
 	_detail_name.text = tile.label
 	TileKeywords.set_description(_detail_description, tile.description)
 	_confirm.disabled = not can_choose or not fits

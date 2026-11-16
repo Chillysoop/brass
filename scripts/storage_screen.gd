@@ -9,6 +9,8 @@ const TileKeywords = preload("res://scripts/tile_keywords.gd")
 const COLUMNS := TilePacking.STORAGE_COLUMNS
 const ROWS := TilePacking.STORAGE_ROWS
 const COMBINE_HEIGHT := 29.0
+const DOCK_CELL_WIDTH := 26.0
+const DOCK_ROW_HEIGHT := 34.0
 const INK := Color("#101820")
 const PANEL := Color("#192732")
 const EDGE := Color("#3c505b")
@@ -23,11 +25,19 @@ const SELECTED := Color("#50462f")
 const GOLD_DARK := Color("#493823")
 
 var _host: Control
+var _stage: CenterContainer
 var _frame: PanelContainer
+var _layout: VBoxContainer
 var _grid: ScrollContainer
 var _board: VBoxContainer
 var _rows: Array[Control] = []
 var _tile_row_size := Vector2.ZERO
+var _popup_tile_row_size := Vector2.ZERO
+var _docked := false
+var _heading: Label
+var _close: Button
+var _footer: HBoxContainer
+var _dock_footer: HFlowContainer
 var _status: Label
 var _capacity: Label
 var _send: Button
@@ -53,10 +63,49 @@ func configure(host: Control) -> void:
 
 
 func set_tile_size(beat_pitch: float, row_height: float) -> void:
-	_tile_row_size = Vector2(COLUMNS * beat_pitch, row_height)
+	_popup_tile_row_size = Vector2(COLUMNS * beat_pitch, row_height)
+	if not _docked:
+		_apply_tile_size(_popup_tile_row_size)
+
+
+func set_docked(docked: bool) -> void:
+	if _docked == docked:
+		return
+	_docked = docked
+	_frame.reparent(self if docked else _stage, false)
+	_frame.set_anchors_and_offsets_preset(PRESET_FULL_RECT if docked else PRESET_TOP_LEFT)
+	_frame.custom_minimum_size.x = 0 if docked else 740
+	var border := _box(PANEL, GOLD_DARK, 12)
+	if docked:
+		border.content_margin_left = 6
+		border.content_margin_right = 6
+	_frame.add_theme_stylebox_override("panel", border)
+	_heading.add_theme_font_size_override("font_size", 18 if docked else 22)
+	_close.visible = not docked
+	_grid.size_flags_vertical = SIZE_EXPAND_FILL if docked else SIZE_FILL
+	size_flags_vertical = SIZE_EXPAND_FILL if docked else SIZE_FILL
+	_enchantment_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS if docked else TextServer.OVERRUN_NO_TRIMMING
+	for button: Button in [_send, _discard, _forge, _combine]:
+		button.reparent(_dock_footer if docked else _footer, false)
+		button.add_theme_font_size_override("font_size", 12 if docked else 14)
+	_status.reparent(_layout if docked else _footer, false)
+	if docked:
+		_layout.move_child(_status, _dock_footer.get_index())
+	else:
+		_footer.move_child(_status, 0)
+	_footer.visible = not docked
+	_dock_footer.visible = docked
+	_status.add_theme_font_size_override("font_size", 12 if docked else 14)
+	_discard.text = "Discard" if docked else "Discard selected"
+	_discard.accessibility_name = "Discard selected tile"
+	_apply_tile_size(Vector2(COLUMNS * DOCK_CELL_WIDTH, DOCK_ROW_HEIGHT) if docked else _popup_tile_row_size)
+
+
+func _apply_tile_size(row_size: Vector2) -> void:
+	_tile_row_size = row_size
 	_board.custom_minimum_size.x = _tile_row_size.x
 	for row: Control in _rows:
-		row.get_parent().custom_minimum_size.y = row_height
+		row.get_parent().custom_minimum_size.y = row_size.y
 		row.size = _tile_row_size
 	_fit_grid.call_deferred()
 
@@ -76,7 +125,8 @@ func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can
 	for row_index in range(ROWS):
 		var tiles: Array = rows[row_index] if row_index < rows.size() else []
 		used += _build_row(row_index, tiles, offers)
-	_capacity.text = "%d / %d cells used" % [used, COLUMNS * ROWS]
+	_capacity.text = ("%d / %d" if _docked else "%d / %d cells used") % [used, COLUMNS * ROWS]
+	_capacity.tooltip_text = "%d of %d storage cells used" % [used, COLUMNS * ROWS]
 	_send.disabled = not _selected.has("row")
 	_discard.disabled = not _selected.has("lane") or protect_selected
 	_discard.tooltip_text = "Return to the forge before discarding this tile." if protect_selected else ""
@@ -89,11 +139,13 @@ func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can
 		_enchantment_icon.texture = GameIcons.icon(info.icon)
 		_enchantment_label.text = "%s · %s" % [info.label, "Unequipped" if enchantment.host.is_empty() else enchantment.host]
 		_enchantment_label.tooltip_text = info.description
-		_enchant.text = enchantment.button
+		_enchant.text = str(enchantment.button).get_slice(" ", 0) if _docked else enchantment.button
+		_enchant.accessibility_name = enchantment.button
 		_enchant.disabled = not enchantment.eligible
 		_enchant.tooltip_text = info.description if enchantment.eligible else "Select a compatible tile in storage or on the timeline.\n" + info.description
 	if _selected.is_empty():
-		show_message("Select a tile to enchant." if _enchantment_row.visible else "Drag between storage and the timeline.")
+		var message := "Drag to move tiles." if _docked else "Drag between storage and the timeline."
+		show_message("Select a tile to enchant." if _enchantment_row.visible else message)
 	else:
 		var tile: Dictionary = _host.tile_spec(_selected.id)
 		show_message("%s selected" % tile.get("label", _selected.id))
@@ -104,46 +156,48 @@ func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can
 func show_message(message: String) -> void:
 	if _status != null:
 		_status.text = message
+		_status.tooltip_text = message
 
 
 func _build() -> void:
 	name = "TileStoragePopup"
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
-	var stage := CenterContainer.new()
-	stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	add_child(stage)
-	stage.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_stage = CenterContainer.new()
+	_stage.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(_stage)
+	_stage.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_frame = PanelContainer.new()
 	_frame.custom_minimum_size.x = 740
 	_frame.add_theme_stylebox_override("panel", _box(PANEL, GOLD_DARK, 12))
-	stage.add_child(_frame)
-	var layout := VBoxContainer.new()
-	layout.add_theme_constant_override("separation", 5)
-	_frame.add_child(layout)
+	_stage.add_child(_frame)
+	_layout = VBoxContainer.new()
+	_layout.add_theme_constant_override("separation", 5)
+	_frame.add_child(_layout)
 
 	var header := HBoxContainer.new()
 	header.add_theme_constant_override("separation", 12)
-	layout.add_child(header)
-	var heading := _label("Tile storage", 22, GOLD)
-	heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(heading)
+	_layout.add_child(header)
+	_heading = _label("Tile storage", 22, GOLD)
+	_heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(_heading)
 	_capacity = _label("", 14, TEAL)
+	_capacity.mouse_filter = Control.MOUSE_FILTER_PASS
 	_capacity.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	header.add_child(_capacity)
-	var close := _button("Close", func(): _host.storage_close())
-	close.name = "CloseStorage"
-	header.add_child(close)
+	_close = _button("Close", func(): _host.storage_close())
+	_close.name = "CloseStorage"
+	header.add_child(_close)
 	_grid = ScrollContainer.new()
 	_grid.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_grid.follow_focus = true
-	layout.add_child(_grid)
+	_layout.add_child(_grid)
 	_board = VBoxContainer.new()
 	_board.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_board.add_theme_constant_override("separation", 4)
 	_grid.add_child(_board)
 	_enchantment_row = HBoxContainer.new()
 	_enchantment_row.add_theme_constant_override("separation", 8)
-	layout.add_child(_enchantment_row)
+	_layout.add_child(_enchantment_row)
 	_enchantment_icon = TextureRect.new()
 	_enchantment_icon.custom_minimum_size = Vector2(20, 20)
 	_enchantment_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
@@ -160,33 +214,42 @@ func _build() -> void:
 	_enchantment_row.add_child(_enchant)
 	_enchantment_row.hide()
 
-	var footer := HBoxContainer.new()
-	footer.add_theme_constant_override("separation", 12)
-	layout.add_child(footer)
+	_footer = HBoxContainer.new()
+	_footer.add_theme_constant_override("separation", 12)
+	_layout.add_child(_footer)
+	_dock_footer = HFlowContainer.new()
+	_dock_footer.add_theme_constant_override("h_separation", 4)
+	_dock_footer.add_theme_constant_override("v_separation", 3)
+	_layout.add_child(_dock_footer)
+	_dock_footer.hide()
 	_status = _label("", 14, MUTED)
+	_status.mouse_filter = Control.MOUSE_FILTER_PASS
 	_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	_status.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_status.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	footer.add_child(_status)
+	_footer.add_child(_status)
 	_send = _button("To timeline", func(): _host.storage_send_to_timeline())
 	_send.disabled = true
-	footer.add_child(_send)
+	_footer.add_child(_send)
 	_discard = _button("Discard selected", func(): _host.storage_discard())
 	_discard.name = "DiscardSelected"
 	_discard.disabled = true
-	footer.add_child(_discard)
+	_footer.add_child(_discard)
 	_forge = _button("Forge selected", func(): _host.storage_forge())
 	_forge.hide()
-	footer.add_child(_forge)
+	_footer.add_child(_forge)
 	_combine = _button("Combine 3", func(): _host.storage_combine_selected())
 	_combine.name = "CombineSelected"
 	_combine.tooltip_text = "Combine three matching copies from your timelines or storage."
 	_combine.hide()
-	footer.add_child(_combine)
+	_footer.add_child(_combine)
 	resized.connect(_fit_grid)
 
 
 func _fit_grid() -> void:
+	if _docked:
+		_grid.custom_minimum_size = Vector2(_tile_row_size.x, 0)
+		return
 	var chrome_height := _frame.get_combined_minimum_size().y - _grid.get_combined_minimum_size().y
 	var board_height := _board.get_combined_minimum_size().y
 	var grid_height := minf(board_height, maxf(_tile_row_size.y, floorf(size.y - chrome_height - 4.0)))
@@ -248,12 +311,17 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 	var name := String(tile.get("label", item.id))
 	var caption: String = tile.get("short_label", name)
 	var width: int = tile.width
-	var metric := CombatIcons.tile_corner_stat(tile)
-	var card := _button(caption, func(): _host.storage_pick(row_index, item))
+	var metric := {} if _docked else CombatIcons.tile_corner_stat(tile)
+	var icon_only := _docked and width == 1
+	var card := _button("" if icon_only else caption, func(): _host.storage_pick(row_index, item))
 	card.name = "StoredTile_%s_%d_%d" % [item.id, row_index, item.start]
 	card.alignment = HORIZONTAL_ALIGNMENT_LEFT
-	GameIcons.decorate(card, GameIcons.tile(item.id, tile), 15 if width == 1 else 22)
-	if width == 1:
+	GameIcons.decorate(card, GameIcons.tile(item.id, tile), 15 if width == 1 or _docked else 22)
+	if _docked:
+		card.add_theme_constant_override("h_separation", 3)
+		card.add_theme_font_size_override("font_size", 11)
+		card.icon_alignment = HORIZONTAL_ALIGNMENT_CENTER if icon_only else HORIZONTAL_ALIGNMENT_LEFT
+	elif width == 1:
 		card.add_theme_constant_override("h_separation", 3)
 		card.add_theme_font_size_override("font_size", 13)
 	card.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
@@ -268,6 +336,7 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 		card.tooltip_text += "\n%s · %s" % [enchantment.label, enchantment.description]
 		copy += "\n" + enchantment.description
 	card.tooltip_text = TileKeywords.with_definitions(card.tooltip_text, GameIcons.tile_stats(tile) + "\n" + copy)
+	card.accessibility_name = name
 	var rarity := GameIcons.rarity(tile)
 	for mode: String in ["normal", "hover", "pressed"]:
 		var fill := STORED.lightened(0.16) if mode == "hover" else STORED
@@ -275,15 +344,22 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 			fill = SELECTED
 		var box := _box(fill, rarity)
 		box.border_width_top = 3
-		box.content_margin_top = 16
+		box.content_margin_top = 4 if _docked else 16
 		box.content_margin_bottom = 2
-		if width == 1:
+		if _docked:
+			box.content_margin_left = 3
+			box.content_margin_right = 3
+		elif width == 1:
 			box.content_margin_left = 4
 			box.content_margin_right = 4
 		if not metric.is_empty():
 			box.content_margin_right = 25
 		card.add_theme_stylebox_override(mode, box)
 	_span(row, card, int(item.start), width, true)
+	_keep_cell_focus(card, row_index, item.start)
+	_drop_target(card, row, row_index, tiles, payload)
+	if _docked:
+		return
 	var rarity_badge := GameIcons.rarity_badge(tile, true)
 	card.add_child(rarity_badge)
 	rarity_badge.position = Vector2(6, 3)
@@ -298,8 +374,6 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 		badge.set_anchors_and_offsets_preset(Control.PRESET_CENTER_TOP, Control.PRESET_MODE_MINSIZE)
 		badge.offset_top = 2
 	CombatIcons.add_tile_corner(card, metric)
-	_keep_cell_focus(card, row_index, item.start)
-	_drop_target(card, row, row_index, tiles, payload)
 
 
 func _keep_cell_focus(button: Button, row: int, column: int) -> void:
@@ -316,14 +390,21 @@ func _build_offer(strip: Control, row_index: int, offer: Dictionary) -> void:
 	var backing := _box(GOLD_DARK, GOLD)
 	backing.content_margin_top = 0
 	backing.content_margin_bottom = 0
+	if _docked:
+		backing.content_margin_left = 3
+		backing.content_margin_right = 3
 	wrapper.add_theme_stylebox_override("panel", backing)
 	var actions := HBoxContainer.new()
 	actions.alignment = BoxContainer.ALIGNMENT_CENTER
 	actions.add_theme_constant_override("separation", 5)
-	var caption := _label("Combine", 13, GOLD)
-	actions.add_child(caption)
-	var accept := _button("Yes", func(): _host.storage_combine(row_index, start, true))
-	var decline := _button("No", func(): _host.storage_combine(row_index, start, false))
+	if not _docked:
+		actions.add_child(_label("Combine", 13, GOLD))
+	var accept := _button("✓" if _docked else "Yes", func(): _host.storage_combine(row_index, start, true))
+	var decline := _button("×" if _docked else "No", func(): _host.storage_combine(row_index, start, false))
+	accept.tooltip_text = "Combine three matching tiles"
+	decline.tooltip_text = "Keep these tiles separate"
+	accept.accessibility_name = accept.tooltip_text
+	decline.accessibility_name = decline.tooltip_text
 	accept.add_theme_stylebox_override("normal", _box(GOLD, GOLD))
 	accept.add_theme_color_override("font_color", INK)
 	for button: Button in [accept, decline]:
@@ -332,6 +413,9 @@ func _build_offer(strip: Control, row_index: int, offer: Dictionary) -> void:
 			var style := button.get_theme_stylebox(state) as StyleBoxFlat
 			style.content_margin_top = 1
 			style.content_margin_bottom = 1
+			if _docked:
+				style.content_margin_left = 4
+				style.content_margin_right = 4
 	actions.add_child(accept)
 	actions.add_child(decline)
 	wrapper.add_child(actions)

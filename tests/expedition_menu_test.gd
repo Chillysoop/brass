@@ -1,6 +1,7 @@
 extends SceneTree
 
 const Arena := preload("res://arena.tscn")
+const ArenaSim := preload("res://scripts/arena_sim.gd")
 const FrontierRun := preload("res://scripts/frontier_run.gd")
 const TilePacking := preload("res://scripts/tile_packing.gd")
 const TEST_SEED := 81243
@@ -288,8 +289,12 @@ func _check_practice_retry() -> void:
 		game.run_resume()
 		_check(loaded and game.combat_meter.snapshot() == meter,
 			"Resuming the saved reward preserves the original combat totals.")
-		await _press_named(game.frontier_screen, "RewardTile_" + str(run.data.offers.front()))
-		_check(run.data.phase == "map", "One reward selection claims the tile and returns to the route.")
+		var stored_id := str(run.data.offers.front())
+		_check(game.storage_screen.is_visible_in_tree() and game.storage_screen.get_parent() == game.combat_sidebar,
+			"A resumed reward opens storage beside the original battlefield.")
+		await _press_named(game.frontier_screen, "RewardTile_" + stored_id)
+		_check(run.data.phase == "map" and run.loadout.storage[0].any(func(tile: Dictionary): return tile.id == stored_id),
+			"Sending a reward to storage stows the tile and returns to the route.")
 	run.abandon_run()
 
 
@@ -427,10 +432,13 @@ func _check_enchantment_reward() -> void:
 		_check(false, "Prepare the opening Brass fight reward with enchantments unlocked.")
 		return
 	game.run_return()
-	await _press_named(game.frontier_screen, "RewardTile_" + str(run.data.offers[0]))
+	var reward_id: String = run.data.offers[0]
+	await _drag_reward_to_timeline(reward_id, 4)
 	_check(run.data.phase == "enchantment", "The enchantment draft follows the opening tile reward.")
 	if run.data.phase != "enchantment":
 		return
+	_check(run.loadout.lanes[0][1].id == reward_id and run.loadout.lanes[0][1].start == 4,
+		"The reward lands on the exact beat dropped before the enchantment draft.")
 	await _press_named(game.frontier_screen, "Enchantment_guarded")
 	_check(run.data.phase == "enchantment" and run.active_enchantment().is_empty(),
 		"Selecting Guarded shows eligible tiles before claiming it.")
@@ -529,11 +537,44 @@ func _click(button: Button, description: String) -> void:
 		_check(false, "Expected an enabled button for %s." % description)
 		return
 	for down in [true, false]:
-		var event := InputEventMouseButton.new()
-		event.position = button.get_global_rect().get_center()
-		event.button_index = MOUSE_BUTTON_LEFT
-		event.pressed = down
-		root.push_input(event, true)
+		_push_button(button.get_global_rect().get_center(), down)
+
+
+func _drag_reward_to_timeline(id: String, start: int) -> void:
+	await process_frame
+	var card := game.frontier_screen.find_child("DragReward_" + id, true, false) as Control
+	if card == null or not card.is_visible_in_tree():
+		_check(false, "Expected the reward tile to be draggable.")
+		return
+	var details := card.find_child("ChoiceDetails", true, false) as Control
+	var source := details.get_global_rect().get_center()
+	var board := game.lane_stack.get_child(0).get_child(1) as Control
+	var target := board.global_position + Vector2(board.size.x * (start + 0.5) / ArenaSim.BEATS, board.size.y * 0.5)
+	var threshold := source + Vector2(18, 0)
+	_push_motion(source, source, false)
+	_push_button(source, true)
+	_push_motion(source, threshold, true)
+	_push_motion(threshold, target, true)
+	_check(root.gui_is_dragging(), "Dragging the reward body starts the tile drag.")
+	_push_button(target, false)
+	await process_frame
+
+
+func _push_button(point: Vector2, down: bool) -> void:
+	var event := InputEventMouseButton.new()
+	event.position = point
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = down
+	root.push_input(event, true)
+
+
+func _push_motion(from: Vector2, to: Vector2, held: bool) -> void:
+	var event := InputEventMouseMotion.new()
+	event.position = to
+	event.relative = to - from
+	if held:
+		event.button_mask = MOUSE_BUTTON_MASK_LEFT
+	root.push_input(event, true)
 
 
 func _check_disabled(parent: Control, node_name: String, caption: String) -> void:

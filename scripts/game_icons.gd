@@ -265,8 +265,9 @@ static func hero_badge(class_id: String, compact := true) -> PanelContainer:
 	var badge := PanelContainer.new()
 	badge.name = "TileHeroBadge"
 	badge.set_meta("hero_class", class_id)
-	badge.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	badge.mouse_filter = Control.MOUSE_FILTER_PASS
 	badge.tooltip_text = hero_label(class_id)
+	badge.accessibility_name = badge.tooltip_text
 	badge.visible = HERO_CODES.has(class_id)
 	badge.size_flags_horizontal = Control.SIZE_SHRINK_BEGIN
 	badge.size_flags_vertical = Control.SIZE_SHRINK_CENTER

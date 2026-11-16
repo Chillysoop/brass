@@ -219,9 +219,11 @@ func _check_reward_screen() -> void:
 		and restored.data.relics == run.data.relics and restored.data.offers == run.data.offers,
 		"Resuming between the relic and tile steps must preserve the chosen relic and offers.")
 	_check(not run.choose_elite_relic("siege_fuse"), "The player cannot claim another relic once the draft is complete.")
+	_check(game.storage_screen.is_visible_in_tree() and game.storage_screen.get_parent() == game.combat_sidebar,
+		"The elite tile draft keeps storage open beside the arena.")
 	await _click(game.frontier_screen, "RewardTile_" + companion)
-	_check(run.data.phase == "map" and run.loadout.lanes[0].any(func(item: Dictionary): return item.id == companion),
-		"Claiming the companion must put it in inventory and return to the route.")
+	_check(run.data.phase == "map" and run.loadout.storage[0].any(func(item: Dictionary): return item.id == companion),
+		"Sending the companion to storage must stow it and return to the route.")
 	var next := _reach_elite(run, elites[1])
 	var before: int = run.data.relics.size()
 	if _win_elite(run, next):

@@ -147,13 +147,11 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 		var button := game.frontier_screen.find_child("RecruitLoadout_" + str(kit.id), true, false) as Button
 		if not _check(button != null and button.is_visible_in_tree() and not button.disabled, "Both recruit kits can be equipped."):
 			return
-		var beat := 0
-		for id: String in kit.tiles:
-			beat += int(ArenaSim.TILES[id].width)
-			var stat := button.get_parent().find_child("RecruitTileBeat_" + id, true, false) as HBoxContainer
-			_check(stat != null and stat.is_visible_in_tree() and stat.get_node_or_null("WindupIcon") != null
-				and stat.tooltip_text == "Fires on beat %d." % beat,
-				"Each recruit tile shows its firing beat at the end of the tile.")
+		var durations := button.get_parent().find_children("BeatSquares", "HBoxContainer", true, false)
+		_check(durations.size() == kit.tiles.size(), "Every recruit tile shows its duration.")
+		for index in mini(durations.size(), kit.tiles.size()):
+			_check(durations[index].get_child_count() == ArenaSim.TILES[kit.tiles[index]].width,
+				"Each occupied beat is represented by one duration square.")
 	if not _press(game.frontier_screen, "RecruitLoadout_support"):
 		return
 	await process_frame

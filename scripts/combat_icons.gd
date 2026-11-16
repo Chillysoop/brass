@@ -36,21 +36,44 @@ static func icon(id: String, extent := 18) -> Control:
 
 
 static func stat(id: String, value: String, extent := 17, detail := "") -> HBoxContainer:
-	var row := HBoxContainer.new()
-	row.name = "%sStat" % id.capitalize()
-	row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	row.mouse_filter = Control.MOUSE_FILTER_PASS
 	var label: String = LABELS.get(id, id.capitalize())
-	row.tooltip_text = detail if not detail.is_empty() else "%s: %s" % [label, value]
-	row.accessibility_name = row.tooltip_text
-	row.add_theme_constant_override("separation", 3)
-	row.add_child(icon(id, extent))
+	var row := _stat_row(id, extent, detail if not detail.is_empty() else "%s: %s" % [label, value])
 	var amount := Label.new()
 	amount.text = value
 	amount.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	amount.add_theme_color_override("font_color", VALUE)
 	amount.add_theme_font_size_override("font_size", maxi(12, extent - 1))
 	row.add_child(amount)
+	return row
+
+
+static func _stat_row(id: String, extent: int, detail: String) -> HBoxContainer:
+	var row := HBoxContainer.new()
+	row.name = "%sStat" % id.capitalize()
+	row.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.mouse_filter = Control.MOUSE_FILTER_PASS
+	row.tooltip_text = detail
+	row.accessibility_name = detail
+	row.add_theme_constant_override("separation", 3)
+	row.add_child(icon(id, extent))
+	return row
+
+
+static func _beat_stat(beats: int, extent: int) -> HBoxContainer:
+	var row := _stat_row("beat", extent, "Beats occupied: %d" % beats)
+	var compact := extent <= 14
+	var squares := HBoxContainer.new()
+	squares.name = "BeatSquares"
+	squares.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	squares.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	squares.add_theme_constant_override("separation", 1 if compact else 2)
+	for beat in range(beats):
+		var square := ColorRect.new()
+		square.color = PALETTE.beat
+		square.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		square.custom_minimum_size = Vector2.ONE * (4 if compact else 5)
+		squares.add_child(square)
+	row.add_child(squares)
 	return row
 
 
@@ -87,8 +110,8 @@ static func _tile_guard(spec: Dictionary) -> int:
 static func tile_stats(spec: Dictionary, extent := 16) -> HBoxContainer:
 	var row := HBoxContainer.new()
 	row.name = "TileStats"
-	row.add_theme_constant_override("separation", 8)
-	row.add_child(stat("beat", str(int(spec.width)), extent, "Beats occupied: %d" % int(spec.width)))
+	row.add_theme_constant_override("separation", 5 if extent <= 14 else 8)
+	row.add_child(_beat_stat(int(spec.width), extent))
 	var damage := int(spec.get("damage", 0))
 	if damage > 0:
 		row.add_child(stat("attack", str(damage), extent, "Base attack damage: %d" % damage))

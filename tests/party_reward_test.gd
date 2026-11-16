@@ -276,7 +276,7 @@ func _check_medium_rewards(game: Control) -> void:
 	var first_offers: Array = run.data.offers.duplicate()
 	_check(first_offers.size() == 3 and recruit_signature not in first_offers,
 		"The original hero sees three choices without copying the recruit's signature.")
-	# Free both timelines to verify where the real reward buttons place each chosen tile.
+	# Free both timelines to verify that each reward can only be dropped on its owner's lane.
 	run.loadout.lanes[0].clear()
 	run.loadout.lanes[1].clear()
 	game.run_return()
@@ -290,14 +290,14 @@ func _check_medium_rewards(game: Control) -> void:
 	var first_details := first_button.get_parent().find_child("ChoiceDetails", true, false) as Control
 	var body_point := first_details.get_global_rect().get_center()
 	_push_mouse_button(body_point, true)
-	_push_mouse_button(body_point + Vector2(15.0, 0.0), false)
-	_check(run.reward_position() == 0, "Dragging across a reward card does not claim it.")
-	_push_mouse_button(body_point, true)
 	_push_mouse_button(body_point, false)
-	await process_frame
+	_check(run.reward_position() == 0 and run.loadout.lanes[0].is_empty(), "Clicking the card body does not claim it.")
+	await _drag_reward(game, first_tile, 1, 4)
+	_check(run.reward_position() == 0 and run.loadout.lanes[1].is_empty(), "The lead's tile cannot be dropped on the recruit's timeline.")
+	await _drag_reward(game, first_tile, 0, 4)
 	_check(run.data.phase == "reward" and run.reward_position() == 1 and run.reward_lane() == 1
-		and run.loadout.lanes[0].size() == 1 and run.loadout.lanes[0][0].id == first_tile
-		and run.loadout.lanes[1].is_empty(), "Clicking the card body equips the tile and advances to the recruit.")
+		and run.loadout.lanes[0].size() == 1 and run.loadout.lanes[0][0].id == first_tile and run.loadout.lanes[0][0].start == 4
+		and run.loadout.lanes[1].is_empty(), "Dropping the tile on the lead's timeline places it exactly and advances to the recruit.")
 	_check(_reward_header_has(game.frontier_screen, "RewardPlacement",
 		"%s added to %s’s timeline" % [ArenaSim.TILES[first_tile].label, FrontierRun.HEROES[lead].label]),
 		"The next pick confirms which timeline received the lead's tile.")
@@ -316,9 +316,9 @@ func _check_medium_rewards(game: Control) -> void:
 		"The resumed screen identifies the recruit and second pick.")
 	_check_reward_tile_identity(game.frontier_screen, second_offers, recruit)
 	var second_tile: String = second_offers[0]
-	await _claim_from_screen(game.frontier_screen, second_tile)
+	await _drag_reward(game, second_tile, 1, 2)
 	_check(run.data.phase == "map" and run.reward_lane() == -1 and run.loadout.lanes[1].size() == 1
-		and run.loadout.lanes[1][0].id == second_tile and not game.run_claim_reward(second_tile),
+		and run.loadout.lanes[1][0].id == second_tile and run.loadout.lanes[1][0].start == 2 and not game.run_claim_reward(second_tile),
 		"Claiming the recruit's tile equips it only once and opens the route.")
 	_check_first_elite_signatures(run, lead_signature, recruit_signature)
 
@@ -345,7 +345,7 @@ func _check_medium_rewards(game: Control) -> void:
 		"The test must reach the recruit's reward with their timeline full.")
 	var stowed: String = run.data.offers[0]
 	game.run_return()
-	await _claim_from_screen(game.frontier_screen, stowed)
+	await _click(game.frontier_screen, "RewardTile_" + stowed)
 	_check(run.data.phase == "map" and run.loadout.lanes[0].is_empty()
 		and run.loadout.storage[0].size() == 1 and run.loadout.storage[0][0].id == stowed,
 		"When its own timeline is full, a tile reward goes to storage and leaves the other hero's lane alone.")
@@ -436,8 +436,24 @@ func _descendant_buttons(node: Node) -> Array[String]:
 	return labels
 
 
-func _claim_from_screen(page: Control, id: String) -> void:
-	await _click(page, "RewardTile_" + id)
+func _drag_reward(game: Control, id: String, lane: int, start: int) -> void:
+	await process_frame
+	var option := game.frontier_screen.find_child("DragReward_" + id, true, false) as Control
+	if option == null or not option.is_visible_in_tree():
+		_check(false, "Expected a draggable reward card for " + id)
+		return
+	var details := option.find_child("ChoiceDetails", true, false) as Control
+	var source := details.get_global_rect().get_center()
+	var board := game.lane_stack.get_child(lane).get_child(1) as Control
+	var target := board.global_position + Vector2(board.size.x * (start + 0.5) / ArenaSim.BEATS, board.size.y * 0.5)
+	var threshold := source + Vector2(16, 0)
+	_push_mouse_motion(source, source, false)
+	_push_mouse_button(source, true)
+	_push_mouse_motion(source, threshold, true)
+	_push_mouse_motion(threshold, target, true)
+	_check(root.gui_is_dragging(), "Expected dragging the reward card to carry a tile.")
+	_push_mouse_button(target, false)
+	await process_frame
 
 
 func _click(page: Control, node_name: String) -> void:
@@ -458,6 +474,15 @@ func _push_mouse_button(at: Vector2, down: bool) -> void:
 	event.global_position = at
 	event.button_index = MOUSE_BUTTON_LEFT
 	event.pressed = down
+	root.push_input(event, true)
+
+
+func _push_mouse_motion(from: Vector2, to: Vector2, held: bool) -> void:
+	var event := InputEventMouseMotion.new()
+	event.position = to
+	event.relative = to - from
+	if held:
+		event.button_mask = MOUSE_BUTTON_MASK_LEFT
 	root.push_input(event, true)
 
 

@@ -171,6 +171,10 @@ func _check_compact_reward_overlay(lab: Control) -> void:
 	await process_frame
 	var field: Rect2 = lab.arena.get_global_rect()
 	var intel: Rect2 = lab.enemy_details.get_global_rect()
+	var speed_group: Rect2 = lab.speed_controls.get_global_rect()
+	_check(lab.speed_controls.is_visible_in_tree() and lab.speed_buttons.size() == 3
+		and root.get_visible_rect().encloses(speed_group) and speed_group.end.y <= field.position.y,
+		"All three playback controls stay in the top header at compact width.")
 	_check(lab.enemy_details.is_visible_in_tree() and lab.enemy_cards.get_child_count() > 0 and intel.position.x >= field.end.x,
 		"Enemy descriptions appear beside the playable setup on the right.")
 	if not _check(run.finish_combat(true, [81, 88, 91]) and run.reward_count() == 3, "The compact arena has three reward lanes."):

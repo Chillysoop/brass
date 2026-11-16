@@ -252,8 +252,9 @@ func _check_alternate_copies(game: Control) -> void:
 	if not _check(game.forge_screen.visible and game.forge_screen._keep_reward.disabled,
 		"A full inventory can use a reward with two matching copies that free room for a wider upgrade."):
 		return
-	_check(game.forge_can_fit(choice) and game.forge_firing_beat(choice) == 9,
-		"The reward combine previews the beat made available by the alternate pair.")
+	var reward_plan: Dictionary = game._reward_upgrade_plan(game.pending_forge.copies, choice)
+	_check(game.forge_can_fit(choice) and reward_plan.get("destination", {}).get("start", -1) == 6,
+		"The reward combine finds the position made available by the alternate pair.")
 	game.forge_choose(choice)
 	var expected_reward := [_tile(source, 0), _tile("jab", 2), _tile(source, 3), _tile("jab", 5),
 		_tile(choice, 6), _tile("jab", 10), _tile("jab", 11)]
@@ -268,7 +269,9 @@ func _check_alternate_copies(game: Control) -> void:
 	game.selected = {"id": source, "lane": 0, "start": 0}
 	game._render_storage()
 	await _click(game.storage_screen, "CombineSelected")
-	if not _check(game.forge_screen.visible and game.forge_can_fit(choice) and game.forge_firing_beat(choice) == 9,
+	var inventory_plan: Dictionary = game._inventory_upgrade_plan(choice)
+	if not _check(game.forge_screen.visible and game.forge_can_fit(choice)
+		and inventory_plan.get("destination", {}).get("start", -1) == 6,
 		"Combine 3 includes the selected copy and finds two other copies that make room."):
 		return
 	run.save_path = save_path + ".missing/save.json"

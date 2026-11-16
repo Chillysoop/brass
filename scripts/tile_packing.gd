@@ -60,6 +60,103 @@ static func nudge_plan(items: Array, id: String, start: int, capacity: int, igno
 	return {} if best_cost < 0 else {"start": start, "moves": best_moves}
 
 
+static func timeline_drop_plan(lanes: Array, storage: Array, lane_index: int, start: int, payload: Dictionary) -> Dictionary:
+	var id: String = payload.get("id", "")
+	if lane_index < 0 or lane_index >= lanes.size() or not ArenaSim.TILES.has(id) or start < 0:
+		return {}
+	var width: int = ArenaSim.TILES[id].width
+	if start + width > ArenaSim.BEATS:
+		return {}
+	var items: Array = lanes[lane_index]
+	var source_lane: int = payload.get("lane", -1)
+	if source_lane < 0 or payload.has("row"):
+		return nudge_plan(items, id, start, ArenaSim.BEATS)
+	var source_start: int = payload.get("start", -1)
+	if source_lane >= lanes.size() or not lanes[source_lane].any(func(item: Dictionary):
+			return item.start == source_start and item.id == id):
+		return {}
+	var ignored := source_start if source_lane == lane_index else -1
+	for item: Dictionary in items:
+		if item.start == start and item.start != ignored and ArenaSim.TILES[item.id].width == width:
+			return {"start": start, "moves": {}, "swap": start}
+
+	var slide := nudge_plan(items, id, start, ArenaSim.BEATS, ignored)
+	if not slide.is_empty():
+		return slide
+	return _timeline_stow_plan(items, storage, id, start, ignored)
+
+
+static func _timeline_stow_plan(items: Array, storage: Array, id: String, start: int, ignored: int) -> Dictionary:
+	var end: int = start + ArenaSim.TILES[id].width
+	var displaced := items.filter(func(item: Dictionary):
+		return item.start != ignored and item.start < end and item.start + ArenaSim.TILES[item.id].width > start)
+	var best := {}
+	var best_count := displaced.size() + 1
+	var best_distance := 0
+	# Try the covered tiles first, keeping as many equipped as the available spans allow.
+	for mask in range(1, 1 << displaced.size()):
+		var to_stow := []
+		for index in range(displaced.size()):
+			if (mask & (1 << index)) != 0:
+				to_stow.append(displaced[index])
+		if to_stow.size() > best_count:
+			continue
+		var remaining := items.filter(func(item: Dictionary): return item not in to_stow)
+		var plan := nudge_plan(remaining, id, start, ArenaSim.BEATS, ignored)
+		if plan.is_empty():
+			continue
+		var distance := 0
+		for origin: int in plan.moves:
+			distance += absi(int(plan.moves[origin]) - origin)
+		if to_stow.size() == best_count and distance >= best_distance:
+			continue
+		var positions := _stow_positions(storage, to_stow)
+		if positions.is_empty():
+			continue
+		best_count = to_stow.size()
+		best_distance = distance
+		plan.stows = positions
+		best = plan
+	return best
+
+
+static func _stow_positions(storage: Array, items: Array) -> Array[Dictionary]:
+	var occupied: Array[int] = []
+	for row: Array in storage:
+		var reserved := 0
+		for item: Dictionary in row:
+			reserved |= ((1 << int(ArenaSim.TILES[item.id].width)) - 1) << int(item.start)
+		occupied.append(reserved)
+	items.sort_custom(func(a: Dictionary, b: Dictionary):
+		var left: int = ArenaSim.TILES[a.id].width
+		var right: int = ArenaSim.TILES[b.id].width
+		return left > right if left != right else int(a.start) < int(b.start))
+	var placements: Array[Dictionary] = []
+	if _reserve_stows(items, occupied, placements):
+		return placements
+	return []
+
+
+static func _reserve_stows(items: Array, occupied: Array[int], placements: Array[Dictionary]) -> bool:
+	var index := placements.size()
+	if index == items.size():
+		return true
+	var item: Dictionary = items[index]
+	var width: int = ArenaSim.TILES[item.id].width
+	for row in range(occupied.size()):
+		for position in range(STORAGE_COLUMNS - width + 1):
+			var cells := ((1 << width) - 1) << position
+			if (occupied[row] & cells) != 0:
+				continue
+			occupied[row] |= cells
+			placements.append({"start": item.start, "row": row, "position": position})
+			if _reserve_stows(items, occupied, placements):
+				return true
+			placements.pop_back()
+			occupied[row] ^= cells
+	return false
+
+
 static func forge_tiers(id: String) -> Array:
 	var family: String = ArenaSim.TILES.get(id, {}).get("family", "")
 	return ArenaSim.FORGE_FAMILIES.get(family, [])

@@ -50,6 +50,7 @@ func _run() -> void:
 	await process_frame
 	_check(lab.lanes[1].size() == 4, "Dragging the palette tile to an open span should place it.")
 	await _check_nudge(lab)
+	await _check_timeline_rearrange(lab)
 	await _check_practice_arsenal(lab)
 	await _check_tile_identity(lab)
 	await _check_target_icons(lab)
@@ -67,9 +68,16 @@ func _run() -> void:
 	_check(lab.lanes[1].size() == original[1].size() + 1, "A tile should fit into a free span.")
 	lab._load_fixture("duo")
 	lab._action()
-	lab.speed = 2
+	_click(lab.speed_buttons[2].get_global_rect().get_center())
 	lab._physics_process(1.0 / 60.0)
-	_check(lab.sim.tick == 2, "2× speed should advance exactly two fixed steps.")
+	_check(lab.speed == 3 and lab.sim.tick == 3 and lab.speed_buttons[2].button_pressed
+		and not lab.speed_buttons[0].button_pressed, "The triple play icon runs exactly three fixed steps and selects only 3×.")
+	lab._load_fixture("duo")
+	lab._action()
+	_click(lab.speed_buttons[1].get_global_rect().get_center())
+	lab._physics_process(1.0 / 60.0)
+	_check(lab.speed == 2 and lab.sim.tick == 2 and not lab.speed_buttons[2].button_pressed,
+		"The double play icon advances exactly two fixed steps and deselects 3×.")
 	lab._action()
 	lab._physics_process(1.0 / 60.0)
 	_check(lab.sim.tick == 2, "Pause should preserve the simulation tick.")
@@ -277,6 +285,64 @@ func _check_nudge(lab: Control) -> void:
 	lab._load_fixture("duo")
 
 
+func _check_timeline_rearrange(lab: Control) -> void:
+	var bash: Dictionary = lab._entry("bash", 1, "farthest")
+	var shot: Dictionary = lab._entry("shot", 6, "lowest_hp")
+	shot.enchantment = "longshot"
+	lab.lanes[0].assign([bash, shot])
+	lab._reset_fight()
+	await process_frame
+	var source: Button = lab.tile_cards[0][1].get_child(0)
+	var board: Control = source.get_parent().get_parent()
+	var origin := source.global_position + Vector2(source.size.x * 0.25, source.size.y * 0.5)
+	var destination := _cell_point(board, 6, ArenaSim.BEATS)
+	_drag(origin, destination)
+	_check(lab.drag_overlay != null and lab.drag_overlay.get_child_count() == 2
+		and bash.start == 1 and shot.start == 6, "An equal-width overlap previews a swap before the drop.")
+	if lab.drag_overlay != null and lab.drag_overlay.get_child_count() == 2:
+		var moving: Control = lab.drag_overlay.get_child(0)
+		var initial := moving.position.x
+		await create_timer(0.20).timeout
+		_check(moving.position.x < initial, "The outgoing tile visibly slides toward the source slot.")
+	_button_input(destination, false)
+	await process_frame
+	_check(lab.lanes[0] == [shot, bash] and shot.start == 1 and bash.start == 6
+		and shot.target == "lowest_hp" and shot.enchantment == "longshot",
+		"Dropping a swap exchanges slots and keeps each tile's settings.")
+
+	var incoming: Dictionary = lab._entry("stave_crush", 0, "nearest")
+	var crowded: Array = []
+	for beat in range(ArenaSim.BEATS):
+		crowded.append(lab._entry("tap_bolt", beat, "lowest_hp"))
+	var displaced: Dictionary = crowded[6]
+	displaced.enchantment = "longshot"
+	lab.lanes[0].assign([incoming])
+	lab.lanes[1].assign(crowded)
+	for row: Array in lab.storage_rows:
+		row.clear()
+	lab._reset_fight()
+	lab._place({"id": incoming.id, "lane": 0, "start": 0}, 1, 5, true)
+	_check(lab.lanes[0].is_empty() and lab.lanes[1].size() == 10 and incoming.start == 5
+		and lab.storage_rows[0].size() == 3 and displaced in lab.storage_rows[0]
+		and displaced.target == "lowest_hp" and displaced.enchantment == "longshot",
+		"A crowded lane slides what it can and stows displaced tiles with their settings.")
+	if lab.forge_screen.visible:
+		lab.forge_close()
+	for row: Array in lab.storage_rows:
+		row.clear()
+		for column in range(TilePacking.STORAGE_COLUMNS):
+			row.append(lab._entry("tap_bolt", column, "nearest"))
+	lab.lanes[0].assign([lab._entry("stave_crush", 0, "nearest")])
+	for beat in range(ArenaSim.BEATS):
+		crowded[beat] = lab._entry("tap_bolt", beat, "nearest")
+	lab.lanes[1].assign(crowded)
+	lab._reset_fight()
+	var before: Array = [lab.lanes.duplicate(true), lab.storage_rows.duplicate(true)]
+	lab._place({"id": "stave_crush", "lane": 0, "start": 0}, 1, 5, true)
+	_check([lab.lanes, lab.storage_rows] == before, "A drop that needs unavailable storage changes neither lane nor storage.")
+	lab._load_fixture("duo")
+
+
 func _check_target_icons(lab: Control) -> void:
 	lab._load_fixture("duo")
 	await process_frame
@@ -418,10 +484,13 @@ func _check_storage_popup(lab: Control) -> void:
 	_button_input(destination, false)
 	await process_frame
 	await process_frame
-	_check(popup.visible and lab.storage_rows[0].size() == 3 and not lab.tile_cards[1].has(4),
-		"A timeline-to-storage drop should move the tile while leaving the popup open.")
+	_check(lab.forge_screen.visible and lab.storage_rows[0].size() == 3 and not lab.tile_cards[1].has(4),
+		"Dropping the third matching tile in storage moves it and opens the forge.")
+	lab.forge_close()
+	await process_frame
+	_check(popup.visible, "Leaving the forge returns to the storage popup.")
 	_check(popup._board.get_child(0).get_child(0).get_child_count() == 1,
-		"The third touching copy should immediately show a storage Combine prompt.")
+		"Returning to storage leaves the Combine prompt available.")
 	row = popup._board.get_child(0).get_child(1)
 	var timeline: Control = lab.lane_stack.get_child(1).get_child(1)
 	origin = _cell_point(row, 4, TilePacking.STORAGE_COLUMNS)
@@ -462,8 +531,7 @@ func _check_forge(lab: Control) -> void:
 	_check(lab.suppressed_combines.has("bash"), "Moving a Bash must not restore a declined offer.")
 	lab.storage_place(0, 4, {"id": "bash"})
 	_check(not lab.suppressed_combines.has("bash"), "Acquiring a new Bash must restore offers.")
-	lab.storage_combine(0, 0, true)
-	_check(lab.forge_screen.visible, "Storage Combine should open the forge.")
+	_check(lab.forge_screen.visible, "Completing a storage triple should open the forge.")
 	lab.forge_choose("event_horizon")
 	_check(lab.storage_rows[0] == original, "A future tier must not consume any copies.")
 	lab.forge_close()
@@ -482,8 +550,13 @@ func _check_forge(lab: Control) -> void:
 	lab.lanes[0].clear()
 	for beat in [0, 2, 4]:
 		lab._place({"id": "bash"}, 0, beat)
-	lab._offer_combine(-1, 0, 0, true)
-	_check(lab.forge_screen.visible, "Timeline Combine should open the forge.")
+	_check(lab.forge_screen.visible, "Completing a timeline triple should open the forge.")
+	var matches: Node = lab.forge_screen.find_child("MatchingTiles", true, false)
+	_check(matches != null and matches.get_child_count() == 3 and lab.forge_screen._title.text == "Upgrade ready!",
+		"The upgrade intro should start by showing all three matching tiles.")
+	lab.forge_screen._inspect("shield_ram")
+	_check(lab.forge_screen.find_child("ForgeMergeIntro", true, false) == null and not lab.forge_screen._confirm.disabled,
+		"Selecting an upgrade path dismisses the intro immediately.")
 	lab.forge_choose("shield_ram")
 	_check(lab.lanes[0].size() == 1 and lab.lanes[0][0].id == "shield_ram",
 		"Timeline forge should replace the triple in place.")
@@ -594,7 +667,7 @@ func _check_forge_layout_edit(lab: Control) -> void:
 	lab.storage_pick(0, lab.storage_rows[0][0])
 	lab.action.pressed.emit()
 	_check(lab.forge_screen.visible and lab.forge_screen._inspected_id == "bulwark_charge" \
-		and not lab.forge_screen._confirm.disabled and lab.forge_firing_beat("bulwark_charge") == 8,
+		and not lab.forge_screen._confirm.disabled and room.get_child(7).tooltip_text == "Beat 8 · Open",
 		"Returning should preserve the inspected branch and follow the original tile after rearranging.")
 	lab.forge_screen._confirm.pressed.emit()
 	var restored := FrontierRun.new()
