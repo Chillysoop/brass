@@ -221,9 +221,10 @@ func _check_enchanted_tile_movement(game: Control) -> void:
 	if run.loadout.lanes.is_empty():
 		return
 	run.data.phase = "map"
-	run.data.enchantment = "splash"
+	run.data.enchantments = ["splash", "guarded"]
 	run.loadout.lanes[0] = [_tile("shot", 0), _tile("shot", 2), _tile("shot", 4)]
 	run.loadout.lanes[0][0].enchantment = "splash"
+	run.loadout.lanes[0][1].enchantment = "guarded"
 	run.loadout.storage = [[], [], []]
 	game.run_open_enchantment_loadout()
 	var from_lane := {"id": "shot", "lane": 0, "start": 0}
@@ -243,8 +244,8 @@ func _check_enchanted_tile_movement(game: Control) -> void:
 	run.save_path = save_path
 	game.forge_choose("split_shot")
 	_check(game.lanes[0].size() == 1 and game.lanes[0][0].id == "split_shot"
-		and not game.lanes[0][0].has("enchantment") and run.active_enchantment() == "splash",
-		"An incompatible upgrade returns the enchantment to the player's available enchantments.")
+		and game.lanes[0][0].get("enchantment", "") == "guarded" and run.enchantments() == ["splash", "guarded"],
+		"A combine keeps the eligible attachment and returns the other held enchantment to storage.")
 	await process_frame
 
 

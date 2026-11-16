@@ -512,6 +512,7 @@ var _overflow_healed := 0
 var _twin_bell_hits: Dictionary = {}
 var _flanking_hits: Dictionary = {}
 var _healed_tiles: Dictionary = {}
+var _mended_tiles: Dictionary = {}
 var _last_party_heal_loop := -1
 var _enemy_pursuit_sprints := false
 var _critical_seed := 0
@@ -602,6 +603,7 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 	_twin_bell_hits.clear()
 	_flanking_hits.clear()
 	_healed_tiles.clear()
+	_mended_tiles.clear()
 	_last_party_heal_loop = -1
 	_reinforcement_wave.clear()
 	_critical_seed = int(options.get("seed", 0))
@@ -1453,6 +1455,37 @@ func _apply_enchantment(actor: Dictionary, tile: Dictionary) -> void:
 			var dealt: int = previous_hp - enemy.hp
 			var effect := "Splash dealt %d damage to %s." % [dealt, enemy.name] if dealt > 0 else "%s blocked Splash." % enemy.name
 			_activation.get_or_add("effect_details", []).append(effect)
+		"embered":
+			if _activation.get("primary_hit", false):
+				var target := _find_unit(_activation.target)
+				if target.get("hp", 0) > 0:
+					_ignite_ember(actor, target, tile.id, TileEnchantments.EMBER_DAMAGE, TileEnchantments.EMBER_BEATS, "embered")
+		"mending":
+			_apply_mending(actor, tile.id)
+
+
+func _apply_mending(actor: Dictionary, tile_id: String) -> void:
+	var healed_id: String = _activation.get("mending_first_recipient", "")
+	_activation.erase("mending_first_recipient")
+	var placement := Vector2i(actor.lane, _activation.start)
+	if healed_id.is_empty() or _mended_tiles.has(placement):
+		return
+	var recipient := {}
+	var missing := 0
+	for ally: Dictionary in units:
+		if ally.side != actor.side or ally.id == healed_id or ally.hp <= 0:
+			continue
+		var deficit: int = ally.max_hp - ally.hp
+		if deficit > missing:
+			recipient = ally
+			missing = deficit
+	if recipient.is_empty():
+		return
+	var restored := mini(TileEnchantments.MENDING_AMOUNT, missing)
+	_mended_tiles[placement] = true
+	recipient.hp += restored
+	_emit("heal", "Mending restores %d HP to %s." % [restored, recipient.name], actor, recipient, tile_id, restored,
+		Vector2.INF, Vector2.INF, {"enchantment": "mending", "source_tile": tile_id})
 
 
 func _mastery_hit(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
@@ -1796,6 +1829,8 @@ func _heal_from_tile(actor: Dictionary, recipient: Dictionary, tile_id: String, 
 	_healed_tiles[placement] = true
 	recipient.hp += gained
 	_emit("heal", "%s restores %d HP to %s." % [TILES[tile_id].label, gained, recipient.name], actor, recipient, tile_id, gained)
+	if _activation.get("enchantment") == "mending" and _activation.actor == actor.id and _activation.tile == tile_id:
+		_activation.get_or_add("mending_first_recipient", recipient.id)
 
 
 func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
@@ -1904,14 +1939,25 @@ func _apply_ember_burn(actor: Dictionary, target: Dictionary, tile_id: String, t
 	if tile.has("ember_burn_radius"):
 		targets = _enemies_in_area(actor, impact, tile.ember_burn_radius)
 	for enemy: Dictionary in targets:
-		var burns: Dictionary = enemy.get_or_add("ember_burns", {})
-		var active: Dictionary = burns.get(actor.id, {})
-		if not active.is_empty() and active.damage * active.remaining > tile.ember_burn_damage * tile.ember_burn_ticks:
-			continue
-		burns[actor.id] = {"damage": tile.ember_burn_damage, "remaining": tile.ember_burn_ticks,
-			"next_tick": int(active.get("next_tick", tick + TICKS_PER_BEAT)), "tile": tile_id}
-		_emit("ember_ignite", "%s ignites %s for %d beats." % [tile.label, enemy.name, tile.ember_burn_ticks],
-			actor, enemy, tile_id, tile.ember_burn_damage)
+		_ignite_ember(actor, enemy, tile_id, tile.ember_burn_damage, tile.ember_burn_ticks)
+
+
+func _ignite_ember(actor: Dictionary, enemy: Dictionary, tile_id: String, damage: int, beats: int, enchantment := "") -> void:
+	var burns: Dictionary = enemy.get_or_add("ember_burns", {})
+	var active: Dictionary = burns.get(actor.id, {})
+	if not active.is_empty() and active.damage * active.remaining > damage * beats:
+		return
+	var burn := {"damage": damage, "remaining": beats,
+		"next_tick": int(active.get("next_tick", tick + TICKS_PER_BEAT)), "tile": tile_id}
+	var details := {}
+	var label: String = TILES[tile_id].label
+	if not enchantment.is_empty():
+		burn["enchantment"] = enchantment
+		details = {"enchantment": enchantment, "source_tile": tile_id}
+		label = "Embered"
+	burns[actor.id] = burn
+	_emit("ember_ignite", "%s ignites %s for %d beats." % [label, enemy.name, beats],
+		actor, enemy, tile_id, damage, Vector2.INF, Vector2.INF, details)
 
 
 func _weakest_other_ally(actor: Dictionary) -> Dictionary:
@@ -3454,12 +3500,22 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 		target["bulwark_loop"] = _loop_index()
 		amount = maxi(0, amount - 6)
 	var blocked := mini(amount, target.guard)
+	var bypass_damage := 0
+	var enchantment: String = _activation.get("enchantment", "")
+	if not enchantment.is_empty() and actor.side == "hero" and target.side == "enemy" and extra_hit.is_empty() \
+			and actor.id == _activation.actor and tile_id == _activation.tile and target.id == _activation.target:
+		if enchantment == "piercing" and blocked > 0:
+			bypass_damage = ceili(blocked * TileEnchantments.PIERCING_RATIO)
+		elif enchantment == "embered":
+			_activation["primary_hit"] = true
 	target.guard -= blocked
 	if blocked > 0 and actor.side == "enemy" and target.side == "hero":
 		target["last_guard_block_tick"] = tick
 		if _has_relic(target, "bridgeplate") and int(target.get("bridgeplate_used_loop", -1)) != _loop_index():
 			target["bridgeplate_ready_loop"] = _loop_index()
-	var dealt := mini(amount - blocked, target.hp)
+	var regular_damage := mini(amount - blocked, target.hp)
+	var dealt := mini(regular_damage + bypass_damage, target.hp)
+	var pierced_guard := dealt - regular_damage
 	target.hp -= dealt
 	var action: String = TILES[tile_id].label if TILES.has(tile_id) else "Strike"
 	if not extra_hit.is_empty():
@@ -3476,8 +3532,15 @@ func _damage(actor: Dictionary, target: Dictionary, amount: int, tile_id: String
 	var impact_details := source_details.duplicate()
 	impact_details["blocked"] = blocked
 	impact_details["critical"] = critical
+	if pierced_guard > 0:
+		impact_details["pierced_guard"] = pierced_guard
 	var strike_origin: Vector2 = source_details.get("strike_origin", _attack_origin(actor))
 	_emit("hit", hit_message, actor, target, tile_id, dealt, strike_origin, Vector2.INF, impact_details)
+	if pierced_guard > 0:
+		var note := "Piercing dealt %d damage through Guard." % pierced_guard
+		_activation.get_or_add("effect_details", []).append(note)
+		_emit("enchant_pierce", note, actor, target, tile_id, pierced_guard, strike_origin, Vector2.INF,
+			{"enchantment": "piercing", "source_tile": tile_id})
 	if critical:
 		_activation["critical_wounded"] = dealt > 0
 		_activation.get_or_add("effect_details", []).append("Critical hit.")
@@ -4080,9 +4143,13 @@ func _tick_ember_burns(target: Dictionary) -> void:
 		if source.is_empty():
 			continue
 		var before: int = target.hp
-		_damage(source, target, burn.damage, "cinder_mage", "", {"source_tile": burn.tile})
-		_emit("ember_tick", "%s burns %s for %d damage." % [TILES[burn.tile].label, target.name, before - int(target.hp)],
-			source, target, burn.tile, before - int(target.hp))
+		var details := {"source_tile": burn.tile}
+		if burn.has("enchantment"):
+			details["enchantment"] = burn.enchantment
+		_damage(source, target, burn.damage, "cinder_mage", "", details)
+		var dealt := before - int(target.hp)
+		_emit("ember_tick", "%s burns %s for %d damage." % [TILES[burn.tile].label, target.name, dealt],
+			source, target, burn.tile, dealt, Vector2.INF, Vector2.INF, details if burn.has("enchantment") else {})
 		if target.hp <= 0:
 			break
 

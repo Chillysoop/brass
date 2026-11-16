@@ -1074,72 +1074,74 @@ func _claim_boss_relic(id: String) -> void:
 
 
 func _enchantment_draft() -> void:
-	_page_title("Choose an enchantment", "Equip it now or keep it for a later tile.")
+	_page_title("Choose an enchantment", "Claim it for Tile storage or equip it now.")
 	var cards := _cards_row()
 	cards.size_flags_vertical = SIZE_SHRINK_BEGIN
-	var slots := VBoxContainer.new()
-	slots.size_flags_vertical = SIZE_EXPAND_FILL
-	var group := ButtonGroup.new()
 	for offer: Dictionary in _run.enchantment_offers():
 		var id: String = offer.id
 		var tone := GameIcons.enchantment_color(id)
-		var card := _panel_stack(cards, Vector2.ZERO, true)
+		var card := _panel_stack(cards, Vector2(0, 180), true)
 		card.get_parent().add_theme_stylebox_override("panel", _box(PANEL, tone.darkened(0.50), 9, 14))
-		var button := _button(offer.label, func(): _render_enchantment_targets(slots, id), true)
+		var badge := GameIcons.enchantment_badge(id, 48)
+		card.add_child(badge)
+		var button := _button(offer.label, func(): _claim_enchantment(id), true)
 		button.name = "Enchantment_" + id
-		button.toggle_mode = true
-		button.button_group = group
-		GameIcons.decorate(button, offer.icon, 22)
+		button.accessibility_name = "Claim %s. %s" % [offer.label, offer.description]
 		card.add_child(button)
 		var description := TileKeywords.description(offer.description, 16, MUTED)
+		description.size_flags_vertical = SIZE_EXPAND_FILL
 		card.add_child(description)
+		_enable_reward_card_click(card, button)
+		_add_enchantment_equip(card, id)
 		if card.get_parent().get_index() == 0:
 			button.grab_focus()
-	_layout.add_child(slots)
-	_render_enchantment_targets(slots, "")
 	var skip := _button("Skip enchantment", func(): _claim_enchantment("skip"))
 	skip.name = "SkipEnchantment"
 	_footer_actions().add_child(skip)
 
 
-func _render_enchantment_targets(slots: VBoxContainer, id: String) -> void:
-	for child in slots.get_children():
-		slots.remove_child(child)
-		child.queue_free()
-	var choices := _panel_stack(slots, Vector2.ZERO)
-	if id.is_empty():
-		choices.add_child(_label("Select an enchantment to see eligible tiles.", 17, MUTED))
+func _add_enchantment_equip(card: VBoxContainer, id: String) -> void:
+	var targets := _enchantment_targets(id)
+	if targets.is_empty():
 		return
-	var enchantment := TileEnchantments.info(id)
-	choices.add_child(_label("Equip %s" % enchantment.label, 23, GOLD, true))
-	var targets := GridContainer.new()
-	targets.columns = 3
-	targets.add_theme_constant_override("h_separation", 8)
-	targets.add_theme_constant_override("v_separation", 6)
-	choices.add_child(targets)
-	for inventory in ["lanes", "storage"]:
+	var action: Button
+	if targets.size() == 1:
+		var target: Dictionary = targets[0]
+		action = _button("Equip on " + target.label, func(): _claim_enchantment(id, target.destination))
+		action.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		action.tooltip_text = target.label
+	else:
+		var menu := MenuButton.new()
+		menu.text = "Equip on…"
+		menu.flat = false
+		menu.focus_mode = FOCUS_ALL
+		var choices := menu.get_popup()
+		for index in range(targets.size()):
+			choices.add_item(targets[index].label, index)
+		choices.id_pressed.connect(func(index: int): _claim_enchantment(id, targets[index].destination))
+		action = menu
+	action.name = "EquipDraftEnchantment_" + id
+	action.accessibility_name = "%s · %s" % [action.text, TileEnchantments.info(id).label]
+	card.add_child(action)
+
+
+func _enchantment_targets(id: String) -> Array[Dictionary]:
+	var targets: Array[Dictionary] = []
+	var heroes := _party()
+	for inventory: String in ["lanes", "storage"]:
 		var rows: Array = _run.loadout[inventory]
-		for row_index in range(rows.size()):
-			for tile: Dictionary in rows[row_index]:
+		for row in range(rows.size()):
+			for tile: Dictionary in rows[row]:
 				var spec: Dictionary = ArenaSim.TILES[tile.id]
-				if not TileEnchantments.is_eligible(id, spec, tile.id):
+				if tile.has("enchantment") or not TileEnchantments.is_eligible(id, spec, tile.id):
 					continue
+				var stored := inventory == "storage"
 				var destination := {"id": tile.id, "start": tile.start}
-				destination["lane" if inventory == "lanes" else "row"] = row_index
-				var location := "Beat %d" % (int(tile.start) + int(spec.width)) if inventory == "lanes" else "Storage"
-				var equip := _button("%s · %s" % [spec.label, location], func(): _claim_enchantment(id, destination))
-				equip.name = "EquipEnchantment_" + tile.id
-				equip.size_flags_horizontal = SIZE_EXPAND_FILL
-				equip.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-				equip.tooltip_text = spec.description
-				GameIcons.decorate(equip, GameIcons.tile(tile.id, spec), 17)
-				targets.add_child(equip)
-	if targets.get_child_count() == 0:
-		choices.add_child(_label("No compatible tiles equipped or in storage.", 16, MUTED))
-	var keep := _button("Keep for later", func(): _claim_enchantment(id))
-	keep.name = "KeepEnchantment"
-	keep.size_flags_horizontal = SIZE_SHRINK_END
-	choices.add_child(keep)
+				destination["row" if stored else "lane"] = row
+				var place := "Storage %d" % (row + 1) if stored else _hero_name(heroes[row].id)
+				var caption := "%s · %s · %d" % [spec.label, place, int(tile.start) + 1]
+				targets.append({"label": caption, "destination": destination})
+	return targets
 
 
 func _claim_enchantment(id: String, destination := {}) -> void:

@@ -44,10 +44,7 @@ var _send: Button
 var _discard: Button
 var _forge: Button
 var _combine: Button
-var _enchantment_row: HBoxContainer
-var _enchantment_icon: TextureRect
-var _enchantment_label: Label
-var _enchant: Button
+var _enchantment_rows: VBoxContainer
 var _selected: Dictionary = {}
 var _preview: Control
 var _preview_row: Control
@@ -84,7 +81,6 @@ func set_docked(docked: bool) -> void:
 	_close.visible = not docked
 	_grid.size_flags_vertical = SIZE_EXPAND_FILL if docked else SIZE_FILL
 	size_flags_vertical = SIZE_EXPAND_FILL if docked else SIZE_FILL
-	_enchantment_label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS if docked else TextServer.OVERRUN_NO_TRIMMING
 	for button: Button in [_send, _discard, _forge, _combine]:
 		button.reparent(_dock_footer if docked else _footer, false)
 		button.add_theme_font_size_override("font_size", 12 if docked else 14)
@@ -111,7 +107,7 @@ func _apply_tile_size(row_size: Vector2) -> void:
 
 
 func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can_combine := false,
-		enchantment := {}, protect_selected := false) -> void:
+		enchantments := [], protect_selected := false) -> void:
 	var focus := get_viewport().gui_get_focus_owner()
 	var scroll_top := _grid.scroll_vertical
 	_focused_cell = focus.get_meta("storage_cell", Vector2i(-1, -1)) if is_instance_valid(focus) else Vector2i(-1, -1)
@@ -133,26 +129,54 @@ func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can
 	_forge.visible = camp
 	_forge.disabled = not _selected.has("lane")
 	_combine.visible = can_combine
-	_enchantment_row.visible = not enchantment.is_empty()
-	if _enchantment_row.visible:
-		var info := TileEnchantments.info(enchantment.id)
-		_enchantment_icon.texture = GameIcons.icon(info.icon)
-		_enchantment_label.text = "%s · %s" % [info.label, "Unequipped" if enchantment.host.is_empty() else enchantment.host]
-		_enchantment_label.tooltip_text = info.description
-		_enchant.text = str(enchantment.button).get_slice(" ", 0) if _docked else enchantment.button
-		_enchant.accessibility_name = enchantment.button
-		_enchant.disabled = not enchantment.eligible
-		_enchant.tooltip_text = info.description if enchantment.eligible else "Select a compatible tile in storage or on the timeline.\n" + info.description
+	_render_enchantments(enchantments)
 	if _selected.is_empty():
 		var message := "Drag to move tiles." if _docked else "Drag between storage and the timeline."
 		if camp:
 			message = "Select a tile in the sequence or storage to upgrade."
-		show_message("Select a tile to enchant." if _enchantment_row.visible else message)
+		show_message("Select a tile to enchant." if _enchantment_rows.visible and not camp else message)
 	else:
 		var tile: Dictionary = _host.tile_spec(_selected.id)
 		show_message("%s selected" % tile.get("label", _selected.id))
 	_fit_grid.call_deferred()
 	_grid.set_deferred("scroll_vertical", scroll_top)
+
+
+func _render_enchantments(enchantments: Array) -> void:
+	for child in _enchantment_rows.get_children():
+		_enchantment_rows.remove_child(child)
+		child.queue_free()
+	_enchantment_rows.visible = not enchantments.is_empty()
+	for entry: Dictionary in enchantments:
+		var id: String = entry.id
+		var info := TileEnchantments.info(id)
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 6)
+		_enchantment_rows.add_child(row)
+		row.add_child(GameIcons.enchantment_badge(id, 19))
+		var caption := "%s · %s" % [info.label, "Unequipped" if entry.host.is_empty() else entry.host]
+		var label := _label(caption, 12 if _docked else 14, GameIcons.enchantment_color(id))
+		label.size_flags_horizontal = SIZE_EXPAND_FILL
+		label.size_flags_vertical = SIZE_SHRINK_CENTER
+		label.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+		label.mouse_filter = MOUSE_FILTER_PASS
+		label.tooltip_text = "%s\n%s" % [caption, info.description]
+		row.add_child(label)
+		var button := _button(entry.button, func(): _host.storage_enchant_selected(id))
+		button.name = "EnchantSelected_" + id
+		button.accessibility_name = "%s %s" % [entry.button, info.label]
+		button.disabled = not entry.eligible
+		var detail: String = info.description
+		if not entry.eligible:
+			detail = "Select a compatible tile in storage or on the timeline.\n" + detail
+		elif not entry.replaced.is_empty():
+			var replaced: String = TileEnchantments.info(entry.replaced).label
+			button.accessibility_name = "Equip %s in place of %s" % [info.label, replaced]
+			detail = "%s returns to the available enchantments.\n%s" % [replaced, detail]
+		button.tooltip_text = detail
+		if _docked:
+			button.add_theme_font_size_override("font_size", 12)
+		row.add_child(button)
 
 
 func show_message(message: String) -> void:
@@ -197,24 +221,11 @@ func _build() -> void:
 	_board.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
 	_board.add_theme_constant_override("separation", 4)
 	_grid.add_child(_board)
-	_enchantment_row = HBoxContainer.new()
-	_enchantment_row.add_theme_constant_override("separation", 8)
-	_layout.add_child(_enchantment_row)
-	_enchantment_icon = TextureRect.new()
-	_enchantment_icon.custom_minimum_size = Vector2(20, 20)
-	_enchantment_icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-	_enchantment_icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-	_enchantment_icon.mouse_filter = Control.MOUSE_FILTER_IGNORE
-	_enchantment_row.add_child(_enchantment_icon)
-	_enchantment_label = _label("", 14, TEAL)
-	_enchantment_label.mouse_filter = Control.MOUSE_FILTER_STOP
-	_enchantment_label.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	_enchantment_label.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	_enchantment_row.add_child(_enchantment_label)
-	_enchant = _button("Enchant selected", func(): _host.storage_enchant_selected())
-	_enchant.name = "EnchantSelected"
-	_enchantment_row.add_child(_enchant)
-	_enchantment_row.hide()
+	_enchantment_rows = VBoxContainer.new()
+	_enchantment_rows.name = "HeldEnchantments"
+	_enchantment_rows.add_theme_constant_override("separation", 3)
+	_layout.add_child(_enchantment_rows)
+	_enchantment_rows.hide()
 
 	_footer = HBoxContainer.new()
 	_footer.add_theme_constant_override("separation", 12)

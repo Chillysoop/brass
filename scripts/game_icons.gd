@@ -3,6 +3,7 @@ extends RefCounted
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
 const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
+const CombatIcons = preload("res://scripts/combat_icons.gd")
 
 const GLASS_PILOT_ART := {
 	"glass_mirrorback": Rect2i(11, 22, 386, 373),
@@ -124,7 +125,8 @@ const RARITY_COLORS := {
 	"epic": Color("#cf9dff"), "legendary": Color("#ffc86d")
 }
 const RARITIES := ["common", "uncommon", "rare", "epic", "legendary"]
-const ENCHANTMENT_COLORS := {"guarded": Color("#7de4cf"), "longshot": Color("#f0ce90"), "splash": Color("#f0a48c")}
+const ENCHANTMENT_COLORS := {"guarded": Color("#7de4cf"), "longshot": Color("#f0ce90"), "splash": Color("#f0a48c"),
+	"piercing": Color("#c5aff3"), "embered": Color("#ffa263"), "mending": Color("#a5e9ae")}
 
 static var _enemy_textures: Dictionary = {}
 static var _hero_textures: Dictionary = {}
@@ -399,3 +401,9 @@ static func _draw_enchantment_glyph(glyph: Control, id: String, color: Color) ->
 			glyph.draw_circle(center + Vector2(-3, 1) * scale_factor, 2.4 * scale_factor, color, true, -1, true)
 			glyph.draw_circle(center + Vector2(2, -4) * scale_factor, 1.6 * scale_factor, color, true, -1, true)
 			glyph.draw_circle(center + Vector2(4, 2) * scale_factor, 1.5 * scale_factor, color, true, -1, true)
+		"piercing":
+			CombatIcons.draw(glyph, "attack", center, 13.0 * scale_factor, color)
+		"embered":
+			CombatIcons.draw(glyph, "burn", center, 13.0 * scale_factor, color)
+		"mending":
+			CombatIcons.draw(glyph, "heal", center, 13.0 * scale_factor, color)

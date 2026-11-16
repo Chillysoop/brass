@@ -76,8 +76,9 @@ const META_NODES := {
 	"shot_artifice": {"label": "Marksman's Arsenal", "description": "Upgrade a single Shot tile at camp and find Shot upgrades in rewards and shops.", "cost": 14, "requires": ["purse"]},
 	"guard_artifice": {"label": "Bastion Workshop", "description": "Upgrade a single Guard tile at camp and find Guard upgrades in rewards and shops.", "cost": 14, "requires": ["stout_start"]},
 	"navigation": {"label": "Pathfinder's Chart", "description": "Find wagers, relic brokers, and optional elite bounties at mystery nodes.", "cost": 12, "requires": ["purse"]},
-	"enchantments": {"label": "Tile Enchantments", "description": "Draft a movable enchantment after the opening fight in future Brass Frontier expeditions.", "cost": 8, "requires": ["curated_cache"]},
+	"enchantments": {"label": "Tile Enchantments", "description": "Draft movable enchantments after the Brass Frontier opening and after recruitment.", "cost": 8, "requires": ["curated_cache"]},
 }
+const ENCHANTMENT_DRAFTS := ["opening", "recruit"]
 const TILE_RARITIES := ["common", "uncommon", "rare", "epic", "legendary"]
 const NODE_LABELS := {
 	"battle": ["Dust Patrol", "Gate Watch", "Scrap Brigade", "Piston Guard", "Wall Patrol", "Relay Duel"],
@@ -410,6 +411,11 @@ func _valid_save_run(record: Dictionary, inventory: Dictionary) -> bool:
 	for field: String in ["layers", "visited", "relics", "offers"]:
 		if not record.get(field) is Array:
 			return false
+	if not _valid_enchantment_list(record.get("enchantments", []), TileEnchantments.IDS, 2) \
+			or not _valid_enchantment_list(record.get("enchantment_drafts", []), ENCHANTMENT_DRAFTS, 2):
+		return false
+	if phase == "enchantment" and not _valid_enchantment_list(record.offers, TileEnchantments.IDS, 3):
+		return false
 	if record.layers.is_empty() or not _valid_save_node(record.get("node")):
 		return false
 	for layer: Variant in record.layers:
@@ -426,6 +432,11 @@ func _valid_save_run(record: Dictionary, inventory: Dictionary) -> bool:
 			or not _save_integer(hero.get("hp")) or not _save_integer(hero.get("max_hp")):
 			return false
 	return _valid_save_inventory(inventory)
+
+
+func _valid_enchantment_list(value: Variant, choices: Array, limit: int) -> bool:
+	return value is Array and value.size() <= limit and value.all(func(id: Variant) -> bool:
+		return id is String and id in choices and value.count(id) == 1)
 
 
 func _valid_save_node(node: Variant) -> bool:
@@ -1469,6 +1480,7 @@ func reward(id: String, placement := {}) -> bool:
 	data.erase("reward_hints")
 	if is_final_boss():
 		data.phase = "result"
+		data.offers = []
 	elif data.node.type == "boss":
 		if _has_boss_relic_draft():
 			data.phase = "boss_relic"
@@ -1477,25 +1489,53 @@ func reward(id: String, placement := {}) -> bool:
 			data.node_notice = ""
 		else:
 			_start_recruitment()
-		return _save_run_change(before)
 	else:
-		var draft_enchantment: bool = data.location == "brass" and data.node.type == "opening" \
-			and "enchantments" in profile.meta and not data.has("enchantment")
-		data.phase = "enchantment" if draft_enchantment else "map"
-	data.offers = []
+		data.offers = _draft_enchantments()
+		data.phase = "map" if data.offers.is_empty() else "enchantment"
 	return _save_run_change(before)
 
 
+func _completed_enchantment_drafts() -> Array:
+	return data.get("enchantment_drafts", ["opening"] if data.has("enchantment") else [])
+
+
+func _draft_enchantments() -> Array:
+	if data.location != "brass" or "enchantments" not in profile.meta:
+		return []
+	var opening: bool = data.node.type == "opening"
+	var recruitment: bool = data.node.type == "battle" and int(data.segment) >= 2 and data.heroes.size() >= 2
+	var stage := "opening" if opening else "recruit"
+	var held := enchantments()
+	if (not opening and not recruitment) or stage in _completed_enchantment_drafts() or held.size() >= 2:
+		return []
+	var pool := TileEnchantments.IDS.filter(func(id: String): return id not in held and (recruitment or id != "mending"))
+	var rows: Array = loadout.lanes + loadout.storage
+	var fitting := pool.filter(func(id: String):
+		return rows.any(func(row: Array): return row.any(func(item: Dictionary):
+			return TileEnchantments.is_eligible(id, ArenaSim.TILES[item.id], item.id))))
+	var pick := _sample(fitting, 3, int(data.seed), _node_salt(141))
+	var other := pool.filter(func(id: String): return id not in fitting)
+	pick.append_array(_sample(other, 3 - pick.size(), int(data.seed), _node_salt(142)))
+	return pick
+
+
+func _pending_enchantment_ids() -> Array:
+	return data.offers if not data.offers.is_empty() else TileEnchantments.LEGACY_IDS
+
+
 func enchantment_offers() -> Array:
-	var offers: Array = []
-	if data.get("phase") == "enchantment":
-		for id: String in TileEnchantments.IDS:
-			offers.append(TileEnchantments.info(id).duplicate())
-	return offers
+	if data.get("phase") != "enchantment":
+		return []
+	return _pending_enchantment_ids().map(func(id: String): return TileEnchantments.info(id).duplicate())
 
 
 func choose_enchantment(id: String, destination := {}) -> bool:
-	if data.get("phase") != "enchantment" or (id != "skip" and id not in TileEnchantments.IDS):
+	if data.get("phase") != "enchantment" or (id != "skip" and id not in _pending_enchantment_ids()):
+		return false
+	var stage := "opening" if data.node.type == "opening" else "recruit"
+	var completed := _completed_enchantment_drafts()
+	var held := enchantments()
+	if stage in completed or (id != "skip" and (id in held or held.size() >= 2)):
 		return false
 	var before_loadout: Variant = null
 	var equipped_tile := ""
@@ -1516,18 +1556,24 @@ func choose_enchantment(id: String, destination := {}) -> bool:
 		item.enchantment = id
 		equipped_tile = ArenaSim.TILES[item.id].label
 	var before := data.duplicate(true)
-	data.enchantment = "" if id == "skip" else id
 	if id != "skip":
+		held.append(id)
 		var label: String = TileEnchantments.info(id).label
 		data.enchantment_notice = "%s kept for later." % label if equipped_tile.is_empty() \
 			else "%s equipped on %s." % [label, equipped_tile]
+	data.enchantments = held
+	data.enchantment_drafts = completed + [stage]
+	data.erase("enchantment")
+	data.offers = []
 	data.phase = "map"
 	return _save_run_change(before, {}, before_loadout)
 
 
-func active_enchantment() -> String:
-	var id: String = data.get("enchantment", "")
-	return id if id in TileEnchantments.IDS else ""
+func enchantments() -> Array:
+	if data.has("enchantments"):
+		return data.enchantments.duplicate()
+	var legacy: String = data.get("enchantment", "")
+	return [legacy] if legacy in TileEnchantments.LEGACY_IDS else []
 
 
 func _save_run_change(before: Dictionary, before_profile := {}, before_loadout: Variant = null) -> bool:
@@ -2912,6 +2958,10 @@ func _restore_integers() -> void:
 	_restore_node(data.node)
 	if not data.has("elite_relic_drafted"):
 		data.elite_relic_drafted = _has_earned_elite_relic()
+	if data.has("enchantment"):
+		data.enchantment_drafts = _completed_enchantment_drafts()
+		data.enchantments = enchantments()
+		data.erase("enchantment")
 	for items: Array in loadout.lanes + loadout.storage:
 		for tile: Dictionary in items:
 			tile.start = int(tile.start)

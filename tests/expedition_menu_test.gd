@@ -4,6 +4,7 @@ const Arena := preload("res://arena.tscn")
 const ArenaSim := preload("res://scripts/arena_sim.gd")
 const FrontierRun := preload("res://scripts/frontier_run.gd")
 const TilePacking := preload("res://scripts/tile_packing.gd")
+const TileEnchantments := preload("res://scripts/tile_enchantments.gd")
 const TEST_SEED := 81243
 
 var failures: Array[String] = []
@@ -427,7 +428,8 @@ func _check_enchantment_reward() -> void:
 	await _press_named(chart, "UnlockUpgrade")
 	_check("enchantments" in run.profile.meta and int(run.profile.marks) == before - 8,
 		"Unlocking enchantments from the chart spends eight Aether Marks.")
-	if not (run.start_run(42, "easy", "brass") and run.choose_preferred_hero("warden") and run.choose_relic("pocket_bell")
+	run.profile.medium_unlocked = true
+	if not (run.start_run(42, "medium", "brass") and run.choose_preferred_hero("warden") and run.choose_relic("pocket_bell")
 		and run.choose_starter("bash") and run.finish_combat(true, 80)):
 		_check(false, "Prepare the opening Brass fight reward with enchantments unlocked.")
 		return
@@ -439,43 +441,101 @@ func _check_enchantment_reward() -> void:
 		return
 	_check(run.loadout.lanes[0][1].id == reward_id and run.loadout.lanes[0][1].start == 4,
 		"The reward lands on the exact beat dropped before the enchantment draft.")
-	await _press_named(game.frontier_screen, "Enchantment_guarded")
-	_check(run.data.phase == "enchantment" and run.active_enchantment().is_empty(),
-		"Selecting Guarded shows eligible tiles before claiming it.")
-	await _press_named(game.frontier_screen, "EquipEnchantment_bash")
-	_check(run.data.phase == "map" and run.active_enchantment() == "guarded"
-		and run.loadout.lanes[0][0].get("enchantment", "") == "guarded",
-		"One click equips Guarded on Bash and returns to the map.")
+	var first_id := _find_enchantment_offer(run)
+	if first_id.is_empty():
+		_check(false, "The opening draft offers an enchantment compatible with Bash and a ranged recruit.")
+		return
+	await _press_named(game.frontier_screen, "Enchantment_" + first_id)
+	_check(run.data.phase == "map" and run.enchantments() == [first_id]
+		and not run.loadout.lanes[0][0].has("enchantment"),
+		"Choosing the enchantment in one click keeps it available and returns to the map.")
 	await _press_text(game.frontier_screen, "Manage tiles")
 	await _press_text(game.arena_screen, "Tile storage")
-	var badge: Node = game.arena_screen.find_child("TileEnchantmentBadge", true, false)
-	_check(badge != null and badge.get_meta("enchantment", "") == "guarded",
-		"An enchanted timeline tile shows its badge.")
-	if not await _check_timeline_enchantment_move():
+	await _select_enchantment_tile(0, 0)
+	await _press_named(game.storage_screen, "EnchantSelected_" + first_id)
+	var badge: Node = game.tile_cards[0][0].find_child("TileEnchantmentBadge", true, false)
+	_check(badge != null and badge.get_meta("enchantment", "") == first_id,
+		"An enchanted timeline tile shows the selected enchantment's badge.")
+	if not _reach_second_enchantment(run):
+		_check(false, "The first ordinary win with a recruit opens the second enchantment draft.")
 		return
-	var restored := FrontierRun.new()
-	_check(restored.load_save(save_path) and restored.active_enchantment() == "guarded"
-		and restored.loadout.lanes[0][1].get("enchantment", "") == "guarded",
-		"The chosen enchantment and attached tile persist together.")
-
-
-func _check_timeline_enchantment_move() -> bool:
-	if game.lanes[0].size() != 2:
-		_check(false, "The opening reward supplies a second tile for moving an enchantment.")
-		return false
+	game.run_return()
+	var second_id := _find_enchantment_offer(run)
+	if second_id.is_empty():
+		_check(false, "The recruit draft offers a different enchantment compatible with Bash and Shot.")
+		return
+	await _equip_draft_on_shot(second_id)
+	_check(run.data.phase == "map" and run.enchantments() == [first_id, second_id],
+		"Assigning from the second draft adds another distinct enchantment and returns to the map.")
+	await _press_text(game.frontier_screen, "Manage tiles")
+	await _press_text(game.arena_screen, "Tile storage")
+	await _select_enchantment_tile(1, 0)
 	var first: Dictionary = game.lanes[0][0]
-	var second: Dictionary = game.lanes[0][1]
-	var tile_card: Control = game.tile_cards[0][second.start]
+	var second: Dictionary = game.lanes[1][0]
+	_check(first.get("enchantment", "") == first_id and second.get("enchantment", "") == second_id,
+		"Draft assignment and storage assignment can coexist on independent tiles.")
+	var replace := game.storage_screen.find_child("EnchantSelected_" + first_id, true, false) as Button
+	_check(replace != null and replace.text == "Replace", "Moving onto an occupied tile offers replacement.")
+	await _press_named(game.storage_screen, "EnchantSelected_" + first_id)
+	_check(not first.has("enchantment") and second.get("enchantment", "") == first_id
+		and run.enchantments() == [first_id, second_id],
+		"Moving an enchantment clears its old host and returns the replaced enchantment to storage.")
+	await _press_named(game.storage_screen, "EnchantSelected_" + first_id)
+	_check(not second.has("enchantment") and run.enchantments() == [first_id, second_id],
+		"Removing the selected enchantment leaves both available to equip.")
+	await _press_named(game.storage_screen, "EnchantSelected_" + first_id)
+	await _select_enchantment_tile(0, 0)
+	await _press_named(game.storage_screen, "EnchantSelected_" + second_id)
+	var restored := FrontierRun.new()
+	_check(restored.load_save(save_path) and restored.enchantments() == [first_id, second_id]
+		and restored.loadout.lanes[0][0].get("enchantment", "") == second_id
+		and restored.loadout.lanes[1][0].get("enchantment", "") == first_id,
+		"The two held enchantments persist with their individual attached tiles.")
+
+
+func _equip_draft_on_shot(id: String) -> void:
+	var action := game.frontier_screen.find_child("EquipDraftEnchantment_" + id, true, false) as Button
+	await _press_named(game.frontier_screen, "EquipDraftEnchantment_" + id)
+	if action is MenuButton:
+		var choices := (action as MenuButton).get_popup()
+		_check(choices.visible, "The optional equip menu opens without claiming the enchantment.")
+		var shot := -1
+		for index in range(choices.item_count):
+			var label: String = choices.get_item_text(index)
+			_check(label != "Bash · Warden · 1", "The equip menu leaves occupied tiles out of its choices.")
+			if label.begins_with("Shot ·"):
+				shot = choices.get_item_id(index)
+		_check(shot >= 0, "The draft can equip the enchantment on the recruit's unoccupied Shot.")
+		if shot >= 0:
+			choices.id_pressed.emit(shot)
+			choices.hide()
+			await process_frame
+
+
+func _find_enchantment_offer(run: FrontierRun) -> String:
+	for offer: Dictionary in run.enchantment_offers():
+		if TileEnchantments.is_eligible(offer.id, ArenaSim.TILES.bash, "bash") \
+				and TileEnchantments.is_eligible(offer.id, ArenaSim.TILES.shot, "shot"):
+			return offer.id
+	return ""
+
+
+func _reach_second_enchantment(run: FrontierRun) -> bool:
+	run.data.node = run.data.layers[FrontierRun.NODES_PER_SEGMENT - 1][0]
+	run.data.phase = "combat"
+	if not (run.finish_combat(true, 100) and run.reward("skip") and run.choose_boss_relic("skip")
+			and run.choose_recruit(run.data.offers[0]) and run.choose_recruit_starter("shot")):
+		return false
+	var nodes := run.available_nodes()
+	return not nodes.is_empty() and run.choose_node(nodes[0].id) and run.finish_combat(true, [100, 100]) \
+		and run.reward("skip") and run.reward("skip") and run.data.phase == "enchantment"
+
+
+func _select_enchantment_tile(lane: int, start: int) -> void:
 	await process_frame
-	_click(tile_card.get_child(0) as Button, "the second timeline tile")
-	await _press_text(game.storage_screen, "Move to selected")
-	_check(not first.has("enchantment") and second.get("enchantment", "") == "guarded",
-		"Moving Guarded attaches it only to the newly selected tile.")
-	await _press_text(game.storage_screen, "Remove enchantment")
-	_check(not second.has("enchantment") and game.run.active_enchantment() == "guarded",
-		"Removing an enchantment leaves it available to equip again.")
-	await _press_named(game.storage_screen, "EnchantSelected")
-	return true
+	var tile_card: Control = game.tile_cards[lane][start]
+	_click(tile_card.get_child(0) as Button, "the timeline tile for the enchantment")
+	await process_frame
 
 
 func _check_class_roster() -> void:

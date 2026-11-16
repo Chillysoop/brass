@@ -277,7 +277,6 @@ static func apply_combination(lanes: Array, storage: Array, copies: Array, desti
 	if not _combine_fits(lanes, storage, copies, destination, upgrade):
 		return false
 	var removals := []
-	var enchantment := ""
 	for copy: Dictionary in copies:
 		var items := _combine_row(lanes, storage, copy)
 		var index := items.find_custom(func(item: Dictionary): return item.start == copy.start and item.id == copy.id)
@@ -286,18 +285,40 @@ static func apply_combination(lanes: Array, storage: Array, copies: Array, desti
 		var item: Dictionary = items[index]
 		if removals.any(func(removal: Dictionary): return is_same(removal.item, item)):
 			return false
-		if item.has("enchantment"):
-			enchantment = item.enchantment
 		removals.append({"items": items, "item": item})
+	var enchantment: String = combination_enchantments(lanes, storage, copies, destination, upgrade).kept
 	for removal: Dictionary in removals:
 		removal.items.erase(removal.item)
 	var items := _combine_row(lanes, storage, destination)
 	var entry := {"id": upgrade, "start": int(destination.start), "target": target}
-	if TileEnchantments.is_eligible(enchantment, ArenaSim.TILES[upgrade], upgrade):
+	if not enchantment.is_empty():
 		entry.enchantment = enchantment
 	items.append(entry)
 	items.sort_custom(func(a: Dictionary, b: Dictionary): return a.start < b.start)
 	return true
+
+
+static func combination_enchantments(lanes: Array, storage: Array, copies: Array, destination: Dictionary,
+		upgrade: String) -> Dictionary:
+	var enchantments: Array[String] = []
+	var retained := ""
+	for copy: Dictionary in copies:
+		var items := _combine_row(lanes, storage, copy)
+		var index := items.find_custom(func(item: Dictionary): return item.start == copy.start and item.id == copy.id)
+		if index < 0:
+			continue
+		var id: String = items[index].get("enchantment", "")
+		if id.is_empty() or id in enchantments:
+			continue
+		enchantments.append(id)
+		if not TileEnchantments.is_eligible(id, ArenaSim.TILES[upgrade], upgrade):
+			continue
+		var keeps_slot: bool = copy.lane == destination.lane and copy.start == destination.start \
+			and copy.get("row", -1) == destination.get("row", -1)
+		if retained.is_empty() or keeps_slot:
+			retained = id
+	enchantments.erase(retained)
+	return {"kept": retained, "returned": enchantments}
 
 
 static func _combine_fits(lanes: Array, storage: Array, copies: Array, destination: Dictionary, upgrade: String) -> bool:

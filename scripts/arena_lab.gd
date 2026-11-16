@@ -534,12 +534,11 @@ func _update_controls() -> void:
 	fixture_picker.disabled = state != "setup"
 	storage_button.disabled = not _can_edit_loadout()
 	storage_button.visible = not _placing_tile_reward()
-	var enchantment := TileEnchantments.info(_active_enchantment())
-	enchantment_button.visible = state == "setup" and not enchantment.is_empty()
+	var enchantments := _held_enchantments()
+	enchantment_button.visible = state == "setup" and not enchantments.is_empty()
 	if enchantment_button.visible:
-		enchantment_button.text = enchantment.label
-		enchantment_button.tooltip_text = enchantment.description + "\nAssign or move this enchantment in Tile storage."
-		GameIcons.decorate(enchantment_button, enchantment.icon, 18)
+		enchantment_button.text = "Enchantments"
+		enchantment_button.tooltip_text = "Equip, move, or remove enchantments in Tile storage."
 	speed_controls.visible = not campaign or (encounter_setup and state != "finished")
 	var speed_button := speed_buttons[speed - 1]
 	if not speed_button.button_pressed:
@@ -1503,8 +1502,8 @@ func _render_storage() -> void:
 	storage_screen.render(storage_rows, selected, all_offers, camp_forge and not _editing_camp_forge(),
 		_selected_combine_copies().size() >= 3, _enchantment_controls(), protect_selected)
 
-func _active_enchantment() -> String:
-	return run.active_enchantment() if campaign or not retry_options.is_empty() else ""
+func _held_enchantments() -> Array:
+	return run.enchantments() if campaign or not retry_options.is_empty() else []
 
 func _selected_tile() -> Dictionary:
 	if not selected.has("lane"):
@@ -1515,36 +1514,41 @@ func _selected_tile() -> Dictionary:
 			return item
 	return {}
 
-func _enchantment_host() -> Dictionary:
+func _enchantment_host(id: String) -> Dictionary:
 	for items: Array in lanes + storage_rows:
 		for item: Dictionary in items:
-			if item.has("enchantment"):
+			if item.get("enchantment", "") == id:
 				return item
 	return {}
 
-func _enchantment_controls() -> Dictionary:
-	var id := _active_enchantment()
-	if id.is_empty():
-		return {}
-	var host := _enchantment_host()
+func _enchantment_controls() -> Array[Dictionary]:
+	var controls: Array[Dictionary] = []
 	var item := _selected_tile()
-	var eligible := TileEnchantments.is_eligible(id, tile_spec(item.get("id", "")), item.get("id", ""))
-	var caption := "Enchant selected" if host.is_empty() else "Move to selected"
-	if not host.is_empty() and is_same(host, item):
-		caption = "Remove enchantment"
-	return {"id": id, "host": tile_spec(host.get("id", "")).get("label", ""), "eligible": eligible, "button": caption}
+	var tile_id: String = item.get("id", "")
+	var current: String = item.get("enchantment", "")
+	for id: String in _held_enchantments():
+		var host := _enchantment_host(id)
+		var eligible := current == id or TileEnchantments.is_eligible(id, tile_spec(tile_id), tile_id)
+		var caption := "Equip" if host.is_empty() else "Move"
+		if current == id:
+			caption = "Remove"
+		elif not current.is_empty():
+			caption = "Replace"
+		controls.append({"id": id, "host": tile_spec(host.get("id", "")).get("label", ""),
+			"eligible": eligible, "button": caption, "replaced": current if caption == "Replace" else ""})
+	return controls
 
-func storage_enchant_selected() -> void:
-	if not _can_edit_loadout() or not storage_screen.visible:
+func storage_enchant_selected(id: String) -> void:
+	if not _can_edit_loadout() or not storage_screen.visible or id not in _held_enchantments():
 		return
-	var id := _active_enchantment()
 	var item := _selected_tile()
-	if not TileEnchantments.is_eligible(id, tile_spec(item.get("id", "")), item.get("id", "")):
+	var tile_id: String = item.get("id", "")
+	var removing: bool = item.get("enchantment", "") == id
+	if not removing and not TileEnchantments.is_eligible(id, tile_spec(tile_id), tile_id):
 		return
 	var before := _inventory_checkpoint()
-	var previous := _enchantment_host()
-	previous.erase("enchantment")
-	if not is_same(previous, item):
+	_enchantment_host(id).erase("enchantment")
+	if not removing:
 		item.enchantment = id
 	if not _persist_inventory(before):
 		return
@@ -1632,7 +1636,7 @@ func _commit_inventory_combine(id: String) -> void:
 		return
 	var before := _inventory_checkpoint()
 	var target := _combine_target(lanes, storage_rows, plan.copies, plan.destination, id)
-	var notice := _combine_enchantment_notice(lanes, storage_rows, plan.copies, id)
+	var notice := _combine_enchantment_notice(lanes, storage_rows, plan.copies, plan.destination, id)
 	if not TilePacking.apply_combination(lanes, storage_rows, plan.copies, plan.destination, id, target):
 		return
 	suppressed_combines.erase(id)
@@ -1742,7 +1746,7 @@ func forge_choose(id: String) -> void:
 		copies.append(copy)
 	var before := _inventory_checkpoint()
 	var target := _combine_target(lanes, storage_rows, copies, copies[0], id)
-	var notice := _combine_enchantment_notice(lanes, storage_rows, copies, id)
+	var notice := _combine_enchantment_notice(lanes, storage_rows, copies, copies[0], id)
 	if not TilePacking.apply_combination(lanes, storage_rows, copies, copies[0], id, target):
 		return
 	suppressed_combines.erase(id)
@@ -2147,16 +2151,13 @@ func _combine_target(owned_lanes: Array, owned_storage: Array, copies: Array, de
 			return _forge_target(id, item.target)
 	return ArenaSim.TILES[id].targets[0]
 
-func _combine_enchantment_notice(owned_lanes: Array, owned_storage: Array, copies: Array, upgrade: String) -> String:
-	var spec := tile_spec(upgrade)
-	for copy: Dictionary in copies:
-		var items: Array = owned_storage[copy.row] if copy.has("row") else owned_lanes[copy.lane]
-		for item: Dictionary in items:
-			if item.start != copy.start or item.id != copy.id or not item.has("enchantment"):
-				continue
-			if not TileEnchantments.is_eligible(item.enchantment, spec, upgrade):
-				return "%s returned to storage." % TileEnchantments.info(item.enchantment).label
-	return ""
+func _combine_enchantment_notice(owned_lanes: Array, owned_storage: Array, copies: Array,
+		destination: Dictionary, upgrade: String) -> String:
+	var result := TilePacking.combination_enchantments(owned_lanes, owned_storage, copies, destination, upgrade)
+	var returned := PackedStringArray()
+	for id: String in result.returned:
+		returned.append(TileEnchantments.info(id).get("label", id))
+	return "%s returned to storage." % ", ".join(returned) if not returned.is_empty() else ""
 
 func _show_inventory_message(message: String) -> void:
 	if storage_screen.visible:
@@ -2352,7 +2353,7 @@ func _claim_reward_upgrade(id: String) -> void:
 		forge_screen.show_error("Make room for the upgrade or return to the reward choices.")
 		return
 	var target := _combine_target(run.loadout.lanes, run.loadout.storage, plan.copies, plan.destination, id)
-	var notice := _combine_enchantment_notice(run.loadout.lanes, run.loadout.storage, plan.copies, id)
+	var notice := _combine_enchantment_notice(run.loadout.lanes, run.loadout.storage, plan.copies, plan.destination, id)
 	_finish_reward_combine(func():
 		if not TilePacking.apply_combination(run.loadout.lanes, run.loadout.storage, plan.copies, plan.destination, id, target):
 			return false
