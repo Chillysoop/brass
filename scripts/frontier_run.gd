@@ -396,6 +396,8 @@ func _valid_save_run(record: Dictionary, inventory: Dictionary) -> bool:
 				return false
 			if not stock.all(func(id: Variant) -> bool: return id is String and ArenaSim.TILES.has(id)):
 				return false
+			if record.has("shop_deck_offer") and record.shop_deck_offer not in stock:
+				return false
 		"result":
 			if record.get("result") not in ["victory", "defeat"]:
 				return false
@@ -764,6 +766,7 @@ func choose_node(id: String) -> bool:
 	data.erase("reward_placement")
 	data.erase("reward_hints")
 	data.erase("shop_class_offers")
+	data.erase("shop_deck_offer")
 	data.erase("shop_stock")
 	var midpoint := floori(float(data.layers.size() - 1) / 2.0)
 	if not data.midpoint_paid and int(selected.row) >= midpoint:
@@ -773,6 +776,7 @@ func choose_node(id: String) -> bool:
 		"shop":
 			data.phase = "shop"
 			data.offers = _shop_tiles()
+			_add_shop_deck_offer()
 			if "guild_ledger" in data.relics:
 				_add_class_shop_offers()
 			data.shop_stock = data.offers.duplicate()
@@ -1313,6 +1317,11 @@ func reward_reroll_price() -> int:
 	return 5 << mini(count, 50)
 
 
+func reward_reroll_prefers_copy() -> bool:
+	return reward_reroll_price() > 0 and _act_rerolls() == 0 and data.offers.any(func(id: String):
+		return ArenaSim.TILES[id].rarity != "legendary")
+
+
 func _act_rerolls() -> int:
 	return int(data.get("reward_rerolls", 0)) if int(data.get("reroll_act", 0)) == int(data.segment) else 0
 
@@ -1325,19 +1334,20 @@ func reroll_reward() -> bool:
 	var hero: String = data.heroes[lane].id
 	var rows := _reward_inventory(lane)
 	var count := _act_rerolls()
-	var rng := _rng(int(data.seed), _node_salt(421 + lane * 1069 + count * 719))
-	var replacements: Array[String] = []
-	var hints := {}
+	var salt := 421 + lane * 1069 + count * 719
+	var pools := {}
 	for id: String in data.offers:
 		var tier := TILE_RARITIES.find(ArenaSim.TILES[id].rarity)
-		var pool := _class_reward_pool(hero, tier, rows)
-		var fresh := pool.filter(func(tile: String): return tile not in data.offers and tile not in replacements)
-		if fresh.is_empty():
-			fresh = pool.filter(func(tile: String): return tile != id and tile not in replacements)
-		if fresh.is_empty():
-			return false
-		var replacement: String = fresh[rng.randi_range(0, fresh.size() - 1)]
-		replacements.append(replacement)
+		if not pools.has(tier):
+			pools[tier] = _class_reward_pool(hero, tier, rows)
+	var copy := _first_reroll_copy(hero, rows, pools, salt + 1) if count == 0 else ""
+	var replacements := _reroll_tiles(pools, salt, copy)
+	if replacements.is_empty() and not copy.is_empty():
+		replacements = _reroll_tiles(pools, salt)
+	if replacements.is_empty():
+		return false
+	var hints := {}
+	for replacement: String in replacements:
 		var hint := _copy_reward_hint(replacement, rows)
 		if not hint.is_empty():
 			hints[replacement] = hint
@@ -1347,6 +1357,38 @@ func reroll_reward() -> bool:
 	data.reward_rerolls = count + 1
 	_activate_reward_draft({"offers": replacements, "hints": hints})
 	return _save_run_change(before)
+
+
+func _first_reroll_copy(hero_id: String, rows: Array, pools: Dictionary, salt: int) -> String:
+	var eligible := _forge_copy_pool(hero_id, rows).filter(func(id: String):
+		var tier := TILE_RARITIES.find(ArenaSim.TILES[id].rarity)
+		return id in pools.get(tier, []))
+	var new_to_draft := eligible.filter(func(id: String): return id not in data.offers)
+	return _owned_reward(eligible if new_to_draft.is_empty() else new_to_draft, salt, false, rows)
+
+
+func _reroll_tiles(pools: Dictionary, salt: int, copy := "") -> Array[String]:
+	var rng := _rng(int(data.seed), _node_salt(salt))
+	var replacements: Array[String] = []
+	var copy_slot: int = data.offers.find(copy)
+	if copy_slot < 0 and not copy.is_empty():
+		var copy_rarity: String = ArenaSim.TILES[copy].rarity
+		copy_slot = data.offers.find_custom(func(id: String): return ArenaSim.TILES[id].rarity == copy_rarity)
+	for index in range(data.offers.size()):
+		if index == copy_slot:
+			replacements.append(copy)
+			continue
+		var id: String = data.offers[index]
+		var tier := TILE_RARITIES.find(ArenaSim.TILES[id].rarity)
+		var pool: Array = pools[tier]
+		var unclaimed := pool.filter(func(tile: String): return tile != copy and tile not in replacements)
+		var fresh := unclaimed.filter(func(tile: String): return tile not in data.offers)
+		if fresh.is_empty():
+			fresh = unclaimed.filter(func(tile: String): return tile != id)
+		if fresh.is_empty():
+			return []
+		replacements.append(fresh[rng.randi_range(0, fresh.size() - 1)])
+	return replacements
 
 
 func current_reward_placement() -> Dictionary:
@@ -1486,6 +1528,10 @@ func shop_stock() -> Array:
 
 func shop_tile_purchased(id: String) -> bool:
 	return id in shop_stock() and not _is_offer("shop", id)
+
+
+func shop_deck_offer_id() -> String:
+	return data.get("shop_deck_offer", "") if data.get("phase") == "shop" else ""
 
 
 func shop_class_offer_owner(id: String) -> String:
@@ -2497,8 +2543,35 @@ func _shop_tiles() -> Array:
 	return stock
 
 
+func _add_shop_deck_offer() -> void:
+	var prior_shops := 0
+	for layer: Array in data.layers.slice(0, int(data.node.row)):
+		if layer.any(func(node: Dictionary): return node.type == "shop" and node.id in data.visited):
+			prior_shops += 1
+	var hero_count: int = data.heroes.size()
+	var offset := _rng(int(data.seed), 195).randi_range(0, hero_count - 1)
+	var lane := (offset + prior_shops) % hero_count
+	var hero_id: String = data.heroes[lane].id
+	var rows := _reward_inventory(lane)
+	var deck := ClassDecks.common(hero_id) + ClassDecks.uncommon(hero_id)
+	var copies := _forge_copy_pool(hero_id, rows).filter(func(id: String):
+		return id not in data.offers and ArenaSim.TILES[id].get("family", id) in deck)
+	var copy := _owned_reward(copies, 196 + lane, false, rows)
+	var unstocked := deck.filter(func(id: String): return id not in data.offers)
+	var fresh := unstocked.filter(func(id: String): return _copy_reward_hint(id, rows).is_empty())
+	var use_copy := not copy.is_empty() and (fresh.is_empty() or _copy_reward_hint(copy, rows) == "Third copy" \
+		or _rng(int(data.seed), _node_salt(197 + lane)).randi_range(0, 1) == 0)
+	var offers := [copy] if use_copy else _sample(fresh if not fresh.is_empty() else unstocked, 1,
+		int(data.seed), _node_salt(198 + lane))
+	if not offers.is_empty():
+		var id: String = offers[0]
+		data.offers.append(id)
+		data.shop_deck_offer = id
+		data.shop_class_offers = {id: hero_id}
+
+
 func _add_class_shop_offers() -> void:
-	var owners := {}
+	var owners: Dictionary = data.get("shop_class_offers", {})
 	for lane in range(data.heroes.size()):
 		var hero_id: String = data.heroes[lane].id
 		var pool := ClassDecks.common(hero_id) + ClassDecks.uncommon(hero_id)
@@ -2509,6 +2582,18 @@ func _add_class_shop_offers() -> void:
 		data.offers.append(id)
 		owners[id] = hero_id
 	data.shop_class_offers = owners
+
+
+func _forge_copy_pool(hero_id: String, rows: Array) -> Array:
+	var quantities := {}
+	for row: Array in rows:
+		for tile: Dictionary in row:
+			quantities[tile.id] = int(quantities.get(tile.id, 0)) + 1
+	return quantities.keys().filter(func(id: String):
+		var tile: Dictionary = ArenaSim.TILES[id]
+		var tier_available: bool = tile.rarity == "common" or forge_family_available(tile.get("family", ""))
+		return quantities[id] < 3 and tier_available and _can_draft_owned_tile(id, hero_id) \
+			and not TilePacking.next_options(id).is_empty())
 
 
 func _owned_reward(pool: Array, salt: int, favor_owned_family := true, inventory: Variant = null) -> String:

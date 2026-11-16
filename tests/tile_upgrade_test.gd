@@ -24,6 +24,7 @@ func _run() -> void:
 	game.set_physics_process(false)
 	game.run.load_save(save_path)
 	await _check_reward_combine(game)
+	await _check_reward_copy_pips(game)
 	await _check_enchanted_tile_movement(game)
 	await _check_distributed_storage(game)
 	await _check_alternate_copies(game)
@@ -162,6 +163,57 @@ func _check_reward_combine(game: Control) -> void:
 	_check(run.load_save(save_path) and run.reward_lane() == 1 and run.data.offers == next_hero_offers
 		and run.loadout.lanes[0].any(func(tile: Dictionary): return tile.id == choice and tile.get("enchantment") == "guarded"),
 		"The chosen upgrade inherits the consumed attachment. It and the next hero's draft survive a second reload.")
+
+
+func _check_reward_copy_pips(game: Control) -> void:
+	var run: FrontierRun = game.run
+	var lane := run.reward_lane()
+	if lane != 1:
+		_check(false, "Copy pips need the recruit's active reward.")
+		return
+	var before := run.loadout.duplicate(true)
+	var offers: Array = run.data.offers
+	# Both matching copies are stowed, but each only frees two contiguous spaces.
+	run.loadout.lanes[0] = [_tile("shield_ram", 0)]
+	run.loadout.lanes[lane] = [_tile("slam", 0), _tile("slam", 4), _tile("slam", 8)]
+	run.loadout.storage = [
+		[_tile("shield_ram", 0), _tile("slam", 2), _tile("hook_bash", 6)],
+		[_tile("shield_ram", 0), _tile("slam", 2), _tile("shield_tap", 6)],
+		[_tile("slam", 0), _tile("slam", 4)],
+	]
+	run.data.offers = ["shield_ram", "hook_bash", "meteor_seal"]
+	game.run_return()
+	await process_frame
+	var card := game.frontier_screen.find_child("RewardTile_shield_ram", true, false) as Button
+	var pips := _reward_copy_pips(game.frontier_screen, "shield_ram")
+	var other := _reward_copy_pips(game.frontier_screen, "hook_bash")
+	_check(pips != null and pips.is_visible_in_tree() and int(pips.get_meta("owned_copies")) == 2
+		and not pips.get_meta("completes_set") and "Make room" in pips.tooltip_text,
+		"Copy pips count the two stowed copies and ignore the other hero, without promising an upgrade that cannot fit.")
+	_check(other != null and int(other.get_meta("owned_copies")) == 1
+		and _reward_copy_pips(game.frontier_screen, "meteor_seal") == null,
+		"Copy pips count exact tile IDs and are absent on Legendary offers.")
+	game._place({"id": "slam", "lane": -1, "row": 0, "start": 2}, 0, 4)
+	_check(pips != null and pips == _reward_copy_pips(game.frontier_screen, "shield_ram")
+		and pips.get_meta("completes_set") and "completes a set of three" in card.accessibility_name,
+		"Making room updates the same card and its accessible description without leaving the reward.")
+	game._place({"id": "shield_ram", "lane": -1, "row": 0, "start": 0}, 0, 2)
+	_check(pips != null and int(pips.get_meta("owned_copies")) == 1 and not pips.get_meta("completes_set"),
+		"Moving a matching copy onto the other hero's timeline immediately removes it from the count.")
+	_check(run.load_save(save_path), "The edited inventory is saved during the reward.")
+	game.run_resume()
+	await process_frame
+	pips = _reward_copy_pips(game.frontier_screen, "shield_ram")
+	_check(pips != null and int(pips.get_meta("owned_copies")) == 1 and not pips.get_meta("completes_set"),
+		"Resuming the same reward recomputes the count from the saved inventory.")
+	run.loadout = before
+	run.data.offers = offers
+	_check(run.save(), "Restore the reward fixture for the remaining inventory tests.")
+
+
+func _reward_copy_pips(page: Control, id: String) -> Control:
+	var button := page.find_child("RewardTile_" + id, true, false) as Button
+	return button.get_parent().find_child("RewardCopyPips", true, false) as Control if button != null else null
 
 
 func _check_enchanted_tile_movement(game: Control) -> void:

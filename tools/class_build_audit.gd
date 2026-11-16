@@ -7,13 +7,15 @@ extends SceneTree
 # Medium stops at the first boss by default. Hard continues to the final boss.
 # Recruit audits consider natural class offers for the final party slot.
 # Audits including a locked class buy the complete class roster in scratch saves.
-# Drafts repack equipped tiles and skip rerolls. --upgrades additionally weighs
-# duplicate copies, combines through legal placements, and forges at healthy camps.
+# Drafts repack equipped tiles. --upgrades values duplicate copies, uses legal
+# combines, forges at healthy camps, visits shops on even seeds, and weighs one
+# paid reroll per act while keeping enough gold for an inexpensive shop tile.
 
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const REST_FORGE_HEALTH := 0.70
+const REROLL_GOLD_RESERVE := 15
 
 const POLICIES := {
 	"warden": ["guard", "knockback"],
@@ -271,7 +273,7 @@ func _expedition(class_id: String, seed_value: int, policy: String) -> Dictionar
 	var lead_policy: String = POLICIES[lead][0] if as_recruit else policy
 	var row := {"class": class_id, "seed": seed_value, "policy": policy, "lane": hero_lane, "result": "incomplete", "phase": "",
 		"drafts": [], "fights": [], "route": [], "starter_trials": [], "final": [], "partner": "", "relics": [],
-		"upgrades": [], "rests": []}
+		"upgrades": [], "rests": [], "shops": [], "rerolls": [], "first_boss": {}}
 	if not _setup_profile(run) or not run.start_run(seed_value, difficulty) \
 			or not run.choose_preferred_hero(lead) or not run.choose_relic("pocket_bell"):
 		return row
@@ -286,6 +288,8 @@ func _expedition(class_id: String, seed_value: int, policy: String) -> Dictionar
 		match run.data.phase:
 			"combat":
 				var encounter := run.encounter()
+				if audit_upgrades and encounter.segment == 1 and encounter.encounter == "boss":
+					_record_first_boss(run, row)
 				var fight := _fight(run.loadout.lanes, encounter)
 				fight.node = run.data.node.label
 				fight.row = run.data.node.row
@@ -301,13 +305,15 @@ func _expedition(class_id: String, seed_value: int, policy: String) -> Dictionar
 					break
 				var lane := maxi(0, run.reward_lane())
 				var draft_policy := policy if lane == hero_lane else lead_policy if lane == 0 else "partner"
+				if audit_upgrades and not _maybe_reroll(run, lane, row):
+					break
 				if not _claim_tile(run, lane, draft_policy, row):
 					break
 			"map":
 				var options := run.available_nodes()
 				if options.is_empty():
 					break
-				var node := _choose_node(options)
+				var node := _choose_node(options, row, run.data.segment)
 				row.route.append(node.id)
 				if not run.choose_node(node.id):
 					break
@@ -326,9 +332,7 @@ func _expedition(class_id: String, seed_value: int, policy: String) -> Dictionar
 					break
 				row.drafts.append({"node": "Recruit", "kind": "loadout", "lane": lane, "pick": loadout, "tiles": _ids(run.loadout.lanes[lane])})
 			"shop":
-				if run.data.heroes.any(func(hero: Dictionary): return hero.hp <= hero.max_hp - 15):
-					run.shop_heal()
-				if not run.leave_node():
+				if not _visit_shop(run, row, policy, lead_policy):
 					break
 			"rest":
 				if not _rest(run, row, policy, lead_policy):
@@ -351,6 +355,21 @@ func _expedition(class_id: String, seed_value: int, policy: String) -> Dictionar
 	return row
 
 
+func _record_first_boss(run: FrontierRun, row: Dictionary) -> void:
+	var ids := _ids(run.loadout.lanes[0])
+	var class_id: String = run.data.heroes[0].id
+	var specialty := ids.filter(func(id: String): return _is_specialty(id, class_id) and _upgrade_branch(id) != "base")
+	var stored := []
+	for items: Array in run.loadout.storage:
+		stored.append_array(_ids(items).filter(func(id: String): return _is_specialty(id, class_id) and _upgrade_branch(id) != "base"))
+	var owned := stored.duplicate()
+	for lane: Array in run.loadout.lanes:
+		owned.append_array(_ids(lane).filter(func(id: String): return _is_specialty(id, class_id) and _upgrade_branch(id) != "base"))
+	row.first_boss = {"node": run.data.node.label, "hero": class_id, "hp": run.data.hp, "gold": run.data.gold,
+		"tiles": ids, "equipped_upgraded_specialties": specialty, "stored_upgraded_specialties": stored,
+		"owned_upgraded_specialties": owned}
+
+
 func _recruit_loadout(options: Array, policy: String, class_id: String) -> String:
 	if not as_recruit:
 		return "assault"
@@ -364,12 +383,148 @@ func _recruit_loadout(options: Array, policy: String, class_id: String) -> Strin
 	return selected
 
 
-func _choose_node(options: Array) -> Dictionary:
+func _choose_node(options: Array, row: Dictionary, segment: int) -> Dictionary:
+	if audit_upgrades and int(row.seed) % 2 == 0 and not row.shops.any(func(shop: Dictionary): return shop.segment == segment):
+		for node: Dictionary in options:
+			if node.type == "shop":
+				return node
 	for kind: String in ROUTE_PRIORITY:
 		for node: Dictionary in options:
 			if node.type == kind:
 				return node
 	return options.front()
+
+
+func _is_specialty(id: String, class_id: String) -> bool:
+	return _family(id) in SPECIALTIES[class_id]
+
+
+func _maybe_reroll(run: FrontierRun, lane: int, row: Dictionary) -> bool:
+	var segment: int = run.data.segment
+	if run.data.node.type != "battle" or row.rerolls.any(func(entry: Dictionary): return entry.segment == segment):
+		return true
+	var price := run.reward_reroll_price()
+	if price <= 0 or int(run.data.gold) < price + REROLL_GOLD_RESERVE:
+		return true
+	var class_id: String = run.data.heroes[lane].id
+	var copies := _owned_specialties(run, lane, class_id)
+	if copies.is_empty():
+		return true
+	var before: Array = run.data.offers.duplicate()
+	if before.any(func(id: String):
+		return copies.has(id) or (_is_specialty(id, class_id) and ArenaSim.TILES[id].rarity != "common")):
+		return true
+	var prefers_copy: bool = run.call("reward_reroll_prefers_copy") if run.has_method("reward_reroll_prefers_copy") else false
+	if not run.reroll_reward():
+		return run.save_error.is_empty()
+	var after: Array = run.data.offers.duplicate()
+	row.rerolls.append({"node": run.data.node.label, "row": run.data.node.row, "segment": segment, "lane": lane,
+		"hero": class_id, "cost": price, "owned": copies, "before": before, "offers": after, "prefers_copy": prefers_copy,
+		"matching": after.filter(func(id: String): return copies.has(id)),
+		"upgraded_specialties": after.filter(func(id: String): return _is_specialty(id, class_id) and ArenaSim.TILES[id].rarity != "common")})
+	return true
+
+
+func _owned_specialties(run: FrontierRun, lane: int, class_id: String) -> Dictionary:
+	var counts := {}
+	for items: Array in run._reward_inventory(lane):
+		for item: Dictionary in items:
+			if _is_specialty(item.id, class_id) and not TilePacking.next_options(item.id).is_empty():
+				_count(counts, item.id)
+	return counts
+
+
+func _visit_shop(run: FrontierRun, row: Dictionary, policy: String, lead_policy: String) -> bool:
+	var visit := {"node": run.data.node.label, "row": run.data.node.row, "segment": run.data.segment, "stock": [], "purchase": {}}
+	if audit_upgrades:
+		var featured: String = run.call("shop_deck_offer_id") if run.has_method("shop_deck_offer_id") else ""
+		for id: String in run.shop_stock():
+			visit.stock.append({"tile": id, "owner": run.shop_class_offer_owner(id), "price": run.shop_price(id), "featured": id == featured})
+		row.shops.append(visit)
+	if run.data.heroes.any(func(hero: Dictionary): return hero.hp <= hero.max_hp - 15):
+		if run.shop_heal() and audit_upgrades:
+			visit.healed = true
+	if audit_upgrades and not _shop_for_specialty(run, row, visit, policy, lead_policy):
+		return false
+	return run.leave_node()
+
+
+func _shop_for_specialty(run: FrontierRun, row: Dictionary, visit: Dictionary, policy: String, lead_policy: String) -> bool:
+	var choice := {}
+	var best_gain := 5.0
+	for offer: Dictionary in visit.stock:
+		var id: String = offer.tile
+		if int(run.data.gold) < offer.price or _storage_placement(run.loadout.storage, id).is_empty():
+			continue
+		for lane in range(run.data.heroes.size()):
+			var class_id: String = run.data.heroes[lane].id
+			if not _is_specialty(id, class_id) or (not offer.owner.is_empty() and offer.owner != class_id):
+				continue
+			var copies := TilePacking.find_copies(run.loadout.lanes, run.loadout.storage, id, [lane]).size()
+			var lane_policy := policy if lane == row.lane else lead_policy if lane == 0 else "partner"
+			var current := _ids(run.loadout.lanes[lane])
+			var candidate := _best_build(current + [id], lane_policy, class_id)
+			var gain := _build_score(candidate, lane_policy, class_id) - _build_score(current, lane_policy, class_id)
+			gain += 5.0 * mini(copies, 2) - float(offer.price) * 0.10
+			if gain > best_gain:
+				best_gain = gain
+				choice = offer.merged({"lane": lane, "hero": class_id, "owned_copies": copies,
+					"policy": lane_policy, "equip": candidate}, true)
+	if choice.is_empty():
+		return true
+	return _buy_specialty(run, row, visit, choice)
+
+
+func _buy_specialty(run: FrontierRun, row: Dictionary, visit: Dictionary, choice: Dictionary) -> bool:
+	var id: String = choice.tile
+	var lane: int = choice.lane
+	var before := run.loadout.duplicate(true)
+	var placement := _stow(run.loadout.storage, id)
+	if placement.is_empty() or not run.shop_buy(id, placement):
+		run.loadout = before
+		return false
+	visit.purchase = {"tile": id, "rarity": ArenaSim.TILES[id].rarity, "price": choice.price, "owner": choice.owner,
+		"featured": choice.featured, "lane": lane, "hero": choice.hero, "owned_copies": choice.owned_copies}
+	var copies := TilePacking.find_copies(run.loadout.lanes, run.loadout.storage, id, [lane], placement)
+	var merge := _merge_choice(run, lane, id, copies, 3, choice.policy, choice.hero) if copies.size() >= 3 else {}
+	if not merge.is_empty():
+		var draft := {"pick": id, "lane": lane, "node": visit.node}
+		if not _commit_merge(run, row, draft, merge, "inventory_combine"):
+			return false
+		visit.purchase.upgrade = merge.tile
+		return true
+	# The purchase already exists in storage. Move it to the timeline only if
+	# every removed tile can be stored and the chosen build actually improves it.
+	var current := _ids(run.loadout.lanes[lane])
+	if _build_score(choice.equip, choice.policy, choice.hero) <= _build_score(current, choice.policy, choice.hero):
+		return true
+	return _equip_purchase(run, lane, id, placement, choice.equip)
+
+
+func _equip_purchase(run: FrontierRun, lane: int, id: String, placement: Dictionary, build: Array) -> bool:
+	var before := run.loadout.duplicate(true)
+	var contents: Array = run.loadout.storage[placement.row]
+	var position := contents.find_custom(func(item: Dictionary): return item.start == placement.start and item.id == id)
+	if position < 0:
+		return false
+	contents.remove_at(position)
+	var displaced := _ids(run.loadout.lanes[lane]) + [id]
+	for tile: String in build:
+		displaced.erase(tile)
+	for tile: String in displaced:
+		if _stow(run.loadout.storage, tile).is_empty():
+			run.loadout = before
+			return true
+	var entries := []
+	var beat := 0
+	for tile: String in build:
+		entries.append(_entry(tile, beat))
+		beat += int(ArenaSim.TILES[tile].width)
+	run.loadout.lanes[lane] = entries
+	if run.save():
+		return true
+	run.loadout = before
+	return false
 
 
 func _starter_trials(encounter: Dictionary, starters: Array) -> Array:
@@ -395,6 +550,8 @@ func _fight(lanes: Array, encounter: Dictionary) -> Dictionary:
 			"first_damage_tick": -1, "guard": 0, "healing": 0, "criticals": 0, "parallax_criticals": 0,
 			"backdraft_hits": 0, "pushes": 0, "pulls": 0, "retreats": 0, "duel_kill_followups": 0,
 			"damage_by_tile": {}, "healing_by_tile": {}, "activations_by_tile": {}, "landed_by_tile": {}, "effect_events_by_tile": {}}
+		if audit_upgrades:
+			stats.legendary_equipped = _ids(lanes[lane]).filter(func(id: String): return ArenaSim.TILES[id].rarity == "legendary")
 		for activation: Dictionary in sim.activations:
 			if int(activation.lane) != lane or activation.status == "unavailable":
 				continue
@@ -474,6 +631,8 @@ func _claim_tile(run: FrontierRun, lane: int, policy: String, row: Dictionary) -
 	row.drafts.append(draft)
 	if run.is_final_boss():
 		draft.pick = offers.front()
+		draft.trophy = true
+		draft.rarity = ArenaSim.TILES[draft.pick].rarity
 		return run.reward(draft.pick)
 	var current := _ids(run.loadout.lanes[lane])
 	var current_score := _build_score(current, policy, class_id)
@@ -496,6 +655,7 @@ func _claim_tile(run: FrontierRun, lane: int, policy: String, row: Dictionary) -
 				alternate = progression
 	if draft.pick == "skip":
 		return run.reward("skip")
+	draft.rarity = ArenaSim.TILES[draft.pick].rarity
 	if alternate.has("plan"):
 		return _claim_reward_merge(run, draft, row, alternate, policy, class_id)
 	if alternate.has("stash"):

@@ -751,8 +751,8 @@ func _reward() -> void:
 		var id: String = offers[index]
 		var tile: Dictionary = ArenaSim.TILES[id]
 		var hint: String = _run.reward_hint(id)
-		if _host.run_can_combine_reward(id):
-			hint = "Combine with 2 owned copies" if hint in ["", "Third copy", "Owned copy"] else "%s · Combine with 2 owned copies" % hint
+		if hint in ["Third copy", "Owned copy"]:
+			hint = ""
 		if not owner.is_empty() and tile.get("base_tile", id) == ClassDecks.signature(owner):
 			hint = "Signature tile" if hint.is_empty() else "Signature tile · " + hint
 		var card := _choice(cards, tile.label, tile.description + ("\n" + hint if not hint.is_empty() else ""),
@@ -764,6 +764,7 @@ func _reward() -> void:
 		var select_tile: Button = card.get_child(card.get_child_count() - 1)
 		select_tile.name = "RewardTile_" + id
 		_add_tile_header(card, id, tile, owner, _battle_overlay)
+		_add_reward_copy_pips(card.get_child(0), select_tile, id)
 		if place_by_drag:
 			_enable_reward_card_drag(card, id, select_tile)
 		else:
@@ -791,7 +792,66 @@ func _reward() -> void:
 		reroll.name = "RerollReward"
 		reroll.disabled = int(_run.data.gold) < price
 		reroll.tooltip_text = "The price doubles each time you reroll in this act."
+		if _run.reward_reroll_prefers_copy():
+			reroll.tooltip_text = "This reroll favors a tile you already own. " + reroll.tooltip_text
 		actions.add_child(reroll)
+
+
+func _add_reward_copy_pips(header: HBoxContainer, action: Button, id: String) -> void:
+	var status: Dictionary = _host.run_reward_copy_status(id)
+	if status.is_empty():
+		return
+	var indicator := Control.new()
+	indicator.name = "RewardCopyPips"
+	indicator.custom_minimum_size = Vector2(30, 20)
+	indicator.size_flags_vertical = SIZE_SHRINK_CENTER
+	indicator.mouse_filter = MOUSE_FILTER_PASS
+	indicator.draw.connect(_draw_reward_copy_pips.bind(indicator))
+	header.add_child(indicator)
+	_update_reward_copy_pips(indicator, action, id, status)
+
+
+func refresh_reward_copy_pips() -> void:
+	if not is_inside_tree() or not is_visible_in_tree() or not is_instance_valid(_layout):
+		return
+	for id: String in _run.data.get("offers", []):
+		var action := _layout.find_child("RewardTile_" + id, true, false) as Button
+		if action == null:
+			continue
+		var indicator := action.get_parent().find_child("RewardCopyPips", true, false) as Control
+		if indicator != null:
+			_update_reward_copy_pips(indicator, action, id, _host.run_reward_copy_status(id))
+
+
+func _update_reward_copy_pips(indicator: Control, action: Button, id: String, status: Dictionary) -> void:
+	var owned: int = status.owned
+	var completes_set: bool = status.completes_set
+	var unit := "copy" if owned == 1 else "copies"
+	var summary := "%d matching %s on eligible timelines or in shared storage." % [owned, unit]
+	if completes_set:
+		summary += " This offer completes a set of three."
+	elif owned >= 2:
+		summary += " Make room for the upgrade to combine this offer."
+	indicator.set_meta("owned_copies", owned)
+	indicator.set_meta("completes_set", completes_set)
+	indicator.tooltip_text = summary
+	indicator.accessibility_name = summary
+	action.accessibility_name = "%s. %s. %s" % [ArenaSim.TILES[id].label, action.text, summary]
+	indicator.queue_redraw()
+
+
+func _draw_reward_copy_pips(indicator: Control) -> void:
+	var owned := mini(2, int(indicator.get_meta("owned_copies")))
+	var complete: bool = indicator.get_meta("completes_set")
+	for index in range(3):
+		var center := Vector2(5 + 10 * index, indicator.size.y * 0.5)
+		if index < owned:
+			indicator.draw_circle(center, 3.4, GOLD if complete else TEAL, true, -1.0, true)
+		else:
+			var offered := index == owned
+			indicator.draw_circle(center, 3.4, GOLD if offered else EDGE.lightened(0.22), false, 1.2, true)
+			if offered and complete:
+				indicator.draw_circle(center, 1.5, GOLD, true, -1.0, true)
 
 
 func _enable_reward_card_drag(card: VBoxContainer, id: String, storage_button: Button) -> void:
@@ -1112,14 +1172,13 @@ func _shop() -> void:
 	_page_title(_run.data.get("node", {}).get("label", "Relay Market"), "")
 	var notice := _notice()
 	var offers: Array = _run.shop_stock()
-	var ledger_owners := {}
-	for id: String in offers:
-		var owner: String = _run.shop_class_offer_owner(id)
-		if not owner.is_empty():
-			ledger_owners[id] = owner
+	var deck_offer: String = _run.shop_deck_offer_id()
+	var has_ledger_stock := offers.any(func(id: String):
+		return id != deck_offer and not _run.shop_class_offer_owner(id).is_empty())
+	var compact := has_ledger_stock or offers.size() > 4
 	var cards: HBoxContainer
 	var ledger_cards: HBoxContainer
-	if ledger_owners.is_empty():
+	if not has_ledger_stock:
 		cards = _cards_row()
 	else:
 		var scroll := ScrollContainer.new()
@@ -1139,8 +1198,8 @@ func _shop() -> void:
 		var tile: Dictionary = ArenaSim.TILES[id]
 		var price: int = _run.shop_price(id)
 		var purchased: bool = _run.shop_tile_purchased(id)
-		var owner: String = ledger_owners.get(id, "")
-		var row := cards if owner.is_empty() else ledger_cards
+		var owner: String = _run.shop_class_offer_owner(id)
+		var row := cards if owner.is_empty() or id == deck_offer else ledger_cards
 		var caption := "Purchased" if purchased else "Buy · %d gold" % price
 		var destination: String = "" if purchased else _host.run_shop_placement_label(id)
 		var unavailable := purchased or int(_run.data.get("gold", 0)) < price or destination.is_empty()
@@ -1151,16 +1210,16 @@ func _shop() -> void:
 		var purchase: Button = card.get_child(card.get_child_count() - 1)
 		purchase.name = "ShopTile_" + id
 		var panel := card.get_parent() as PanelContainer
-		if ledger_cards != null:
+		if compact:
 			panel.custom_minimum_size.y = 0
 			card.add_theme_constant_override("separation", 8)
 			card.get_child(0).add_theme_font_size_override("font_size", 22)
 			card.get_child(1).add_theme_font_size_override("font_size", 15)
 			_add_tile_header(card, id, tile, owner, true)
 		else:
-			_add_tile_header(card, id, tile)
+			_add_tile_header(card, id, tile, owner)
 		if purchased:
-			panel.add_theme_stylebox_override("panel", _box(Color("#1b242b"), Color("#56636a"), 9, 12 if ledger_cards != null else 18))
+			panel.add_theme_stylebox_override("panel", _box(Color("#1b242b"), Color("#56636a"), 9, 12 if compact else 18))
 			card.modulate = Color("#a9afb4")
 	if offers.is_empty():
 		cards.add_child(_label("No tiles left.", 20, MUTED))

@@ -133,6 +133,7 @@ func _initialize() -> void:
 	_check_class_progression()
 	_check_slam_pool()
 	_check_arsenal_rewards()
+	_check_acquisition_drafts()
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
@@ -1009,6 +1010,118 @@ func _check_arsenal_rewards() -> void:
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
+
+
+func _check_acquisition_drafts() -> void:
+	var path := "user://frontier-acquisition-test-%d.json" % Time.get_ticks_usec()
+	var run := FrontierRun.new()
+	run.load_save(path)
+	run.profile.medium_unlocked = true
+	_check_rotating_shop(run)
+	run.abandon_run()
+	_check_first_paid_copy(run)
+	for suffix in ["", ".bak", ".tmp"]:
+		if FileAccess.file_exists(path + suffix):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
+
+
+func _start_acquisition_run(run: FrontierRun, difficulty: String) -> bool:
+	return run.start_run(1, difficulty) and run.choose_preferred_hero("warden") \
+		and run.choose_relic("pocket_bell") and run.choose_starter("shield_tap")
+
+
+func _check_rotating_shop(run: FrontierRun) -> void:
+	if not _start_acquisition_run(run, "medium"):
+		check(false, "Start the two-hero shop fixture.")
+		return
+	_reach_boss(run)
+	if not (run.finish_combat(true, 100) and _finish_rewards(run, "skip") and run.choose_boss_relic("skip")):
+		check(false, "The first boss should open recruit selection for the shop fixture.")
+		return
+	var recruit: String = run.data.offers[0]
+	if not (run.choose_recruit(recruit) and run.choose_recruit_starter(ClassDecks.starter(recruit))):
+		check(false, "The shop fixture needs a second hero.")
+		return
+	var deck_tiles := {"warden": "shield_ram", recruit: ClassDecks.specialties(recruit).back()}
+	for lane in range(run.data.heroes.size()):
+		run.loadout.lanes[lane] = _acquisition_pair(deck_tiles[run.data.heroes[lane].id])
+	if not (run.choose_node("7-1") and run.finish_combat(true, [100, 100]) and _finish_rewards(run, "skip") \
+		and run.choose_node("8-0") and run.leave_node() and run.choose_node("9-1")):
+		check(false, "The seeded route must reach the first Act II shop.")
+		return
+	var stock := run.shop_stock().duplicate()
+	var ordinary := run._shop_tiles()
+	var offer := run.shop_deck_offer_id()
+	var owner := run.shop_class_offer_owner(offer)
+	var lane := run.shop_class_offer_lane(offer)
+	check(stock == ordinary + [offer] and offer == deck_tiles.get(owner) and lane >= 0,
+		"The added class slot leaves ordinary stock intact and can stock an exact pair completion from its hero's deck.")
+	var gold: int = run.data.gold
+	var price := run.shop_price(offer)
+	check(run.shop_buy(offer) and run.load_save(run.save_path) and run.data.gold == gold - price \
+		and run.shop_deck_offer_id() == offer and run.shop_stock() == stock \
+		and run.shop_class_offer_owner(offer) == owner and run.shop_tile_purchased(offer) and not run.shop_buy(offer),
+		"A bought class offer keeps its label, owner, stock position, and purchased state after reload.")
+	if not (run.leave_node() and run.choose_node("10-0") and run.finish_combat(true, [100, 100]) \
+		and _finish_rewards(run, "skip") and run.choose_node("11-1")):
+		check(false, "The seeded route must reach a second Act II shop.")
+		return
+	var next := run.shop_deck_offer_id()
+	var next_owner := run.shop_class_offer_owner(next)
+	check(not next.is_empty() and next_owner != owner and next == deck_tiles.get(next_owner),
+		"Visiting another shop rotates the regular class slot to the other hero.")
+
+
+func _check_first_paid_copy(run: FrontierRun) -> void:
+	if not _start_acquisition_run(run, "easy"):
+		check(false, "Start the first-reroll fixture.")
+		return
+	var lane := _acquisition_pair("reversal_plate")
+	lane.append_array(_acquisition_pair("rampart_rush", 4))
+	run.loadout.lanes[0] = lane
+	if not run.finish_combat(true, 100):
+		check(false, "A combat victory must open a rerollable reward.")
+		return
+	var initial := ["reversal_plate", "shoulder_check", "shield_tap"]
+	run.data.offers = initial
+	var tiers := initial.map(func(id: String): return ArenaSim.TILES[id].rarity)
+	var gold: int = run.data.gold
+	check(run.reward_reroll_price() == 5 and run.reward_reroll_prefers_copy() and run.reroll_reward(),
+		"The first paid reroll can prioritize an eligible copy for five gold.")
+	var first: Array = run.data.offers.duplicate()
+	check(first.size() == 3 and first.all(func(id: String): return id not in initial and first.count(id) == 1) \
+		and first.map(func(id: String): return ArenaSim.TILES[id].rarity) == tiers \
+		and "rampart_rush" in first and run.reward_hint("rampart_rush") == "Third copy",
+		"The reroll favors a different owned exact copy alongside fresh, distinct options at the same rarities.")
+	check(run.load_save(run.save_path) and run.data.gold == gold - 5 and run.data.offers == first \
+		and run.reward_reroll_price() == 10 and not run.reward_reroll_prefers_copy(),
+		"The first reroll and doubled next cost survive reload.")
+	check(run.reroll_reward() and run.data.gold == gold - 15 and run.reward_reroll_price() == 20 \
+		and run.data.offers.all(func(id: String): return id not in first),
+		"A later reroll continues to refresh the draft and double the cost.")
+	run.abandon_run()
+
+	if not _start_acquisition_run(run, "easy"):
+		check(false, "Start the retained-copy reroll fixture.")
+		return
+	lane = _acquisition_pair("guard") + _acquisition_pair("riposte", 4)
+	run.loadout.lanes[0] = lane
+	var locked_pool := run._forge_copy_pool("warden", run._reward_inventory(0))
+	check("guard" in locked_pool and "riposte" not in locked_pool,
+		"Common copies are eligible for merging before Artifice, while higher locked tiers are ineligible.")
+	if not run.finish_combat(true, 100):
+		check(false, "The retained-copy fixture must reach a combat draft.")
+		return
+	run.data.offers = ["bash", "guard", "shield_tap"]
+	check(run.reroll_reward() and run.data.offers[1] == "guard" and run.reward_hint("guard") == "Third copy" \
+		and "bash" not in run.data.offers and "shield_tap" not in run.data.offers,
+		"The first reroll can keep an existing useful Common in its slot while refreshing the other two.")
+
+
+func _acquisition_pair(id: String, start := 0) -> Array:
+	var tile: Dictionary = ArenaSim.TILES[id]
+	return [{"id": id, "start": start, "target": tile.targets[0]},
+		{"id": id, "start": start + tile.width, "target": tile.targets[0]}]
 
 
 func _check_navigation(path: String) -> void:

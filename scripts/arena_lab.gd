@@ -1892,6 +1892,8 @@ func _persist_inventory(before: Dictionary) -> bool:
 	if _save_loadout():
 		if _editing_camp_forge():
 			_track_camp_forge_tile()
+		if _placing_tile_reward():
+			frontier_screen.refresh_reward_copy_pips()
 		return true
 	_restore_inventory(before)
 	_show_inventory_message(run.save_error)
@@ -2290,8 +2292,6 @@ func _pending_reward_id() -> String:
 	return run.data.get("reward_combine", {}).get("id", "") if run.data.get("phase") == "reward" else ""
 
 func _reward_combine_copies(id: String) -> Array:
-	if run.data.get("phase") != "reward" or run.is_final_boss() or id not in run.data.offers or not run.elite_relic_offers().is_empty():
-		return []
 	return TilePacking.find_copies(run.loadout.lanes, run.loadout.storage, id, _reward_combine_lanes())
 
 func _reward_combine_lanes() -> Array:
@@ -2302,10 +2302,19 @@ func _reward_upgrade_plan(copies: Array, id: String) -> Dictionary:
 	return TilePacking.combine_plan(run.loadout.lanes, run.loadout.storage, copies, 2, id, _reward_combine_lanes())
 
 func run_can_combine_reward(id: String) -> bool:
+	return run_reward_copy_status(id).get("completes_set", false)
+
+func run_reward_copy_status(id: String) -> Dictionary:
+	if run.data.get("phase") != "reward" or run.is_final_boss() or id not in run.data.offers or not run.elite_relic_offers().is_empty():
+		return {}
+	var options := TilePacking.next_options(id)
+	if options.is_empty():
+		return {}
 	var copies := _reward_combine_copies(id)
-	return copies.size() >= 2 and TilePacking.next_options(id).any(
+	var completes_set := copies.size() >= 2 and options.any(
 		func(upgrade: String): return not _reward_upgrade_plan(copies, upgrade).is_empty()
 	)
+	return {"owned": copies.size(), "completes_set": completes_set}
 
 func _open_reward_combine() -> bool:
 	var id := _pending_reward_id()

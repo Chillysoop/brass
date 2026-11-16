@@ -83,6 +83,9 @@ func _check_draft_and_shop(game: Control) -> void:
 			return
 	var ordinary_stock: Array = control.data.offers
 	var ledger_stock: Array = run.data.offers.duplicate()
+	var deck_offer := control.shop_deck_offer_id()
+	_check(not deck_offer.is_empty() and deck_offer in ordinary_stock and run.shop_deck_offer_id() == deck_offer,
+		"The regular class-deck tile is stocked before the Ledger adds its extra cards.")
 	_check(run.data.gold == control.data.gold, "Guild Ledger keeps the gold from skipped combat rewards.")
 	_check(run.data.node.id == control.data.node.id and ledger_stock.slice(0, ordinary_stock.size()) == ordinary_stock,
 		"The Guild Ledger adds stock to the same shop without replacing its normal offers.")
@@ -99,7 +102,11 @@ func _check_draft_and_shop(game: Control) -> void:
 			"Each extra tile comes from its displayed hero's class deck and keeps that association after reloading.")
 	game.run_resume()
 	await process_frame
-	_check(game.frontier_screen.find_child("GuildLedgerStock", true, false) != null, "The shop shows the extra Ledger stock as a distinct row.")
+	var ledger_row := game.frontier_screen.find_child("GuildLedgerStock", true, false) as Control
+	var deck_card := game.frontier_screen.find_child("ShopTile_" + deck_offer, true, false) as Button
+	_check(ledger_row != null and deck_card != null and not ledger_row.is_ancestor_of(deck_card)
+		and not run.shop_class_offer_owner(deck_offer).is_empty() and saved_shop.shop_deck_offer_id() == deck_offer,
+		"The regular class card keeps its owner and stays in regular stock beside the separate Ledger row.")
 	var recruit_tile: String = extras[1]
 	var purchase := game.frontier_screen.find_child("ShopTile_" + recruit_tile, true, false) as Button
 	if not _check(purchase != null and not purchase.disabled, "The recruit's stocked tile can be bought from the shop."):
@@ -125,7 +132,7 @@ func _check_draft_and_shop(game: Control) -> void:
 	_check(purchase != null and purchase.disabled and purchase.text == "Purchased"
 		and purchase.get_parent().get_parent().get_index() == card_slot and run.shop_stock() == ledger_stock,
 		"The purchased Ledger tile should stay in its original stock slot.")
-	await _check_storage_purchase(game, ordinary_stock[0])
+	await _check_storage_purchase(game, deck_offer)
 
 
 func _check_storage_purchase(game: Control, id: String) -> void:
@@ -160,8 +167,9 @@ func _check_storage_purchase(game: Control, id: String) -> void:
 	game.run_resume()
 	await process_frame
 	var sold := game.frontier_screen.find_child("ShopTile_" + id, true, false) as Button
-	_check(sold != null and sold.disabled and sold.text == "Purchased",
-		"The completed purchase remains visible and disabled after reload.")
+	_check(sold != null and sold.disabled and sold.text == "Purchased" and run.shop_deck_offer_id() == id
+		and not run.shop_class_offer_owner(id).is_empty(),
+		"The purchased class card remains visible with its original ownership after reload.")
 	run.data.heroes[0].hp = int(run.data.heroes[0].max_hp) - 20
 	game.run_resume()
 	await process_frame
