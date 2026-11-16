@@ -627,7 +627,7 @@ func _update_controls() -> void:
 	fixture_picker.visible = not campaign and retry_options.is_empty()
 	return_button.visible = not campaign
 	return_button.text = "Back to battle result" if not retry_result.is_empty() else "Title"
-	camp_button.visible = camp_forge and not _editing_camp_forge()
+	camp_button.visible = camp_forge and not _editing_camp_forge() and not storage_screen.visible
 	fixture_picker.disabled = state != "setup"
 	storage_button.disabled = not _can_edit_loadout()
 	storage_button.visible = not _placing_battle_reward()
@@ -1826,6 +1826,7 @@ func _open_storage() -> void:
 		arsenal_panel.hide()
 		arena_screen.show()
 		storage_screen.show()
+		camp_button.hide()
 		_render_storage()
 
 func _toggle_storage() -> void:
@@ -1838,6 +1839,7 @@ func storage_close() -> void:
 	storage_screen.hide()
 	arena_screen.show()
 	_rebuild_loadout()
+	_update_controls()
 
 func _render_storage() -> void:
 	var all_offers: Array[Dictionary] = []

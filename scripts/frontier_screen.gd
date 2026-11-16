@@ -1610,7 +1610,13 @@ func tile_hover_card(id: String, owner: String, enchantment_id: String) -> Contr
 	preview.name = "TimelineTilePreview"
 	preview.custom_minimum_size.x = 300
 	var card := _choice(preview, spec.label, body, "", Callable(), false, true)
+	var title := card.get_child(0) as Label
+	var description := card.get_node("ChoiceDetails") as RichTextLabel
+	title.autowrap_mode = TextServer.AUTOWRAP_OFF
 	_add_tile_header(card, id, spec, owner, true)
+	# Godot sizes tooltips before their containers lay out the text.
+	var frame := (card.get_parent() as PanelContainer).get_theme_stylebox("panel")
+	description.size.x = preview.get_combined_minimum_size().x - frame.get_minimum_size().x
 	return preview
 
 

@@ -181,7 +181,7 @@ func _claim_smith(game: Control) -> String:
 		return ""
 	var source: Dictionary = run.loadout.lanes[0][1]
 	game._select({"id": source.id, "lane": 0, "start": source.start})
-	if not await _press(game.arena_screen, "ForgeSelected"):
+	if not await _press(game.storage_screen, "StorageForgeSelected"):
 		return ""
 	var options := TilePacking.next_options("bash")
 	if not _check(game.forge_screen.visible and game.forge_can_fit(options[0]) and game.forge_can_fit(options[1]),

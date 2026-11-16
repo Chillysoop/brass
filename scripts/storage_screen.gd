@@ -145,6 +145,8 @@ func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can
 		_enchant.tooltip_text = info.description if enchantment.eligible else "Select a compatible tile in storage or on the timeline.\n" + info.description
 	if _selected.is_empty():
 		var message := "Drag to move tiles." if _docked else "Drag between storage and the timeline."
+		if camp:
+			message = "Select a tile in the sequence or storage to upgrade."
 		show_message("Select a tile to enchant." if _enchantment_row.visible else message)
 	else:
 		var tile: Dictionary = _host.tile_spec(_selected.id)
@@ -236,6 +238,7 @@ func _build() -> void:
 	_discard.disabled = true
 	_footer.add_child(_discard)
 	_forge = _button("Forge selected", func(): _host.storage_forge())
+	_forge.name = "StorageForgeSelected"
 	_forge.hide()
 	_footer.add_child(_forge)
 	_combine = _button("Combine 3", func(): _host.storage_combine_selected())
