@@ -39,19 +39,17 @@ internal static class BrassAetherLauncher
                 if (FocusRunningGame())
                     return;
 
-                var attempted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                if (StartCachedGame(attempted))
-                {
-                    using (StartUpdate()) { }
-                    return;
-                }
-
+                // Windows may lock the executable while the game is running.
                 using (var update = StartUpdate())
                 {
                     if (update != null)
+                    {
                         WaitForUpdate(update);
+                        if (update.ExitCode != 0)
+                            Log("Update check exited with code " + update.ExitCode + ".");
+                    }
                 }
-                if (!StartCachedGame(attempted))
+                if (!StartCachedGame())
                     ShowError("No playable build could be opened. Details are in " +
                         Path.Combine(State, "startup.log") + " and launcher.log.");
             }
@@ -93,6 +91,8 @@ internal static class BrassAetherLauncher
 
     private static IEnumerable<string> CachedBuilds()
     {
+        yield return Path.Combine(State, GameExe);
+        // Support legacy installations until the updater can migrate the cached build.
         foreach (string marker in new[] { "current-build.txt", "current-build.previous" })
         {
             string path = Path.Combine(State, marker);
@@ -108,8 +108,9 @@ internal static class BrassAetherLauncher
         yield return Path.Combine(State, "builds", "local", GameExe);
     }
 
-    private static bool StartCachedGame(HashSet<string> attempted)
+    private static bool StartCachedGame()
     {
+        var attempted = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (string path in CachedBuilds())
         {
             if (!File.Exists(path) || !attempted.Add(path)) continue;
@@ -163,7 +164,7 @@ internal static class BrassAetherLauncher
 
     private static void WaitForUpdate(Process update)
     {
-        if (update.HasExited) return;
+        if (update.WaitForExit(750)) return;
         using (var notice = new Form
         {
             Text = GameName,
@@ -177,7 +178,7 @@ internal static class BrassAetherLauncher
         {
             notice.Controls.Add(new Label
             {
-                Text = "Checking for a playable build...",
+                Text = "Checking for a game update...",
                 Dock = DockStyle.Fill,
                 TextAlign = System.Drawing.ContentAlignment.MiddleCenter
             });

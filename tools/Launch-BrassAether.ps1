@@ -2,14 +2,16 @@
 param(
     [switch] $CheckOnly,
     [string] $Repository = 'https://github.com/Chillysoop/brass.git',
-    [string] $StateDirectory = (Join-Path $env:LOCALAPPDATA 'BrassAether'),
+    [string] $StateDirectory = (Join-Path $env:USERPROFILE 'Games/Brass Aether'),
     [string] $Godot = (Join-Path $env:LOCALAPPDATA 'BrassAetherTools/Godot/4.7.2/Godot_v4.7.2-stable_win64.exe')
 )
 
 $ErrorActionPreference = 'Stop'
 $gameName = 'Brass & Aether.exe'
 $builds = Join-Path $StateDirectory 'builds'
+$executable = Join-Path $StateDirectory $gameName
 $marker = Join-Path $StateDirectory 'current-build.txt'
+$previousMarker = Join-Path $StateDirectory 'current-build.previous'
 $activity = Join-Path $StateDirectory 'launcher.log'
 $cache = Join-Path $StateDirectory 'repository.git'
 $installedGodot = Join-Path $StateDirectory 'tools/Godot_v4.7.2-stable_win64.exe'
@@ -42,28 +44,83 @@ function Invoke-LauncherCommand {
     }
 }
 
-function Find-PlayableBuilds {
-    foreach ($versionFile in @($marker, (Join-Path $StateDirectory 'current-build.previous'))) {
-        if (-not (Test-Path -LiteralPath $versionFile -PathType Leaf)) { continue }
-        $version = (Get-Content -LiteralPath $versionFile -Raw).Trim()
-        if ($version -notmatch '^[0-9a-f]{40}$') { continue }
-        $candidate = Join-Path (Join-Path $builds $version) $gameName
-        if (Test-Path -LiteralPath $candidate -PathType Leaf) { $candidate }
-    }
-    $fallback = Join-Path (Join-Path $builds 'local') $gameName
-    if (Test-Path -LiteralPath $fallback -PathType Leaf) { $fallback }
+function Read-BuildRevision([string] $Path) {
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) { return }
+    $version = ([string](Get-Content -LiteralPath $Path -Raw)).Trim()
+    if ($version -cmatch '^[0-9a-f]{40}$') { return $version }
 }
 
-function Select-PlayableBuild([string] $Version) {
+function Find-LegacyBuilds {
+    foreach ($versionFile in @($marker, $previousMarker)) {
+        $version = Read-BuildRevision $versionFile
+        if (-not $version) { continue }
+        $candidate = Join-Path (Join-Path $builds $version) $gameName
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            [pscustomobject]@{ Path = $candidate; Revision = $version }
+        }
+    }
+    $fallback = Join-Path (Join-Path $builds 'local') $gameName
+    if (Test-Path -LiteralPath $fallback -PathType Leaf) {
+        [pscustomobject]@{ Path = $fallback; Revision = $null }
+    }
+}
+
+function Find-PlayableBuilds {
+    if (Test-Path -LiteralPath $executable -PathType Leaf) { return $executable }
+    Find-LegacyBuilds | Select-Object -ExpandProperty Path
+}
+
+function Save-BuildRevision([string] $Version) {
+    if (-not $Version) {
+        if (Test-Path -LiteralPath $marker -PathType Leaf) { Remove-Item -LiteralPath $marker }
+        return
+    }
+    if ((Read-BuildRevision $marker) -eq $Version) { return }
     $pending = Join-Path $StateDirectory 'current-build.pending'
+    Set-Content -LiteralPath $pending -Value $Version -Encoding ascii
     if (Test-Path -LiteralPath $marker -PathType Leaf) {
-        if ((Get-Content -LiteralPath $marker -Raw).Trim() -eq $Version) { return }
-        Set-Content -LiteralPath $pending -Value $Version -Encoding ascii
-        $backup = Join-Path $StateDirectory 'current-build.previous'
-        [IO.File]::Replace($pending, $marker, $backup)
+        [IO.File]::Replace($pending, $marker, [NullString]::Value)
     } else {
-        Set-Content -LiteralPath $pending -Value $Version -Encoding ascii
         [IO.File]::Move($pending, $marker)
+    }
+}
+
+function Import-LegacyBuild {
+    if (Test-Path -LiteralPath $executable -PathType Leaf) { return }
+    $legacy = Find-LegacyBuilds | Select-Object -First 1
+    if (-not $legacy) { return }
+    $pending = Join-Path $StateDirectory ('migrate-' + [guid]::NewGuid().ToString('N') + '.tmp')
+    try {
+        [IO.File]::Copy($legacy.Path, $pending)
+        Save-BuildRevision $legacy.Revision
+        [IO.File]::Move($pending, $executable)
+        Add-Content -LiteralPath $activity -Value "Migrated $($legacy.Path) to $executable."
+    } finally {
+        if (Test-Path -LiteralPath $pending -PathType Leaf) { Remove-Item -LiteralPath $pending }
+    }
+}
+
+function Remove-LegacyBuilds {
+    if (-not (Test-Path -LiteralPath $executable -PathType Leaf) -or
+        -not (Test-Path -LiteralPath $builds -PathType Container)) { return }
+    $buildRoot = Get-Item -LiteralPath $builds
+    if ($buildRoot.Attributes -band [IO.FileAttributes]::ReparsePoint) { return }
+    $processName = [IO.Path]::GetFileNameWithoutExtension($gameName)
+    $runningGames = @(Get-Process -Name $processName -ErrorAction SilentlyContinue | ForEach-Object Path)
+    foreach ($folder in (Get-ChildItem -LiteralPath $buildRoot.FullName -Directory)) {
+        if ($folder.Name -cnotmatch '^(local|[0-9a-f]{40})$' -or
+            ($folder.Attributes -band [IO.FileAttributes]::ReparsePoint) -or
+            $folder.Parent.FullName -ne $buildRoot.FullName) { continue }
+        $legacyGame = Join-Path $folder.FullName $gameName
+        if ($legacyGame -in $runningGames -or -not (Test-Path -LiteralPath $legacyGame -PathType Leaf)) { continue }
+        try {
+            Remove-Item -LiteralPath $legacyGame -Force
+            if (-not (Get-ChildItem -LiteralPath $folder.FullName -Force | Select-Object -First 1)) {
+                [IO.Directory]::Delete($folder.FullName)
+            }
+        } catch {
+            Add-Content -LiteralPath $activity -Value "Could not remove $legacyGame. $($_.Exception.Message)"
+        }
     }
 }
 
@@ -82,9 +139,9 @@ function Update-PlayableBuild {
     $version = (Invoke-LauncherCommand 'git-version' $git ($gitOptions + @('rev-parse', '--verify', $branch)) 8).Trim()
     if ($version -notmatch '^[0-9a-f]{40}$') { throw 'Git returned an invalid revision.' }
 
-    $installed = Join-Path $builds $version
-    $executable = Join-Path $installed $gameName
-    if (-not (Test-Path -LiteralPath $executable -PathType Leaf)) {
+    if ((Test-Path -LiteralPath $executable -PathType Leaf) -and (Read-BuildRevision $marker) -eq $version) {
+        Add-Content -LiteralPath $activity -Value "Already installed $version."
+    } else {
         if (-not (Test-Path -LiteralPath $Godot -PathType Leaf)) { throw "Godot was not found at $Godot." }
         $stage = Join-Path $StateDirectory 'staging'
         $work = Join-Path $stage ([guid]::NewGuid().ToString('N'))
@@ -120,7 +177,12 @@ function Update-PlayableBuild {
                     throw "Godot reported an error in $log."
                 }
             }
-            [IO.Directory]::Move($export, $installed)
+            if (Test-Path -LiteralPath $executable -PathType Leaf) {
+                [IO.File]::Replace($stagedGame, $executable, [NullString]::Value)
+            } else {
+                [IO.File]::Move($stagedGame, $executable)
+            }
+            Save-BuildRevision $version
         } finally {
             $resolvedStage = (Resolve-Path -LiteralPath $stage).Path
             $resolvedWork = (Resolve-Path -LiteralPath $work).Path
@@ -129,10 +191,7 @@ function Update-PlayableBuild {
             }
         }
         Add-Content -LiteralPath $activity -Value "Installed $version."
-    } else {
-        Add-Content -LiteralPath $activity -Value "Already installed $version."
     }
-    Select-PlayableBuild $version
     return $executable
 }
 
@@ -185,10 +244,20 @@ function Invoke-UpdateCheck {
     try {
         Set-Content -LiteralPath $activity -Value ('Update check ' + (Get-Date -Format o))
         try {
+            Import-LegacyBuild
+        } catch {
+            Add-Content -LiteralPath $activity -Value ('Could not migrate the existing build. ' + $_.Exception.Message)
+        }
+        try {
             $playable = Update-PlayableBuild
         } catch {
             Add-Content -LiteralPath $activity -Value ('Update unavailable. ' + $_.Exception.Message)
             $playable = Find-PlayableBuilds | Select-Object -First 1
+        }
+        try {
+            Remove-LegacyBuilds
+        } catch {
+            Add-Content -LiteralPath $activity -Value ('Could not finish old build cleanup. ' + $_.Exception.Message)
         }
         if ($playable) { Add-Content -LiteralPath $activity -Value "Playable: $playable" }
         return $playable
@@ -197,7 +266,7 @@ function Invoke-UpdateCheck {
     }
 }
 
-$null = New-Item -ItemType Directory -Path $StateDirectory, $builds -Force
+$null = New-Item -ItemType Directory -Path $StateDirectory -Force
 if ($CheckOnly) {
     $playable = Invoke-UpdateCheck
     if (-not $playable) { throw "No playable build was found. Details are in $activity" }
@@ -205,14 +274,9 @@ if ($CheckOnly) {
     return
 }
 
-# Start the cached game before network or build work. An update takes effect on the next launch.
+$null = Invoke-UpdateCheck
 $candidates = @(Find-PlayableBuilds)
-$started = $false
-if ($candidates.Count -gt 0) { $started = Start-PlayableBuild $candidates }
-$updated = Invoke-UpdateCheck
-if (-not $started -and $updated -and $updated -notin $candidates) {
-    $started = Start-PlayableBuild @($updated)
-}
+$started = $candidates.Count -gt 0 -and (Start-PlayableBuild $candidates)
 if (-not $started) {
     $message = "Brass & Aether could not open. Launcher logs are in $StateDirectory."
     $null = (New-Object -ComObject WScript.Shell).Popup($message, 0, 'Brass & Aether', 16)

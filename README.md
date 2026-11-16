@@ -99,7 +99,7 @@ Run the scripts under `tests/` with Godot's `--headless --script` options to che
 
 ## Desktop launcher
 
-On Windows, `tools/Install-DesktopShortcut.ps1` installs the launcher in `%USERPROFILE%\Games\Brass Aether` and creates the **Brass & Aether** desktop shortcut. The launcher opens the cached game immediately and checks the project's GitHub `main` branch in the background. An update takes effect the next time you open the game. The updater uses Git, Godot 4.7.2, and the matching Windows release template.
+On Windows, `tools/Install-DesktopShortcut.ps1` installs the launcher in `%USERPROFILE%\Games\Brass Aether` and creates the **Brass & Aether** desktop shortcut. With the game closed, the shortcut checks GitHub `main` and replaces `Brass & Aether.exe` in that folder after a successful build and startup check. If the update fails or you're offline, the launcher opens the installed copy. Opening the shortcut while the game is running brings it to the foreground. The updater uses Git, Godot 4.7.2, and the matching Windows release template.
 
 ## Credits
 

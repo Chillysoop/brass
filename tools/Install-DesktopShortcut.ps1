@@ -7,7 +7,7 @@ $project = Split-Path -Parent $PSScriptRoot
 $previousState = Join-Path $env:LOCALAPPDATA 'BrassAether'
 # A packaged installer host may redirect AppData into its private cache.
 $stateDirectory = Join-Path $env:USERPROFILE 'Games/Brass Aether'
-$localBuild = Join-Path $stateDirectory 'builds/local'
+$playableGame = Join-Path $stateDirectory $gameName
 $launcher = Join-Path $stateDirectory 'Launch-BrassAether.ps1'
 $bootstrap = Join-Path $stateDirectory 'BrassAetherLauncher.exe'
 $desktop = [Environment]::GetFolderPath('DesktopDirectory')
@@ -15,28 +15,57 @@ if (-not $desktop -or -not (Test-Path -LiteralPath $desktop -PathType Container)
     throw 'The Windows desktop folder could not be located.'
 }
 
-$null = New-Item -ItemType Directory -Path $localBuild -Force
-$builtGame = Join-Path (Join-Path $project 'build') $gameName
-$offlineGame = Join-Path $localBuild $gameName
-foreach ($markerName in @('current-build.txt', 'current-build.previous')) {
-    $oldMarker = Join-Path $previousState $markerName
-    $newMarker = Join-Path $stateDirectory $markerName
-    if ((Test-Path -LiteralPath $newMarker) -or -not (Test-Path -LiteralPath $oldMarker)) { continue }
-    $revision = (Get-Content -LiteralPath $oldMarker -Raw).Trim()
-    if ($revision -notmatch '^[0-9a-f]{40}$') { continue }
-    $oldBuild = Join-Path $previousState "builds/$revision/$gameName"
-    if (-not (Test-Path -LiteralPath $oldBuild -PathType Leaf)) { continue }
-    $newBuild = Join-Path $stateDirectory "builds/$revision"
-    $null = New-Item -ItemType Directory -Path $newBuild -Force
-    Copy-Item -LiteralPath $oldBuild -Destination $newBuild
-    Set-Content -LiteralPath $newMarker -Value $revision -Encoding ascii
-}
-if (-not (Test-Path -LiteralPath $offlineGame -PathType Leaf)) {
-    foreach ($candidate in @($builtGame, (Join-Path $previousState "builds/local/$gameName"))) {
-        if (-not (Test-Path -LiteralPath $candidate -PathType Leaf)) { continue }
-        Copy-Item -LiteralPath $candidate -Destination $offlineGame
-        break
+function Find-LegacyGame([string] $Directory) {
+    foreach ($markerName in @('current-build.txt', 'current-build.previous')) {
+        $marker = Join-Path $Directory $markerName
+        if (-not (Test-Path -LiteralPath $marker -PathType Leaf)) { continue }
+        $revision = ([string](Get-Content -LiteralPath $marker -Raw)).Trim()
+        if ($revision -notmatch '^[0-9a-f]{40}$') { continue }
+        $candidate = Join-Path $Directory "builds/$revision/$gameName"
+        if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+            return @{ Path = $candidate; Revision = $revision }
+        }
     }
+}
+
+function Initialize-PlayableGame {
+    $existingLocal = Join-Path $stateDirectory "builds/local/$gameName"
+    if ((Test-Path -LiteralPath $playableGame -PathType Leaf) -or (Find-LegacyGame $stateDirectory) -or
+        (Test-Path -LiteralPath $existingLocal -PathType Leaf)) { return }
+
+    $seed = Find-LegacyGame $previousState
+    if (-not $seed) {
+        $builtGame = Join-Path $project "build/$gameName"
+        foreach ($candidate in @($builtGame, (Join-Path $previousState "builds/local/$gameName"))) {
+            if (Test-Path -LiteralPath $candidate -PathType Leaf) {
+                $seed = @{ Path = $candidate; Revision = '' }
+                break
+            }
+        }
+    }
+    if (-not $seed) { return }
+
+    $stagedGame = Join-Path $stateDirectory ('Game-' + [guid]::NewGuid().ToString('N') + '.pending')
+    try {
+        Copy-Item -LiteralPath $seed.Path -Destination $stagedGame
+        $marker = Join-Path $stateDirectory 'current-build.txt'
+        if ($seed.Revision) {
+            Set-Content -LiteralPath $marker -Value $seed.Revision -Encoding ascii
+        } elseif (Test-Path -LiteralPath $marker -PathType Leaf) {
+            Remove-Item -LiteralPath $marker -Force
+        }
+        [IO.File]::Move($stagedGame, $playableGame)
+    } finally {
+        if (Test-Path -LiteralPath $stagedGame -PathType Leaf) { Remove-Item -LiteralPath $stagedGame -Force }
+    }
+}
+
+$null = New-Item -ItemType Directory -Path $stateDirectory -Force
+$updateLock = [IO.File]::Open((Join-Path $stateDirectory 'update.lock'), 'OpenOrCreate', 'ReadWrite', 'None')
+try {
+    Initialize-PlayableGame
+} finally {
+    $updateLock.Dispose()
 }
 
 $toolDirectory = Join-Path $stateDirectory 'tools'
@@ -74,10 +103,9 @@ $shortcut = $shell.CreateShortcut($shortcutPath)
 $shortcut.TargetPath = $bootstrap
 $shortcut.Arguments = ''
 $shortcut.WorkingDirectory = $stateDirectory
-$shortcut.Description = 'Play Brass & Aether and check for updates in the background.'
+$shortcut.Description = 'Check for updates and play Brass & Aether.'
 $shortcut.WindowStyle = 1
-if (Test-Path -LiteralPath $offlineGame -PathType Leaf) {
-    $shortcut.IconLocation = $offlineGame + ',0'
-}
+$iconSource = if (Test-Path -LiteralPath $playableGame -PathType Leaf) { $playableGame } else { $bootstrap }
+$shortcut.IconLocation = $iconSource + ',0'
 $shortcut.Save()
 Write-Output $shortcutPath
