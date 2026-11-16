@@ -22,7 +22,7 @@ const MARSHAL_BUILDS := {
 	"pressure": {
 		"heroes": ["starshot", "warden"],
 		"tiles": [["rivet_bolt", "spark_shot", "star_piercer", "deadeye"],
-			["iron_arc", "guard", "first_aid", "ward_lantern"]],
+			["guard", "iron_arc", "first_aid", "ward_lantern"]],
 		"break": "marshal_pressure_break",
 	},
 	"defense": {

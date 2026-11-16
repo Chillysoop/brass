@@ -5,6 +5,11 @@ const ArenaSim := preload("res://scripts/arena_sim.gd")
 const FrontierRun := preload("res://scripts/frontier_run.gd")
 const TilePacking := preload("res://scripts/tile_packing.gd")
 const RARITIES := ["common", "uncommon", "rare", "epic", "legendary"]
+const TILE_TUNING := [
+	"base_tile", "damage", "description", "family", "forge_name", "icon", "label", "range",
+	"rarity", "short_label", "targets", "upgrade_path", "width",
+]
+const COMBAT_COUNTS := ["chorus_echo_charges", "collision_chain_hops", "convergence_targets", "rune_quick_hits"]
 
 var failures: Array[String] = []
 var save_path := "user://tile-upgrade-test-%d.json" % Time.get_ticks_usec()
@@ -16,8 +21,10 @@ func _initialize() -> void:
 
 func _run() -> void:
 	_check_paths()
+	_check_forge_ranks()
 	if failures.is_empty():
 		_check_upgraded_attack()
+		_check_generated_burn()
 	var game = Arena.instantiate()
 	root.add_child(game)
 	await process_frame
@@ -64,6 +71,39 @@ func _check_paths() -> void:
 			"%s's two branches should offer the same pair one rarity later." % id)
 
 
+func _check_forge_ranks() -> void:
+	for family: String in ArenaSim.FORGE_FAMILIES:
+		var names := {}
+		var previous: Array = []
+		for tier: Array in ArenaSim.FORGE_FAMILIES[family]:
+			if tier.is_empty():
+				continue
+			for id: String in tier:
+				var tile: Dictionary = ArenaSim.TILES[id]
+				var name: String = tile.get("forge_name", tile.label)
+				_check(not name.is_empty() and not names.has(name),
+					"%s repeats the forge name %s in the %s family." % [id, name, family])
+				names[name] = true
+				# Core tiles also implement effects in their dedicated cast methods.
+				if not ArenaSim.CORE_FORGE_FAMILIES.has(family):
+					for source: String in previous:
+						_check(_adds_combat_effect(ArenaSim.TILES[source], tile),
+							"%s only changes tuning when upgraded from %s." % [id, source])
+			previous = tier
+
+
+func _adds_combat_effect(source: Dictionary, upgraded: Dictionary) -> bool:
+	for field: String in upgraded:
+		if field in TILE_TUNING:
+			continue
+		var value: Variant = upgraded[field]
+		if not source.has(field):
+			return true
+		if (value is String or value is bool or field in COMBAT_COUNTS) and value != source[field]:
+			return true
+	return false
+
+
 func _check_upgraded_attack() -> void:
 	var upgrade_id: String = TilePacking.next_options("iron_arc")[0]
 	var spec: Dictionary = ArenaSim.TILES[upgrade_id]
@@ -87,6 +127,31 @@ func _check_upgraded_attack() -> void:
 	_check(sim.activations.size() == 1 and sim.activations[0].tile == upgrade_id
 		and int(sim.activations[0].damage) == int(spec.damage) + int(spec.get("guard_bonus", 0)),
 		"An upgraded Iron Arc retains and applies its listed Guard bonus.")
+
+
+func _check_generated_burn() -> void:
+	var id: String = TilePacking.forge_tiers("snap_shot")[3][0]
+	var sim := ArenaSim.new()
+	sim.start([[_tile(id, 0)]], "solo", {"encounter": "opening", "heroes": [{"hero": "warden"}]})
+	var hero: Dictionary = sim.units[0]
+	var foe: Dictionary = sim.units[1]
+	hero.speed = 0.0
+	foe.speed = 0.0
+	foe.next_attack = 99999
+	foe.pos = hero.pos + Vector2(240, 0)
+	foe.prev_pos = foe.pos
+	foe.hp = 200
+	foe.max_hp = 200
+	for tick in range(ArenaSim.TICKS_PER_BEAT - 1):
+		sim.step()
+	_check(foe.get("ember_burns", {}).is_empty(), "Incendiary Snap Shot cannot apply Burn before its edge.")
+	sim.step()
+	var health: int = foe.hp
+	_check(foe.get("ember_burns", {}).has(hero.id), "Incendiary Snap Shot ignites a stationary enemy on hit.")
+	for tick in range(ArenaSim.TICKS_PER_BEAT):
+		sim.step()
+	_check(int(foe.hp) == health - int(ArenaSim.TILES[id].ember_burn_damage),
+		"Incendiary Snap Shot's Burn removes its listed damage a beat after the hit.")
 
 
 func _check_reward_combine(game: Control) -> void:
@@ -350,6 +415,7 @@ func _check_authored_forge_choices(game: Control) -> void:
 	var source := "reversal_plate"
 	var choices := ["reversal_plate_upgrade_uncommon_power", "reversal_plate_upgrade_uncommon_technique"]
 	var paths := ["Retaliation", "Fellow Guard"]
+	var names := ["Shield Edge", "Shared Stance"]
 	var tiers := TilePacking.forge_tiers(source)
 	if not _check(tiers.map(func(tier: Array): return tier.size()) == [1, 2, 2, 2, 2]
 		and tiers[0] == [source] and tiers[1] == choices, "Reversal Plate keeps one Common and two named options per rarity."):
@@ -382,9 +448,9 @@ func _check_authored_forge_choices(game: Control) -> void:
 			return
 		for index in range(choices.size()):
 			var option: Button = forge._cards[choices[index]]
-			_check(option.is_visible_in_tree() and option.text == paths[index]
+			_check(option.is_visible_in_tree() and option.text == names[index]
 				and ArenaSim.TILES[choices[index]].upgrade_path == paths[index],
-				"The %s displays Reversal Plate's %s path label." % [labels, paths[index]])
+				"The %s displays Reversal Plate's %s upgrade name." % [labels, names[index]])
 		var choice: String = choices[branch]
 		await _click(forge, str(forge._cards[choice].name))
 		await _click(forge, str(forge._confirm.name))

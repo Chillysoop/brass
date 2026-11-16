@@ -72,7 +72,7 @@ static func _shield_wave(sim, actor: Dictionary, target: Dictionary, tile_id: St
 		return
 	for enemy: Dictionary in sim._enemies_in_area(actor, impact, tile.block_wave_radius):
 		if enemy.id != target.id:
-			sim._damage(actor, enemy, int(tile.block_wave_damage), tile_id, "Shieldshock wave")
+			sim._damage(actor, enemy, int(tile.block_wave_damage), tile_id, "Guard wave")
 
 
 static func _charge_path(sim, actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary, route: PackedVector2Array) -> void:
@@ -93,7 +93,7 @@ static func _charge_path(sim, actor: Dictionary, target: Dictionary, tile_id: St
 			if (index == 1 and progress <= 0.0) or (index == route.size() - 1 and progress >= 1.0):
 				continue
 			if offset.distance_squared_to(segment * clampf(progress, 0.0, 1.0)) <= radius * radius:
-				sim._damage(actor, enemy, int(tile.charge_path_damage), tile_id, "Phalanx sweep")
+				sim._damage(actor, enemy, int(tile.charge_path_damage), tile_id, "Passing sweep")
 				break
 
 

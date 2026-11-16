@@ -59,6 +59,7 @@ func _initialize() -> void:
 	_check_activation_review()
 	_check_boss_review()
 	_check_new_forge_families()
+	_check_core_forge_effects()
 	_check_mobility()
 	if _failures.is_empty():
 		print("Arena simulation checks passed (duo %d ticks, solo %d ticks)." % [first.tick, solo.tick])
@@ -266,6 +267,103 @@ func _stop_movement(sim: RefCounted) -> void:
 	for unit: Dictionary in sim.units:
 		unit.speed = 0.0
 		unit.next_attack = 10000
+
+
+func _check_core_forge_effects() -> void:
+	var beat := ArenaSim.TICKS_PER_BEAT
+	_check(is_equal_approx(ArenaSim.critical_chance("warden", "deadeye", 211.0) -
+		ArenaSim.critical_chance("warden", "deadeye", 210.0), 0.10),
+		"Deadeye adds critical chance strictly beyond the long-range threshold")
+	var shots := ArenaSim.new()
+	shots.start([[{"id": "star_piercer", "start": 0}], [{"id": "shot", "start": 4}]], "duo")
+	_stop_movement(shots)
+	shots.units[0].pos = Vector2(200, 260)
+	shots.units[1].pos = Vector2(250, 260)
+	shots.units[2].pos = Vector2(525, 260)
+	shots.units[2].hp = 200
+	shots.units[2].max_hp = 200
+	shots.units[2].guard = 9
+	shots.units[3].pos = Vector2(740, 380)
+	for frame in range(6 * beat):
+		shots.step()
+	_check(_event(shots, "guard_break", "star_piercer", 5 * beat).get("amount") == 7
+		and _event(shots, "mark", "star_piercer", 5 * beat).get("target") == shots.units[2].id
+		and _event(shots, "hit", "shot", 6 * beat).get("amount") == ArenaSim.TILES.shot.damage + 7,
+		"Star Piercer strips Guard and gives a teammate a long-range follow-up")
+
+	var flak := ArenaSim.new()
+	flak.start([[{"id": "flak_burst", "start": 0}], []], "duo")
+	_stop_movement(flak)
+	flak.units[0].pos = Vector2(200, 260)
+	flak.units[2].pos = Vector2(440, 260)
+	flak.units[2].guard = 6
+	flak.units[3].pos = Vector2(500, 310)
+	flak.units[3].guard = 6
+	flak.units[3].intent = "enemy_attack"
+	flak.units[3].intent_tick = 5 * beat
+	for frame in range(4 * beat):
+		flak.step()
+	var flak_hits := flak.trace.filter(func(event: Dictionary): return event.kind == "hit" and event.tile == "flak_burst")
+	_check(_event(flak, "guard_break", "flak_burst", 4 * beat).get("target") == flak.units[3].id
+		and flak_hits.size() == 2 and flak_hits[0].amount == 22 and flak_hits[1].amount == 26,
+		"Flak Burst strips Guard and exploits a wind-up on splash targets while leaving the primary strike alone")
+
+	var guard := ArenaSim.new()
+	guard.start([[{"id": "ward_link", "start": 0}], []], "duo")
+	_stop_movement(guard)
+	var ally: Dictionary = guard.units[1]
+	ally.hp = 45
+	for frame in range(3 * beat):
+		guard.step()
+	_check(ally.hp == 51 and ally.guard == 17 and guard.units[0].guard == 17,
+		"Ward Link heals its ally while preserving both Guard grants")
+	ally.hp = 45
+	for frame in range(ArenaSim.LOOP_TICKS):
+		guard.step()
+	_check(ally.hp == 45, "Ward Link grants healing only once from the same tile")
+
+	guard.start([[{"id": "last_stand", "start": 0}]], "solo")
+	_stop_movement(guard)
+	guard.units[0].pos = Vector2(200, 260)
+	guard.units[1].pos = Vector2(580, 260)
+	for frame in range(5 * beat):
+		guard.step()
+	guard._damage(guard.units[1], guard.units[0], 9, "enemy_attack")
+	_check(_event(guard, "bastion_ready", "last_stand", 5 * beat).get("amount") == 6
+		and _event(guard, "bastion_release", "last_stand", 5 * beat).get("amount") == 5,
+		"Last Stand can ready and release its ward even without an enemy in strike reach")
+
+	var blink := ArenaSim.new()
+	blink.start([[{"id": "phase_cut", "start": 0}, {"id": "mirror_step", "start": 3}]], "solo")
+	_stop_movement(blink)
+	blink.units[0].pos = Vector2(250, 260)
+	blink.units[0].hp = 65
+	blink.units[1].pos = Vector2(435, 260)
+	blink.units[1].hp = 200
+	blink.units[1].max_hp = 200
+	blink.units[1].guard = 8
+	for frame in range(6 * beat):
+		blink.step()
+	_check(_event(blink, "guard_break", "phase_cut", 3 * beat).get("amount") == 5
+		and not _event(blink, "teleport", "phase_cut", 3 * beat).is_empty()
+		and _event(blink, "heal", "mirror_step", 6 * beat).get("amount") == 5,
+		"Phase Cut strips Guard on a successful blink and Mirror Step restores the caster's HP")
+
+	var armor := ArenaSim.new()
+	armor.start([[{"id": "skybreaker", "start": 0}], []], "duo")
+	_stop_movement(armor)
+	armor.units[0].pos = Vector2(205, 240)
+	armor.units[2].pos = Vector2(375, 240)
+	armor.units[3].pos = Vector2(405, 340)
+	for foe: Dictionary in armor.units.slice(2):
+		foe.hp = 200
+		foe.max_hp = 200
+	armor.units[2].guard = 20
+	for frame in range(5 * beat):
+		armor.step()
+	_check(armor.units[2].has("ally_mark") and not armor.units[3].has("ally_mark")
+		and _event(armor, "guard_break", "skybreaker", 5 * beat).get("amount") == 20,
+		"Skybreaker marks the foe whose Guard it actually stripped and still hits the other foe")
 
 
 func _run(sim: RefCounted, steps_per_frame: int = 1) -> void:

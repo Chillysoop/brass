@@ -294,33 +294,37 @@ const CORE_TILES := {
 	},
 	"deadeye": {
 		"label": "Deadeye", "width": 3, "range": 675.0, "damage": 25,
-		"family": "shot", "rarity": "rare", "distance_bonus": 11,
-		"targets": TARGET_RULES, "description": "Hit one enemy. Deal 11 extra damage beyond 210 range."
+		"family": "shot", "rarity": "rare", "distance_bonus": 11, "long_critical_bonus": 0.10,
+		"targets": TARGET_RULES, "description": "Beyond 210 range, deal 11 extra damage and add 10 percentage points to this shot’s critical chance."
 	},
 	"volley": {
 		"label": "Volley", "width": 3, "range": 535.0, "damage": 22,
 		"family": "shot", "rarity": "rare", "splash": 150.0, "splash_targets": 2, "splash_damage": 17,
-		"targets": TARGET_RULES, "description": "Hit one enemy, then deal 17 damage to up to two neighbors within 150 range."
+		"splash_guard_break": 4,
+		"targets": TARGET_RULES, "description": "Hit one enemy. Strip up to 4 Guard and deal 17 damage to up to two neighbors within 150 range."
 	},
 	"rail_shot": {
 		"label": "Rail Shot", "width": 4, "range": 735.0, "damage": 33,
-		"family": "shot", "rarity": "epic", "distance_bonus": 16,
-		"targets": TARGET_RULES, "description": "Hit one enemy. Deal 16 extra damage beyond 210 range."
+		"family": "shot", "rarity": "epic", "distance_bonus": 16, "long_critical_bonus": 0.10, "guard_break": 7,
+		"targets": TARGET_RULES, "description": "Strip up to 7 Guard before the hit. Beyond 210 range, deal 16 extra damage and add 10 percentage points to this shot’s critical chance."
 	},
 	"flak_burst": {
 		"label": "Flak Burst", "width": 4, "range": 580.0, "damage": 28,
 		"family": "shot", "rarity": "epic", "splash": 165.0, "splash_damage": 23,
-		"targets": TARGET_RULES, "description": "Hit one enemy and deal 23 damage to every other enemy within 165 range of it."
+		"splash_guard_break": 4, "splash_windup_bonus": 5,
+		"targets": TARGET_RULES, "description": "Hit one enemy. Strip up to 4 Guard and deal 23 damage to each neighbor within 165 range. Winding-up neighbors take 5 extra damage."
 	},
 	"star_piercer": {
 		"label": "Star Piercer", "width": 5, "range": 800.0, "damage": 43,
-		"family": "shot", "rarity": "legendary", "distance_bonus": 23,
-		"targets": TARGET_RULES, "description": "Hit one enemy. Deal 23 extra damage beyond 210 range."
+		"family": "shot", "rarity": "legendary", "distance_bonus": 23, "long_critical_bonus": 0.10, "guard_break": 7,
+		"mark_bonus": 7, "mark_beats": 3, "ally_only_mark": true,
+		"targets": TARGET_RULES, "description": "Strip up to 7 Guard before the hit. Beyond 210 range, deal 23 extra damage, add 10 percentage points to critical chance, and mark the target. The next hit from another hero within 3 beats deals 7 extra damage."
 	},
 	"meteor_volley": {
 		"label": "Meteor Volley", "width": 5, "range": 625.0, "damage": 37,
 		"family": "shot", "rarity": "legendary", "splash": 200.0, "splash_damage": 30,
-		"targets": TARGET_RULES, "description": "Hit one enemy and deal 30 damage to every other enemy within 200 range of it."
+		"splash_guard_break": 4, "splash_windup_bonus": 5, "sweep_push_radius": 130.0, "sweep_push_force": 290.0,
+		"targets": TARGET_RULES, "description": "Hit one enemy. Strip up to 4 Guard and deal 30 damage to each neighbor within 200 range. Winding-up neighbors take 5 extra damage. Push surviving neighbors within 130 units away from you."
 	},
 	"riposte": {
 		"label": "Riposte", "width": 2, "range": 150.0, "damage": 13,
@@ -335,32 +339,36 @@ const CORE_TILES := {
 	"counterwall": {
 		"label": "Counterwall", "width": 3, "range": 175.0, "damage": 20,
 		"family": "guard", "rarity": "rare", "guard": 12, "guard_bonus_cap": 14,
-		"targets": TARGET_RULES, "description": "Strike and spend up to 14 guard for extra damage. Gain 12 guard even if no target is in range."
+		"recent_block_damage": 5, "recent_block_beats": 3,
+		"targets": TARGET_RULES, "description": "Strike and spend up to 14 Guard for extra damage. Deal 5 more damage if your Guard absorbed a hit in the last 3 beats. Gain 12 Guard even if no target is in range."
 	},
 	"ward_link": {
 		"label": "Ward Link", "width": 3, "range": 0.0, "damage": 0,
-		"family": "guard", "rarity": "rare", "guard": 17, "support": "weakest",
-		"targets": ["self"], "description": "Give yourself and your lowest-health ally 17 guard each."
+		"family": "guard", "rarity": "rare", "guard": 17, "support": "weakest", "heal": 6,
+		"targets": ["self"], "description": "Give yourself and your lowest-HP ally 17 Guard each. Once per fight, restore up to 6 HP to that ally, or to yourself when alone."
 	},
 	"iron_rebuke": {
 		"label": "Iron Rebuke", "width": 4, "range": 200.0, "damage": 27,
 		"family": "guard", "rarity": "epic", "guard": 16, "guard_bonus_cap": 18, "push": 620.0,
-		"targets": TARGET_RULES, "description": "Strike and push. Spend up to 18 guard for extra damage. Gain 16 guard even if no target is in range."
+		"recent_block_damage": 5, "recent_block_beats": 3,
+		"targets": TARGET_RULES, "description": "Strike and push. Spend up to 18 Guard for extra damage. Deal 5 more damage if your Guard absorbed a hit in the last 3 beats. Gain 16 Guard even if no target is in range."
 	},
 	"shield_chorus": {
 		"label": "Shield Chorus", "width": 4, "range": 0.0, "damage": 0,
-		"family": "guard", "rarity": "epic", "guard": 17, "support": "party",
-		"targets": ["self"], "description": "Give every living hero 17 guard."
+		"family": "guard", "rarity": "epic", "guard": 17, "support": "party", "heal": 6,
+		"targets": ["self"], "description": "Give every living hero 17 Guard. Once per fight, restore up to 6 HP to your lowest-HP ally, or to yourself when alone."
 	},
 	"last_stand": {
 		"label": "Last Stand", "width": 5, "range": 225.0, "damage": 37,
 		"family": "guard", "rarity": "legendary", "guard": 21, "guard_bonus_cap": 22, "push": 810.0,
-		"targets": TARGET_RULES, "description": "Strike and push. Spend up to 22 guard for extra damage. Gain 21 guard even if no target is in range."
+		"recent_block_damage": 5, "recent_block_beats": 3,
+		"bastion_block_threshold": 6, "bastion_party_guard": 5, "bastion_beats": 4,
+		"targets": TARGET_RULES, "description": "Strike and push, spending up to 22 Guard for extra damage. Deal 5 more damage after blocking within 3 beats. Always gain 21 Guard. Within 4 beats, absorb at least 6 damage from one hit to give each living hero 5 Guard once."
 	},
 	"aegis_network": {
 		"label": "Aegis Network", "width": 5, "range": 0.0, "damage": 0,
-		"family": "guard", "rarity": "legendary", "guard": 20, "support": "party", "weakest_bonus": 7,
-		"targets": ["self"], "description": "Give every living hero 20 guard. Your lowest-health hero gets 7 extra."
+		"family": "guard", "rarity": "legendary", "guard": 20, "support": "party", "weakest_bonus": 7, "heal": 6,
+		"targets": ["self"], "description": "Give every living hero 20 Guard. Your lowest-HP hero gets 7 extra. Once per fight, restore up to 6 HP to your lowest-HP ally, or to yourself when alone."
 	},
 	"blink": {
 		"label": "Blink", "width": 3, "range": 560.0, "damage": 8,
@@ -369,8 +377,8 @@ const CORE_TILES := {
 	},
 	"phase_cut": {
 		"label": "Phase Cut", "width": 3, "range": 620.0, "damage": 25,
-		"family": "blink", "rarity": "uncommon",
-		"targets": TARGET_RULES, "description": "Teleport behind an enemy and deal a heavier strike from longer range."
+		"family": "blink", "rarity": "uncommon", "guard_break": 5,
+		"targets": TARGET_RULES, "description": "Teleport behind the target and strip up to 5 Guard before striking."
 	},
 	"ward_step": {
 		"label": "Ward Step", "width": 3, "range": 560.0, "damage": 19,
@@ -379,33 +387,33 @@ const CORE_TILES := {
 	},
 	"rift_lunge": {
 		"label": "Rift Lunge", "width": 3, "range": 665.0, "damage": 29,
-		"family": "blink", "rarity": "rare", "push": 610.0,
-		"targets": TARGET_RULES, "description": "Teleport behind an enemy, then strike and knock it away from your landing point."
+		"family": "blink", "rarity": "rare", "push": 610.0, "guard_break": 5,
+		"targets": TARGET_RULES, "description": "Teleport behind the target and strip up to 5 Guard. Strike and knock it away from your landing point."
 	},
 	"mirror_step": {
 		"label": "Mirror Step", "width": 3, "range": 600.0, "damage": 23,
-		"family": "blink", "rarity": "rare", "retreat": 216.0, "guard": 13,
-		"targets": TARGET_RULES, "description": "Teleport farther away from the target and strike it. Gain 13 guard."
+		"family": "blink", "rarity": "rare", "retreat": 216.0, "guard": 13, "heal": 5,
+		"targets": TARGET_RULES, "description": "Teleport away from the target and strike it. Gain 13 Guard. Restore up to 5 HP to yourself once per fight."
 	},
 	"void_dance": {
 		"label": "Void Dance", "width": 4, "range": 710.0, "damage": 33,
-		"family": "blink", "rarity": "epic", "splash": 145.0,
-		"targets": TARGET_RULES, "description": "Teleport behind an enemy and strike it and other enemies near it."
+		"family": "blink", "rarity": "epic", "splash": 145.0, "guard_break": 5,
+		"targets": TARGET_RULES, "description": "Teleport behind the target and strip up to 5 Guard. Strike it and other nearby enemies."
 	},
 	"prism_stride": {
 		"label": "Prism Stride", "width": 4, "range": 650.0, "damage": 25,
-		"family": "blink", "rarity": "epic", "retreat": 245.0, "guard": 15, "guard_radius": 305.0,
-		"targets": TARGET_RULES, "description": "Teleport away and strike the target. Give yourself and allies near your landing point 15 guard."
+		"family": "blink", "rarity": "epic", "retreat": 245.0, "guard": 15, "guard_radius": 305.0, "heal": 5,
+		"targets": TARGET_RULES, "description": "Teleport away and strike the target. Give yourself and allies near your landing point 15 Guard. Restore up to 5 HP to yourself once per fight."
 	},
 	"starfall_step": {
 		"label": "Starfall Step", "width": 5, "range": 790.0, "damage": 39,
-		"family": "blink", "rarity": "legendary", "splash": 185.0, "push": 790.0,
-		"targets": TARGET_RULES, "description": "Teleport behind an enemy. Strike and knock back every enemy near it, including the target."
+		"family": "blink", "rarity": "legendary", "splash": 185.0, "push": 790.0, "guard_break": 5,
+		"targets": TARGET_RULES, "description": "Teleport behind the target and strip up to 5 Guard. Strike and knock back the target and nearby enemies."
 	},
 	"sanctuary_gate": {
 		"label": "Sanctuary Gate", "width": 5, "range": 725.0, "damage": 33,
-		"family": "blink", "rarity": "legendary", "retreat": 280.0, "guard": 21, "guard_radius": INF,
-		"targets": TARGET_RULES, "description": "Teleport away and strike the target. Give every living ally 21 guard."
+		"family": "blink", "rarity": "legendary", "retreat": 280.0, "guard": 21, "guard_radius": INF, "heal": 5,
+		"targets": TARGET_RULES, "description": "Teleport away and strike the target. Give every living hero 21 Guard. Restore up to 5 HP to yourself once per fight."
 	},
 	"slam": {
 		"label": "Slam", "width": 4, "range": 190.0, "damage": 20,
@@ -414,8 +422,8 @@ const CORE_TILES := {
 	},
 	"shockwave": {
 		"label": "Shockwave", "width": 4, "range": 205.0, "damage": 24,
-		"family": "slam", "rarity": "uncommon", "radius": 160.0, "push": 630.0,
-		"targets": TARGET_RULES, "description": "Strike and push enemies in a wider area around the target."
+		"family": "slam", "rarity": "uncommon", "radius": 160.0, "push": 630.0, "collision_bonus": 4,
+		"targets": TARGET_RULES, "description": "Strike and push enemies in a wider area. Enemies knocked into each other take 4 extra collision damage each."
 	},
 	"sundering_slam": {
 		"label": "Sundering Slam", "width": 4, "range": 200.0, "damage": 28,
@@ -425,32 +433,39 @@ const CORE_TILES := {
 	"quake": {
 		"label": "Quake", "width": 4, "range": 225.0, "damage": 28,
 		"family": "slam", "rarity": "rare", "radius": 190.0, "push": 710.0,
-		"targets": TARGET_RULES, "description": "Strike and push enemies in a broad area around the target."
+		"collision_bonus": 4, "collision_chain_push": 390.0,
+		"targets": TARGET_RULES, "description": "Strike and push enemies in a broad area. A collision deals 4 extra damage to each foe and knocks the second onward for one more collision."
 	},
 	"armor_crush": {
 		"label": "Armor Crush", "width": 4, "range": 215.0, "damage": 34,
 		"family": "slam", "rarity": "rare", "radius": 125.0, "push": 570.0, "guard_break": 16,
-		"targets": TARGET_RULES, "description": "Remove up to 16 Guard from each enemy caught in the impact, then strike and push them."
+		"recent_block_damage": 5, "recent_block_beats": 3,
+		"targets": TARGET_RULES, "description": "Strip up to 16 Guard from each enemy in the impact, then strike and push them. Deal 5 extra damage to each if your Guard absorbed a hit in the last 3 beats."
 	},
 	"fault_line": {
 		"label": "Fault Line", "width": 4, "range": 245.0, "damage": 32,
 		"family": "slam", "rarity": "epic", "radius": 220.0, "push": 790.0,
-		"targets": TARGET_RULES, "description": "Strike and shove enemies across a wide area around the target."
+		"collision_bonus": 4, "collision_chain_push": 390.0, "windup_bonus": 6,
+		"targets": TARGET_RULES, "description": "Strike and shove enemies in a wide area. Deal 6 extra damage to foes winding up. A collision deals 4 extra damage to each foe and knocks the second onward for one more collision."
 	},
 	"hammerfall": {
 		"label": "Hammerfall", "width": 4, "range": 230.0, "damage": 40,
 		"family": "slam", "rarity": "epic", "radius": 140.0, "push": 640.0, "guard_break": 22,
-		"targets": TARGET_RULES, "description": "Remove up to 22 Guard from each enemy caught in the impact, then strike and push them."
+		"recent_block_damage": 5, "recent_block_beats": 3, "repeat_target_damage": 6,
+		"targets": TARGET_RULES, "description": "Strip up to 22 Guard from each enemy in the impact, then strike and push them. Deal 5 extra damage after blocking within 3 beats, and 6 extra to the chosen target if your last landed attack targeted it."
 	},
 	"worldbreaker": {
 		"label": "Worldbreaker", "width": 5, "range": 280.0, "damage": 43,
 		"family": "slam", "rarity": "legendary", "radius": 260.0, "push": 910.0,
-		"targets": TARGET_RULES, "description": "Strike and scatter enemies in a large area around the target."
+		"collision_bonus": 4, "collision_chain_push": 430.0, "collision_chain_hops": 2, "windup_bonus": 6,
+		"targets": TARGET_RULES, "description": "Strike and scatter enemies in a large area. Deal 6 extra damage to foes winding up. Each collision deals 4 extra damage to both foes, knocking enemies onward for up to two more collisions."
 	},
 	"skybreaker": {
 		"label": "Skybreaker", "width": 5, "range": 250.0, "damage": 52,
 		"family": "slam", "rarity": "legendary", "radius": 160.0, "push": 760.0, "guard_break": 28,
-		"targets": TARGET_RULES, "description": "Remove up to 28 Guard from each enemy caught in the impact, then strike and push them."
+		"recent_block_damage": 5, "recent_block_beats": 3, "repeat_target_damage": 6,
+		"mark_bonus": 7, "mark_beats": 3, "ally_only_mark": true,
+		"targets": TARGET_RULES, "description": "Strip up to 28 Guard from each enemy in the impact, then strike and push them. Deal 5 extra damage after blocking within 3 beats, plus 6 to a repeat target. Strip Guard to mark that foe for another hero’s next hit for 7 extra damage within 3 beats."
 	},
 	"shield_ram": {
 		"label": "Shield Ram", "width": 2, "range": 160.0, "damage": 21,
@@ -1655,6 +1670,7 @@ func _cast(actor: Dictionary, tile_id: String, rule: String, reach := -1.0) -> v
 		var recipient := _arsenal_support_target(actor, tile)
 		_review_activation_target(recipient)
 		_apply_arsenal_support(actor, recipient, tile_id, tile)
+		_apply_arsenal_guard_followups(actor, tile_id, tile)
 		return
 	if tile.get("family") == "guard":
 		_cast_guard(actor, tile_id, tile, rule, reach)
@@ -1859,6 +1875,14 @@ func _heal_from_tile(actor: Dictionary, recipient: Dictionary, tile_id: String, 
 		ClassRelicEffects.on_tile_heal(self, actor, recipient, tile_id)
 	if _activation.get("enchantment") == "mending" and _activation.actor == actor.id and _activation.tile == tile_id:
 		_activation.get_or_add("mending_first_recipient", recipient.id)
+	var tile: Dictionary = TILES[tile_id]
+	var overflow_guard := mini(healing - gained, int(tile.get("heal_overflow_guard", 0)))
+	if overflow_guard > 0:
+		_guard_from_tile(actor, recipient, overflow_guard, tile_id)
+	var party_guard := int(tile.get("heal_party_guard", 0))
+	if party_guard > 0 and not _activation.get("heal_party_guard_granted", false):
+		_activation["heal_party_guard_granted"] = true
+		_guard_allies(actor, tile_id, party_guard, INF, true)
 
 
 func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
@@ -1882,9 +1906,7 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 		burn_details["burning_bonus"] = burning_bonus
 	var healing_bonus := int(tile.get("healing_damage_bonus", 0)) if _last_party_heal_loop == _loop_index() else 0
 	damage += healing_bonus
-	if tile.has("recent_block_damage") and tick - int(actor.get("last_guard_block_tick", -LOOP_TICKS)) \
-			<= int(tile.recent_block_beats) * TICKS_PER_BEAT:
-		damage += int(tile.recent_block_damage)
+	damage += _recent_guard_hit_bonus(actor, tile)
 	if actor.get("last_primary_tile_target", "") == target.id:
 		damage += int(tile.get("repeat_target_damage", 0))
 	var last_blink := int(actor.get("last_teleport_tick", -1))
@@ -1934,7 +1956,7 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 			_apply_cantor_mark(actor, target, tile_id, tile)
 		if tile.has("chorus_echo_damage"):
 			ArtificeSpecialties.prime_echo(self, actor, target, tile_id, tile)
-	if tile.has("ember_burn_damage") and (spreads_burn or tick <= target.get("displaced_until", -1)):
+	if tile.has("ember_burn_damage") and (spreads_burn or tile.get("ember_burn_on_hit", false) or tick <= target.get("displaced_until", -1)):
 		_apply_ember_burn(actor, target, tile_id, tile, impact, not spreads_burn or was_burning)
 	if tile.has("cluster_pull_radius"):
 		_cluster_pull(actor, target, tile_id, impact, tile.cluster_pull_radius, tile.cluster_pull_force)
@@ -1957,10 +1979,14 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 		ApothecaryTiles.apply_tonic(self, actor, tile_id, tile)
 	elif tile.has("guard"):
 		_apply_arsenal_support(actor, _arsenal_support_target(actor, tile), tile_id, tile)
-		if tile.has("harmony_guard"):
-			ArtificeSpecialties.apply_harmony_guard(self, actor, tile_id, tile)
 		if tile.has("intercept_guard"):
 			VanguardSpecialties.prime_intercept(self, actor, tile_id, tile)
+	_apply_arsenal_guard_followups(actor, tile_id, tile)
+
+
+func _apply_arsenal_guard_followups(actor: Dictionary, tile_id: String, tile: Dictionary) -> void:
+	if tile.has("harmony_guard"):
+		ArtificeSpecialties.apply_harmony_guard(self, actor, tile_id, tile)
 	if tile.has("ally_guard"):
 		_guard_from_tile(actor, _weakest_other_ally(actor), tile.ally_guard, tile_id)
 	if tile.has("bastion_party_guard"):
@@ -2093,9 +2119,15 @@ func _prime_ranged_followup(actor: Dictionary, tile_id: String, tile: Dictionary
 
 
 func _cast_shot(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary) -> void:
-	var damage: int = tile.damage + _distance_bonus(actor, target, tile)
-	_damage(actor, target, damage, tile_id)
+	var distance_bonus := _distance_bonus(actor, target, tile)
+	var impact: Vector2 = target.pos
+	_strip_guard(actor, target, tile_id, int(tile.get("guard_break", 0)))
+	_damage(actor, target, int(tile.damage) + distance_bonus, tile_id)
 	_apply_splash(actor, target, tile_id, tile)
+	if tile.has("sweep_push_radius"):
+		_sweep_push(actor, target, tile_id, impact, tile.sweep_push_radius, tile.sweep_push_force)
+	if tile.has("mark_bonus") and distance_bonus > 0 and target.hp > 0 and not _activation.is_empty():
+		_apply_arsenal_mark(actor, target, tile_id, tile)
 
 
 func _distance_bonus(actor: Dictionary, target: Dictionary, tile: Dictionary) -> int:
@@ -2112,8 +2144,13 @@ func _apply_splash(actor: Dictionary, target: Dictionary, tile_id: String, tile:
 	if tile.has("splash_targets"):
 		_sort_by_distance(neighbors, target.pos)
 		neighbors.resize(mini(neighbors.size(), tile.splash_targets))
+	var guard_break := int(tile.get("splash_guard_break", 0))
+	var windup_bonus := int(tile.get("splash_windup_bonus", 0))
+	var damage := int(tile.splash_damage) + bonus
 	for enemy: Dictionary in neighbors:
-		_damage(actor, enemy, tile.splash_damage + bonus, tile_id)
+		_strip_guard(actor, enemy, tile_id, guard_break)
+		var bonus_damage := windup_bonus if not str(enemy.intent).is_empty() and enemy.intent_tick >= tick else 0
+		_damage(actor, enemy, damage + bonus_damage, tile_id)
 
 
 func _splash_neighbors(actor: Dictionary, target: Dictionary, radius: float) -> Array[Dictionary]:
@@ -2137,12 +2174,14 @@ func _cast_guard(actor: Dictionary, tile_id: String, tile: Dictionary, rule: Str
 			_prepare_siege_fuse(actor, target, tile_id)
 			var spent := mini(actor.guard, tile.guard_bonus_cap)
 			actor.guard -= spent
-			var damage: int = tile.damage + spent
+			var damage: int = tile.damage + spent + _recent_guard_hit_bonus(actor, tile)
 			if tile.has("push"):
 				_strike_and_push(actor, target, tile_id, damage, tile.push)
 			else:
 				_damage(actor, target, damage, tile_id)
 		_guard_from_tile(actor, actor, tile.guard, tile_id)
+		if tile.has("bastion_block_threshold"):
+			_prime_bastion_ward(actor, tile_id, tile)
 		if target.is_empty() and not _activation.is_empty():
 			_activation.reason = "No enemy was in reach for the strike."
 		return
@@ -2156,6 +2195,8 @@ func _cast_guard(actor: Dictionary, tile_id: String, tile: Dictionary, rule: Str
 		_guard_from_tile(actor, actor, tile.guard, tile_id)
 		if recipient.id != actor.id:
 			_guard_from_tile(actor, recipient, tile.guard, tile_id)
+	if tile.has("heal") and not _activation.is_empty():
+		_heal_from_tile(actor, _weakest_other_ally(actor), tile_id, int(tile.heal))
 
 
 func _guard_recipient(actor: Dictionary, tile: Dictionary) -> Dictionary:
@@ -2174,6 +2215,7 @@ func _cast_blink(actor: Dictionary, target: Dictionary, tile_id: String, tile: D
 	if not _blink_to_target(actor, target, tile_id, tile.get("retreat", 0.0)):
 		return
 	_prepare_siege_fuse(actor, target, tile_id)
+	_strip_guard(actor, target, tile_id, int(tile.get("guard_break", 0)))
 	var enemies: Array = _enemies_in_area(actor, target.pos, tile.splash) if tile.has("splash") else [target]
 	for enemy: Dictionary in enemies:
 		if tile.has("push"):
@@ -2182,6 +2224,8 @@ func _cast_blink(actor: Dictionary, target: Dictionary, tile_id: String, tile: D
 			_damage(actor, enemy, tile.damage, tile_id)
 	if tile.has("guard"):
 		_guard_allies(actor, tile_id, tile.guard, tile.get("guard_radius", 0.0), true)
+	if tile.has("heal") and not _activation.is_empty():
+		_heal_from_tile(actor, actor, tile_id, int(tile.heal))
 
 
 func _blink_to_target(actor: Dictionary, target: Dictionary, tile_id: String, retreat: float, report_failure := true) -> bool:
@@ -2214,9 +2258,27 @@ func _strike_and_push(actor: Dictionary, target: Dictionary, tile_id: String, da
 
 
 func _area_push(actor: Dictionary, target: Dictionary, tile_id: String, damage: int, radius: float, force: float, guard_break := 0) -> void:
+	var tile: Dictionary = TILES[tile_id]
+	var base_damage := damage + _recent_guard_hit_bonus(actor, tile)
+	var repeated: bool = actor.get("last_primary_tile_target", "") == target.id
 	for enemy in _enemies_in_area(actor, target.pos, radius):
+		var enemy_damage := base_damage
+		if enemy.id == target.id and repeated:
+			enemy_damage += int(tile.get("repeat_target_damage", 0))
+		if not str(enemy.intent).is_empty() and enemy.intent_tick >= tick:
+			enemy_damage += int(tile.get("windup_bonus", 0))
+		var mark: bool = tile.has("mark_bonus") and guard_break > 0 and enemy.guard > 0
 		_strip_guard(actor, enemy, tile_id, guard_break)
-		_strike_and_push(actor, enemy, tile_id, damage, force)
+		_strike_and_push(actor, enemy, tile_id, enemy_damage, force)
+		if mark and enemy.hp > 0 and not _activation.is_empty():
+			_apply_arsenal_mark(actor, enemy, tile_id, tile)
+
+
+func _recent_guard_hit_bonus(actor: Dictionary, tile: Dictionary) -> int:
+	if not tile.has("recent_block_damage"):
+		return 0
+	var last_block := int(actor.get("last_guard_block_tick", -LOOP_TICKS))
+	return int(tile.recent_block_damage) if tick - last_block <= int(tile.recent_block_beats) * TICKS_PER_BEAT else 0
 
 
 func _strip_guard(actor: Dictionary, target: Dictionary, tile_id: String, limit: int) -> void:

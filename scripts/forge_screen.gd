@@ -326,7 +326,7 @@ func _add_tier(tier: int) -> void:
 	column.add_child(options)
 	for id: String in ids:
 		var tile: Dictionary = _host.tile_spec(id)
-		var card := _button(tile.get("upgrade_path", tile.label), func(): _inspect(id))
+		var card := _button(tile.get("forge_name", tile.label), func(): _inspect(id))
 		GameIcons.decorate(card, GameIcons.tile(id, tile), 25)
 		card.custom_minimum_size.y = 88
 		card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART

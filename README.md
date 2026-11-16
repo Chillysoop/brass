@@ -42,6 +42,8 @@ Unlock **Tile Enchantments** on the Aether Chart after **Gravity Hook**. Brass F
 
 Combine any three identical tiles below Legendary to choose between two upgrades at the next rarity. Touching copies offer a combine on the timeline or in storage. For copies spread across rows or timelines, select one with **Tile storage** open and choose **Combine 3**. A combat reward can count as the third copy for its hero using their timeline and shared storage. This works even when the reward tile itself would not fit.
 
+Each forge choice adds or changes a combat effect. You can switch branches at each rarity. Select a tile in the forge to read its effects before committing.
+
 A camp can advance one eligible tile instead of healing the party. The **Aether Chart** unlocks camp upgrades and direct reward drops for Blink, Shot, and Guard. **Wayfarer's Pin** adds a starter relic choice that grants each hero 6 Guard on their first successful teleport each loop. It can also appear in shops and elite rewards.
 
 **Marksman's Arsenal** unlocks precision fire and shots that hit clustered enemies. Precision tiles let heroes keep their distance when the lane has no melee attacks. **Bastion Workshop** unlocks counters fueled by Guard and tiles that shield vulnerable allies. Shops offer one specialist upgrade from the unlocked families, from Uncommon on the first leg to Rare on the second and Epic on the third. **Pathfinder's Chart** adds seeded mystery encounters with gold wagers, relic brokers, and optional elite bounties.

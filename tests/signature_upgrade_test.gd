@@ -270,19 +270,35 @@ func _check_apothecary(choices: Array) -> void:
 	_check(focused.units[1].hp == 20 + dose_spec.heal and focused.units[1].guard == dose_spec.guard,
 		"%s should still grant Guard on the second loop without repeating the heal." % dose)
 
+	var overflow := _fixture([[_tile(dose, 0)], [], []], allies)
+	overflow.units[0].hp = 100
+	overflow.units[1].hp = 98
+	overflow.units[2].hp = 100
+	_advance(overflow, edge)
+	var overflow_bonus := mini(dose_spec.heal - 2, int(dose_spec.get("heal_overflow_guard", 0)))
+	_check(overflow_bonus > 0 and overflow.units[1].hp == 100 and overflow.units[1].guard == dose_spec.guard + overflow_bonus
+		and overflow.units[0].guard == 0 and overflow.units[2].guard == 0,
+		"%s should turn limited unused healing into Guard on the recipient." % dose)
+	overflow.units[1].hp = 98
+	overflow.units[1].guard = 0
+	_advance(overflow, edge + ArenaSim.LOOP_TICKS)
+	_check(overflow.units[1].hp == 98 and overflow.units[1].guard == dose_spec.guard,
+		"%s should only convert healing to Guard when the tile actually restores HP." % dose)
+
 	var shared := _fixture([[_tile(mist, 0)], [], []], allies)
 	shared.units[0].hp = 50
 	shared.units[1].hp = 100
 	shared.units[2].hp = 0
 	_advance(shared, edge)
+	var guard_after_heal: int = mist_spec.guard + int(mist_spec.get("heal_party_guard", 0))
 	_check(shared.units[0].hp == 50 + mist_spec.heal and shared.units[1].hp == 100
-		and shared.units[1].guard == mist_spec.guard and shared.units[2].hp == 0 and shared.units[2].guard == 0,
+		and shared.units[1].guard == guard_after_heal and shared.units[2].hp == 0 and shared.units[2].guard == 0,
 		"%s should heal injured living heroes, guard the living party, and leave fallen heroes down." % mist)
 	shared.units[0].hp = 45
 	shared.units[1].hp = 55
 	shared.units[0].guard = 0
 	_advance(shared, edge + ArenaSim.LOOP_TICKS)
-	_check(shared.units[0].hp == 45 and shared.units[0].guard == mist_spec.guard
+	_check(shared.units[0].hp == 45 and shared.units[0].guard == guard_after_heal
 		and shared.units[1].hp == 55 + mist_spec.heal and shared.units[2].hp == 0,
 		"%s should heal a previously full hero on a later loop without healing the same hero twice." % mist)
 

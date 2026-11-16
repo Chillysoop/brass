@@ -2,8 +2,8 @@ extends RefCounted
 
 const MartialSpecialtyUpgrades = preload("res://scripts/martial_specialty_upgrades.gd")
 const ArcaneSpecialtyUpgrades = preload("res://scripts/arcane_specialty_upgrades.gd")
+const ForgeUpgradeStages = preload("res://scripts/forge_upgrade_stages.gd")
 const RARITIES := ["common", "uncommon", "rare", "epic", "legendary"]
-const RANKS := ["I", "II", "III", "IV"]
 const CORE_PULL_FORCE := {"pull": 735.0, "gravity_hook": 935.0}
 const TECHNIQUE_GAINS := {
 	"guard_bonus": 3, "displaced_bonus": 3, "distance_bonus": 3, "windup_bonus": 3,
@@ -14,161 +14,193 @@ const AUTHORED_SIGNATURES := {
 	"rampart_counter": {
 		"power": [
 			{"label": "Shield Reckoning", "damage": 19, "range": 158.0, "guard_spend": 5, "icon": "battle"},
-			{"label": "Iron Reckoning", "damage": 22, "range": 164.0, "guard_spend": 8, "icon": "battle"},
-			{"label": "Last Reckoning", "damage": 25, "range": 170.0, "guard_spend": 10, "icon": "battle"},
+			{"label": "Iron Reckoning", "damage": 22, "range": 164.0, "guard_spend": 8, "guard_break": 5, "icon": "battle"},
+			{"label": "Last Reckoning", "damage": 25, "range": 170.0, "guard_spend": 10, "guard_break": 5,
+				"recent_block_damage": 5, "recent_block_beats": 3, "icon": "battle"},
 		],
 		"technique": [
 			{"label": "Stand Together", "damage": 16, "range": 158.0, "guard_bonus": 9, "ally_guard": 6},
-			{"label": "Aegis Relay", "damage": 19, "range": 164.0, "guard_bonus": 11, "ally_guard": 9},
-			{"label": "Aegis Pact", "damage": 22, "range": 170.0, "guard_bonus": 13, "ally_guard": 12},
+			{"label": "Aegis Relay", "damage": 19, "range": 164.0, "guard_bonus": 11, "ally_guard": 9,
+				"mark_bonus": 5, "mark_beats": 3, "ally_only_mark": true},
+			{"label": "Aegis Pact", "damage": 22, "range": 170.0, "guard_bonus": 13, "ally_guard": 12,
+				"mark_bonus": 5, "mark_beats": 3, "ally_only_mark": true,
+				"bastion_block_threshold": 5, "bastion_party_guard": 4, "bastion_beats": 4},
 		],
 	},
 	"gravity_spike": {
 		"power": [
-			{"label": "Anchor Spike", "damage": 19, "range": 505.0, "displaced_bonus": 12, "pull": 860.0},
-			{"label": "Anchor Breaker", "damage": 23, "range": 540.0, "displaced_bonus": 15, "pull": 900.0},
-			{"label": "Anchorfall", "damage": 27, "range": 575.0, "displaced_bonus": 18, "pull": 980.0},
+			{"label": "Anchor Spike", "damage": 19, "range": 505.0, "displaced_bonus": 12, "pull": 860.0, "pull_before_hit": true},
+			{"label": "Anchor Breaker", "damage": 23, "range": 540.0, "displaced_bonus": 15, "pull": 900.0,
+				"pull_before_hit": true, "guard_break": 6},
+			{"label": "Anchorfall", "damage": 27, "range": 575.0, "displaced_bonus": 18, "pull": 980.0,
+				"pull_before_hit": true, "guard_break": 6, "mark_bonus": 7, "mark_beats": 3},
 		],
 		"technique": [
 			{"label": "Gravity Net", "damage": 17, "range": 475.0, "displaced_bonus": 10, "pull": 720.0,
 				"cluster_pull_radius": 110.0, "cluster_pull_force": 370.0, "icon": "area"},
 			{"label": "Gravity Well", "damage": 20, "range": 500.0, "displaced_bonus": 12, "pull": 760.0,
-				"cluster_pull_radius": 145.0, "cluster_pull_force": 475.0, "icon": "area"},
+				"cluster_pull_radius": 145.0, "cluster_pull_force": 475.0, "splash": 105.0, "splash_damage": 6, "icon": "area"},
 			{"label": "Gravity Vortex", "damage": 23, "range": 525.0, "displaced_bonus": 14, "pull": 800.0,
-				"cluster_pull_radius": 175.0, "cluster_pull_force": 570.0, "icon": "area"},
+				"cluster_pull_radius": 175.0, "cluster_pull_force": 570.0, "splash": 105.0, "splash_damage": 6,
+				"chorus_echo_damage": 6, "chorus_echo_radius": 145.0, "chorus_echo_beats": 4, "icon": "area"},
 		],
 	},
 	"horizon_round": {
 		"power": [
-			{"label": "Skyline Shot", "damage": 24, "range": 750.0, "distance_bonus": 23},
-			{"label": "Far Horizon", "damage": 27, "range": 785.0, "distance_bonus": 30},
-			{"label": "Daybreak Shot", "damage": 28, "range": 820.0, "distance_bonus": 32},
+			{"label": "Skyline Shot", "damage": 24, "range": 750.0, "distance_bonus": 23, "long_critical_bonus": 0.08},
+			{"label": "Far Horizon", "damage": 27, "range": 785.0, "distance_bonus": 30, "long_critical_bonus": 0.08,
+				"guard_break": 6},
+			{"label": "Daybreak Shot", "damage": 28, "range": 820.0, "distance_bonus": 32, "long_critical_bonus": 0.08,
+				"guard_break": 6, "dash_followup_damage": 7, "dash_followup_beats": 3},
 		],
 		"technique": [
 			{"label": "Spotter Round", "damage": 22, "range": 720.0, "distance_bonus": 10,
 				"mark_bonus": 16, "mark_beats": 4, "ally_only_mark": true},
 			{"label": "Beacon Round", "damage": 24, "range": 740.0, "distance_bonus": 12,
-				"mark_bonus": 22, "mark_beats": 5, "ally_only_mark": true},
+				"mark_bonus": 22, "mark_beats": 5, "ally_only_mark": true,
+				"chorus_echo_damage": 4, "chorus_echo_radius": 100.0, "chorus_echo_beats": 4},
 			{"label": "Signal Lance", "damage": 27, "range": 760.0, "distance_bonus": 14,
-				"mark_bonus": 27, "mark_beats": 5, "ally_only_mark": true},
+				"mark_bonus": 27, "mark_beats": 5, "ally_only_mark": true,
+				"chorus_echo_damage": 4, "chorus_echo_radius": 100.0, "chorus_echo_beats": 5, "chorus_echo_charges": 2},
 		],
 	},
 	"ghost_volley": {
 		"power": [
 			{"label": "Rift Ambush", "damage": 27, "range": 435.0, "ranged": false, "blink_strike": true, "icon": "teleport"},
-			{"label": "Veilstrike", "damage": 32, "range": 470.0, "ranged": false, "blink_strike": true, "icon": "teleport"},
-			{"label": "Phantom Ambush", "damage": 38, "range": 515.0, "ranged": false, "blink_strike": true, "icon": "teleport"},
+			{"label": "Veilstrike", "damage": 32, "range": 470.0, "ranged": false, "blink_strike": true, "guard_break": 6,
+				"icon": "teleport"},
+			{"label": "Phantom Ambush", "damage": 38, "range": 515.0, "ranged": false, "blink_strike": true, "guard_break": 6,
+				"splash": 100.0, "splash_damage": 7, "icon": "teleport"},
 		],
 		"technique": [
 			{"label": "Covering Shot", "damage": 17, "range": 480.0, "retreat": 105.0,
 				"ranged_followup_bonus": 12, "ranged_followup_beats": 3},
 			{"label": "Ghost Feint", "damage": 20, "range": 505.0, "retreat": 118.0,
-				"ranged_followup_bonus": 17, "ranged_followup_beats": 4},
+				"ranged_followup_bonus": 17, "ranged_followup_beats": 4, "dash_followup_damage": 6, "dash_followup_beats": 3},
 			{"label": "Fadefire Volley", "damage": 23, "range": 530.0, "retreat": 130.0,
-				"ranged_followup_bonus": 22, "ranged_followup_beats": 5},
+				"ranged_followup_bonus": 22, "ranged_followup_beats": 5, "dash_followup_damage": 6, "dash_followup_beats": 3,
+				"ally_guard": 5},
 		],
 	},
 	"collision_hammer": {
 		"power": [
 			{"label": "Wrecking Drive", "damage": 28, "range": 180.0, "push": 840.0, "displaced_bonus": 12, "collision_bonus": 9},
-			{"label": "Rivet Ram", "damage": 32, "range": 190.0, "push": 910.0, "displaced_bonus": 14, "collision_bonus": 13},
-			{"label": "Wrecking Blow", "damage": 37, "range": 200.0, "push": 980.0, "displaced_bonus": 16, "collision_bonus": 18},
+			{"label": "Rivet Ram", "damage": 32, "range": 190.0, "push": 910.0, "displaced_bonus": 14, "collision_bonus": 13,
+				"collision_chain_push": 435.0},
+			{"label": "Wrecking Blow", "damage": 37, "range": 200.0, "push": 980.0, "displaced_bonus": 16, "collision_bonus": 18,
+				"collision_chain_push": 540.0, "collision_chain_hops": 2},
 		],
 		"technique": [
 			{"label": "Scatter Swing", "damage": 24, "range": 180.0, "push": 650.0, "displaced_bonus": 11,
 				"sweep_push_radius": 118.0, "sweep_push_force": 400.0, "icon": "area"},
 			{"label": "Fault Sweep", "damage": 27, "range": 190.0, "push": 700.0, "displaced_bonus": 12,
-				"sweep_push_radius": 140.0, "sweep_push_force": 480.0, "icon": "area"},
+				"sweep_push_radius": 140.0, "sweep_push_force": 480.0, "splash": 103.0, "splash_damage": 5, "icon": "area"},
 			{"label": "Shatterline", "damage": 30, "range": 200.0, "push": 760.0, "displaced_bonus": 14,
-				"sweep_push_radius": 162.0, "sweep_push_force": 560.0, "icon": "area"},
+				"sweep_push_radius": 162.0, "sweep_push_force": 560.0, "splash": 103.0, "splash_damage": 5,
+				"collision_bonus": 4, "icon": "area"},
 		],
 	},
 	"triage_kit": {
 		"power": [
-			{"label": "Emergency Dose", "guard": 14, "heal": 20},
-			{"label": "Critical Care", "guard": 17, "heal": 26},
-			{"label": "Lifeline Kit", "guard": 20, "heal": 32},
+			{"label": "Emergency Dose", "guard": 14, "heal": 20, "heal_overflow_guard": 5},
+			{"label": "Critical Care", "guard": 17, "heal": 26, "heal_overflow_guard": 5, "harmony_guard": 4},
+			{"label": "Lifeline Kit", "guard": 20, "heal": 32, "heal_overflow_guard": 5, "harmony_guard": 4,
+				"bastion_block_threshold": 5, "bastion_party_guard": 4, "bastion_beats": 5},
 		],
 		"technique": [
 			{"label": "Triage Mist", "support": "party", "party_heal": true, "guard": 6, "heal": 9},
-			{"label": "Mercy Fog", "support": "party", "party_heal": true, "guard": 8, "heal": 12},
-			{"label": "Mercy Rain", "support": "party", "party_heal": true, "guard": 10, "heal": 15},
+			{"label": "Mercy Fog", "support": "party", "party_heal": true, "guard": 8, "heal": 12, "heal_party_guard": 3},
+			{"label": "Mercy Rain", "support": "party", "party_heal": true, "guard": 10, "heal": 15, "heal_party_guard": 3,
+				"heal_overflow_guard": 4},
 		],
 	},
 	"runic_anvil": {
 		"power": [
 			{"label": "Weight Rune", "damage": 34, "range": 170.0, "guard_break": 12, "rune_heavy_bonus": 10},
-			{"label": "Siege Rune", "damage": 38, "range": 180.0, "guard_break": 14, "rune_heavy_bonus": 14},
-			{"label": "Titan Rune", "damage": 42, "range": 190.0, "guard_break": 16, "rune_heavy_bonus": 19},
+			{"label": "Siege Rune", "damage": 38, "range": 180.0, "guard_break": 14, "rune_heavy_bonus": 14, "windup_bonus": 6},
+			{"label": "Titan Rune", "damage": 42, "range": 190.0, "guard_break": 16, "rune_heavy_bonus": 19, "windup_bonus": 6,
+				"sweep_push_radius": 105.0, "sweep_push_force": 330.0},
 		],
 		"technique": [
 			{"label": "Spark Anvil", "damage": 31, "range": 170.0, "splash_damage": 15,
 				"rune_quick_bonus": 4, "rune_quick_hits": 2, "icon": "forge"},
 			{"label": "Ember Anvil", "damage": 34, "range": 175.0, "splash_damage": 17,
-				"rune_quick_bonus": 5, "rune_quick_hits": 3, "icon": "forge"},
+				"rune_quick_bonus": 5, "rune_quick_hits": 3, "guard": 2, "support": "party", "harmony_guard": 3, "icon": "forge"},
 			{"label": "Star Anvil", "damage": 37, "range": 185.0, "splash_damage": 19,
-				"rune_quick_bonus": 6, "rune_quick_hits": 3, "icon": "forge"},
+				"rune_quick_bonus": 6, "rune_quick_hits": 3, "guard": 2, "support": "party", "harmony_guard": 3,
+				"mark_bonus": 6, "mark_beats": 3, "ally_only_mark": true, "icon": "forge"},
 		],
 	},
 	"needle_point": {
 		"power": [
 			{"label": "Needle Lock", "short_label": "Lock", "damage": 8, "duel_stack_gain": 3, "duel_stack_cap": 9},
 			{"label": "Piercing Rhythm", "short_label": "Rhythm", "damage": 9, "range": 130.0,
-				"duel_stack_gain": 4, "duel_stack_cap": 12},
+				"duel_stack_gain": 4, "duel_stack_cap": 12, "guard_break": 3},
 			{"label": "Master's Point", "short_label": "Point", "damage": 10, "range": 135.0,
-				"duel_stack_gain": 5, "duel_stack_cap": 15},
+				"duel_stack_gain": 5, "duel_stack_cap": 15, "guard_break": 3, "windup_bonus": 4},
 		],
 		"technique": [
 			{"label": "Passing Cut", "short_label": "Passing", "damage": 8, "low_hp_bonus": 6, "duel_kill_bonus": 8},
 			{"label": "Victor's Step", "short_label": "Victor", "damage": 9, "range": 130.0, "low_hp_bonus": 7,
-				"duel_kill_bonus": 11},
+				"duel_kill_bonus": 11, "guard": 2},
 			{"label": "Finishing Dance", "short_label": "Dance", "damage": 10, "range": 135.0, "low_hp_bonus": 8,
-				"duel_kill_bonus": 14},
+				"duel_kill_bonus": 14, "guard": 2, "dash_followup_damage": 5, "dash_followup_beats": 3},
 		],
 	},
 	"chorus_bolt": {
 		"power": [
 			{"label": "Battle Chorus", "damage": 15, "range": 465.0, "guard": 7, "chorus_mark_bonus": 11, "chorus_mark_beats": 4},
-			{"label": "War Choir", "damage": 18, "range": 485.0, "guard": 8, "chorus_mark_bonus": 14, "chorus_mark_beats": 5},
-			{"label": "Grand Refrain", "damage": 21, "range": 510.0, "guard": 10, "chorus_mark_bonus": 17, "chorus_mark_beats": 6},
+			{"label": "War Choir", "damage": 18, "range": 485.0, "guard": 8, "chorus_mark_bonus": 14, "chorus_mark_beats": 5,
+				"chorus_echo_damage": 5, "chorus_echo_radius": 125.0, "chorus_echo_beats": 4},
+			{"label": "Grand Refrain", "damage": 21, "range": 510.0, "guard": 10, "chorus_mark_bonus": 17, "chorus_mark_beats": 6,
+				"chorus_echo_damage": 5, "chorus_echo_radius": 125.0, "chorus_echo_beats": 4, "chorus_echo_charges": 2},
 		],
 		"technique": [
 			{"label": "Ward Chime", "damage": 14, "range": 465.0, "guard": 8,
 				"chorus_guard": 5, "chorus_guard_beats": 4, "icon": "guard"},
 			{"label": "Shield Hymn", "damage": 16, "range": 485.0, "guard": 10,
-				"chorus_guard": 7, "chorus_guard_beats": 5, "icon": "guard"},
+				"chorus_guard": 7, "chorus_guard_beats": 5, "harmony_guard": 3, "icon": "guard"},
 			{"label": "Sanctuary Song", "damage": 19, "range": 510.0, "guard": 12,
-				"chorus_guard": 9, "chorus_guard_beats": 6, "icon": "guard"},
+				"chorus_guard": 9, "chorus_guard_beats": 6, "harmony_guard": 3,
+				"bastion_block_threshold": 5, "bastion_party_guard": 4, "bastion_beats": 4, "icon": "guard"},
 		],
 	},
 	"bastion_oath": {
 		"power": [
-			{"label": "Vigil Strike", "damage": 20, "range": 180.0, "guard_bonus": 11, "guard": 13, "support": "weakest"},
-			{"label": "Guardian's Vow", "damage": 24, "range": 190.0, "guard_bonus": 13, "guard": 16, "support": "weakest"},
-			{"label": "Last Bulwark", "damage": 28, "range": 200.0, "guard_bonus": 15, "guard": 20, "support": "weakest"},
+			{"label": "Vigil Strike", "damage": 20, "range": 180.0, "guard_bonus": 11, "guard": 13, "support": "weakest",
+				"intercept_guard": 4, "intercept_beats": 4},
+			{"label": "Guardian's Vow", "damage": 24, "range": 190.0, "guard_bonus": 13, "guard": 16, "support": "weakest",
+				"intercept_guard": 4, "intercept_beats": 4, "guard_break": 6},
+			{"label": "Last Bulwark", "damage": 28, "range": 200.0, "guard_bonus": 15, "guard": 20, "support": "weakest",
+				"intercept_guard": 4, "intercept_beats": 4, "guard_break": 6, "harmony_guard": 4},
 		],
 		"technique": [
 			{"label": "Shield Beacon", "damage": 19, "range": 180.0, "guard": 7, "support": "self",
 				"bastion_block_threshold": 6, "bastion_party_guard": 7, "bastion_beats": 5},
 			{"label": "Bastion Relay", "damage": 22, "range": 190.0, "guard": 8, "support": "self",
-				"bastion_block_threshold": 7, "bastion_party_guard": 9, "bastion_beats": 6},
+				"bastion_block_threshold": 7, "bastion_party_guard": 9, "bastion_beats": 6,
+				"recent_block_damage": 6, "recent_block_beats": 3},
 			{"label": "Unbroken Line", "damage": 25, "range": 200.0, "guard": 9, "support": "self",
-				"bastion_block_threshold": 8, "bastion_party_guard": 11, "bastion_beats": 7},
+				"bastion_block_threshold": 8, "bastion_party_guard": 11, "bastion_beats": 7,
+				"recent_block_damage": 6, "recent_block_beats": 3, "block_wave_damage": 5, "block_wave_radius": 100.0},
 		],
 	},
 	"comet_charge": {
 		"power": [
 			{"label": "Running Lance", "damage": 23, "range": 440.0, "push": 660.0, "windup_bonus": 6, "lance_travel_bonus": 12},
-			{"label": "Meteor Run", "damage": 27, "range": 475.0, "push": 700.0, "windup_bonus": 7, "lance_travel_bonus": 16},
-			{"label": "Thunder Gallop", "damage": 31, "range": 510.0, "push": 750.0, "windup_bonus": 8, "lance_travel_bonus": 20},
+			{"label": "Meteor Run", "damage": 27, "range": 475.0, "push": 700.0, "windup_bonus": 7, "lance_travel_bonus": 16,
+				"charge_path_damage": 5, "charge_path_radius": 32.0},
+			{"label": "Thunder Gallop", "damage": 31, "range": 510.0, "push": 750.0, "windup_bonus": 8, "lance_travel_bonus": 20,
+				"charge_path_damage": 5, "charge_path_radius": 32.0, "charge_carry": true},
 		],
 		"technique": [
 			{"label": "Second Pass", "damage": 22, "range": 430.0, "push": 725.0, "windup_bonus": 6,
 				"lance_return_bonus": 10, "lance_return_beats": 4},
 			{"label": "Turnback Charge", "damage": 25, "range": 465.0, "push": 780.0, "windup_bonus": 7,
-				"lance_return_bonus": 14, "lance_return_beats": 5},
+				"lance_return_bonus": 14, "lance_return_beats": 5, "sweep_push_radius": 90.0, "sweep_push_force": 310.0},
 			{"label": "Comet's Return", "damage": 28, "range": 500.0, "push": 830.0, "windup_bonus": 8,
-				"lance_return_bonus": 18, "lance_return_beats": 6},
+				"lance_return_bonus": 18, "lance_return_beats": 6, "sweep_push_radius": 90.0, "sweep_push_force": 310.0,
+				"guard_break": 6},
 		],
 	},
 	"cinder_wave": {
@@ -176,17 +208,18 @@ const AUTHORED_SIGNATURES := {
 			{"label": "Coal Brand", "damage": 18, "range": 345.0, "splash_damage": 11,
 				"ember_burn_damage": 4, "ember_burn_ticks": 3},
 			{"label": "Kilnbrand", "damage": 21, "range": 365.0, "splash_damage": 12,
-				"ember_burn_damage": 5, "ember_burn_ticks": 4},
+				"ember_burn_damage": 5, "ember_burn_ticks": 4, "burning_bonus": 5},
 			{"label": "Evercoal", "damage": 24, "range": 385.0, "splash_damage": 14,
-				"ember_burn_damage": 5, "ember_burn_ticks": 5},
+				"ember_burn_damage": 5, "ember_burn_ticks": 5, "burning_bonus": 5, "ember_burn_on_hit": true},
 		],
 		"technique": [
 			{"label": "Ember Wake", "damage": 16, "range": 345.0, "splash_damage": 12,
 				"ember_burn_damage": 4, "ember_burn_ticks": 2, "ember_burn_radius": 142.0},
 			{"label": "Cinder Bloom", "damage": 19, "range": 365.0, "splash_damage": 14,
-				"ember_burn_damage": 5, "ember_burn_ticks": 2, "ember_burn_radius": 165.0},
+				"ember_burn_damage": 5, "ember_burn_ticks": 2, "ember_burn_radius": 165.0, "guard_break": 4},
 			{"label": "Ashstorm", "damage": 22, "range": 385.0, "splash_damage": 17,
-				"ember_burn_damage": 6, "ember_burn_ticks": 2, "ember_burn_radius": 185.0},
+				"ember_burn_damage": 6, "ember_burn_ticks": 2, "ember_burn_radius": 185.0, "guard_break": 4,
+				"sweep_push_radius": 110.0, "sweep_push_force": 330.0},
 		],
 	},
 }
@@ -232,12 +265,13 @@ static func _upgrade(id: String, base: Dictionary, tier: int, ranks: int, techni
 		tile.merge(path.get("properties", {}), true)
 		for field: String in path.gains:
 			tile[field] = tile.get(field, 0) + path.gains[field] * ranks
+		var name := _apply_stages(tile, path.stages, ranks)
 		for force: String in ["push", "pull"]:
 			if tile.has(force):
 				tile[force] = minf(tile[force], 1000.0)
 		tile.upgrade_path = path.label
-		tile.short_label = path.get("short_label", path.label)
-		tile.label = "%s · %s %s" % [base.label, path.label, RANKS[ranks - 1]]
+		tile.short_label = name
+		tile.label = name
 		tile.description = _describe_upgrade(tile)
 		return tile
 	if AUTHORED_SIGNATURES.has(id):
@@ -251,9 +285,7 @@ static func _upgrade(id: String, base: Dictionary, tier: int, ranks: int, techni
 		tile.merge(AUTHORED_SIGNATURES[id][choice][ranks - 1], true)
 		tile.description = _describe_upgrade(tile)
 		return tile
-	var style: String
 	if tile.damage > 0:
-		style = "Keen" if technique else "Heavy"
 		if CORE_PULL_FORCE.has(id):
 			tile.pull = CORE_PULL_FORCE[id]
 			tile.pull_before_hit = true
@@ -274,17 +306,26 @@ static func _upgrade(id: String, base: Dictionary, tier: int, ranks: int, techni
 			if tile.has("mark_beats"):
 				tile.mark_beats += floori(ranks * 0.5)
 	else:
-		style = "Restoring" if technique else "Warding"
 		var guard_gain := 1 if technique else maxi(2, roundi(float(base.guard) * 0.30))
 		tile.guard = mini(28, int(base.guard) + guard_gain * ranks)
 		var heal: int = base.get("heal", 0)
 		if technique or heal > 0:
 			tile.heal = heal + ranks * (4 if technique else 1)
-	tile.label = "%s · %s %s" % [base.label, style, RANKS[ranks - 1]]
-	var caption: String = base.get("short_label", base.label)
-	tile.short_label = "%s %s" % [style, caption] if tile.width == 1 else "%s %s" % [caption, style]
+	var name := _apply_stages(tile, ForgeUpgradeStages.stages_for(tile, technique), ranks)
+	tile.label = "%s · %s" % [base.label, name]
+	tile.short_label = name
+	tile.forge_name = name
 	tile.description = _describe_upgrade(tile)
 	return tile
+
+
+static func _apply_stages(tile: Dictionary, stages: Array, ranks: int) -> String:
+	for index in range(ranks):
+		var stage: Dictionary = stages[index]
+		tile.merge(stage.effects, true)
+		if stage.has("minimum_heal"):
+			tile.heal = maxi(int(tile.get("heal", 0)), stage.minimum_heal)
+	return stages[ranks - 1].name
 
 
 static func _describe_upgrade(tile: Dictionary) -> String:
@@ -299,7 +340,7 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 		if tile.get("blink_strike", false):
 			lines.append("Blink beside the target and strike if there is a clear landing.")
 		if tile.has("blink_on_hit_retreat"):
-			lines.append("Fire a shot, then blink sideways around the target by up to %d units. Blink away if both sides are blocked." % int(tile.blink_on_hit_retreat))
+			lines.append("After the hit, blink sideways around the target by up to %d units. Blink away if both sides are blocked." % int(tile.blink_on_hit_retreat))
 		if tile.has("blink_echo_damage"):
 			lines.append("A successful blink leaves an afterimage that shoots the same enemy for %d damage if it survives." % tile.blink_echo_damage)
 		if tile.has("teleport_followup_damage"):
@@ -407,13 +448,16 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 			var burn_target := "the target"
 			if tile.has("ember_burn_radius"):
 				burn_target = "surviving enemies within %d range of the impact" % int(tile.ember_burn_radius)
-			var trigger := "was pushed or pulled in the last 3 beats"
-			if tile.has("push"):
-				trigger = "was moved by this hit or pushed or pulled in the last 3 beats"
-			lines.append("If the target %s, burn %s for %d damage per beat for %d beats." % [
+			var trigger := "If the target was pushed or pulled in the last 3 beats, burn"
+			if tile.get("ember_burn_on_hit", false):
+				trigger = "On hit, burn"
+			elif tile.has("push"):
+				trigger = "If this hit moves the target or it was pushed or pulled in the last 3 beats, burn"
+			lines.append("%s %s for %d damage per beat for %d beats." % [
 				trigger, burn_target, tile.ember_burn_damage, tile.ember_burn_ticks])
 	if tile.has("ally_guard"):
-		lines.append("On hit, give %d Guard to the living ally with the lowest HP. Gain it yourself if no ally is alive." % tile.ally_guard)
+		var when := "On hit, give" if tile.damage > 0 else "Give"
+		lines.append("%s %d Guard to the living ally with the lowest HP. Gain it yourself if no ally is alive." % [when, tile.ally_guard])
 	var healing_dart: bool = tile.get("heal_overflow_on_hit", false)
 	if healing_dart:
 		lines.append("On hit, give %d Guard to the living hero missing the most HP. Once per fight, if they are injured, also restore up to %d HP and convert leftover healing to Guard." % [
@@ -428,8 +472,9 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 			_:
 				lines.append("Gain %d Guard%s" % [tile.guard, when])
 	if tile.has("bastion_block_threshold"):
-		lines.append("On hit, ready a ward for %d beats. Absorb at least %d damage with Guard from a single enemy hit to give each living hero %d Guard once." % [
-			tile.bastion_beats, tile.bastion_block_threshold, tile.bastion_party_guard])
+		var when := "On hit, ready" if tile.damage > 0 else "Ready"
+		lines.append("%s a ward for %d beats. Absorb at least %d damage with Guard from a single enemy hit to give each living hero %d Guard." % [
+			when, tile.bastion_beats, tile.bastion_block_threshold, tile.bastion_party_guard])
 	if tile.has("intercept_guard"):
 		lines.append("Gain %d Guard before your next intercept within %d beats." % [tile.intercept_guard, tile.intercept_beats])
 	if tile.has("harmony_guard"):
@@ -441,4 +486,8 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 		elif tile.get("support") == "weakest":
 			recipient = "the lowest-HP living hero"
 		lines.append("Restore up to %d HP to %s once per fight." % [tile.heal, recipient])
+	if tile.has("heal_overflow_guard"):
+		lines.append("When you restore HP, convert up to %d excess healing to Guard for the healed hero." % tile.heal_overflow_guard)
+	if tile.has("heal_party_guard"):
+		lines.append("When this tile restores HP, each living hero gains %d Guard once." % tile.heal_party_guard)
 	return " ".join(lines)
