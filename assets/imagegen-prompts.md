@@ -1,5 +1,19 @@
 # Arena art prompts
 
+## Relic portrait atlases
+
+Generated with the built-in ImageGen tool. Both atlases share the following prompt.
+
+Use case: stylized-concept. Asset type: a game relic portrait sprite atlas. Generate one perfectly square image on a pure, even, near-black plum backdrop (#171019). Lay out exactly 12 isolated fantasy-steampunk props as a precise 4-column by 3-row regular grid, centered at 12.5%, 37.5%, 62.5%, 87.5% of width and 16.7%, 50%, 83.3% of height. Each object must fit entirely within the central 66% of its own cell with broad empty gutters, same visual size, no interaction between cells. Do not draw cell divisions, borders, holders, pedestals, vignettes extending to other cells, or text. Distinct bold silhouettes in hand-painted finely rendered fantasy game inventory art, warm brass, copper, leather, enamel and restrained turquoise or violet aether glow. Warm bevel highlights, crisp silhouette edges, low-key background, front three-quarter view. Objects should read clearly at thumbnail size. Exactly one centered relic per cell in the order described.
+
+**relic-portraits-first.png**
+
+Row 1, left to right: a small antique round pocket bell with loop handle; a round copper nautical compass with a teal needle; a single gold quartermaster coin stamped with a crown symbol; a rolled travel ration packet tied with leather cord. Row 2, left to right: a wide feather-shaped cloak pin with a turquoise stone; a compact sailor's knot of thick rope with bronze clasps; a fragment of ridged bronze armor plate; a triangular clockwork pendulum metronome with teal detail. Row 3, left to right: a filigree golden chalice with turquoise liquid glow; a brass gear with nested stepped cogs; a cream wax seal pressed with a shield on a short folded parchment ribbon; a dark brass hourglass with violet ghostly sand trails.
+
+**relic-portraits-second.png**
+
+Row 1, left to right: a brass rack of three short ammunition cartridges; a cloth-wrapped explosive fuse spool with one turquoise spark; two small interconnected golden bells; an angled double-lens spyglass with blue reflective glass. Row 2, left to right: a triangular lavender gemstone prism held in three brass claws; a chunky bronze signet ring with a gate crest; a round copper medal hanging from a teal ribbon; a closed deep violet ledger book clasped in brass. Row 3, left to right: a brown compact mechanic's repair kit with two visible tools; a gold bell clapper with ember glow; a slender blue crystal resonator held in a brass tuning-fork; a bronze plate engraved with wave lines and trimmed with violet enamel.
+
 Generated with the built-in ImageGen tool. The transparent character atlas was cropped into four game sprites.
 
 ## Tollkeeper repair drone

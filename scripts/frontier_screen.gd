@@ -11,6 +11,7 @@ const ClassDecks = preload("res://scripts/class_decks.gd")
 const ClassMasteries = preload("res://scripts/class_masteries.gd")
 const TileKeywords = preload("res://scripts/tile_keywords.gd")
 const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
+const RelicPortraitShader = preload("res://assets/relic-portrait.gdshader")
 const INK := Color("#101820")
 const PANEL := Color("#182632")
 const PANEL_DARK := Color("#111f2a")
@@ -20,6 +21,7 @@ const GOLD := Color("#ecc482")
 const MUTED := Color("#aababc")
 const TEAL := Color("#9ddbd1")
 const RUST := Color("#e8a28b")
+const RELIC_MUTED := Color("#d3c1c7")
 const TYPE_GLYPHS := {
 	"battle": "×", "opening": "×", "elite": "◆", "shop": "◈", "event": "?", "rest": "+", "boss": "✦"
 }
@@ -219,6 +221,19 @@ func _shell(phase: String) -> void:
 	base.mouse_filter = MOUSE_FILTER_IGNORE
 	add_child(base)
 	base.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
+	if phase in ["relic", "boss_relic"] or (phase == "reward" and not _run.elite_relic_offers().is_empty()):
+		base.color = Color.TRANSPARENT
+		var light := Gradient.new()
+		light.colors = PackedColorArray([Color(0.23, 0.14, 0.23, 0.94), Color(0.063, 0.038, 0.075, 0.89)])
+		var wash := GradientTexture2D.new()
+		wash.gradient = light
+		wash.fill = GradientTexture2D.FILL_RADIAL
+		wash.fill_from = Vector2(0.5, 0.4)
+		wash.fill_to = Vector2(0.96, 0.95)
+		var backdrop := _icon_view(wash, 0)
+		backdrop.stretch_mode = TextureRect.STRETCH_SCALE
+		base.add_child(backdrop)
+		backdrop.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
 	var margin := MarginContainer.new()
 	add_child(margin)
 	margin.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
@@ -352,7 +367,10 @@ func _draft(phase: String) -> void:
 	var loadouts: Array = _run.recruit_loadout_offers()
 	if not loadouts.is_empty():
 		subtitle += " · All heroes share the same clock."
-	_page_title(title, subtitle)
+	if phase == "relic":
+		_relic_heading(title, "")
+	else:
+		_page_title(title, subtitle)
 	var cards := _cards_row()
 	var offers: Array = _run.data.get("offers", [])
 	if phase == "hero" and _run.can_choose_starter():
@@ -364,7 +382,9 @@ func _draft(phase: String) -> void:
 		switch.name = "RelicDraftSwitch"
 		_footer_actions().add_child(switch)
 		offers = _run.build_relic_offers()
-	if loadouts.is_empty():
+	if phase == "relic":
+		_add_starter_relic_cards(cards, offers)
+	elif loadouts.is_empty():
 		_add_draft_cards(cards, offers, phase)
 	else:
 		_add_recruit_loadouts(cards, loadouts)
@@ -448,7 +468,12 @@ func _toggle_relic_draft(cards: HBoxContainer) -> void:
 		cards.remove_child(card)
 		card.queue_free()
 	var offers: Array = _run.data.get("offers", []) if show_classic else _run.build_relic_offers()
-	_add_draft_cards(cards, offers, "relic")
+	_add_starter_relic_cards(cards, offers)
+
+
+func _add_starter_relic_cards(cards: HBoxContainer, offers: Array) -> void:
+	for id: String in offers:
+		_relic_draft_card(cards, id, "StarterRelic_", func(): _pick_draft("relic", id))
 
 
 func _add_draft_cards(cards: HBoxContainer, offers: Array, phase: String) -> void:
@@ -456,7 +481,6 @@ func _add_draft_cards(cards: HBoxContainer, offers: Array, phase: String) -> voi
 		var entry: Dictionary
 		match phase:
 			"hero", "recruit": entry = FrontierRun.HEROES[id]
-			"relic": entry = FrontierRun.RELICS[id]
 			_: entry = ArenaSim.TILES[id]
 		var info := str(entry.get("description", ""))
 		var card := _choice(cards, entry.label, info, "Choose", func(): _pick_draft(phase, id))
@@ -471,8 +495,6 @@ func _add_draft_cards(cards: HBoxContainer, offers: Array, phase: String) -> voi
 			GameIcons.decorate(deck_button, "review", 17)
 			card.add_child(deck_button)
 			card.move_child(deck_button, card.get_child_count() - 2)
-		elif phase == "relic":
-			_add_card_icon(card, GameIcons.relic(id))
 		else:
 			var hero_id: String = _run.data.get("pending_recruit", _run.data.get("hero", ""))
 			_add_tile_header(card, id, entry, hero_id)
@@ -903,72 +925,132 @@ func _reward_heading(title: String, milestone: String, hero_id: String) -> void:
 
 
 func _elite_relic_draft(offers: Array) -> void:
-	_page_title("Choose an elite relic", "Tile reward follows.")
+	_relic_heading("Choose an elite relic", "Tile reward follows.")
 	var cards := _cards_row()
 	for offer: Dictionary in offers:
 		var id: String = offer.id
-		var tone: Color = RELIC_DRAFT_TONES.get(id, GOLD)
-		var card := _relic_draft_card(cards, id, "EliteRelic_",
-			func(): _refresh_after_choice(_run.choose_elite_relic(id)))
-		var select_relic: Button = card.get_child(card.get_child_count() - 1)
-		var role := _label(offer.role, 15, tone)
-		card.add_child(role)
-		card.move_child(role, 0)
-		var companion: String = offer.companion
-		var support := HBoxContainer.new()
-		support.custom_minimum_size.y = 24
-		card.add_child(support)
-		card.move_child(support, select_relic.get_index())
-		if not companion.is_empty():
-			var tile: Dictionary = ArenaSim.TILES[companion]
-			var texture := GameIcons.icon(GameIcons.tile(companion, tile))
-			if texture != null:
-				support.add_child(_icon_view(texture, 21))
-			support.add_child(_label("Tile offer · " + tile.label, 15, GameIcons.rarity(tile)))
-			support.add_child(GameIcons.rarity_badge(tile, true))
-			var owner := _reward_owner(_run.reward_lane(), _party())
-			if not owner.is_empty():
-				support.add_child(GameIcons.hero_badge(owner))
-		if _battle_overlay:
-			var art := GameIcons.icon(GameIcons.relic(id))
-			if art != null:
-				var portrait := _icon_view(art, 28)
-				var role_row := HBoxContainer.new()
-				card.add_child(role_row)
-				role_row.add_child(portrait)
-				role.reparent(role_row, false)
-				card.move_child(role_row, 0)
-		else:
-			_add_card_icon(card, GameIcons.relic(id), tone)
-		_enable_reward_card_click(card, select_relic)
+		_relic_draft_card(cards, id, "EliteRelic_", func(): _refresh_after_choice(_run.choose_elite_relic(id)),
+			offer.role, offer.companion)
 
 
 func _boss_relic_draft() -> void:
-	_page_title("Choose a boss relic", "%s · Applies to the whole crew, including recruits." % _run.data.node.label)
+	_relic_heading("Choose a boss relic", "%s · Applies to the whole crew, including recruits." % _run.data.node.label)
 	var cards := _cards_row()
 	for offer: Dictionary in _run.boss_relic_offers():
 		var id: String = offer.id
-		var card := _relic_draft_card(cards, id, "BossRelic_", func(): _claim_boss_relic(id))
-		_add_card_icon(card, GameIcons.relic(id), RELIC_DRAFT_TONES.get(id, GOLD))
-		_enable_reward_card_click(card, card.get_child(card.get_child_count() - 1))
+		_relic_draft_card(cards, id, "BossRelic_", func(): _claim_boss_relic(id))
 	var skip := _button("Skip relic", func(): _claim_boss_relic("skip"))
 	skip.name = "SkipBossRelic"
 	_footer_actions().add_child(skip)
 
 
-func _relic_draft_card(cards: HBoxContainer, id: String, button_prefix: String, select: Callable) -> VBoxContainer:
+func _relic_heading(title: String, subtitle: String) -> void:
+	var heading := VBoxContainer.new()
+	heading.add_theme_constant_override("separation", 3)
+	_layout.add_child(heading)
+	var label := _label(title, 24 if _battle_overlay else 48, GOLD, true)
+	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	heading.add_child(label)
+	if not subtitle.is_empty() and _battle_overlay:
+		label.tooltip_text = subtitle
+		label.mouse_filter = MOUSE_FILTER_STOP
+	elif not subtitle.is_empty():
+		var caption := _label(subtitle, 16, RELIC_MUTED)
+		caption.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		caption.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		heading.add_child(caption)
+	if not _battle_overlay:
+		var margin := _layout.get_parent() as MarginContainer
+		var fit_heading := func():
+			var compact := size.y < 630
+			label.add_theme_font_size_override("font_size", 36 if compact else 48)
+			_layout.add_theme_constant_override("separation", 7 if compact else 13)
+			margin.add_theme_constant_override("margin_top", 12 if compact else 25)
+			margin.add_theme_constant_override("margin_bottom", 12 if compact else 25)
+		_layout.resized.connect(fit_heading)
+		fit_heading.call()
+
+
+func _relic_draft_card(cards: HBoxContainer, id: String, button_prefix: String, select: Callable,
+		role := "", companion := "") -> void:
 	var spec: Dictionary = FrontierRun.RELICS[id]
 	var tone: Color = RELIC_DRAFT_TONES.get(id, GOLD)
-	var card := _choice(cards, spec.label, spec.description, "Select", select)
+	var card := _panel_stack(cards, Vector2.ZERO, true)
+	card.add_theme_constant_override("separation", 2 if _battle_overlay else 6)
 	var panel := card.get_parent() as PanelContainer
+	panel.name = "RelicChoice_" + id
 	panel.size_flags_vertical = SIZE_FILL if _battle_overlay else SIZE_SHRINK_CENTER
-	panel.custom_minimum_size.y = 0 if _battle_overlay else 426
-	panel.add_theme_stylebox_override("panel", _box(PANEL, tone.darkened(0.50), 9, 12 if _battle_overlay else 18))
-	var button: Button = card.get_child(card.get_child_count() - 1)
+	var surround := StyleBoxEmpty.new()
+	var inset := 3 if _battle_overlay else 12
+	surround.content_margin_left = inset
+	surround.content_margin_right = inset
+	panel.add_theme_stylebox_override("panel", surround)
+
+	var art := GameIcons.relic_art(id)
+	var portrait := _icon_view(art, 63 if _battle_overlay else 205)
+	portrait.name = "RelicPortrait"
+	portrait.custom_minimum_size.x = 0
+	if art is AtlasTexture:
+		var material := ShaderMaterial.new()
+		material.shader = RelicPortraitShader
+		material.set_shader_parameter("portrait_region", Vector4(art.region.position.x, art.region.position.y,
+			art.region.size.x, art.region.size.y))
+		portrait.material = material
+	card.add_child(portrait)
+	portrait.modulate.a = 0.25
+	portrait.create_tween().tween_property(portrait, "modulate:a", 1.0, 0.22).set_delay(panel.get_index() * 0.045)
+	var title := _label(spec.label, 20 if _battle_overlay else 29, CREAM, true)
+	title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	card.add_child(title)
+	if not role.is_empty():
+		var role_label := _label(role, 13, tone)
+		role_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		role_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		card.add_child(role_label)
+	var details := TileKeywords.description(spec.description, 13 if _battle_overlay else 17, RELIC_MUTED)
+	details.name = "ChoiceDetails"
+	details.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	if _battle_overlay:
+		details.add_theme_constant_override("line_separation", -1)
+		details.fit_content = false
+		details.scroll_active = true
+		details.custom_minimum_size.y = 34
+		details.size_flags_vertical = SIZE_EXPAND_FILL
+	card.add_child(details)
+	if not companion.is_empty():
+		var tile: Dictionary = ArenaSim.TILES[companion]
+		var hint := _label("Tile offer · " + tile.label, 13, GameIcons.rarity(tile))
+		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		hint.tooltip_text = "%s · %s" % [tile.get("rarity", "common").capitalize(), _hero_name(_reward_owner(_run.reward_lane(), _party()))]
+		hint.mouse_filter = MOUSE_FILTER_PASS
+		card.add_child(hint)
+
+	var button := _button("Claim relic", select, true)
 	button.name = button_prefix + id
+	button.accessibility_name = "Claim %s. %s" % [spec.label, spec.description]
+	button.size_flags_horizontal = SIZE_SHRINK_CENTER
+	var fills := {"normal": Color("#3c2838"), "hover": Color("#664743"), "pressed": Color("#4b323c")}
+	for state: String in fills:
+		var fill: Color = fills[state]
+		var surface := _box(fill, Color.TRANSPARENT, 16, 5 if _battle_overlay else 9)
+		surface.content_margin_left = 16
+		surface.content_margin_right = 16
+		button.add_theme_stylebox_override(state, surface)
+	button.add_theme_color_override("font_color", GOLD)
+	card.add_child(button)
+	if not _battle_overlay:
+		var fit_card := func():
+			var compact := size.y < 630 or size.x < 960
+			portrait.custom_minimum_size.y = 112 if compact else 205
+			title.add_theme_font_size_override("font_size", 22 if compact else 29)
+			details.add_theme_font_size_override("normal_font_size", 14 if compact else 17)
+		_layout.resized.connect(fit_card)
+		fit_card.call()
+	_enable_reward_card_click(card, button)
 	if panel.get_index() == 0:
 		button.grab_focus()
-	return card
 
 
 func _claim_boss_relic(id: String) -> void:
@@ -1525,6 +1607,8 @@ func _add_tile_header(card: VBoxContainer, id: String, spec: Dictionary, owner :
 	var rarity := GameIcons.rarity_badge(spec)
 	rarity.text += "  " + GameIcons.rarity_pips(spec)
 	rarity.size_flags_horizontal = SIZE_EXPAND_FILL
+	if compact:
+		rarity.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	row.add_child(rarity)
 	var origin := GameIcons.tile_origin(id, spec)
 	var class_id := owner if not owner.is_empty() else origin

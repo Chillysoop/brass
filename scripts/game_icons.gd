@@ -91,6 +91,18 @@ const RELIC_ICONS := {
 	"tollkeeper_repair_kit": "rest", "bellmaker_clapper": "area", "bellmaker_long_echo": "shot",
 	"bellmaker_resonant_plate": "guard",
 }
+const RELIC_PORTRAITS := [
+	"pocket_bell", "copper_compass", "quartermasters_coin", "trail_ration",
+	"wayfarers_pin", "towline_knot", "bridgeplate", "brass_metronome",
+	"overflow_chalice", "stepped_gear", "mercy_seal", "afterimage",
+	"barrage_rack", "siege_fuse", "twin_bell", "switchback_lens",
+	"longshot_prism", "tollkeeper_signet", "bastion_medal", "guild_ledger",
+	"tollkeeper_repair_kit", "bellmaker_clapper", "bellmaker_long_echo", "bellmaker_resonant_plate",
+]
+const RELIC_ATLASES := [
+	preload("res://assets/relic-portraits-first.png"),
+	preload("res://assets/relic-portraits-second.png"),
+]
 const TILE_ICONS := {"pull": "pull", "gravity_hook": "pull", "slam": "area", "meteor_seal": "area",
 	"hook_bash": "pull", "graviton": "pull", "event_horizon": "pull",
 	"split_shot": "area", "volley": "area", "flak_burst": "area", "meteor_volley": "area",
@@ -123,6 +135,20 @@ static func tile(id: String, spec: Dictionary) -> String:
 
 static func relic(id: String) -> String:
 	return RELIC_ICONS.get(id, "relic")
+
+
+static func relic_art(id: String) -> Texture2D:
+	var index := RELIC_PORTRAITS.find(id)
+	if index < 0:
+		return icon(relic(id))
+	var cell := index % 12
+	var columns := [24, 328, 613, 915]
+	var rows := [68, 447, 827]
+	var portrait := AtlasTexture.new()
+	portrait.atlas = RELIC_ATLASES[floori(index / 12.0)]
+	portrait.region = Rect2(columns[cell % 4], rows[floori(cell / 4.0)], 316, 316)
+	portrait.filter_clip = true
+	return portrait
 
 
 static func pilot_enemy_art(id: String) -> Texture2D:
