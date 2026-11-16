@@ -77,9 +77,6 @@ var arsenal_panel: PanelContainer
 var arena
 var battle_stage: HBoxContainer
 var combat_sidebar: VBoxContainer
-var enemy_details: ScrollContainer
-var enemy_cards: VBoxContainer
-var enemy_card_names := {}
 var save_title_button: Button
 var battle_heading: Label
 var fixture_picker: OptionButton
@@ -95,15 +92,12 @@ var battle_snapshot: Dictionary = {}
 var retry_options: Dictionary = {}
 var retry_result: Dictionary = {}
 var combat_save_pending := false
-var showing_battle_rewards := false
+var showing_rewards := false
 var result_animation: Tween
 var result_text: Label
 var result_banner: PanelContainer
 var lane_health: Array[ProgressBar] = []
 var lane_health_labels: Array[Label] = []
-var colossus_status: Label
-var relay_status: Label
-var dock_status: Label
 var setup_hint: Label
 var playheads: Array[ColorRect] = []
 var tile_cards: Array[Dictionary] = []
@@ -231,27 +225,11 @@ func _build() -> void:
 	combat_sidebar.name = "CombatSidebar"
 	combat_sidebar.custom_minimum_size.x = 245
 	battle_stage.add_child(combat_sidebar)
-	_build_enemy_details()
 	_build_result_banner()
 	combat_meter = CombatMeter.new()
 	combat_meter.name = "CombatMeter"
 	combat_meter.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	combat_sidebar.add_child(combat_meter)
-	colossus_status = _label("", 15, GOLD)
-	colossus_status.name = "ColossusStatus"
-	colossus_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	colossus_status.hide()
-	stack.add_child(colossus_status)
-	relay_status = _label("", 15, TEAL)
-	relay_status.name = "RelayStatus"
-	relay_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	relay_status.hide()
-	stack.add_child(relay_status)
-	dock_status = _label("", 15, TEAL)
-	dock_status.name = "DockStatus"
-	dock_status.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-	dock_status.hide()
-	stack.add_child(dock_status)
 	var sequence_bar := HBoxContainer.new()
 	stack.add_child(sequence_bar)
 	relic_strip = HBoxContainer.new()
@@ -352,75 +330,6 @@ func _draw_speed_icon(glyph: Control, multiplier: int) -> void:
 		]), CREAM)
 
 
-func _build_enemy_details() -> void:
-	enemy_details = ScrollContainer.new()
-	enemy_details.name = "BattleEnemyDetails"
-	enemy_details.custom_minimum_size.x = 245
-	enemy_details.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	enemy_details.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	combat_sidebar.add_child(enemy_details)
-	enemy_cards = VBoxContainer.new()
-	enemy_cards.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	enemy_cards.add_theme_constant_override("separation", 7)
-	enemy_details.add_child(enemy_cards)
-	enemy_details.hide()
-
-func _refresh_enemy_details() -> void:
-	if not ((campaign and encounter_setup) or not retry_options.is_empty()):
-		return
-	var difficulty: String = run.data.get("difficulty", "") if campaign else retry_options.get("difficulty", "")
-	var living_types := {}
-	for unit: Dictionary in sim.units:
-		if unit.side == "enemy" and unit.hp > 0:
-			living_types[unit.name] = true
-	for unit: Dictionary in sim.units:
-		if unit.side != "enemy":
-			continue
-		var defeated := not living_types.has(unit.name)
-		if enemy_card_names.has(unit.name):
-			var existing: Dictionary = enemy_card_names[unit.name]
-			if existing.defeated != defeated:
-				_set_enemy_card_state(existing, unit.name, defeated)
-			continue
-		var card := PanelContainer.new()
-		card.name = "Enemy_" + str(unit.id)
-		card.add_theme_stylebox_override("panel", _box(PANEL, EDGE))
-		enemy_cards.add_child(card)
-		var body := VBoxContainer.new()
-		body.add_theme_constant_override("separation", 3)
-		card.add_child(body)
-		var heading := HBoxContainer.new()
-		body.add_child(heading)
-		var texture := GameIcons.enemy_art(unit.sprite)
-		if texture != null:
-			var portrait := TextureRect.new()
-			portrait.texture = texture
-			portrait.custom_minimum_size = Vector2(34, 34)
-			portrait.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
-			portrait.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
-			heading.add_child(portrait)
-		var title := _label(unit.name, 16, GOLD)
-		title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		heading.add_child(title)
-		var hint := _label(FrontierScreen.battle_enemy_hint(unit, difficulty), 14, MUTED)
-		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		body.add_child(hint)
-		var details := {"card": card, "title": title, "defeated": defeated}
-		enemy_card_names[unit.name] = details
-		_set_enemy_card_state(details, unit.name, defeated)
-
-func _set_enemy_card_state(details: Dictionary, enemy_name: String, defeated: bool) -> void:
-	details.defeated = defeated
-	details.title.text = "%s · Defeated" % enemy_name if defeated else enemy_name
-	details.card.modulate.a = 0.58 if defeated else 1.0
-
-func _clear_enemy_details() -> void:
-	enemy_card_names.clear()
-	for card in enemy_cards.get_children():
-		enemy_cards.remove_child(card)
-		card.queue_free()
-
 func _build_result_banner() -> void:
 	var positioner := CenterContainer.new()
 	positioner.mouse_filter = Control.MOUSE_FILTER_IGNORE
@@ -502,7 +411,6 @@ func _entry(id: String, start: int, target: String) -> Dictionary:
 
 func _reset_fight() -> void:
 	_hide_result_animation()
-	_clear_enemy_details()
 	arsenal_panel.hide()
 	state = "setup"
 	combat_save_pending = false
@@ -513,7 +421,6 @@ func _reset_fight() -> void:
 	pending_forge.clear()
 	_start_sim()
 	arena.reset_view(sim.units, lanes, sim.pending_reinforcement())
-	_refresh_enemy_details()
 	_rebuild_loadout()
 	_update_controls()
 
@@ -546,7 +453,6 @@ func _action() -> void:
 				battle_name = "Arena Practice"
 			_start_sim()
 			arena.reset_view(sim.units, lanes, sim.pending_reinforcement())
-			_refresh_enemy_details()
 			state = "running"
 			_rebuild_loadout()
 		"running": state = "paused"
@@ -588,7 +494,6 @@ func _physics_process(_delta: float) -> void:
 		var activation: Dictionary = sim.activations[index]
 		if activation.status != "unavailable":
 			edge_tiles[Vector2i(activation.lane, activation.start)] = activation.tick
-	_refresh_enemy_details()
 	_update_controls()
 
 func _save_finished_battle() -> void:
@@ -613,16 +518,14 @@ func _update_controls() -> void:
 	if campaign and state == "finished" and sim.outcome == "defeat" and not combat_save_pending:
 		action.text = "See results"
 	action.tooltip_text = run.save_error if combat_save_pending else ""
-	action.visible = not (campaign and animating) and not showing_battle_rewards
+	action.visible = not (campaign and animating) and not showing_rewards
 	save_title_button.visible = campaign and not combat_save_pending and not animating and state in ["setup", "finished"]
 	var battle_title := FrontierScreen.battle_title(run.data.get("node", {}))
-	battle_heading.text = battle_title if campaign and (encounter_setup or showing_battle_rewards) and not battle_title.is_empty() else "BRASS & AETHER"
-	combat_meter_toggle.visible = not campaign or encounter_setup or showing_battle_rewards
+	battle_heading.text = battle_title if campaign and (encounter_setup or showing_rewards) and not battle_title.is_empty() else "BRASS & AETHER"
+	combat_meter_toggle.visible = not campaign or encounter_setup or (showing_rewards and run.has_combat_reward())
 	combat_meter_toggle.set_pressed_no_signal(combat_meter_open)
 	combat_meter.visible = combat_meter_toggle.visible and combat_meter_open
-	enemy_details.visible = not combat_meter.visible and not showing_battle_rewards \
-		and ((campaign and encounter_setup) or not retry_options.is_empty()) and not enemy_card_names.is_empty()
-	combat_sidebar.visible = combat_meter.visible or enemy_details.visible or _placing_battle_reward()
+	combat_sidebar.visible = combat_meter.visible or _placing_tile_reward()
 	reset_button.visible = not campaign
 	fixture_picker.visible = not campaign and retry_options.is_empty()
 	return_button.visible = not campaign
@@ -630,7 +533,7 @@ func _update_controls() -> void:
 	camp_button.visible = camp_forge and not _editing_camp_forge() and not storage_screen.visible
 	fixture_picker.disabled = state != "setup"
 	storage_button.disabled = not _can_edit_loadout()
-	storage_button.visible = not _placing_battle_reward()
+	storage_button.visible = not _placing_tile_reward()
 	var enchantment := TileEnchantments.info(_active_enchantment())
 	enchantment_button.visible = state == "setup" and not enchantment.is_empty()
 	if enchantment_button.visible:
@@ -660,14 +563,6 @@ func _update_controls() -> void:
 		health.tooltip_text = "%s · %d / %d HP" % [hero.name, hero.hp, hero.max_hp]
 		health_label.text = "Fallen" if fallen else "%d/%d" % [hero.hp, hero.max_hp]
 		health_label.add_theme_color_override("font_color", RUST if fallen else MUTED)
-	if not showing_battle_rewards and ((campaign and encounter_setup) or not retry_options.is_empty()):
-		_update_colossus_status()
-		_update_relay_status()
-		_update_dock_status()
-	else:
-		colossus_status.hide()
-		relay_status.hide()
-		dock_status.hide()
 	for head in playheads:
 		head.visible = state != "setup"
 		var fraction := ArenaSim.loop_progress(display_tick)
@@ -706,7 +601,7 @@ func _retry_in_practice() -> void:
 	suppressed_combines = practice.suppressed
 	sim = ArenaSim.new()
 	frontier_screen.hide()
-	showing_battle_rewards = false
+	showing_rewards = false
 	campaign = false
 	_reset_fight()
 
@@ -725,265 +620,13 @@ func _return_to_battle_result() -> void:
 	sim = original.sim
 	combat_meter.restore(original.meter)
 	_read_run_loadout()
-	_clear_enemy_details()
 	arena.location = run.data.get("location", "brass")
 	arena.reset_view(sim.units, lanes)
-	_refresh_enemy_details()
 	if run.has_combat_reward():
-		_show_battle_rewards()
+		_show_rewards()
 	else:
 		_rebuild_loadout()
 		_update_controls()
-
-func _update_colossus_status() -> void:
-	colossus_status.hide()
-	if arena.location != "glass":
-		return
-	for unit: Dictionary in sim.units:
-		if unit.get("sprite") != "tempered_colossus":
-			continue
-		colossus_status.show()
-		var stage: int = unit.get("colossus_stage", 0)
-		var instruction := ""
-		var color := GOLD
-		match stage:
-			1:
-				instruction = "1 of 3 · Push or pull the Colossus."
-			2, 3:
-				var contributors: Array = [unit.get("colossus_first", ""), unit.get("colossus_second", "")]
-				var eligible := PackedStringArray()
-				for hero: Dictionary in sim.units:
-					if hero.side == "hero" and hero.hp > 0 and hero.id not in contributors:
-						eligible.append(hero.name)
-				instruction = "%d of 3 · Hit with %s." % [stage, " or ".join(eligible)] if not eligible.is_empty() else "%d of 3 · A different hero must land the next hit." % stage
-		if stage > 0:
-			var remaining := maxi(0, int(unit.get("colossus_window_until", unit.get("intent_tick", 0))) - sim.tick)
-			instruction = "Forge Sweep · %s  %.1f beats left" % [instruction, float(remaining) / ArenaSim.TICKS_PER_BEAT]
-			if remaining <= 2 * ArenaSim.TICKS_PER_BEAT:
-				color = RUST
-		elif unit.get("colossus_shattered", false):
-			instruction = "Armor shattered · Forge Sweep canceled."
-			color = TEAL
-		else:
-			instruction = "Forge Sweep · Push or pull, then hit with each of your other two heroes in order."
-		colossus_status.text = instruction
-		colossus_status.tooltip_text = instruction
-		colossus_status.add_theme_color_override("font_color", color)
-		return
-
-func _update_relay_status() -> void:
-	relay_status.hide()
-	if arena.location != "crown":
-		return
-	var leader: Dictionary = {}
-	var guard_alive := false
-	var protected := PackedStringArray()
-	for unit: Dictionary in sim.units:
-		if unit.hp <= 0:
-			continue
-		if unit.get("sprite") in ["relay_captain", "relay_marshal", "crown_regent"]:
-			leader = unit
-		if unit.has("relay_link_target"):
-			guard_alive = true
-		if not str(unit.get("relay_shield_source", "")).is_empty():
-			protected.append(unit.name)
-	if leader.is_empty() and not guard_alive:
-		return
-	if leader.get("sprite") == "crown_regent":
-		_update_regent_status(leader)
-		return
-	var cues := PackedStringArray()
-	var color := TEAL
-	var marshal: bool = leader.get("sprite") == "relay_marshal"
-	if leader.get("relay_charge_active", false):
-		var remaining := maxi(0, int(leader.get("intent_tick", 0)) - sim.tick)
-		var beat_time := "%.1f beats left" % (float(remaining) / ArenaSim.TICKS_PER_BEAT)
-		if marshal:
-			cues.append("Linked Charge · %s · %s" % [_marshal_charge_instruction(leader), beat_time])
-		else:
-			cues.append("Relay Charge · Push or pull the Captain · " + beat_time)
-		color = RUST if remaining <= 2 * ArenaSim.TICKS_PER_BEAT else GOLD
-	elif not leader.is_empty():
-		if marshal:
-			cues.append("Linked Charge · Separate the Marshal from the Guard, then push the Marshal with another hero.")
-		else:
-			cues.append("Relay Charge · Interrupt with a push or pull when it begins.")
-	if not protected.is_empty():
-		cues.append("Shielded: " + ", ".join(protected))
-	elif guard_alive:
-		cues.append("Relay Guard · Links a nearby ally")
-	var instruction := "  /  ".join(cues)
-	relay_status.text = instruction
-	relay_status.tooltip_text = instruction
-	relay_status.add_theme_color_override("font_color", color)
-	relay_status.show()
-
-func _update_regent_status(regent: Dictionary) -> void:
-	var active: bool = regent.get("relay_charge_active", false)
-	var sources: Array = regent.get("relay_shield_sources", [])
-	var breakers: Dictionary = regent.get("crown_breakers", {})
-	var eligible := _eligible_hero_names(_live_regent_breakers(breakers))
-	var guidance := "Use tile targeting to assign each Guard to a different hero. Save a push from your third hero for the Regent."
-	var color := TEAL
-	if regent.get("crown_charge_interrupted", false):
-		guidance = "Interrupted · The Regent won't charge again."
-	elif active:
-		var remaining := maxi(0, int(regent.get("intent_tick", 0)) - sim.tick)
-		guidance = "Displace a linked Guard" if not sources.is_empty() else "Push the Regent"
-		if not eligible.is_empty():
-			guidance += " with " + " or ".join(eligible)
-		else:
-			guidance = "No eligible hero remains to interrupt"
-		guidance += " · %.1f beats left" % (float(remaining) / ArenaSim.TICKS_PER_BEAT)
-		color = RUST if remaining <= 2 * ArenaSim.TICKS_PER_BEAT else GOLD
-	relay_status.text = "%s · %s  /  %s" % [
-		"Crown Charge", guidance, _regent_link_summary(regent, sources)]
-	relay_status.tooltip_text = relay_status.text
-	relay_status.add_theme_color_override("font_color", color)
-	relay_status.show()
-
-func _eligible_hero_names(excluded: Array) -> PackedStringArray:
-	var names := PackedStringArray()
-	for hero: Dictionary in sim.units:
-		if hero.side == "hero" and hero.hp > 0 and hero.id not in excluded:
-			names.append(hero.name)
-	return names
-
-func _live_regent_breakers(breakers: Dictionary) -> Array:
-	var actors: Array = []
-	for guard: Dictionary in sim.units:
-		if guard.hp > 0 and breakers.has(guard.id):
-			actors.append(breakers[guard.id])
-	return actors
-
-func _regent_link_summary(regent: Dictionary, sources: Array) -> String:
-	var labels := PackedStringArray()
-	for guard: Dictionary in sim.units:
-		if not guard.has("relay_link_target"):
-			continue
-		var side := str(guard.name).get_slice(" ", 0)
-		var note := "Unlinked"
-		if guard.hp <= 0:
-			note = "Defeated"
-		elif guard.id in sources:
-			note = "Linked"
-		else:
-			var delay: int = int(guard.get("relay_relink_tick", 0)) - sim.tick
-			if delay > 0:
-				note = "Relinks in %.1f beats" % (float(delay) / ArenaSim.TICKS_PER_BEAT)
-		labels.append("%s: %s" % [side, note])
-	if labels.is_empty():
-		return "%s unshielded" % regent.name
-	return "  ·  ".join(labels)
-
-func _marshal_charge_instruction(marshal: Dictionary) -> String:
-	match int(marshal.get("relay_combo_stage", 0)):
-		1:
-			return "1 of 2 · Pull or push the pair apart"
-		2:
-			var eligible := _eligible_hero_names([marshal.get("relay_breaker", "")])
-			if not eligible.is_empty():
-				return "2 of 2 · Push the Marshal with " + " or ".join(eligible)
-			return "2 of 2 · A different hero must push the Marshal"
-	return "Push the Marshal with any hero"
-
-func _update_dock_status() -> void:
-	dock_status.hide()
-	if arena.location != "moonwreck":
-		return
-	for unit: Dictionary in sim.units:
-		if unit.hp <= 0:
-			continue
-		var instruction := ""
-		var color := TEAL
-		var remaining := maxi(0, int(unit.get("intent_tick", 0)) - sim.tick)
-		var time := "%.1f beats left" % (float(remaining) / ArenaSim.TICKS_PER_BEAT)
-		match unit.get("sprite", ""):
-			"wreckmaster":
-				match int(unit.get("wreckmaster_phase", 0)):
-					1:
-						instruction = "Harpoon · Pulls %s close · %s" % [_combatant_name(unit.intent, "the marked hero"), time]
-						color = GOLD
-					2:
-						instruction = "Deck Slam · Hits inside the marked circle · %s" % time
-						color = RUST
-					_:
-						instruction = "Harpoon → Deck Slam · Push after the pull to create distance, or Guard before impact."
-			"tidekeeper":
-				var phase: int = unit.get("tidekeeper_phase", 0)
-				instruction = _tidekeeper_instruction(unit, phase)
-				if phase > 0:
-					instruction += " · " + time
-					color = RUST if phase >= 2 and remaining <= 2 * ArenaSim.TICKS_PER_BEAT else GOLD
-			"drowned_admiral":
-				var phase: int = unit.get("admiral_phase", 0)
-				instruction = _admiral_instruction(unit, phase)
-				if phase > 0:
-					instruction += " · " + time
-					color = RUST if phase >= 2 and remaining <= 2 * ArenaSim.TICKS_PER_BEAT else GOLD
-			"dock_winch":
-				var ally: String = unit.get("dock_winch_ally", "")
-				if not ally.is_empty():
-					instruction = "Winch Pull · %s toward %s · Push or pull the Operator to interrupt · %s" % [
-						_combatant_name(ally, "Bruiser"), _combatant_name(unit.intent, "your hero"), time]
-					color = GOLD
-				else:
-					instruction = "Winch Operator · Can pull a bruiser toward your hero."
-		if not instruction.is_empty():
-			dock_status.text = instruction
-			dock_status.tooltip_text = instruction
-			dock_status.add_theme_color_override("font_color", color)
-			dock_status.show()
-			return
-
-func _tidekeeper_instruction(unit: Dictionary, phase: int) -> String:
-	match phase:
-		1:
-			return "Twin Harpoons · Pulls %s close" % _marked_hero_names(unit.get("tidekeeper_targets", []))
-		2:
-			return "Breakwater Slam · 1 of 2 · Push the Tidekeeper"
-		3:
-			var eligible := _eligible_hero_names([unit.get("tidekeeper_breaker", "")])
-			if eligible.is_empty():
-				eligible = _eligible_hero_names([])
-			return "Breakwater Slam · 2 of 2 · Push or pull with " + " or ".join(eligible)
-	return "Twin Harpoons → Breakwater Slam · Push with one hero, then push or pull with your other hero."
-
-func _admiral_instruction(unit: Dictionary, phase: int) -> String:
-	match phase:
-		1:
-			return "Undertow · Pulls %s close" % _marked_hero_names(unit.get("admiral_targets", []))
-		2:
-			if _eligible_hero_names([]).size() == 1:
-				return "Undertow Sweep · Push the Admiral to interrupt"
-			return "Undertow Sweep · 1 of 3 · Push the Admiral"
-		3:
-			var eligible := _eligible_hero_names([unit.get("admiral_breaker", "")])
-			if eligible.is_empty():
-				eligible = _eligible_hero_names([])
-			if _eligible_hero_names([]).size() < 3:
-				return "Undertow Sweep · Push or pull with " + " or ".join(eligible)
-			return "Undertow Sweep · 2 of 3 · Pull with " + " or ".join(eligible)
-		4:
-			var eligible := _eligible_hero_names([unit.get("admiral_breaker", ""), unit.get("admiral_reverser", "")])
-			if eligible.is_empty():
-				eligible = _eligible_hero_names([])
-			return "Undertow Sweep · 3 of 3 · Push with " + " or ".join(eligible)
-	return "Undertow Sweep · Push, Pull, then push again, using a different hero for each step."
-
-func _marked_hero_names(ids: Array) -> String:
-	var names := PackedStringArray()
-	for id: String in ids:
-		names.append(_combatant_name(id, "a marked hero"))
-	if names.size() > 2:
-		return ", ".join(names.slice(0, names.size() - 1)) + " and " + names[-1]
-	return " and ".join(names) if not names.is_empty() else "the marked heroes"
-
-func _combatant_name(id: String, fallback: String) -> String:
-	for unit: Dictionary in sim.units:
-		if unit.id == id:
-			return unit.name
-	return fallback
 
 func _party_has_tiles() -> bool:
 	for index in range(lanes.size()):
@@ -1255,12 +898,6 @@ func _build_lane(lane_index: int, row_height: int) -> void:
 	hp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	health_row.add_child(hp)
 	lane_health_labels.append(hp)
-	if campaign and run.data.get("location", "brass") == "glass":
-		var ranged_damage := 0
-		for item: Dictionary in lanes[lane_index]:
-			if ArenaSim.is_ranged_tile(item.id):
-				ranged_damage += int(ArenaSim.TILES[item.id].damage)
-		hero_name.tooltip_text = "%d ranged damage · Foundry threat" % ranged_damage
 	var all := _target_buttons(sim.target_rules("bash"), defaults[lane_index], func(rule: String): _set_all(lane_index, rule), true)
 	identity.add_child(all)
 
@@ -1934,7 +1571,7 @@ func storage_place(row: int, start: int, payload: Dictionary, nudge := false) ->
 		storage_screen.show_message("That tile needs a clear span in one row.")
 		return
 	if payload.get("reward", false):
-		if not _place_battle_reward(payload.id, {"row": row, "start": start}, plan):
+		if not _place_tile_reward(payload.id, {"row": row, "start": start}, plan):
 			storage_screen.show_message(run.save_error if not run.save_error.is_empty() else "That reward could not be placed.")
 		return
 	var before := _inventory_checkpoint()
@@ -2262,7 +1899,7 @@ func _persist_inventory(before: Dictionary) -> bool:
 
 func _show_frontier(page := "") -> void:
 	_hide_result_animation()
-	showing_battle_rewards = false
+	showing_rewards = false
 	state = "setup"
 	combat_save_pending = false
 	campaign = false
@@ -2296,21 +1933,24 @@ func _set_reward_storage(docked: bool) -> void:
 			storage_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	storage_screen.visible = docked
 
-func _show_battle_rewards() -> void:
+func _show_rewards() -> void:
 	if not campaign or state != "finished":
 		run_show_arena()
 		state = "finished"
-		var saved_stats: Variant = run.data.get("combat_stats", {})
-		if saved_stats is Dictionary:
-			combat_meter.restore(saved_stats)
-		arena.reset_view(sim.units.filter(func(unit: Dictionary): return unit.side == "hero"), lanes)
+		if run.has_combat_reward():
+			var saved_stats: Variant = run.data.get("combat_stats", {})
+			if saved_stats is Dictionary:
+				combat_meter.restore(saved_stats)
+			arena.reset_view(sim.units.filter(func(unit: Dictionary): return unit.side == "hero"), lanes)
+		else:
+			arena.reset_view([], lanes)
 	else:
 		_read_run_loadout()
 	if _open_reward_combine():
 		arena_screen.hide()
 		return
-	showing_battle_rewards = true
-	_set_reward_storage(_placing_battle_reward())
+	showing_rewards = true
+	_set_reward_storage(_placing_tile_reward())
 	_rebuild_loadout()
 	arena_screen.show()
 	battle_stage.show()
@@ -2362,8 +2002,8 @@ func run_show_chart() -> void:
 func run_return() -> void:
 	if run.data.get("phase") == "combat":
 		run_show_arena()
-	elif run.has_combat_reward():
-		_show_battle_rewards()
+	elif run.data.get("phase") == "reward":
+		_show_rewards()
 	else:
 		_show_frontier()
 
@@ -2377,7 +2017,7 @@ func run_resume() -> void:
 	run_return()
 
 func run_practice() -> void:
-	showing_battle_rewards = false
+	showing_rewards = false
 	campaign = false
 	camp_forge = false
 	frontier_screen.hide()
@@ -2386,7 +2026,7 @@ func run_practice() -> void:
 	_load_fixture("duo")
 
 func run_show_arena(empty_arena := false) -> void:
-	showing_battle_rewards = false
+	showing_rewards = false
 	campaign = true
 	encounter_setup = not empty_arena and run.data.phase == "combat"
 	_read_run_loadout()
@@ -2566,18 +2206,18 @@ func _claim_loot(id: String, commit: Callable, reward_lane := -1) -> bool:
 		run.loadout.suppressed[id] = true
 	return false
 
-func _placing_battle_reward() -> bool:
-	return showing_battle_rewards and run.has_combat_reward() and not run.is_final_boss() and run.elite_relic_offers().is_empty()
+func _placing_tile_reward() -> bool:
+	return showing_rewards and run.data.get("phase") == "reward" and not run.is_final_boss() and run.elite_relic_offers().is_empty()
 
 func _can_edit_loadout() -> bool:
-	return state == "setup" or _placing_battle_reward()
+	return state == "setup" or _placing_tile_reward()
 
 func _reward_can_target(id: String, lane: int) -> bool:
-	return _placing_battle_reward() and id in run.data.offers and _pending_reward_id().is_empty() \
+	return _placing_tile_reward() and id in run.data.offers and _pending_reward_id().is_empty() \
 		and (lane < 0 or run.reward_lane() in [-1, lane])
 
 func _drop_reward_on_timeline(id: String, lane: int, start: int, plan: Dictionary) -> bool:
-	if _place_battle_reward(id, {"lane": lane, "start": start}, plan):
+	if _place_tile_reward(id, {"lane": lane, "start": start}, plan):
 		return true
 	_show_inventory_message(run.save_error if not run.save_error.is_empty() else "That reward could not be placed.")
 	return false
@@ -2588,13 +2228,13 @@ func run_send_reward_to_storage(id: String) -> bool:
 	for row in range(storage_rows.size()):
 		for column in range(TilePacking.STORAGE_COLUMNS):
 			if TilePacking.can_place(storage_rows[row], id, column, TilePacking.STORAGE_COLUMNS):
-				return _place_battle_reward(id, {"row": row, "start": column}, {"moves": {}})
+				return _place_tile_reward(id, {"row": row, "start": column}, {"moves": {}})
 	if run_can_combine_reward(id) and _begin_reward_combine(id, {"row": -1, "start": -1}):
 		run_return()
 		return true
 	return false
 
-func _place_battle_reward(id: String, placement: Dictionary, plan: Dictionary) -> bool:
+func _place_tile_reward(id: String, placement: Dictionary, plan: Dictionary) -> bool:
 	if plan.is_empty() or not _reward_can_target(id, int(placement.get("lane", -1))):
 		return false
 	var claimed: bool

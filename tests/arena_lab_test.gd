@@ -120,7 +120,7 @@ func _run() -> void:
 	_check_forge(lab)
 	_check_blink_forge(lab)
 	_check_forge_layout_edit(lab)
-	_check_retry_boss_hud(lab)
+	_check_retry_boss_telegraphs(lab)
 	if failures.is_empty():
 		print("Arena controls checks passed.")
 	else:
@@ -679,11 +679,11 @@ func _check_forge_layout_edit(lab: Control) -> void:
 		if FileAccess.file_exists(save_path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(save_path + suffix))
 
-func _check_retry_boss_hud(lab: Control) -> void:
+func _check_retry_boss_telegraphs(lab: Control) -> void:
 	for fixture: Dictionary in [
-		{"region": "glass", "id": "tempered_colossus", "label": "colossus_status", "move": "Forge Sweep"},
-		{"region": "crown", "id": "crown_regent", "label": "relay_status", "move": "Crown Charge"},
-		{"region": "moonwreck", "id": "drowned_admiral", "label": "dock_status", "move": "Undertow Sweep"},
+		{"region": "glass", "id": "tempered_colossus", "label": "ColossusStatus", "attack": "colossus_forging"},
+		{"region": "crown", "id": "crown_regent", "label": "RelayStatus", "attack": "crown_regent_charge"},
+		{"region": "moonwreck", "id": "drowned_admiral", "label": "DockStatus", "attack": "admiral_undertow"},
 	]:
 		lab.run_practice()
 		lab.campaign = true
@@ -700,16 +700,26 @@ func _check_retry_boss_hud(lab: Control) -> void:
 			"storage": [[], [], []], "defaults": ["nearest", "farthest", "lowest_hp"], "suppressed": {},
 		}
 		lab.retry_button.pressed.emit()
-		var cue: Label = lab.get(fixture.label)
-		_check(cue.visible and fixture.move in cue.text, "%s should show its boss guidance in Retry in Practice setup." % fixture.id)
+		_check(lab.state == "setup" and lab.arena.is_visible_in_tree()
+			and lab.arena_screen.find_child(fixture.label, true, false) == null,
+			"Retry in Practice should show %s without a boss advice row." % fixture.id)
+		lab.speed = 1
 		lab.action.pressed.emit()
-		var countdown := false
+		var telegraph := Vector2i.ZERO
+		var bosses: Array = lab.sim.units.filter(func(unit: Dictionary): return unit.get("sprite") == fixture.id)
+		_check(not bosses.is_empty(), "Retry in Practice should retain the original boss %s." % fixture.id)
+		if bosses.is_empty():
+			lab.run_menu()
+			continue
+		var boss: Dictionary = bosses.front()
 		for step in range(500):
 			lab._physics_process(1.0 / 60.0)
-			if cue.visible and "beats left" in cue.text:
-				countdown = true
+			if boss.get("intent_attack_id") == fixture.attack and lab.arena._windups.has(boss.id):
+				telegraph = lab.arena._windups[boss.id]
 				break
-		_check(countdown, "%s should show a countdown during the practice replay." % fixture.id)
+		_check(telegraph.x == lab.arena.combat_tick and telegraph.y > telegraph.x
+			and lab.arena_screen.find_child(fixture.label, true, false) == null,
+			"%s should keep its timed on-arena windup during the practice replay." % fixture.id)
 		lab.run_menu()
 
 

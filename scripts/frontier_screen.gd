@@ -50,69 +50,11 @@ const COMPACT_ROUTE_NAMES := {
 	"Sea Wall Traverse": "Sea Wall", "Saltwater Exchange": "Salt Exchange",
 }
 const REINFORCEMENT_NAMES := {"Dust Patrol": "Dust Ambush", "Piston Guard": "Piston Wave"}
-const BOSS_BRIEFS := {
-	"gilded_marshal": {
-		"portrait": "marshal",
-		"hint": "A push or pull exposes the Marshal's plating for three beats. Land a hit with another hero during that window to shatter it.",
-		"medium_hint": "The Marshal raises plating as its health drops. Direct hits and sweeps that cost the crew no HP wear the plate down."
-	},
-	"iron_regent": {
-		"portrait": "regent",
-		"hint": "When the Regent raises its seals, land hits from all three heroes within four beats to break its defenses and cancel its sweep."
-	},
-	"crucible_twins": {
-		"portrait": "glass_twin",
-		"hint": "Glass keeps its distance while Ember closes in. Use your targeting rules to focus one twin before turning on the other."
-	},
-	"glass_refraction_engine": {
-		"portrait": "glass_refraction_engine", "hint": FrontierRun.GLASS_BOSS_SCOUTS.glass_refraction_engine
-	},
-	"prism_warden": {
-		"portrait": "prism_warden",
-		"hint": "Push or pull the Warden, then strike with your other hero within three beats to shatter the prism ward. Give guard to your ranged leader and the hero with the lowest HP."
-	},
-	"tempered_colossus": {
-		"portrait": "tempered_colossus",
-		"hint": "When Forge Sweep begins, push or pull the Colossus with one hero. Hit with a different hero, then with your third hero. All three actions must land in order during the same nine-beat window. Shatter its armor to stop the sweep."
-	},
-	"relay_captain": {
-		"portrait": "relay_captain",
-		"hint": "Relay Charge begins on beat 2 and strikes at the end of beat 7. Land Bash or another push or pull within that window to interrupt it."
-	},
-	"relay_marshal": {
-		"portrait": "relay_marshal",
-		"hint": "When Linked Charge starts, use Pull to separate the Marshal from its Guard. Then land Bash with your other hero before the charge finishes. Pushes can also separate the pair, and if the Guard falls, any hero can interrupt with a push."
-	},
-	"crown_regent": {
-		"portrait": "crown_regent",
-		"hint": "Crown Charge starts on beat 2 and strikes at the end of beat 9. Use a different hero to displace each Guard, then push the Regent with your third hero before the links return. Use Left Guard, Right Guard, and Crown Regent in the tile targeting menu."
-	},
-	"wreckmaster": {
-		"portrait": "wreckmaster",
-		"hint": "Harpoon pulls its target close at the end of beat 3. Deck Slam hits inside the marked circle at the end of beat 6. Time a push between them to create distance, or use Guard before impact."
-	},
-	"tidekeeper": {
-		"portrait": "tidekeeper",
-		"hint": "Twin Harpoons pull both heroes close at the end of beat 3. Before Breakwater Slam strikes at the end of beat 8, push the Tidekeeper with one hero, then push or pull it with the other. If only one hero is standing, they can do both."
-	},
-	"drowned_admiral": {
-		"portrait": "drowned_admiral",
-		"hint": "Undertow draws your party in at the end of beat 3. Before the sweep lands at the end of beat 9, push the Admiral with one hero, pull with another, then push with the third. A smaller surviving party can interrupt in fewer steps."
-	}
-}
 const MAP_ART := {
 	"brass": "res://assets/frontier-map.webp",
 	"glass": "res://assets/glass-map.webp",
 	"crown": "res://assets/crown-map.webp",
 	"moonwreck": "res://assets/moonwreck-map.webp",
-}
-const ENEMY_HINTS := {
-	"brass_sapper": "Marks the ground before firing.",
-	"glass_duelist": "Blinks toward the weakest hero.",
-	"crown_mender": "Repairs wounded allies.",
-	"dock_corsair": "Hooks a hero into melee range.",
-	"dock_winch": "Pulls a bruiser into striking range.",
-	"relay_guard": "Shields a nearby ally.",
 }
 const RELIC_DRAFT_TONES := {
 	"afterimage": Color("#c8b7ec"), "barrage_rack": Color("#efbe8a"), "siege_fuse": Color("#9ddbd1"),
@@ -765,21 +707,6 @@ func _refresh_after_choice(advanced: bool) -> void:
 		_host.run_return()
 
 
-static func battle_enemy_hint(unit: Dictionary, difficulty: String) -> String:
-	var sprite: String = unit.sprite
-	match unit.get("attack_id", sprite):
-		"boss": return "Its strikes get stronger when it rallies at half health."
-		"tollkeeper_drone": return FrontierRun.TOLLKEEPER_VARIANTS.repair_drone.description
-		"brass_bellmaker": return FrontierRun.BELLMAKER_SCOUT
-		"ember_twin": return "Closes in on the hero with the lowest HP."
-	for brief: Dictionary in BOSS_BRIEFS.values():
-		if brief.portrait == sprite:
-			return brief.get("medium_hint", brief.hint) if difficulty == "medium" else brief.hint
-	var attack: Dictionary = unit.get("attack", {})
-	var fallback := "Attacks from range." if float(attack.get("reach", 0.0)) >= 340.0 else "Closes in to attack."
-	return attack.get("hint", ENEMY_HINTS.get(sprite, fallback))
-
-
 func _reward() -> void:
 	var relic_offers: Array = _run.elite_relic_offers()
 	if not relic_offers.is_empty():
@@ -801,7 +728,8 @@ func _reward() -> void:
 	var party := _party()
 	var owner := _reward_owner(lane, party)
 	if place_by_drag:
-		title = "Drag a tile to the sequence"
+		title = {"salvage_bench": "Drag a copy to the sequence", "class_cache": "Drag an Uncommon to the sequence"}.get(
+			mystery, "Drag a tile to the sequence")
 	if lane >= 0 and lane < party.size():
 		var hero_id: String = party[lane].id
 		_reward_heading(title, milestone, hero_id)

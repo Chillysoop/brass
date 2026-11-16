@@ -207,8 +207,13 @@ func _claim_cache(game: Control) -> String:
 	_check(run.load_save(run.save_path) and run.data.offers == offers, "The chosen cache category and offers survive reload.")
 	game.run_resume()
 	var pick: String = offers[0]
-	if not await _press(game.frontier_screen, "RewardTile_" + pick):
+	await process_frame
+	var reward_card := game.frontier_screen.find_child("DragReward_" + pick, true, false) as Control
+	if not _check(reward_card != null and reward_card.is_visible_in_tree() and game.storage_screen.is_visible_in_tree()
+		and game.storage_screen.get_parent() == game.combat_sidebar and game.arena.units.is_empty(),
+		"Mystery tile rewards offer drag placement and docked storage in an empty arena."):
 		return ""
+	game._place({"id": pick, "reward": true}, 0, 4, true)
 	var ids: Array = run.loadout.lanes[0].map(func(tile: Dictionary): return tile.id)
 	_check(ids == ["bash", "bash", pick], "The Class Cache equips the chosen Uncommon beside the two owned copies.")
 	return pick

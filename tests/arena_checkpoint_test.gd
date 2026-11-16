@@ -94,14 +94,14 @@ func _check_battle_save(lab: Control) -> void:
 	_check(restored.load_save(SAVE_PATH) and restored.data.phase == "reward" and restored.data.gold == int(before.gold) + 12,
 		"Reload after retry grants the opening reward and its gold exactly once.")
 	lab._complete_result_animation()
-	_check(lab.showing_battle_rewards and lab.arena.is_visible_in_tree() and lab.frontier_screen.is_visible_in_tree()
+	_check(lab.showing_rewards and lab.arena.is_visible_in_tree() and lab.frontier_screen.is_visible_in_tree()
 		and lab.frontier_screen.find_child("SkipReward", true, false) is Button,
 		"The victory animation puts the draft and skip option over the arena without another click.")
 	_check_reward_rerolls(lab)
 	if not _set_save_block(true):
 		return
 	lab.save_title_button.pressed.emit()
-	_check(lab.save_title_button.is_visible_in_tree() and lab.showing_battle_rewards and not run.save_error.is_empty(),
+	_check(lab.save_title_button.is_visible_in_tree() and lab.showing_rewards and not run.save_error.is_empty(),
 		"Save & title reports a failed save on the current screen.")
 	_set_save_block(false)
 	lab.save_title_button.pressed.emit()
@@ -120,7 +120,7 @@ func _check_reward_rerolls(lab: Control) -> void:
 		var original: Array = run.data.offers.duplicate()
 		button.pressed.emit()
 		gold -= price
-		_check(lab.showing_battle_rewards and int(run.data.gold) == gold and run.data.offers.size() == 3
+		_check(lab.showing_rewards and int(run.data.gold) == gold and run.data.offers.size() == 3
 			and run.data.offers != original, "A reroll replaces the three offers in place and deducts the displayed cost.")
 	var stored := FrontierRun.new()
 	if not _check(stored.load_save(SAVE_PATH) and stored.data.offers == run.data.offers and stored.reward_reroll_price() == 20,
@@ -172,13 +172,14 @@ func _check_compact_reward_overlay(lab: Control) -> void:
 	await process_frame
 	await process_frame
 	var field: Rect2 = lab.arena.get_global_rect()
-	var intel: Rect2 = lab.enemy_details.get_global_rect()
 	var speed_group: Rect2 = lab.speed_controls.get_global_rect()
 	_check(lab.speed_controls.is_visible_in_tree() and lab.speed_buttons.size() == 3
 		and root.get_visible_rect().encloses(speed_group) and speed_group.end.y <= field.position.y,
 		"All three playback controls stay in the top header at compact width.")
-	_check(lab.enemy_details.is_visible_in_tree() and lab.enemy_cards.get_child_count() > 0 and intel.position.x >= field.end.x,
-		"Enemy descriptions appear beside the playable setup on the right.")
+	var edge: float = lab.arena_screen.get_global_rect().end.x - lab.arena_screen.get_theme_constant("margin_right")
+	_check(lab.arena_screen.find_child("BattleEnemyDetails", true, false) == null
+		and not lab.combat_sidebar.is_visible_in_tree() and is_equal_approx(field.end.x, edge),
+		"The compact arena uses the full width when the optional meter and reward storage are closed.")
 	if not _check(run.finish_combat(true, [81, 88, 91]) and run.reward_count() == 3, "The compact arena has three reward lanes."):
 		return
 	lab.run_return()
