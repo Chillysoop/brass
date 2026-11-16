@@ -2320,6 +2320,13 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 			hints[bridge.tile] = bridge.hint
 	if not signature_offer.is_empty() and signature_offer not in rewards:
 		rewards.append(signature_offer)
+	var gate_specialty: bool = lane == 0 and data.node.type == "opening" \
+		and data.get("location") == "brass" and data.get("difficulty") in ["medium", "hard"]
+	if gate_specialty and rewards.size() < 3:
+		var candidates := specialties.filter(func(id: String): return not held.has(id))
+		var choice := _sample(candidates, 1, int(data.seed), _node_salt(86 + salt))
+		if not choice.is_empty() and choice[0] not in rewards:
+			rewards.append(choice[0])
 	if opening_pilot and rewards.size() < 3 and not owned.is_empty() and owned not in rewards:
 		rewards.append(owned)
 		hints[owned] = owned_hint

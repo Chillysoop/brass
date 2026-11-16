@@ -133,6 +133,7 @@ func _initialize() -> void:
 	_check_class_progression()
 	_check_slam_pool()
 	_check_arsenal_rewards()
+	_check_opening_specialty_rewards()
 	_check_acquisition_drafts()
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(path + suffix):
@@ -1010,6 +1011,78 @@ func _check_arsenal_rewards() -> void:
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(path + suffix):
 			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
+
+
+func _check_opening_specialty_rewards() -> void:
+	var path := "user://frontier-gate-specialty-test-%d.json" % Time.get_ticks_usec()
+	var run := FrontierRun.new()
+	run.load_save(path)
+	run.profile.medium_unlocked = true
+	run.profile.hard_unlocked = true
+	run.profile.glass_medium_unlocked = true
+	run.profile.marks = 999
+	for hero_id: String in FrontierRun.HEROES:
+		if hero_id not in run.available_classes():
+			check(run.buy_class(hero_id), "%s should be unlockable for the Gate Trial test." % hero_id)
+
+	for difficulty: String in ["medium", "hard"]:
+		for hero_id: String in run.available_classes():
+			var specialty_mixes := {}
+			var directions: Array = FrontierRun.EARLY_BUILD_DIRECTIONS.get(hero_id, []) if difficulty == "medium" else []
+			for seed in range(1, 9):
+				if not _equip_gate_starter(run, seed, difficulty, hero_id):
+					check(false, "%s must reach the %s Gate Trial through the opening draft." % [hero_id, difficulty])
+					continue
+				var context := "%s %s seed %d" % [hero_id, difficulty, seed]
+				check(run.encounter().kind == "opening" and run.data.node.label == "Gate Trial",
+					"%s must test the actual opening encounter." % context)
+				if not run.finish_combat(true, 100):
+					check(false, "%s must have an opening victory reward." % context)
+					continue
+				var offers: Array = run.data.offers.duplicate()
+				var specialties := _offered_gate_specialties(offers, hero_id)
+				check(offers.size() == 3 and offers.all(func(id: String): return offers.count(id) == 1) \
+					and not specialties.is_empty(), "%s must offer three distinct choices with a base class specialty." % context)
+				specialties.sort()
+				specialty_mixes[str(specialties)] = true
+				check(directions.all(func(direction: Dictionary): return direction.opening in offers),
+					"%s must retain both authored opening directions when applicable." % context)
+				if seed == 1:
+					check(run.load_save(path) and run.data.phase == "reward" and run.data.offers == offers,
+						"%s must reload the exact Gate Trial reward." % context)
+			check(specialty_mixes.size() > 1,
+				"%s must see different class specialty choices across %s Gate Trial seeds." % [hero_id, difficulty])
+
+	for difficulty: String in ["medium", "hard"]:
+		if _equip_gate_starter(run, 1, difficulty, "warden"):
+			run.loadout.lanes[0] = _acquisition_pair(ClassDecks.starter("warden"))
+			check(run.finish_combat(true, 100) and run.reward_hint("shield_tap") == "Third copy" \
+				and not _offered_gate_specialties(run.data.offers, "warden").is_empty(),
+				"The %s Gate Trial keeps a third-copy opportunity beside a Warden specialty." % difficulty)
+		else:
+			check(false, "Equip Warden for the %s third-copy Gate Trial fixture." % difficulty)
+
+	var saw_non_specialty_draft := false
+	for seed in range(1, 9):
+		if _equip_gate_starter(run, seed, "medium", "warden", "glass") and run.finish_combat(true, 100):
+			saw_non_specialty_draft = saw_non_specialty_draft or _offered_gate_specialties(run.data.offers, "warden").is_empty()
+	check(saw_non_specialty_draft, "The Brass opening guarantee should not apply to Glass Foundry.")
+
+	for suffix in ["", ".bak", ".tmp"]:
+		if FileAccess.file_exists(path + suffix):
+			DirAccess.remove_absolute(ProjectSettings.globalize_path(path + suffix))
+
+
+func _equip_gate_starter(run: FrontierRun, seed: int, difficulty: String, hero_id: String, region := "brass") -> bool:
+	if not run.data.is_empty() and not run.abandon_run():
+		return false
+	return run.start_run(seed, difficulty, region) and run.choose_preferred_hero(hero_id) \
+		and run.choose_relic("pocket_bell") and run.choose_starter(ClassDecks.starter(hero_id))
+
+
+func _offered_gate_specialties(offers: Array, hero_id: String) -> Array:
+	var specialties := ClassDecks.specialties(hero_id)
+	return offers.filter(func(id: String): return id in specialties and ArenaSim.TILES[id].rarity == "common")
 
 
 func _check_acquisition_drafts() -> void:
