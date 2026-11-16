@@ -2,6 +2,7 @@ extends SceneTree
 
 const ArenaScene = preload("res://arena.tscn")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
+const ArenaView = preload("res://scripts/arena_view.gd")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const GameIcons = preload("res://scripts/game_icons.gd")
@@ -55,6 +56,7 @@ func _run() -> void:
 	await _check_tile_identity(lab)
 	await _check_target_icons(lab)
 	_check_enemy_windup(lab)
+	_check_combat_numbers()
 	_check_pause_visuals(lab)
 	lab._load_fixture("duo")
 	var original: Array = lab.lanes.duplicate(true)
@@ -362,6 +364,49 @@ func _check_target_icons(lab: Control) -> void:
 		and lab.lanes[1][1].target == "lowest_hp" and lab.lanes[1][2].target == "lowest_hp"
 		and lab.lanes[0][0].target == "farthest",
 		"Clicking the hero's lowest HP icon updates their compatible tiles and preserves Guard and the other hero.")
+
+
+func _check_combat_numbers() -> void:
+	var view := ArenaView.new()
+	root.add_child(view)
+	view.set_process(false)
+	view.size = Vector2(555, 348)
+	var field := Rect2(56, 95, 443, 207)
+	var charge_bar := Rect2(12, 36, 100, 38)
+	var near_edge := Vector2(-70, 18)
+	var events := [
+		{"kind": "hit", "amount": 29, "critical": true, "target": "scout", "actor": "hero_0", "tile": "shot", "from": near_edge, "to": near_edge},
+		{"kind": "hit", "amount": 14, "target": "drone", "actor": "hero_1", "tile": "bash", "from": near_edge, "to": near_edge},
+		{"kind": "heal", "amount": 8, "target": "hero_0", "actor": "hero_1", "tile": "mend", "from": near_edge, "to": near_edge},
+		{"kind": "guard", "amount": 5, "target": "hero_0", "actor": "hero_0", "tile": "guard", "from": near_edge, "to": near_edge},
+	]
+	view.present([], events, 60, [], 3)
+	view._layout_combat_numbers(field, 0.43, [charge_bar])
+	var critical: Dictionary = view._combat_numbers[0]
+	var original: Rect2 = critical.bounds
+	_check(critical.label == "29!" and view._combat_numbers[2].glyph == "heal" and view._combat_numbers[3].glyph == "guard",
+		"Critical damage, healing, and Guard use distinct combat numbers.")
+	view._process(0.55)
+	view.present([], [events[1]], 159, [], 3)
+	view._layout_combat_numbers(field, 0.43, [charge_bar])
+	var placed: Array[Rect2] = [charge_bar]
+	var viewport := Rect2(Vector2.ZERO, view.size)
+	for number: Dictionary in view._combat_numbers:
+		var bounds: Rect2 = number.bounds
+		_check(bounds.has_area() and viewport.encloses(bounds) and not placed.any(func(other: Rect2): return other.intersects(bounds)),
+			"Simultaneous and staggered combat numbers on nearby units get separate visible space.")
+		placed.append(bounds)
+	_check(critical.bounds == original, "A later popup does not displace an active critical hit.")
+	view._process(0.55)
+	_check(view._combat_numbers.size() == 2 and critical in view._combat_numbers,
+		"Critical hits stay visible after ordinary numbers from the same beat expire at 3×.")
+	view.playback_paused = true
+	view._process(0.5)
+	_check(critical in view._combat_numbers, "Pause holds the remaining screen time for critical hits.")
+	view.playback_paused = false
+	view._process(0.5)
+	_check(view._combat_numbers.is_empty(), "Combat numbers expire in real time after playback resumes.")
+	view.queue_free()
 
 
 func _check_enemy_windup(lab: Control) -> void:

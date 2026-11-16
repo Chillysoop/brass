@@ -11,6 +11,10 @@ const WORLD_SIZE := Vector2(1000.0, 520.0)
 const MAX_CASTS := 48
 const MAX_COMBAT_NUMBERS := 64
 const COMBAT_NUMBER_LIFETIME := 1.05
+const CRITICAL_NUMBER_LIFETIME := 1.55
+const COMBAT_NUMBER_RISE := 23.0
+const COMBAT_NUMBER_PADDING := 6.0
+const COMBAT_NUMBER_POP := 1.16
 const INK := Color("#182126")
 const FRAME := Color("#47534b")
 const SAND := Color("#be955f")
@@ -100,6 +104,7 @@ const EFFECT_LENGTHS := {
 	"haste": 0.42,
 }
 const MARK_COLOR := CombatIcons.PALETTE["mark"]
+const MIN_CAST_DISPLAY_SECONDS := 0.24
 const SIGNATURE_WINDUP_LABELS := {
 	"recruit": "SPRING WINDUP", "bruiser": "SHOVE", "veteran": "SABER SWING", "boss": "TOLL STRIKE",
 	"crown_page_advance": "ADVANCE", "relay_recruit": "BRACED", "relay_runner_press": "HEAVY WINDUP",
@@ -164,6 +169,7 @@ var _gait_strengths: Dictionary = {}
 var _effects: Array[Dictionary] = []
 var _combat_numbers: Array[Dictionary] = []
 var _combat_number_font := SystemFont.new()
+var _combat_number_layout_size := Vector2.ZERO
 var _attack_casts: Array[Dictionary] = []
 var _actor_casts: Dictionary = {}
 var _hero_clips: Array[Array] = []
@@ -248,7 +254,7 @@ func present(units_data: Array, events: Array, tick := 0, attack_cues: Array = [
 				_actor_casts.erase(oldest.actor)
 	for event in events:
 		var tile: String = event.get("tile", "")
-		if event.kind in ["hit", "heal"]:
+		if event.kind in ["hit", "heal", "guard"]:
 			_add_combat_number(event)
 		if tile == "relay_link_broken" and str(event.target).begins_with("crown_regent"):
 			continue
@@ -307,12 +313,15 @@ func _process(delta: float) -> void:
 	for index in range(_combat_numbers.size() - 1, -1, -1):
 		var number := _combat_numbers[index]
 		number.age += delta
-		if number.age >= COMBAT_NUMBER_LIFETIME:
+		if number.age >= number.lifetime:
 			_combat_numbers.remove_at(index)
 		changed = true
 	for index in range(_attack_casts.size() - 1, -1, -1):
 		var cast := _attack_casts[index]
-		cast.age += delta * _attack_rate
+		# Accelerated playback can cross an entire windup between renders.
+		# Give the resulting cast a visible release while the sim runs at full speed.
+		var rate := minf(_attack_rate, maxf(1.0, float(cast.lifetime) / MIN_CAST_DISPLAY_SECONDS))
+		cast.age += delta * rate
 		if cast.age >= cast.lifetime:
 			if _actor_casts.get(cast.actor, {}) == cast:
 				_actor_casts.erase(cast.actor)
@@ -356,11 +365,12 @@ func _draw() -> void:
 	_draw_afterimages(field, sprite_scale)
 	var ordered_units := units.duplicate()
 	ordered_units.sort_custom(func(a: Dictionary, b: Dictionary) -> bool: return a.pos.y < b.pos.y)
+	var hud_space: Array[Rect2] = []
 	for unit in ordered_units:
 		if unit.hp <= 0:
 			continue
 		var point := _project(_positions.get(unit.id, unit.pos), field)
-		_draw_unit(unit, point, sprite_scale)
+		hud_space.append(_draw_unit(unit, point, sprite_scale))
 	for cast: Dictionary in _attack_casts:
 		var moving: bool = cast.profile.style in ["blink", "dash"]
 		var origin: Vector2 = cast.from if moving else cast.get("strike_from", cast.from)
@@ -379,8 +389,11 @@ func _draw() -> void:
 					AttackAnimation.draw_secondary_contact(self, cast.profile, start, end, progress, cast_size)
 	for effect in _effects:
 		_draw_feedback(effect, field)
-	for number in _combat_numbers:
-		_draw_combat_number(number, field, sprite_scale)
+	if not _combat_numbers.is_empty():
+		_layout_combat_numbers(field, sprite_scale, hud_space)
+		for number in _combat_numbers:
+			if number.bounds.has_area():
+				_draw_combat_number(number)
 	_draw_marshal_cues(board)
 	if not _reinforcement_warning.is_empty():
 		_draw_reinforcement_countdown(board)
@@ -452,7 +465,7 @@ func _combat_sprite(id: String, key: String, texture: Texture2D, friendly: bool)
 	return _combat_sprites[id]
 
 
-func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
+func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> Rect2:
 	var friendly: bool = unit.side == "hero"
 	var accent := HERO_COLOR if friendly else ENEMY_COLOR
 	if friendly and location == "glass":
@@ -530,7 +543,8 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		var initial := String(unit.name).left(1)
 		_draw_centered(initial, body_center + Vector2(0.0, 5.0), 15, WHITE)
 	if not acting and not prepare.is_empty():
-		AttackAnimation.windup(self, point + bounce, facing, art_height, prepare.charge, prepare.profile)
+		var emphasis: float = maxf(0.52, prepare.charge) if not friendly and _attack_rate > 1.0 else prepare.charge
+		AttackAnimation.windup(self, point + bounce, facing, art_height, emphasis, prepare.profile)
 	var health_width := clampf(radius * 2.7, 31.0, 58.0)
 	var bar_offset := 7.0 if friendly else 13.0
 	var bar := Rect2(point + Vector2(-health_width * 0.5, -art_height - bar_offset), Vector2(health_width, 5.0))
@@ -550,12 +564,17 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 	if _windups.has(unit.id):
 		var window: Vector2i = _windups[unit.id]
 		var charge := clampf(inverse_lerp(float(window.x), float(window.y), float(combat_tick)), 0.0, 1.0)
-		var gauge := Rect2(bar.position + Vector2(0, 9), Vector2(bar.size.x, 4))
+		var rapid := _attack_rate > 1.0
+		var gauge := Rect2(bar.position + Vector2(0, 9), Vector2(bar.size.x, 6.0 if rapid else 4.0))
 		var repairing: bool = unit.get("intent_attack_id", "") == ArenaSim.TOLLKEEPER_REPAIR_CUE
+		var charge_color := REPAIR_COLOR if repairing else GOLD.lerp(ENEMY_COLOR, charge * charge)
 		draw_rect(gauge.grow(1), INK)
 		draw_rect(gauge, REPAIR_COLOR.darkened(0.76) if repairing else Color("#593b29"))
-		draw_rect(Rect2(gauge.position, Vector2(gauge.size.x * charge, gauge.size.y)), REPAIR_COLOR if repairing else GOLD.lerp(ENEMY_COLOR, charge * charge))
-		_draw_status_badge("heal" if repairing else "windup", Vector2(gauge.position.x - 8.0, gauge.get_center().y))
+		draw_rect(Rect2(gauge.position, Vector2(gauge.size.x * charge, gauge.size.y)), charge_color)
+		if rapid:
+			draw_rect(gauge.grow(0.5), Color(charge_color, lerpf(0.56, 1.0, charge)), false, 1.0)
+		_draw_status_badge("heal" if repairing else "windup", Vector2(gauge.position.x - 8.0, gauge.get_center().y),
+			charge_color if rapid else Color.TRANSPARENT)
 		if repairing:
 			_draw_centered("REPAIRING", bar.get_center() - Vector2(0.0, 9.0), 13, REPAIR_COLOR)
 		var special: String = unit.get("special_intent", "")
@@ -572,6 +591,8 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 			for index in range(2):
 				var pip := gauge.end + Vector2(5.0 + index * 6.0, -2.0)
 				draw_circle(pip, 2.3, HERO_COLOR if index < progress_count else GOLD, true, -1.0, true)
+	elif _attack_rate > 1.0 and cast.get("kind", "") == "enemy_cast":
+		_draw_enemy_release(cast, Vector2(bar.get_center().x, bar.end.y + 7.0))
 	if int(unit.get("tar_slow_until", 0)) > combat_tick:
 		draw_arc(point, radius, 0.0, PI, 16, Color("#be915d"), 2.0, true)
 	if unit.get("marshal_plated", false):
@@ -636,6 +657,24 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float) -> void:
 		_draw_centered("HARPOON" if wreck_phase == 1 else "DECK SLAM", bar.get_center() - Vector2(0.0, 9.0), 14, GOLD)
 	elif not str(unit.get("dock_winch_ally", "")).is_empty():
 		_draw_centered("WINCH PULL", bar.get_center() - Vector2(0.0, 9.0), 13, DOCK_WINCH_COLOR)
+	if _windups.has(unit.id):
+		return bar.grow_individual(30.0, 26.0, 30.0, 16.0)
+	return bar.grow_individual(13.0, 5.0, 13.0, 13.0)
+
+
+func _draw_enemy_release(cast: Dictionary, center: Vector2) -> void:
+	var progress := clampf(float(cast.age) / float(cast.lifetime), 0.0, 1.0)
+	var opacity := 1.0 - smoothstep(0.28, 1.0, progress)
+	var reach := lerpf(6.0, 9.0, progress)
+	var points := PackedVector2Array([
+		center + Vector2(0.0, -reach), center + Vector2(reach, 0.0),
+		center + Vector2(0.0, reach), center + Vector2(-reach, 0.0), center + Vector2(0.0, -reach),
+	])
+	var tone := REPAIR_COLOR if cast.tile == ArenaSim.TOLLKEEPER_REPAIR_CUE else SWEEP_LIGHT
+	draw_polyline(points, Color(INK, opacity), 4.0, true)
+	draw_polyline(points, Color(tone, opacity), 1.6, true)
+	if cast.get("landed", true):
+		draw_circle(center, 2.0, Color(tone, opacity), true, -1.0, true)
 
 
 func _draw_status_badges(unit: Dictionary, bar: Rect2) -> void:
@@ -1190,7 +1229,7 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 
 func _draw_feedback(effect: Dictionary, field: Rect2) -> void:
 	var kind: String = effect.kind
-	if kind not in ["hit", "miss", "wreckmaster_slam_miss", "guard", "heal", "repair_heal"] and not FLOATING_CUES.has(kind):
+	if kind not in ["hit", "miss", "wreckmaster_slam_miss"] and not FLOATING_CUES.has(kind):
 		return
 	var from_drone := kind in ["repair_interrupted", "repair_separated"]
 	var point := _project(effect.from if from_drone else effect.to, field)
@@ -1198,23 +1237,12 @@ func _draw_feedback(effect: Dictionary, field: Rect2) -> void:
 	var opacity := 1.0 - progress
 	var label := "MISS"
 	var color := WHITE
-	var glyph := ""
-	var shift := 0.0
 	if FLOATING_CUES.has(kind):
 		label = FLOATING_CUES[kind]
 		color = REPAIR_COLOR if from_drone else RELAY_SHIELD_COLOR
 	match kind:
 		"wreckmaster_slam_miss":
 			label = "SLAM MISSED"
-		"heal", "repair_heal":
-			return
-		"guard":
-			if effect.amount <= 0:
-				return
-			glyph = "guard"
-			color = CombatIcons.PALETTE.guard
-			label = str(effect.amount) if effect.tile == "relay_absorb" else "+%d" % effect.amount
-			shift = -22.0
 		"hit":
 			color = GOLD if str(effect.actor).begins_with("hero") else ENEMY_COLOR.lightened(0.19)
 			if effect.get("critical", false):
@@ -1225,69 +1253,114 @@ func _draw_feedback(effect: Dictionary, field: Rect2) -> void:
 				draw_line(impact + ray * (4.0 + progress * 8.0), impact + ray * (10.0 + progress * 11.0), Color(color, opacity), 2.0, true)
 			return
 	var lift := 52.0 if kind == "marshal_plate_broken" else 24.0
-	var baseline := point + Vector2(shift, -lift - progress * 25.0)
-	if not glyph.is_empty():
-		var width := get_theme_default_font().get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, 15).x
-		var center := baseline - Vector2(width * 0.5, 5.5)
-		draw_circle(center, 7.0, Color(INK, opacity * 0.93), true, -1.0, true)
-		CombatIcons.draw(self, glyph, center, 13.0, Color(color, opacity))
-		baseline.x += 7.5
-	_draw_centered(label, baseline, 15, Color(color, opacity))
+	_draw_centered(label, point - Vector2(0.0, lift + progress * 25.0), 15, Color(color, opacity))
 
 
 func _add_combat_number(event: Dictionary) -> void:
 	var healing: bool = event.kind == "heal"
+	var guarding: bool = event.kind == "guard"
 	var amount := int(event.amount)
-	if healing and amount <= 0:
+	if (healing or guarding) and amount <= 0:
 		return
-	var occupied := {}
-	for number in _combat_numbers:
-		if number.target == event.target and float(number.age) < 0.38:
-			occupied[number.slot] = true
-	var slot := 0
-	while occupied.has(slot):
-		slot += 1
-	var critical := bool(event.get("critical", false)) and amount > 0
-	var blocked := not healing and amount <= 0 and int(event.get("blocked", 0)) > 0
-	var against_hero := str(event.target).begins_with("hero_")
+	var critical: bool = event.kind == "hit" and event.get("critical", false) and amount > 0
+	var blocked: bool = event.kind == "hit" and amount <= 0 and int(event.get("blocked", 0)) > 0
 	var label := str(amount)
 	var tone := Color("#fff0bf")
+	var glyph := ""
+	var font_size := 23
 	if healing:
 		label = "+%d" % amount
 		tone = Color("#9ef5ab")
+		glyph = "heal"
+		font_size = 20
+	elif guarding:
+		label = str(amount) if event.tile == "relay_absorb" else "+%d" % amount
+		tone = CombatIcons.PALETTE.guard
+		glyph = "guard"
+		font_size = 20
 	elif blocked:
 		label = "BLOCK"
 		tone = Color("#a3dbff")
+		glyph = "guard"
+		font_size = 17
 	else:
 		if critical:
 			label += "!"
-		if against_hero:
+			font_size = 31
+		if str(event.target).begins_with("hero_"):
 			tone = Color("#ff9885")
 		elif critical:
 			tone = Color("#ffe168")
 		elif event.tile == "cinder_mage":
 			tone = Color("#ffb772")
-	_combat_numbers.append({"label": label, "tone": tone, "slot": slot, "target": event.target,
-		"position": event.to, "age": 0.0, "size": 31 if critical else (17 if blocked else 23)})
+	_combat_numbers.append({"label": label, "tone": tone, "glyph": glyph, "position": event.to,
+		"age": 0.0, "size": font_size, "critical": critical,
+		"lifetime": CRITICAL_NUMBER_LIFETIME if critical else COMBAT_NUMBER_LIFETIME})
 	if _combat_numbers.size() > MAX_COMBAT_NUMBERS:
-		_combat_numbers.pop_front()
+		var oldest_normal := _combat_numbers.find_custom(func(number: Dictionary): return not number.critical)
+		_combat_numbers.remove_at(maxi(0, oldest_normal))
 
 
-func _draw_combat_number(number: Dictionary, field: Rect2, unit_scale: float) -> void:
-	var progress := float(number.age) / COMBAT_NUMBER_LIFETIME
-	var opacity := 1.0 - smoothstep(0.48, 1.0, progress)
-	var lane_offsets := [0.0, -58.0, 58.0, -111.0, 111.0]
-	var shift: float = lane_offsets[posmod(number.slot, lane_offsets.size())]
-	var stack_height := minf(floorf(float(number.slot) / lane_offsets.size()), 3.0) * 28.0
-	var lift := clampf(unit_scale * 110.0, 44.0, 78.0) + 40.0 * progress + stack_height
-	var baseline := _project(number.position, field) + Vector2(shift * (1.0 + 0.18 * progress), -lift)
-	var pop := 1.0 + 0.18 * (1.0 - smoothstep(0.0, 0.21, progress))
+func _layout_combat_numbers(field: Rect2, unit_scale: float, hud_space: Array[Rect2]) -> void:
+	var resized := size != _combat_number_layout_size
+	_combat_number_layout_size = size
+	var occupied := hud_space.duplicate()
+	for number in _combat_numbers:
+		if resized:
+			number.erase("bounds")
+		elif number.has("bounds") and number.bounds.has_area():
+			occupied.append(number.bounds)
+	# Place new criticals first, and keep all assigned positions steady as the numbers rise.
+	var lift := clampf(unit_scale * 110.0, 44.0, 78.0)
+	for critical: bool in [true, false]:
+		for number in _combat_numbers:
+			if number.critical != critical or number.has("bounds"):
+				continue
+			var anchor := _project(number.position, field) - Vector2(0.0, lift)
+			var bounds := _reserve_combat_number(number, anchor, occupied)
+			number.bounds = bounds
+			if bounds.has_area():
+				occupied.append(bounds)
+
+
+func _reserve_combat_number(number: Dictionary, anchor: Vector2, occupied: Array[Rect2]) -> Rect2:
+	var max_size := roundi(float(number.size) * COMBAT_NUMBER_POP)
+	var width := _combat_number_font.get_string_size(number.label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, max_size).x
+	var icon_width := 0.0 if number.glyph.is_empty() else 18.0
+	var extent := Vector2(width + icon_width, _combat_number_font.get_height(max_size) + COMBAT_NUMBER_RISE)
+	extent += Vector2.ONE * (2.0 * COMBAT_NUMBER_PADDING)
+	if extent.x + 8.0 > size.x or extent.y + 8.0 > size.y:
+		return Rect2()
+	var descent := _combat_number_font.get_descent(max_size)
+	var origin := anchor - Vector2(extent.x * 0.5, extent.y - descent - COMBAT_NUMBER_PADDING)
+	var stride := Vector2(maxf(54.0, extent.x + 4.0), extent.y + 4.0)
+	var margin := Vector2(4.0, 4.0)
+	for row: int in [0, -1, 1, -2, 2, -3, 3]:
+		for column: int in [0, -1, 1, -2, 2]:
+			var position := (origin + stride * Vector2(column, row)).clamp(margin, size - extent - margin)
+			var bounds := Rect2(position, extent)
+			if not occupied.any(func(other: Rect2): return other.intersects(bounds)):
+				return bounds
+	return Rect2()
+
+
+func _draw_combat_number(number: Dictionary) -> void:
+	var progress := float(number.age) / float(number.lifetime)
+	var opacity := 1.0 - smoothstep(0.68 if number.critical else 0.5, 1.0, progress)
+	var pop := lerpf(COMBAT_NUMBER_POP, 1.0, smoothstep(0.0, 0.21, progress))
 	var size_px := roundi(float(number.size) * pop)
 	var text: String = number.label
 	var width := _combat_number_font.get_string_size(text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size_px).x
-	baseline.x = clampf(baseline.x, width * 0.5 + 6.0, maxf(width * 0.5 + 6.0, size.x - width * 0.5 - 6.0))
-	baseline.y = maxf(baseline.y, size_px + 5)
-	var position := baseline - Vector2(width * 0.5, 0.0)
+	var max_size := roundi(float(number.size) * COMBAT_NUMBER_POP)
+	var bounds: Rect2 = number.bounds
+	var baseline := bounds.end.y - COMBAT_NUMBER_PADDING - _combat_number_font.get_descent(max_size) - COMBAT_NUMBER_RISE * progress
+	var glyph: String = number.glyph
+	var position := Vector2(bounds.get_center().x - width * 0.5, baseline)
+	if not glyph.is_empty():
+		position.x += 9.0
+		var center := position - Vector2(10.0, size_px * 0.34)
+		draw_circle(center, 7.0, Color(INK, opacity * 0.94), true, -1.0, true)
+		CombatIcons.draw(self, glyph, center, 13.0, Color(number.tone, opacity))
 	draw_string_outline(_combat_number_font, position, text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size_px, 5, Color(INK, opacity))
 	draw_string(_combat_number_font, position, text, HORIZONTAL_ALIGNMENT_LEFT, -1.0, size_px, Color(number.tone, opacity))
 

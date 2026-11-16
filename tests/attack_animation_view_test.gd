@@ -59,12 +59,48 @@ func _run() -> void:
 		"Reset must clear the old attack effects and windups.")
 	_check_ranged_standoff(view)
 	_check_limb_pose(view)
+	_check_fast_windup(view)
 	view.queue_free()
 	for failure: String in _failures:
 		printerr(failure)
 	if _failures.is_empty():
 		print("All %d tile animation profiles and exact-edge arena playback passed." % ArenaSim.TILES.size())
 	quit(0 if _failures.is_empty() else 1)
+
+
+func _check_fast_windup(view: ArenaView) -> void:
+	var sim := ArenaSim.new()
+	var lanes := [[{"id": "bash", "start": 0, "target": "nearest"}]]
+	sim.start(lanes, "solo", {"kind": "opening"})
+	view.reset_view(sim.units, lanes)
+	var hero: Dictionary = sim.units[0]
+	var enemy: Dictionary = sim.units[1]
+	enemy.intent = hero.id
+	enemy.intent_start_tick = 98
+	enemy.intent_tick = 99
+	enemy.intent_attack_id = "recruit"
+	view.present(sim.units, [], 98, [], 3)
+	_expect(view._windups.get(enemy.id) == Vector2i(98, 99), "Fast playback must capture a short windup on its actual start tick.")
+
+	enemy.intent = ""
+	view.present(sim.units, [], 99, [{"kind": "enemy_cast", "actor": enemy.id, "tile": "recruit",
+		"from": enemy.pos, "to": hero.pos, "target": hero.id, "landed": true}], 3)
+	_expect(not view._windups.has(enemy.id) and view._actor_casts.has(enemy.id),
+		"A windup crossed between renders must end when the release arrives and keep the cast visible.")
+	view._process(0.18)
+	_expect(view._actor_casts.has(enemy.id) and not view._windups.has(enemy.id),
+		"The release should remain readable in real time at 3× without displaying a false windup.")
+	view._process(0.07)
+	_expect(not view._actor_casts.has(enemy.id), "A fast release must expire after its real-time display window.")
+
+	enemy.intent = hero.id
+	enemy.intent_start_tick = 105
+	enemy.intent_tick = 120
+	view.present(sim.units, [], 105, [], 3)
+	enemy.intent = ""
+	view.present(sim.units, [], 106, [], 3)
+	_expect(not view._windups.has(enemy.id) and not view._actor_casts.has(enemy.id),
+		"Canceling a windup must clear the warning without inventing a release.")
 
 
 func _check_ranged_standoff(view: ArenaView) -> void:
