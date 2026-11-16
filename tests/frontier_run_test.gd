@@ -134,6 +134,7 @@ func _initialize() -> void:
 	_check_slam_pool()
 	_check_arsenal_rewards()
 	_check_opening_specialty_rewards()
+	_check_later_act_specialties()
 	_check_acquisition_drafts()
 	for suffix in ["", ".bak", ".tmp"]:
 		if FileAccess.file_exists(path + suffix):
@@ -1044,7 +1045,7 @@ func _check_opening_specialty_rewards() -> void:
 				var specialties := _offered_gate_specialties(offers, hero_id)
 				check(offers.size() == 3 and offers.all(func(id: String): return offers.count(id) == 1) \
 					and not specialties.is_empty(), "%s must offer three distinct choices with a class specialty." % context)
-				var families := specialties.map(_gate_tile_family)
+				var families := specialties.map(_reward_tile_family)
 				families.sort()
 				specialty_mixes[str(families)] = true
 				check(directions.all(func(direction: Dictionary): return direction.opening in offers),
@@ -1086,10 +1087,10 @@ func _equip_gate_starter(run: FrontierRun, seed: int, difficulty: String, hero_i
 
 func _offered_gate_specialties(offers: Array, hero_id: String) -> Array:
 	var specialties := ClassDecks.specialties(hero_id)
-	return offers.filter(func(id: String): return _gate_tile_family(id) in specialties)
+	return offers.filter(func(id: String): return _reward_tile_family(id) in specialties)
 
 
-func _gate_tile_family(id: String) -> String:
+func _reward_tile_family(id: String) -> String:
 	var tile: Dictionary = ArenaSim.TILES[id]
 	return tile.get("base_tile", tile.get("family", id))
 
@@ -1126,6 +1127,128 @@ func _gate_pair_draft(run: FrontierRun, fixture: Dictionary, region: String) -> 
 		return []
 	run.loadout.lanes[0] = _acquisition_pair("jab")
 	return run.data.offers.duplicate() if run.finish_combat(true, 100) else []
+
+
+func _check_later_act_specialties() -> void:
+	for region: String in ["brass", "glass"]:
+		var path := "user://frontier-act-specialty-%s-%d.json" % [region, Time.get_ticks_usec()]
+		var run := FrontierRun.new()
+		run.load_save(path)
+		run.profile.medium_unlocked = true
+		run.profile.hard_unlocked = true
+		run.profile.glass_hard_unlocked = true
+		_check_party_specialty_route(run, region, path)
+		for base: String in [path, path + ".control"]:
+			for suffix in ["", ".bak", ".tmp"]:
+				if FileAccess.file_exists(base + suffix):
+					DirAccess.remove_absolute(ProjectSettings.globalize_path(base + suffix))
+
+
+func _check_party_specialty_route(run: FrontierRun, region: String, path: String) -> void:
+	if not _equip_gate_starter(run, 6, "hard", "warden", region) or not _recruit_at_next_boss(run):
+		check(false, "%s Hard must reach Act II with a recruit." % region)
+		return
+	var starter := ClassDecks.starter("warden")
+	run.loadout.lanes[0] = _acquisition_pair(starter)
+	run.loadout.lanes[0].append({"id": "iron_vow", "start": 4, "target": "nearest"})
+	var lead_tiles: Array = run.loadout.lanes[0].duplicate(true)
+	run.loadout.storage[0] = [{"id": "bellows_strike_upgrade_uncommon_technique", "start": 0, "target": "nearest"}]
+	run.data.relics.assign(["pocket_bell", "siege_fuse"])
+	var recruit: String = run.data.heroes[1].id
+	var act_two_gate: Dictionary = run.available_nodes()[0]
+	if not (run.choose_node(act_two_gate.id) and run.finish_combat(true, [100, 100])):
+		check(false, "%s Act II must resolve its first ordinary fight." % region)
+		return
+	var lead_signature := ClassDecks.signature("warden")
+	var first_history: Dictionary = run.data.get("act_specialty_offers", {})
+	check(run.reward_hint(starter) == "Third copy" and run.data.offers.any(func(id: String):
+		return _reward_tile_family(id) == lead_signature and ArenaSim.TILES[id].rarity == "rare") \
+		and run.data.offers.any(func(id: String): return "Siege Fuse" in run.reward_hint(id)) \
+		and not first_history.has("warden") and int(first_history.get(recruit, 0)) == 2,
+		"%s keeps three protected lead picks while the new recruit can get their own first specialty." % region)
+	var queued: Array = run.data.reward_remaining.duplicate(true)
+	check(run.load_save(path) and run.data.reward_remaining == queued and run.reward("skip") \
+		and not _offered_gate_specialties(run.data.offers, recruit).is_empty(),
+		"%s Act II retains the recruit's separate specialty draft after reloading." % region)
+	if not _finish_rewards(run, "skip"):
+		return
+	# The right-hand Brass branch rolls only Commons on the second fight.
+	var second := "8-2" if region == "brass" else "8-0"
+	if not (run.choose_node(second) and run.finish_combat(true, [100, 100])):
+		check(false, "%s Act II must reach a second ordinary fight." % region)
+		return
+	var eligible := ["reversal_plate", "rampart_rush"]
+	if region == "brass":
+		check(not run.data.get("act_specialty_offers", {}).has("warden") \
+			and run.data.offers.all(func(id: String): return ArenaSim.TILES[id].rarity == "common"),
+			"An established hero's Act II specialty stays pending after a Common-only second reward.")
+		if not _finish_rewards(run, "skip"):
+			check(false, "Brass Act II must resolve its second ordinary draft.")
+			return
+		run.loadout.lanes[0] = [{"id": "shield_ram", "start": 0, "target": "nearest"}]
+		run.loadout.storage[1] = [{"id": "iron_vow", "start": 0, "target": "nearest"}]
+		if not (run.choose_node("9-2") and run.finish_combat(true, [100, 100])):
+			check(false, "Brass Act II must reach a third ordinary fight.")
+			return
+		check(int(run.data.get("act_specialty_offers", {}).get("warden", 0)) == 2 and "shield_ram" not in run.data.offers \
+			and run.reward_hint("shield_ram").is_empty() and run.data.offers.any(func(id: String):
+				return _reward_tile_family(id) in eligible and ArenaSim.TILES[id].rarity == "uncommon"),
+			"The later win uses an eligible single owned Uncommon slot and prefers a family absent from the party.")
+		run.loadout.lanes[0] = lead_tiles
+		run.loadout.storage[1] = []
+	else:
+		check(int(run.data.get("act_specialty_offers", {}).get("warden", 0)) == 2 and run.data.offers.any(func(id: String):
+			return _reward_tile_family(id) in eligible and ArenaSim.TILES[id].rarity == "rare") \
+			and run.reward_hint(starter) == "Third copy",
+			"Glass retries a fully protected offer and uses a later Rare roll without taking the third copy.")
+	if not _finish_rewards(run, "skip") or not _recruit_at_next_boss(run):
+		check(false, "%s Hard must reach Act III with three heroes." % region)
+		return
+	run.data.relics.assign(["pocket_bell"])
+	run.loadout.lanes[1] = [{"id": "shield_ram", "start": 0, "target": "nearest"}]
+	var act_three_gate: Dictionary = run.available_nodes()[0]
+	if not run.choose_node(act_three_gate.id):
+		check(false, "%s Act III must reach its opening battle." % region)
+		return
+	var normal := FrontierRun.new()
+	if not normal.load_save(path):
+		check(false, "%s Act III must save its opening battle for the matched control." % region)
+		return
+	normal.save_path = path + ".control"
+	var control_history: Dictionary = normal.data.get_or_add("act_specialty_offers", {})
+	control_history.warden = 3
+	if not (normal.finish_combat(true, [100, 100, 100]) and run.finish_combat(true, [100, 100, 100])):
+		check(false, "%s Act III must open both matched combat drafts." % region)
+		return
+	var removed: Array = normal.data.offers.filter(func(id: String): return id not in run.data.offers)
+	var added: Array = run.data.offers.filter(func(id: String): return id not in normal.data.offers)
+	check(removed.size() == 1 and added.size() == 1 and ArenaSim.TILES[removed[0]].rarity == "uncommon" \
+		and ArenaSim.TILES[added[0]].rarity == "uncommon" and _reward_tile_family(added[0]) in eligible \
+		and run.reward_hint(starter) == "Third copy",
+		"%s chooses the Uncommon roll over a Common for the fresh family and keeps the exact third copy." % region)
+	var history: Dictionary = run.data.get("act_specialty_offers", {}).duplicate()
+	queued = run.data.reward_remaining.duplicate(true)
+	check(run.load_save(path) and run.data.reward_remaining == queued and history.keys().all(func(id: String):
+		return int(run.data.get("act_specialty_offers", {}).get(id, 0)) == int(history[id])),
+		"%s Act III preserves the consumed act and queued drafts for all three heroes on reload." % region)
+	for hero: Dictionary in run.data.heroes:
+		check(int(history.get(hero.id, 0)) == 3 and not _offered_gate_specialties(run.data.offers, hero.id).is_empty(),
+			"%s Act III offers a separate class specialty to %s." % [region, hero.id])
+		if not run.reward("skip"):
+			break
+
+
+func _recruit_at_next_boss(run: FrontierRun) -> bool:
+	_reach_boss(run)
+	var hp: Array = run.data.heroes.map(func(hero: Dictionary): return hero.hp)
+	if not (run.finish_combat(true, hp) and _finish_rewards(run, "skip")):
+		return false
+	if run.data.phase == "boss_relic" and not run.choose_boss_relic("skip"):
+		return false
+	if run.data.phase != "recruit":
+		return false
+	var recruit: String = run.data.offers[0]
+	return run.choose_recruit(recruit) and run.choose_recruit_starter(ClassDecks.starter(recruit))
 
 
 func _check_acquisition_drafts() -> void:

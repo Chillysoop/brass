@@ -294,6 +294,8 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String,
 					if preferred in run.data.offers:
 						hero = preferred
 						break
+				if moonwreck_hard and run.data.phase == "recruit" and run.data.heroes.size() == 1 and "hexwright" in run.data.offers:
+					hero = "hexwright"
 				run.choose_hero(hero)
 			"relic":
 				run.choose_relic("pocket_bell")
@@ -305,6 +307,8 @@ func _new_route_playthrough(game: Control, difficulty: String, location: String,
 			"recruit_starter":
 				var needs_bash: bool = crown_medium or ((crown_hard or moonwreck_hard) and run.data.heroes.size() == 3)
 				var recruit_tile := "bash" if needs_bash else "shot"
+				if moonwreck_hard and run.data.get("pending_recruit") == "hexwright":
+					recruit_tile = "grapple"
 				_check(run.choose_starter(recruit_tile), "Equip the recruited hero.")
 				if glass_hard or crown_medium or crown_hard or moonwreck_medium or moonwreck_hard:
 					var saved := FrontierRun.new()

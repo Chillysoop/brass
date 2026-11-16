@@ -59,6 +59,7 @@ const MAP_ART := {
 const RELIC_DRAFT_TONES := {
 	"afterimage": Color("#c8b7ec"), "barrage_rack": Color("#efbe8a"), "siege_fuse": Color("#9ddbd1"),
 	"twin_bell": Color("#f1cc79"), "switchback_lens": Color("#9dcce7"), "longshot_prism": Color("#d7bcee"),
+	"guard_relay": Color("#9ddbd1"), "flanking_standard": Color("#efae81"),
 	"tollkeeper_signet": Color("#f2c185"), "bastion_medal": Color("#9ddbd1"), "guild_ledger": Color("#d3bded"),
 	"tollkeeper_repair_kit": Color("#b5d5a0"), "bellmaker_clapper": Color("#f2b68b"),
 	"bellmaker_long_echo": Color("#a8d9eb"), "bellmaker_resonant_plate": Color("#dfc4ee"),
@@ -939,7 +940,8 @@ func _reward_heading(title: String, milestone: String, hero_id: String) -> void:
 
 
 func _elite_relic_draft(offers: Array) -> void:
-	_relic_heading("Choose an elite relic", "Tile reward follows.")
+	var title := "Choose a party relic" if _run.party_elite_relic_draft() else "Choose an elite relic"
+	_relic_heading(title, "Tile rewards follow.")
 	var cards := _cards_row()
 	for offer: Dictionary in offers:
 		var id: String = offer.id
@@ -1560,10 +1562,16 @@ func _choice(parent: Control, name: String, body: String, cta: String, chosen: C
 	var compact := _battle_overlay or tile_preview
 	var card := _panel_stack(parent, Vector2(0, 0 if compact else 280), true)
 	if compact:
-		card.add_theme_constant_override("separation", 5)
+		card.add_theme_constant_override("separation", 3 if _battle_overlay and not tile_preview else 5)
 	if not name.is_empty():
 		var title := _label(name, 22 if compact else 27, CREAM, true)
 		title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		if _battle_overlay and not tile_preview:
+			title.add_theme_font_size_override("font_size", 18)
+			title.max_lines_visible = 2
+			title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+			title.tooltip_text = name
+			title.mouse_filter = MOUSE_FILTER_PASS
 		card.add_child(title)
 	var details: Control
 	if compact:

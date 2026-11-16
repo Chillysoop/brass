@@ -17,6 +17,7 @@ const BASE_TILES := ["bash", "shot", "slam", "pull", "guard", "blink"]
 const STARTER_RELICS := ["pocket_bell", "copper_compass", "quartermasters_coin"]
 const BUILD_RELICS := ["towline_knot", "bridgeplate", "brass_metronome", "overflow_chalice", "stepped_gear", "mercy_seal"]
 const ELITE_RELICS := ["afterimage", "barrage_rack", "siege_fuse", "switchback_lens", "longshot_prism", "twin_bell"]
+const PARTY_ELITE_RELICS := ["twin_bell", "guard_relay", "flanking_standard"]
 const BOSS_RELICS := {
 	"tollkeeper": ["tollkeeper_signet", "bastion_medal", "guild_ledger", "tollkeeper_repair_kit"],
 	"brass_bellmaker": ["bellmaker_clapper", "bellmaker_long_echo", "bellmaker_resonant_plate"],
@@ -55,6 +56,8 @@ const RELICS := {
 	"switchback_lens": {"label": "Switchback Lens", "description": "Hit a different main target with your next landed attack tile for +10 damage. Once per hero per loop."},
 	"longshot_prism": {"label": "Longshot Prism", "description": "The first direct tile hit from 180 units away or farther deals +11 damage each loop."},
 	"twin_bell": {"label": "Twin Bell", "description": "Two heroes hit the same foe on the same beat. The second hit deals +12 damage once per loop."},
+	"guard_relay": {"label": "Guard Relay", "description": "Once per loop, when a hero's tile gives an ally Guard, both gain 4 more."},
+	"flanking_standard": {"label": "Flanking Standard", "description": "Two heroes hit the same foe from opposite sides within 2 beats. The second hit deals +10 damage once per loop."},
 	"tollkeeper_signet": {"label": "Tollkeeper's Signet", "description": "Damage tiles that finish on beats 1–4 deal +3 damage."},
 	"bastion_medal": {"label": "Bastion Medal", "description": "When a tile fires and grants Guard, it grants 3 extra Guard to each recipient."},
 	"guild_ledger": {"label": "Guild Ledger", "description": "Shops stock one extra tile from each hero's class deck."},
@@ -906,7 +909,7 @@ func elite_preview(node: Dictionary) -> Dictionary:
 	var segment := 1 + floori(float(node.row) / NODES_PER_SEGMENT)
 	return {
 		"encounter": _encounter_for(node, segment), "tile": tile, "reward_family": ArenaSim.TILES[tile].get("family", ""),
-		"relic_draft": not _has_earned_elite_relic(),
+		"relic_draft": not _has_earned_elite_relic() or _can_draft_party_elite_relic(),
 	}
 
 
@@ -927,7 +930,13 @@ func _class_elite_preview_tile(node: Dictionary) -> String:
 func will_draft_elite_relic() -> bool:
 	if data.get("phase") != "combat":
 		return false
-	return data.node.get("encounter_override", data.node.type) == "elite" and not _has_earned_elite_relic()
+	return data.node.get("encounter_override", data.node.type) == "elite" \
+		and (not _has_earned_elite_relic() or _can_draft_party_elite_relic())
+
+
+func _can_draft_party_elite_relic() -> bool:
+	return _has_earned_elite_relic() and not data.get("party_elite_relic_drafted", false) \
+		and data.heroes.filter(func(hero: Dictionary): return int(hero.hp) > 0).size() >= 2
 
 
 func _has_earned_elite_relic() -> bool:
@@ -956,20 +965,27 @@ func elite_relic_offers() -> Array:
 	return data.get("elite_relic_offers", []) if data.get("phase") == "reward" else []
 
 
+func party_elite_relic_draft() -> bool:
+	return not elite_relic_offers().is_empty() and bool(data.get("party_elite_relic_pending", false))
+
+
 func choose_elite_relic(id: String) -> bool:
 	for offer: Dictionary in elite_relic_offers():
 		if offer.id != id or id in data.relics:
 			continue
 		var before := data.duplicate(true)
+		if party_elite_relic_draft():
+			data.party_elite_relic_drafted = true
+			data.erase("party_elite_relic_pending")
 		var guaranteed: String = data.get("elite_guaranteed_tile", "")
-		if guaranteed.is_empty() and data.node.type == "elite":
-			guaranteed = _class_elite_preview_tile(data.node) if reward_lane() >= 0 else _legacy_elite_preview_tile()
 		data.relics.append(id)
 		data.elite_relic_drafted = true
 		data.erase("elite_relic_offers")
 		data.erase("elite_guaranteed_tile")
 		var tile: String = offer.companion
 		if not tile.is_empty():
+			if guaranteed.is_empty() and data.node.type == "elite":
+				guaranteed = _class_elite_preview_tile(data.node) if reward_lane() >= 0 else _legacy_elite_preview_tile()
 			if tile not in data.offers:
 				for index in range(data.offers.size() - 1, -1, -1):
 					var replaced: String = data.offers[index]
@@ -1029,6 +1045,15 @@ func _build_elite_relic_offers() -> Array:
 	for offer: Dictionary in draft:
 		offer.erase("fit")
 	return draft
+
+
+func _build_party_elite_relic_offers() -> Array:
+	var picks := PARTY_ELITE_RELICS.filter(func(id: String): return id not in data.relics)
+	if picks.size() < 3:
+		var alternatives := _available_relics().filter(func(id: String): return id not in picks)
+		picks.append_array(_sample(alternatives, 3 - picks.size(), int(data.seed), _node_salt(187)))
+	return _sample(picks, 3, int(data.seed), _node_salt(188)).map(func(id: String) -> Dictionary:
+		return {"id": id, "role": "", "companion": ""})
 
 
 func _elite_relic_offer(id: String, equipped := []) -> Dictionary:
@@ -1169,6 +1194,7 @@ func finish_combat(victory: bool, hp: Variant, combat_stats := {}) -> bool:
 	if "trail_ration" in data.relics:
 		_heal(5, false)
 	var draft_relic := will_draft_elite_relic()
+	var party_relic := draft_relic and _can_draft_party_elite_relic()
 	var kind: String = data.node.get("encounter_override", data.node.type)
 	_record_pilot_fight(kind)
 	data.phase = "reward"
@@ -1178,7 +1204,10 @@ func finish_combat(victory: bool, hp: Variant, combat_stats := {}) -> bool:
 		"elite":
 			data.gold += 20
 			_grant_marks(2)
-			if draft_relic:
+			if party_relic:
+				data.elite_relic_offers = _build_party_elite_relic_offers()
+				data.party_elite_relic_pending = true
+			elif draft_relic:
 				data.elite_relic_offers = _build_elite_relic_offers()
 				data.elite_guaranteed_tile = ClassDecks.signature(data.hero)
 			else:
@@ -2153,7 +2182,7 @@ func _combat_reward_draft(kind: String, lane: int) -> Dictionary:
 	if kind == "elite":
 		var pool := _class_reward_pool(hero_id, 1, rows) + _class_reward_pool(hero_id, 2, rows) + _class_reward_pool(hero_id, 3, rows)
 		var fixed: Array = []
-		var first_elite := not elite_relic_offers().is_empty()
+		var first_elite := not elite_relic_offers().is_empty() and not party_elite_relic_draft()
 		if first_elite:
 			fixed.append(ClassDecks.signature(hero_id))
 		elif lane == 0 and data.node.type == "elite":
@@ -2302,7 +2331,13 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 	var starshot_opening := specialty_opening and hero_id == "starshot"
 	var fresh_battle_draft: bool = specialty_start and hero_id == "starshot" and data.node.type == "battle" \
 		and _rng(int(data.seed), _node_salt(87 + salt)).randi_range(0, 1) == 0
-	var recruit_draft := _early_recruit_draft(lane) if not specialties.is_empty() else -1
+	var act := int(data.get("segment", 1))
+	var party_draft := _party_battle_index()
+	var established := lane + 1 < act
+	var early_recruit := not established and party_draft in [0, 1]
+	var recruit_draft := party_draft if early_recruit and data.get("location") == "brass" else -1
+	var specialty_act: int = data.get("act_specialty_offers", {}).get(hero_id, 0)
+	var offer_act_specialty: bool = party_draft >= 0 and (established or early_recruit) and specialty_act != act
 	var prefer_new_tiles := opening_pilot or starshot_opening or fresh_battle_draft or recruit_draft == 1
 	var owned_hint := _copy_reward_hint(owned, rows) if not owned.is_empty() else ""
 	if not owned.is_empty() and (not prefer_new_tiles or owned_hint == "Third copy"):
@@ -2326,7 +2361,7 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 	if specialty_opening and rewards.size() < 3:
 		var candidates := specialties.filter(func(id: String): return not held.has(id) and id not in rewards)
 		rewards.append_array(_sample(candidates, 1, int(data.seed), _node_salt(86 + salt)))
-	if recruit_draft >= 0 and rewards.size() < 3:
+	if recruit_draft >= 0 and not offer_act_specialty and rewards.size() < 3:
 		_reserve_recruit_specialty(lane, specialties, held, rewards)
 	var first_roll := rewards.size()
 	var rng := _rng(int(data.seed), _node_salt(84 + salt))
@@ -2354,54 +2389,116 @@ func _normal_reward_draft(lane: int, rows: Array, signature_offer := "") -> Dict
 	if lane == 0 and data.node.type == "opening" and data.get("location") == "brass" \
 		and data.get("difficulty") in ["medium", "hard"]:
 		_reserve_gate_specialty(specialties, held, rewards, hints, first_roll)
+	if offer_act_specialty:
+		var previous := _previous_recruit_specialty(lane, hero_id) if recruit_draft >= 0 else ""
+		var family := _reserve_act_specialty(lane, specialties, held, rewards, hints, first_roll, established, previous)
+		if not family.is_empty():
+			var history: Dictionary = data.get_or_add("act_specialty_offers", {})
+			history[hero_id] = act
+			if recruit_draft >= 0:
+				_record_recruit_specialty(hero_id, family)
 	return {"offers": _sample(rewards, 3, int(data.seed), _node_salt(85 + salt)), "hints": hints}
 
 
-func _reserve_gate_specialty(specialties: Array, held: Dictionary, rewards: Array, hints: Dictionary, first_roll: int) -> void:
+func _replaceable_reward_roll(rewards: Array, held: Dictionary, first_roll: int, prefer_high := false,
+		protect_signatures := false) -> int:
 	var slot := -1
-	var preferred_tier := TILE_RARITIES.size()
-	var copy_slot := -1
-	for index in range(rewards.size() - 1, -1, -1):
+	var best_priority := -1
+	for index in range(rewards.size() - 1, first_roll - 1, -1):
 		var id: String = rewards[index]
 		if int(held.get(id, 0)) >= 2 and not TilePacking.next_options(id).is_empty():
 			continue
-		if index < first_roll:
-			if hints.get(id) == "Owned copy":
-				copy_slot = index
+		if protect_signatures and ClassDecks.is_signature(_reward_family(id)):
 			continue
 		var tier := TILE_RARITIES.find(ArenaSim.TILES[id].rarity)
-		if tier < preferred_tier:
+		var priority := tier if prefer_high else TILE_RARITIES.size() - tier
+		if priority > best_priority:
 			slot = index
-			preferred_tier = tier
+			best_priority = priority
+	return slot
+
+
+func _reserve_gate_specialty(specialties: Array, held: Dictionary, rewards: Array, hints: Dictionary, first_roll: int) -> void:
+	var slot := _replaceable_reward_roll(rewards, held, first_roll)
 	if slot < 0:
-		slot = copy_slot
+		slot = rewards.find_custom(func(id: String): return hints.get(id) == "Owned copy")
 	if slot < 0:
 		return
 	var tier := TILE_RARITIES.find(ArenaSim.TILES[rewards[slot]].rarity)
-	var held_families := {}
-	for id: String in held:
-		held_families[ArenaSim.TILES[id].get("family", id)] = true
+	var held_families := held.keys().map(_reward_family)
 	var families := specialties.filter(func(family: String):
-		return not held_families.has(family) and (tier == 0 or forge_family_available(family)))
+		return family not in held_families and (tier == 0 or forge_family_available(family)))
 	var choice := _sample(families, 1, int(data.seed), _node_salt(86))
 	if choice.is_empty():
 		return
 	var family: String = choice[0]
-	if rewards.any(func(id: String): return ArenaSim.TILES[id].get("family", id) == family):
+	if family in rewards.map(_reward_family):
 		return
 	# The Gate can introduce a specialty's forge variant at the rolled rarity.
-	var options := [family] if tier == 0 else _class_forge_tier([family], tier)
-	var pick := _sample(options, 1, int(data.seed), _node_salt(88))
+	var pick := _sample_specialty_tile(family, tier, 88)
 	if not pick.is_empty():
 		hints.erase(rewards[slot])
-		rewards[slot] = pick[0]
+		rewards[slot] = pick
 
 
-func _early_recruit_draft(lane: int) -> int:
-	if lane < 1 or data.get("location") != "brass" or data.get("difficulty") not in ["medium", "hard"] \
-		or data.node.type != "battle":
+func _reserve_act_specialty(lane: int, specialties: Array, held: Dictionary, rewards: Array, hints: Dictionary,
+		first_roll: int, established: bool, previous: String) -> String:
+	var slot := _replaceable_reward_roll(rewards, held, first_roll, true, true)
+	if established and (slot < 0 or ArenaSim.TILES[rewards[slot]].rarity == "common"):
+		var owned_upgrade := rewards.find_custom(func(id: String):
+			return hints.get(id) == "Owned copy" and int(held.get(id, 0)) == 1 \
+				and ArenaSim.TILES[id].rarity in ["uncommon", "rare"] and not ClassDecks.is_signature(_reward_family(id)))
+		if owned_upgrade >= 0:
+			slot = owned_upgrade
+		else:
+			return ""
+	if slot < 0:
+		return ""
+	var tier := TILE_RARITIES.find(ArenaSim.TILES[rewards[slot]].rarity)
+	var lane_items: Array = loadout.lanes[lane]
+	var equipped := lane_items.map(func(item: Dictionary): return _reward_family(item.id))
+	var eligible := specialties.filter(func(family: String):
+		return family != previous and family not in equipped and (tier == 0 or forge_family_available(family)))
+	var party_families := {}
+	for items: Array in loadout.lanes + loadout.storage:
+		for item: Dictionary in items:
+			party_families[_reward_family(item.id)] = true
+	var fresh := eligible.filter(func(family: String): return not party_families.has(family))
+	var families := fresh if not fresh.is_empty() else eligible
+	var offered := rewards.map(_reward_family)
+	var novel := families.filter(func(family: String): return family not in offered)
+	if established and novel.is_empty():
+		families = families.filter(func(family: String): return rewards.any(func(id: String):
+			return _reward_family(id) == family and ArenaSim.TILES[id].rarity in ["uncommon", "rare"]))
+	var salt := lane * 1069
+	var choice := _sample(novel if not novel.is_empty() else families, 1, int(data.seed), _node_salt(86 + salt))
+	if choice.is_empty():
+		return ""
+	var family: String = choice[0]
+	if family not in offered:
+		var pick := _sample_specialty_tile(family, tier, 88 + salt)
+		if pick.is_empty():
+			return ""
+		hints.erase(rewards[slot])
+		rewards[slot] = pick
+	return family
+
+
+func _reward_family(id: String) -> String:
+	return ArenaSim.TILES[id].get("family", id)
+
+
+func _sample_specialty_tile(family: String, tier: int, salt: int) -> String:
+	var options := [family] if tier == 0 else _class_forge_tier([family], tier)
+	var pick := _sample(options, 1, int(data.seed), _node_salt(salt))
+	return "" if pick.is_empty() else pick[0]
+
+
+func _party_battle_index() -> int:
+	var act := int(data.get("segment", 1))
+	if act < 2 or data.get("difficulty") not in ["medium", "hard"] or data.node.type != "battle":
 		return -1
-	var first_row := lane * NODES_PER_SEGMENT
+	var first_row := (act - 1) * NODES_PER_SEGMENT
 	var row := int(data.node.row)
 	if row < first_row or row >= first_row + NODES_PER_SEGMENT:
 		return -1
@@ -2409,26 +2506,29 @@ func _early_recruit_draft(lane: int) -> int:
 	for layer: Array in data.layers.slice(first_row, row):
 		if layer.any(func(node: Dictionary): return node.type == "battle" and node.id in data.visited):
 			prior_battles += 1
-			if prior_battles >= 2:
-				return -1
 	return prior_battles
 
 
 func _reserve_recruit_specialty(lane: int, specialties: Array, held: Dictionary, rewards: Array) -> void:
-	var held_families := {}
-	for id: String in held:
-		held_families[ArenaSim.TILES[id].get("family", id)] = true
+	var held_families := held.keys().map(_reward_family)
 	var hero_id: String = data.heroes[lane].id
-	var history: Dictionary = data.get("recruit_specialties", {})
-	var legacy: String = str(data.get("recruit_specialty", data.get("starshot_recruit_specialty", ""))) if lane == 1 else ""
-	var previous := str(history.get(hero_id, legacy))
+	var previous := _previous_recruit_specialty(lane, hero_id)
 	var options := specialties.filter(func(id: String):
 		return id != previous and not held_families.has(id) and id not in rewards)
 	var choice := _sample(options, 1, int(data.seed), _node_salt(86 + lane * 1069))
 	if not choice.is_empty():
 		rewards.append(choice[0])
-		history[hero_id] = choice[0]
-		data.recruit_specialties = history
+		_record_recruit_specialty(hero_id, choice[0])
+
+
+func _previous_recruit_specialty(lane: int, hero_id: String) -> String:
+	var legacy := str(data.get("recruit_specialty", data.get("starshot_recruit_specialty", ""))) if lane == 1 else ""
+	return str(data.get("recruit_specialties", {}).get(hero_id, legacy))
+
+
+func _record_recruit_specialty(hero_id: String, family: String) -> void:
+	var history: Dictionary = data.get_or_add("recruit_specialties", {})
+	history[hero_id] = family
 
 
 func _early_build_directions(lane: int, hero_id: String) -> Array:

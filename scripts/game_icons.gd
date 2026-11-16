@@ -87,6 +87,7 @@ const RELIC_ICONS := {
 	"afterimage": "teleport", "barrage_rack": "shot", "siege_fuse": "area",
 	"overflow_chalice": "rest", "stepped_gear": "forge", "mercy_seal": "guard",
 	"twin_bell": "relic", "switchback_lens": "route", "longshot_prism": "shot",
+	"guard_relay": "guard-relay", "flanking_standard": "flanking-standard",
 	"tollkeeper_signet": "boss", "bastion_medal": "guard", "guild_ledger": "shop",
 	"tollkeeper_repair_kit": "rest", "bellmaker_clapper": "area", "bellmaker_long_echo": "shot",
 	"bellmaker_resonant_plate": "guard",

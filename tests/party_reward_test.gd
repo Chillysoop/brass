@@ -252,6 +252,9 @@ func _check_signature_elite_pair(lead: String, recruit: String) -> void:
 		and lead_signature in run.data.offers and run.reward_hint(lead_signature) == "Third copy"
 		and run.data.offers.any(func(id: String): return id in lead_epics),
 		"Later elites retain the preview and third copy, and offer an Epic for %s's owned Rare." % lead)
+	var relics := run.elite_relic_offers()
+	_check(run.party_elite_relic_draft() and relics.size() == 3 and run.choose_elite_relic(relics[0].id),
+		"Choose the party relic before resolving the heroes' tile drafts.")
 	_check(won and run.reward("skip") and run.reward_lane() == 1
 		and run.data.offers.any(func(id: String): return id in TilePacking.next_options(recruit_signature))
 		and not run.data.offers.any(func(id: String): return id in lead_epics),

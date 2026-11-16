@@ -69,6 +69,10 @@ const CRITICAL_RNG_SALT := 182827
 const DISPLACEMENT_BONUS_WINDOW := 3 * TICKS_PER_BEAT
 const COLLISION_WINDOW_TICKS := 24
 const BARRAGE_GUARD_BREAK := 8
+const GUARD_RELAY_GUARD := 4
+const FLANKING_STANDARD_DAMAGE := 10
+const FLANKING_STANDARD_WINDOW := 2 * TICKS_PER_BEAT
+const FLANKING_STANDARD_DOT := -0.5
 const SIEGE_PULL_REACH := 185.0
 const SIEGE_PULL_DISTANCE := 82.0
 const MAX_GUARD := 28
@@ -506,6 +510,7 @@ var _siege_loop := -1
 var _spent_timeline_relics: Dictionary = {}
 var _overflow_healed := 0
 var _twin_bell_hits: Dictionary = {}
+var _flanking_hits: Dictionary = {}
 var _healed_tiles: Dictionary = {}
 var _last_party_heal_loop := -1
 var _enemy_pursuit_sprints := false
@@ -595,6 +600,7 @@ func start(hero_lanes: Array, fixture: String = "duo", options: Dictionary = {})
 	_spent_timeline_relics.clear()
 	_overflow_healed = 0
 	_twin_bell_hits.clear()
+	_flanking_hits.clear()
 	_healed_tiles.clear()
 	_last_party_heal_loop = -1
 	_reinforcement_wave.clear()
@@ -1404,6 +1410,7 @@ func _activate_lanes() -> void:
 					_apply_mastery(actor, tile.id)
 				_apply_bastion_medal(actor, tile.id)
 				_apply_bellmaker_finishes(actor, tile.id)
+				_apply_guard_relay(actor, tile.id)
 				_apply_starshot_critical_step(actor, tile.id)
 				_add_tile_visual_cue(actor, tile.id, origin, first_event)
 				if actor.get("class") == "rune_smith" and TILES[tile.id].width >= 3:
@@ -3170,12 +3177,42 @@ func _guard(recipient: Dictionary, amount: int, tile_id: String, source: Diction
 		_heal_guard_overflow(actor, tile_id, amount - gain)
 	if gain > 0:
 		_emit("guard", "%s gains %d guard." % [recipient.name, gain], actor, recipient, tile_id, gain)
+		if actor.side == "hero" and recipient.side == "hero" and actor.id != recipient.id and recipient.hp > 0 \
+				and _activation.get("tile") == tile_id and _activation.get("actor") == actor.id \
+				and _has_relic(actor, "guard_relay") and not _spent_timeline_relics.has("guard_relay"):
+			var recipients: Array = _activation.get_or_add("guard_relay_recipients", [])
+			if recipient.id not in recipients:
+				recipients.append(recipient.id)
 		if echo and actor.get("class") == "cantor":
 			var weakest := recipient
 			for ally in units:
 				if ally.side == actor.side and ally.hp > 0 and ally.hp < weakest.hp:
 					weakest = ally
 			_guard(weakest, 3, "cantor", actor, false)
+
+
+func _apply_guard_relay(actor: Dictionary, tile_id: String) -> void:
+	var recipients: Array = _activation.get("guard_relay_recipients", [])
+	_activation.erase("guard_relay_recipients")
+	var caster_gain := mini(GUARD_RELAY_GUARD, MAX_GUARD - int(actor.guard))
+	for recipient_id: String in recipients:
+		var recipient := _find_unit(recipient_id)
+		if recipient.get("hp", 0) <= 0:
+			continue
+		var ally_gain := mini(GUARD_RELAY_GUARD, MAX_GUARD - int(recipient.guard))
+		if caster_gain + ally_gain <= 0:
+			continue
+		_spent_timeline_relics["guard_relay"] = true
+		_guard(actor, caster_gain, "guard_relay", {}, false)
+		_guard(recipient, ally_gain, "guard_relay", actor, false)
+		var effect := "%s gained %d Guard" % [recipient.name, ally_gain]
+		if caster_gain > 0 and ally_gain > 0:
+			effect = "%s gained %d Guard and %s gained %d" % [actor.name, caster_gain, recipient.name, ally_gain]
+		elif caster_gain > 0:
+			effect = "%s gained %d Guard" % [actor.name, caster_gain]
+		_relic_proc("guard_relay", "Guard Relay", caster_gain + ally_gain, actor, recipient, TILES[tile_id].label,
+			_activation.beat, effect)
+		return
 
 
 func _heal_guard_overflow(actor: Dictionary, tile_id: String, excess: int) -> void:
@@ -3610,6 +3647,7 @@ func _relic_attack_bonus(actor: Dictionary, target: Dictionary) -> int:
 
 func _timeline_relic_bonus(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
 	var bonus := _twin_bell_bonus(actor, target, tile_id)
+	bonus += _flanking_standard_bonus(actor, target, tile_id)
 	if _activation.beat <= TOLLKEEPER_SIGNET_LAST_BEAT and _has_relic(actor, "tollkeeper_signet"):
 		bonus += _relic_proc("tollkeeper_signet", "Tollkeeper's Signet", TOLLKEEPER_SIGNET_DAMAGE,
 			actor, target, TILES[tile_id].label, _activation.beat, "", _attack_origin(actor))
@@ -3647,6 +3685,34 @@ func _twin_bell_bonus(actor: Dictionary, target: Dictionary, tile_id: String) ->
 		_spent_timeline_relics["twin_bell"] = true
 		return _relic_proc("twin_bell", "Twin Bell", 12, actor, target, previous.source, _activation.beat)
 	return 0
+
+
+func _flanking_standard_bonus(actor: Dictionary, target: Dictionary, tile_id: String) -> int:
+	if not _has_relic(actor, "flanking_standard"):
+		return 0
+	var origin := _attack_origin(actor)
+	var target_position: Vector2 = target.pos
+	var direction := target_position.direction_to(origin)
+	if direction.is_zero_approx():
+		return 0
+	var recent: Array = _flanking_hits.get_or_add(target.id, [])
+	while not recent.is_empty() and tick - int(recent[0].tick) > FLANKING_STANDARD_WINDOW:
+		recent.pop_front()
+	var previous := {}
+	if not _spent_timeline_relics.has("flanking_standard"):
+		for index in range(recent.size() - 1, -1, -1):
+			var candidate: Dictionary = recent[index]
+			if candidate.actor != actor.id and direction.dot(candidate.direction) <= FLANKING_STANDARD_DOT \
+					and _find_unit(candidate.actor).get("hp", 0) > 0:
+				previous = candidate
+				break
+	recent.append({"actor": actor.id, "tick": tick, "direction": direction, "beat": _activation.beat,
+		"source": "%s's %s" % [actor.name, TILES[tile_id].label]})
+	if previous.is_empty():
+		return 0
+	_spent_timeline_relics["flanking_standard"] = true
+	return _relic_proc("flanking_standard", "Flanking Standard", FLANKING_STANDARD_DAMAGE,
+		actor, target, previous.source, previous.beat, "+%d damage from opposite sides" % FLANKING_STANDARD_DAMAGE, origin)
 
 
 func _stepped_gear_bonus(actor: Dictionary, target: Dictionary, tile_id: String) -> int:

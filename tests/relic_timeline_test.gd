@@ -12,12 +12,14 @@ func _initialize() -> void:
 	_check_stepped_gear()
 	_check_mercy_seal()
 	_check_twin_bell()
+	_check_guard_relay()
+	_check_flanking_standard()
 	_check_switchback_lens()
 	_check_longshot_prism()
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Six timeline relics passed timing, targeting, and loop budget checks.")
+		print("Eight timeline relics passed timing, targeting, positioning, and loop budget checks.")
 	quit(0 if failures.is_empty() else 1)
 
 
@@ -122,6 +124,99 @@ func _check_twin_bell() -> void:
 	_advance(split, 2 * BEAT)
 	_check(_procs(offset, "twin_bell").is_empty() and _procs(split, "twin_bell").is_empty(),
 		"A one-beat offset or attacks on different enemies should not trigger Twin Bell.")
+
+
+func _check_guard_relay() -> void:
+	var pair := _sim("guard_relay", [[_tile("rally_guard", 0)], [_tile("rally_guard", 2)], []])
+	var base: int = ArenaSim.TILES.rally_guard.guard
+	var bonus := ArenaSim.GUARD_RELAY_GUARD
+	pair.units[2].hp = 0
+	_advance(pair, 2 * BEAT - 1)
+	_check(_procs(pair, "guard_relay").is_empty() and pair.units[1].guard == 0,
+		"Guard Relay should wait for the tile's right edge.")
+	pair.step()
+	var procs := _procs(pair, "guard_relay")
+	_check(procs.size() == 1 and procs[0].source_tile == "rally_guard" and procs[0].tick == 2 * BEAT
+		and procs[0].amount == 2 * bonus and pair.units[0].guard == base + bonus
+		and pair.units[1].guard == base + bonus and pair.units[2].guard == 0,
+		"An allied Guard grant should give both living heroes four extra and identify its tile in Battle Review.")
+	for hero_index in [0, 1]:
+		pair.units[hero_index].guard = 0
+	_advance(pair, 4 * BEAT)
+	_check(_procs(pair, "guard_relay").size() == 1 and pair.units[0].guard == base and pair.units[1].guard == base,
+		"Guard Relay's once-per-loop limit should be shared across the party.")
+	_advance(pair, LOOP + 2 * BEAT)
+	_check(_procs(pair, "guard_relay").size() == 2, "Guard Relay should refresh in the next loop.")
+
+	var capped := _sim("guard_relay", [[], [_tile("shield_chorus", 0)]])
+	var chorus: int = ArenaSim.TILES.shield_chorus.guard
+	capped.units[0].guard = ArenaSim.MAX_GUARD - chorus - 2
+	capped.units[1].guard = ArenaSim.MAX_GUARD - chorus + 1
+	_advance(capped, 4 * BEAT)
+	procs = _procs(capped, "guard_relay")
+	_check(procs.size() == 1 and procs[0].amount == 2 and capped.units[0].guard == ArenaSim.MAX_GUARD
+		and capped.units[1].guard == ArenaSim.MAX_GUARD,
+		"Calculate the extra Guard after all of the tile's own party grants have reached their recipients.")
+	var solo := _sim("guard_relay", [[_tile("guard", 0), _tile("rally_guard", 2)], []])
+	solo.units[1].hp = 0
+	_advance(solo, 4 * BEAT)
+	_check(_procs(solo, "guard_relay").is_empty() and solo.units[1].guard == 0,
+		"Self Guard and fallback on a fallen ally must leave Guard Relay unused.")
+
+
+func _check_flanking_standard() -> void:
+	var staggered := [[_tile("shot", 0), _tile("shot", 4)], [_tile("shot", 2), _tile("shot", 6)]]
+	var sim := _flank_fixture(staggered)
+	var control := _sim("", staggered)
+	control.units[0].pos = sim.units[0].pos
+	control.units[1].pos = sim.units[1].pos
+	_advance(sim, 4 * BEAT - 1)
+	_check(_procs(sim, "flanking_standard").is_empty(), "The second attack must finish before the flank pays out.")
+	sim.step()
+	_advance(control, 4 * BEAT)
+	var procs := _procs(sim, "flanking_standard")
+	_check(procs.size() == 1 and procs[0].amount == ArenaSim.FLANKING_STANDARD_DAMAGE and procs[0].tick == 4 * BEAT
+		and procs[0].lane == 1 and procs[0].source_tile == "shot" and procs[0].from == sim.units[1].pos
+		and sim.activations[-1].relics[0].source_beat == 2 and sim.units[2].hp < control.units[2].hp,
+		"Opposite-side strikes within exactly two beats should add damage to the second hit and identify both tiles.")
+	_advance(sim, 8 * BEAT)
+	_check(_procs(sim, "flanking_standard").size() == 1, "Only one flank can pay out per loop.")
+	_advance(sim, LOOP + 4 * BEAT)
+	_check(_procs(sim, "flanking_standard").size() == 2, "The next loop can trigger a new flank.")
+
+	var late := _flank_fixture([[_tile("shot", 0)], [_tile("shot", 3)]])
+	var same_side := _flank_fixture([[_tile("shot", 0)], [_tile("shot", 1)]])
+	same_side.units[1].pos = Vector2(375, 330)
+	var late_death := _flank_fixture([[_tile("shot", 0)], [_tile("shot", 1)]])
+	_advance(late_death, 2 * BEAT)
+	late_death.units[0].hp = 0
+	for pair in [late, same_side, late_death]:
+		_advance(pair, 5 * BEAT)
+		_check(_procs(pair, "flanking_standard").is_empty(),
+			"A late shot, a same-side shot, or losing the first hero before the follow-up must leave the bonus unused.")
+	var split := _sim("flanking_standard", [[_tile("shot", 0)], [_tile("shot", 1)]], "elite")
+	split.units[1].pos = Vector2(800, 265)
+	_advance(split, 3 * BEAT)
+	_check(split.activations[0].target != split.activations[1].target and _procs(split, "flanking_standard").is_empty(),
+		"A separate target cannot complete another hero's flank.")
+	var wrap := _flank_fixture([[_tile("shot", 10)], [_tile("shot", 0)]])
+	_advance(wrap, LOOP + 2 * BEAT)
+	procs = _procs(wrap, "flanking_standard")
+	_check(procs.size() == 1 and procs[0].tick == LOOP + 2 * BEAT,
+		"Count the two-beat window across the loop boundary and spend the follow-up loop's budget.")
+	var blink := _flank_fixture([[_tile("shot", 0)], [_tile("blink", 0)]])
+	blink.units[1].pos = Vector2(350, 325)
+	_advance(blink, 3 * BEAT)
+	procs = _procs(blink, "flanking_standard")
+	_check(procs.size() == 1 and procs[0].source_tile == "blink" and procs[0].from == blink.units[1].pos,
+		"Blink can complete a flank from its landing position when both heroes started in front.")
+
+
+func _flank_fixture(lanes: Array) -> ArenaSim:
+	var sim := _sim("flanking_standard", lanes)
+	sim.units[0].pos = Vector2(330, 265)
+	sim.units[1].pos = Vector2(630, 265)
+	return sim
 
 
 func _check_switchback_lens() -> void:

@@ -17,6 +17,7 @@ func _initialize() -> void:
 func _run() -> void:
 	_check_seeded_draft()
 	_check_party_eligibility()
+	await _check_later_party_draft()
 	await _check_reward_screen()
 	_check_bounty_and_legacy()
 	for suffix in ["", ".bak", ".tmp"]:
@@ -25,7 +26,7 @@ func _run() -> void:
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("First elite draft, companion rewards, persistence, and reward screen checks passed.")
+		print("Elite and party relic drafts, companion rewards, persistence, and reward screens passed.")
 	quit(0 if failures.is_empty() else 1)
 
 
@@ -118,6 +119,77 @@ func _check_party_eligibility() -> void:
 		"Selecting Twin Bell should preserve the hero's tile draft.")
 	_check("twin_bell" not in restored._available_relics() and "switchback_lens" in restored._available_relics(),
 		"Shop and event pools should unlock elite relics after the draft without offering held relics.")
+
+
+func _check_later_party_draft() -> void:
+	var game = ArenaScene.instantiate()
+	root.add_child(game)
+	await process_frame
+	game.set_physics_process(false)
+	var run: FrontierRun = game.run
+	run.load_save(save_path)
+	run.profile.medium_unlocked = true
+	if not _start(run, 42, "brass", "medium"):
+		game.queue_free()
+		return
+	var later_elites := _elites(run).filter(func(node: Dictionary): return node.row >= FrontierRun.NODES_PER_SEGMENT)
+	_check(not later_elites.is_empty(), "The party draft fixture needs an Act II elite.")
+	if later_elites.is_empty():
+		game.queue_free()
+		return
+	run.data.node = later_elites[0]
+	run.data.segment = 2
+	run.data.phase = "combat"
+	run.data.elite_relic_drafted = true
+	run.data.relics.append("afterimage")
+	run.data.heroes.append({"id": "warden" if run.data.hero != "warden" else "hexwright", "hp": 100, "max_hp": 100})
+	run.loadout.lanes.append([{"id": "shot", "start": 0, "target": "nearest"}])
+	run.loadout.defaults.append("nearest")
+	_check(run.save(), "Save a party about to fight an elite after taking its first elite relic.")
+	var survivor := FrontierRun.new()
+	var twin_owner := FrontierRun.new()
+	_check(survivor.load_save(save_path) and twin_owner.load_save(save_path), "Restore two branches of the party fixture.")
+	_check(survivor.finish_combat(true, [80, 0]) and survivor.elite_relic_offers().is_empty()
+		and survivor.data.relics.size() == 3, "One living hero receives the existing elite relic drop.")
+	twin_owner.data.relics.append("twin_bell")
+	_check(twin_owner.finish_combat(true, [80, 80]) and twin_owner.party_elite_relic_draft(),
+		"A crew holding Twin Bell can still see the party relic draft.")
+	var alternative_ids := twin_owner.elite_relic_offers().map(func(offer: Dictionary): return offer.id)
+	_check(alternative_ids.size() == 3 and "twin_bell" not in alternative_ids
+		and "guard_relay" in alternative_ids and "flanking_standard" in alternative_ids,
+		"Fill Twin Bell's slot with an unowned relic when it has already been acquired.")
+	var gold := int(run.data.gold)
+	var marks := int(run.profile.marks)
+	_check(run.finish_combat(true, [80, 80]) and run.party_elite_relic_draft()
+		and run.data.relics.size() == 2 and run.data.gold == gold + 20 and run.profile.marks == marks + 2,
+		"The party draft replaces the random relic and keeps the elite gold and Marks.")
+	var offers := run.elite_relic_offers().duplicate(true)
+	var ids := offers.map(func(offer: Dictionary): return offer.id)
+	_check(ids.size() == 3 and FrontierRun.PARTY_ELITE_RELICS.all(func(id: String): return id in ids),
+		"The three new party offers include Twin Bell, Guard Relay, and Flanking Standard.")
+	var tiles: Array = run.data.offers.duplicate()
+	var queued: Array = run.data.reward_remaining.duplicate(true)
+	_check(tiles.size() == 3 and queued.size() == 1 and queued[0].offers.size() == 3 and not run.reward("skip"),
+		"The two heroes retain their separate tile drafts behind the party relic choice.")
+	_check(run.load_save(save_path) and run.party_elite_relic_draft() and run.elite_relic_offers() == offers,
+		"Resume the exact pending party relic choice.")
+	game.run_return()
+	await process_frame
+	for id: String in ids:
+		_check(_button(game.frontier_screen, "EliteRelic_" + id) != null, "Show the %s party relic card." % id)
+		var card := game.frontier_screen.find_child("RelicChoice_" + id, true, false) as Control
+		var portrait := card.find_child("RelicPortrait", true, false) as TextureRect if card != null else null
+		_check(portrait != null and portrait.texture != null, "Load the %s relic portrait in the party draft." % id)
+	await _click(game.frontier_screen, "EliteRelic_guard_relay")
+	_check(run.load_save(save_path) and not run.party_elite_relic_draft() and "guard_relay" in run.data.relics
+		and run.data.offers == tiles and run.data.reward_remaining == queued and not run.choose_elite_relic("twin_bell"),
+		"Choosing one relic opens the same tile picks and persists the selection on resume.")
+	_check(run.reward("skip") and run.reward("skip"), "Both party tile drafts can advance after the relic choice.")
+	run.data.phase = "combat"
+	_check(run.finish_combat(true, [80, 80]) and run.elite_relic_offers().is_empty() and run.data.relics.size() == 4,
+		"After the party draft, the next elite grants a single relic through the usual drop.")
+	game.queue_free()
+	await process_frame
 
 
 func _check_same_seed_battle(first: FrontierRun, second: FrontierRun, teleport: String, heavy: String) -> void:
@@ -262,16 +334,16 @@ func _check_bounty_and_legacy() -> void:
 			"An older run with an elite already cleared should keep the later elite reward flow.")
 
 
-func _start(run: FrontierRun, seed_value: int) -> bool:
+func _start(run: FrontierRun, seed_value: int, location := "moonwreck", difficulty := "easy") -> bool:
 	if not run.data.is_empty():
 		run.abandon_run()
 	run.profile.moonwreck_easy_unlocked = true
 	var started := (
-		run.start_run(seed_value, "easy", "moonwreck") and run.choose_hero(run.data.offers[0])
+		run.start_run(seed_value, difficulty, location) and run.choose_hero(run.data.offers[0])
 		and run.choose_relic("pocket_bell") and run.choose_starter("bash")
 		and run.finish_combat(true, 95) and run.reward("skip")
 	)
-	_check(started, "Start the Moonwreck route with a reproducible solo build.")
+	_check(started, "Start the %s route with a reproducible solo build." % location)
 	return started
 
 

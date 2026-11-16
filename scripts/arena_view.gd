@@ -66,6 +66,8 @@ const EFFECT_LENGTHS := {
 	"siege_fuse": 0.46,
 	"stepped_gear": 0.32,
 	"twin_bell": 0.46,
+	"guard_relay": 0.48,
+	"flanking_standard": 0.38,
 	"switchback_lens": 0.36,
 	"longshot_prism": 0.38,
 	"retreat": 0.30,
@@ -111,7 +113,8 @@ const SIGNATURE_WINDUP_LABELS := {
 	"crown_page_advance": "ADVANCE", "relay_recruit": "BRACED", "relay_runner_press": "HEAVY WINDUP",
 	"dockhand_parry": "PARRY", "chain_warden": "CHAIN REEL", "glass_skirmisher_feint": "FEINT",
 }
-const RELIC_EFFECTS := ["afterimage", "barrage_rack", "siege_fuse", "stepped_gear", "twin_bell", "switchback_lens", "longshot_prism"]
+const RELIC_EFFECTS := ["afterimage", "barrage_rack", "siege_fuse", "stepped_gear", "twin_bell", "switchback_lens",
+	"longshot_prism", "guard_relay", "flanking_standard"]
 const ENCOUNTER_EFFECTS := {
 	"recruit_jammed": "spring_jam",
 	"tollkeeper_repair_interrupted": "repair_interrupted",
@@ -1189,6 +1192,19 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			draw_arc(to_point, radius, 0.0, TAU, 28, color, 2.0, true)
 			if kind == "twin_bell":
 				draw_arc(to_point, radius + 8.0, 0.0, TAU, 28, color, 2.0, true)
+		"guard_relay":
+			var color := Color(RELAY_SHIELD_COLOR, opacity)
+			var height := Vector2(0.0, -16.0)
+			draw_line(from_point + height, to_point + height, Color(color, opacity * 0.38), 2.0, true)
+			for center: Vector2 in [from_point + height, to_point + height]:
+				draw_arc(center, lerpf(9.0, 25.0, progress), 0.0, TAU, 24, color, 2.5, true)
+		"flanking_standard":
+			var center := to_point - Vector2(0.0, 15.0)
+			var radius := lerpf(33.0, 11.0, progress)
+			var angle := from_point.direction_to(to_point).angle()
+			for side in range(2):
+				var start := angle + side * PI - 0.62
+				draw_arc(center, radius, start, start + 1.24, 12, Color(GOLD, opacity), 3.0, true)
 		"switchback_lens":
 			var radius := lerpf(28.0, 13.0, progress)
 			for index in range(2):
