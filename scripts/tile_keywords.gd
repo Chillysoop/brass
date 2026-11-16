@@ -27,7 +27,7 @@ const VARIANTS := {
 	"pulls": "pull", "pulled": "pull", "displace": "displaced", "displacement": "displaced",
 	"teleports": "teleport", "teleportation": "teleport",
 	"retreats": "retreat", "back away": "retreat",
-	"burns": "burn", "interrupts": "interrupt", "windups": "windup",
+	"burns": "burn", "burning": "burn", "interrupts": "interrupt", "windups": "windup",
 	"critical chance": "critical hit", "critical hits": "critical hit", "crit": "critical hit", "crits": "critical hit",
 	"beats": "beat", "loops": "loop",
 }

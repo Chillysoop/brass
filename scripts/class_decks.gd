@@ -11,7 +11,7 @@ const SPECIALTY_COMMONS := {
 	"apothecary": ["pilgrim_aid", "lantern_shot", "tonic_dart", "catalyst_flask"],
 	"rune_smith": ["stave_crush", "tap_bolt", "hammer_stamp", "quick_etch"],
 	"starshot": ["retreat_shot", "spark_shot", "backdraft_bolt", "parallax_shot"],
-	"cinder_mage": ["furnace_burst", "bellows_strike", "cinder_brand", "wildfire_globe"],
+	"cinder_mage": ["furnace_burst", "bellows_strike", "cinder_brand", "wildfire_globe", "sear"],
 	"duelist": ["finishing_cut", "slip_cut", "pinpoint_lunge", "vanishing_cut"],
 }
 
@@ -135,11 +135,11 @@ const DECKS := {
 		"forge": ["bash", "shot"],
 	},
 	"cinder_mage": {
-		"summary": "Displace enemies and hit the cluster",
+		"summary": "Ignite enemies, focus fire, or spread Burn",
 		"common": ["shrapnel", "grapple", "shove", "pull", "slam", "signal_flare", "rivet_bolt", "blink", "shot", "bash"],
 		"uncommon": ["watchfire", "hook_sweep", "shoulder_check", "crossfire"],
 		"extra_common": ["short_fuse", "rake", "furnace_burst", "tether_dart", "bellows_strike", "lantern_shot", "spark_shot", "stave_crush",
-			"cinder_brand", "wildfire_globe"],
+			"cinder_brand", "wildfire_globe", "sear"],
 		"signature": "cinder_wave",
 		"extra_uncommon": ["piercing_burst", "reverse_cut", "flare_mortar"],
 		"forge": ["bash", "slam", "blink"],

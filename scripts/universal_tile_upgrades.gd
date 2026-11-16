@@ -321,6 +321,7 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 			["distance_bonus", "beyond 210 range"],
 			["windup_bonus", "if the target is winding up an attack"],
 			["low_hp_bonus", "if the target is below half HP"],
+			["burning_bonus", "if the target is already burning"],
 		]:
 			if tile.has(bonus[0]):
 				lines.append("Deal %d extra damage %s." % [tile[bonus[0]], bonus[1]])
@@ -399,12 +400,15 @@ static func _describe_upgrade(tile: Dictionary) -> String:
 			var movement := "you dash away" if tile.has("retreat") else "this hit pushes an enemy"
 			lines.append("If %s, your next charging hit within %d beats deals %d extra damage." % [
 				movement, tile.lance_return_beats, tile.lance_return_bonus])
-		if tile.has("ember_burn_damage"):
+		if tile.get("ember_burn_spreads_if_burning", false):
+			lines.append("Burn the target for %d damage per beat for %d beats. If it was already burning, also burn enemies within %d range." % [
+				tile.ember_burn_damage, tile.ember_burn_ticks, int(tile.ember_burn_radius)])
+		elif tile.has("ember_burn_damage"):
 			var burn_target := "the target"
 			if tile.has("ember_burn_radius"):
 				burn_target = "surviving enemies within %d range of the impact" % int(tile.ember_burn_radius)
-			var trigger := "was already burning" if tile.get("ember_burn_if_burning", false) else "was pushed or pulled in the last 3 beats"
-			if tile.has("push") and not tile.get("ember_burn_if_burning", false):
+			var trigger := "was pushed or pulled in the last 3 beats"
+			if tile.has("push"):
 				trigger = "was moved by this hit or pushed or pulled in the last 3 beats"
 			lines.append("If the target %s, burn %s for %d damage per beat for %d beats." % [
 				trigger, burn_target, tile.ember_burn_damage, tile.ember_burn_ticks])

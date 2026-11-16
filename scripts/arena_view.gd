@@ -200,6 +200,7 @@ var _effects: Array[Dictionary] = []
 var _combat_numbers: Array[Dictionary] = []
 var _combat_number_font := SystemFont.new()
 var _combat_number_layout_size := Vector2.ZERO
+var _burn_badge_style := StyleBoxFlat.new()
 var _attack_casts: Array[Dictionary] = []
 var _actor_casts: Dictionary = {}
 var _hero_clips: Array[Array] = []
@@ -214,6 +215,10 @@ func _ready() -> void:
 	mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_combat_number_font.font_names = PackedStringArray(["Segoe UI", "DejaVu Sans"])
 	_combat_number_font.font_weight = 800
+	_burn_badge_style.bg_color = INK
+	_burn_badge_style.border_color = CombatIcons.PALETTE.burn.darkened(0.33)
+	_burn_badge_style.set_border_width_all(1)
+	_burn_badge_style.set_corner_radius_all(5)
 	custom_minimum_size.y = maxf(custom_minimum_size.y, 250.0)
 	for key in ARENA_PATHS:
 		var path: String = ARENA_PATHS[key]
@@ -649,7 +654,7 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float,
 		draw_line(bar.position + Vector2(0.0, -2.0), bar.position + Vector2(bar.size.x, -2.0), RELAY_SHIELD_COLOR, 2.0, true)
 	elif float(unit.get("guard", 0)) > 0.0:
 		draw_line(bar.position + Vector2(0.0, -2.0), bar.position + Vector2(bar.size.x, -2.0), CombatIcons.PALETTE["guard"], 2.0, true)
-	_draw_status_badges(unit, bar)
+	var burn_badge := _draw_status_badges(unit, bar)
 	if unit.has("repairmaster_orders_used"):
 		var batteries := 0
 		for drone: Dictionary in units:
@@ -780,9 +785,9 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float,
 		_draw_centered("HARPOON" if wreck_phase == 1 else "DECK SLAM", bar.get_center() - Vector2(0.0, 9.0), 14, GOLD)
 	elif not str(unit.get("dock_winch_ally", "")).is_empty():
 		_draw_centered("WINCH PULL", bar.get_center() - Vector2(0.0, 9.0), 13, DOCK_WINCH_COLOR)
-	if _windups.has(unit.id):
-		return bar.grow_individual(30.0, 26.0, 30.0, 16.0)
-	return bar.grow_individual(13.0, 5.0, 13.0, 13.0)
+	var hud := bar.grow_individual(30.0, 26.0, 30.0, 16.0) if _windups.has(unit.id) \
+		else bar.grow_individual(13.0, 5.0, 13.0, 13.0)
+	return hud.merge(burn_badge) if burn_badge.has_area() else hud
 
 
 func _draw_enemy_release(cast: Dictionary, center: Vector2) -> void:
@@ -808,11 +813,32 @@ func _draw_repair_cell(bar: Rect2, index: int, available: bool) -> void:
 	draw_line(cell.position + Vector2(1.0, -1.0), cell.position + Vector2(4.0, -1.0), REPAIR_COLOR.darkened(0.22), 1.0)
 
 
-func _draw_status_badges(unit: Dictionary, bar: Rect2) -> void:
+func _burn_beats_left(unit: Dictionary) -> int:
+	var remaining := int(unit.get("burn_left", 0))
+	for burn: Dictionary in unit.get("ember_burns", {}).values():
+		remaining = maxi(remaining, int(burn.get("remaining", 0)))
+	return remaining
+
+
+func _burn_badge_bounds(bar: Rect2, badge_count: int, count_width: float) -> Rect2:
+	var width := count_width + 18.0
+	var left := bar.position.x - 4.0 - badge_count * 11.0 - width
+	var top := bar.get_center().y - 6.5
+	if left < 2.0:
+		# Wrap on the same side instead of crossing the unit's health bar or windup.
+		left = maxf(2.0, bar.position.x - width - 4.0)
+		top = bar.position.y - 33.0
+		if top < 2.0:
+			top = bar.end.y + 15.0
+	return Rect2(Vector2(left, top), Vector2(width, 13.0))
+
+
+func _draw_status_badges(unit: Dictionary, bar: Rect2) -> Rect2:
 	var badges: Array[String] = ["health"]
 	if int(unit.get("guard", 0)) > 0 or int(unit.get("crown_oathbrace_until", 0)) > combat_tick:
 		badges.append("guard")
-	if int(unit.get("burn_left", 0)) > 0 or not unit.get("ember_burns", {}).is_empty():
+	var burn_beats := _burn_beats_left(unit)
+	if burn_beats > 0 and unit.side == "hero":
 		badges.append("burn")
 	if int(unit.get("arsenal_mark", {}).get("expires", -1)) >= combat_tick \
 			or int(unit.get("cantor_mark", {}).get("expires", -1)) >= combat_tick \
@@ -826,6 +852,19 @@ func _draw_status_badges(unit: Dictionary, bar: Rect2) -> void:
 	for index in range(badges.size()):
 		var center := Vector2(bar.position.x - 8.0 - index * 11.0, bar.get_center().y)
 		_draw_status_badge(badges[index], center)
+	if burn_beats <= 0 or unit.side != "enemy":
+		return Rect2()
+	var label := str(burn_beats)
+	var font := get_theme_default_font()
+	var font_size := 11
+	var tally_width := font.get_string_size(label, HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size).x
+	var badge := _burn_badge_bounds(bar, badges.size(), tally_width)
+	draw_style_box(_burn_badge_style, badge)
+	CombatIcons.draw(self, "burn", badge.position + Vector2(7.0, 6.5), 10.0)
+	var baseline := badge.get_center().y + (font.get_ascent(font_size) - font.get_descent(font_size)) * 0.5
+	draw_string(font, Vector2(badge.position.x + 13.0, baseline), label,
+		HORIZONTAL_ALIGNMENT_LEFT, -1.0, font_size, WHITE)
+	return badge
 
 
 func _draw_status_badge(id: String, center: Vector2, tint := Color.TRANSPARENT) -> void:

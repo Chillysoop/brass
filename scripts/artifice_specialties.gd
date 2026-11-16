@@ -42,8 +42,8 @@ const SPECS := {
 	"wildfire_globe": {
 		"label": "Wildfire Globe", "width": 3, "range": 480.0, "damage": 18, "rarity": "common",
 		"ranged": true, "splash": 120.0, "splash_damage": 9, "ember_burn_damage": 3, "ember_burn_ticks": 2,
-		"ember_burn_radius": 135.0, "ember_burn_if_burning": true, "retreat": 80.0, "targets": ENEMY_TARGETS, "icon": "area",
-		"description": "Deal 9 damage to other enemies within 120 units of the target, then dash back up to 80 units. If the target was already burning, burn surviving enemies within 135 units of it for 3 damage per beat for 2 beats.",
+		"ember_burn_radius": 135.0, "ember_burn_spreads_if_burning": true, "retreat": 80.0, "targets": ENEMY_TARGETS, "icon": "area",
+		"description": "Deal 9 damage to other enemies within 120 units of the target, then dash back up to 80 units. Burn the target for 3 damage per beat for 2 beats. If it was already burning, also burn surviving enemies within 135 units.",
 	},
 }
 

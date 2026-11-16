@@ -165,7 +165,7 @@ const HERO_CLASSES := {
 	"apothecary": {"label": "Apothecary", "description": "Your first tile hit each loop heals 2 HP. Excess healing becomes guard."},
 	"rune_smith": {"label": "Rune Smith", "description": "Finish a tile at least 3 beats wide to charge your next hit for 5 bonus damage."},
 	"starshot": {"label": "Starshot", "description": "Ranged critical chance is 15%, rising to 30% beyond 210 units. The first critical shot each loop can dash back. Deal 5 extra damage beyond 200 units."},
-	"cinder_mage": {"label": "Cinder Mage", "description": "Once per loop, hitting a displaced enemy burns it for 6 damage."},
+	"cinder_mage": {"label": "Cinder Mage", "description": "Once per loop, hit an enemy pushed or pulled in the last 3 beats to burn it for 3 damage per beat for 2 beats."},
 	"duelist": {"label": "Duelist", "description": "Repeated hits on one target build up to 6 bonus damage. Resets when you switch."}
 }
 const CAMPAIGN_ENEMIES := {
@@ -1870,8 +1870,15 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 			_emit("miss", "%s: %s has no clear path." % [actor.name, tile.label], actor, target, tile_id)
 			return
 	var impact: Vector2 = target.pos
+	var spreads_burn: bool = tile.get("ember_burn_spreads_if_burning", false)
+	var burning_bonus: int = tile.get("burning_bonus", 0)
+	var was_burning: bool = (spreads_burn or burning_bonus > 0) and ArtificeSpecialties.is_burning(target)
 	_prepare_siege_fuse(actor, target, tile_id)
 	var damage: int = tile.damage + _distance_bonus(actor, target, tile)
+	var burn_details := {}
+	if was_burning and burning_bonus > 0:
+		damage += burning_bonus
+		burn_details["burning_bonus"] = burning_bonus
 	var healing_bonus := int(tile.get("healing_damage_bonus", 0)) if _last_party_heal_loop == _loop_index() else 0
 	damage += healing_bonus
 	if tile.has("recent_block_damage") and tick - int(actor.get("last_guard_block_tick", -LOOP_TICKS)) \
@@ -1902,9 +1909,8 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 	if pull_first:
 		_pull_toward(actor, target, tile_id, _attack_origin(actor), tile.pull)
 	damage += StarterSpecialtyEffects.hexwright_pull_bonus(self, actor, target, tile_id, tile)
-	var burning: bool = tile.get("ember_burn_if_burning", false) and ArtificeSpecialties.is_burning(target)
 	_strip_guard(actor, target, tile_id, int(tile.get("guard_break", 0)))
-	_damage(actor, target, damage, tile_id)
+	_damage(actor, target, damage, tile_id, "", burn_details)
 	if tile.get("charge_carry", false) and actor.hp > 0:
 		_carry_charge_past_target(actor, target, tile_id, impact, charge)
 	VanguardSpecialties.apply_attack_followup(self, actor, target, tile_id, tile, impact,
@@ -1927,9 +1933,8 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 			_apply_cantor_mark(actor, target, tile_id, tile)
 		if tile.has("chorus_echo_damage"):
 			ArtificeSpecialties.prime_echo(self, actor, target, tile_id, tile)
-	var burn_ready: bool = burning if tile.get("ember_burn_if_burning", false) else tick <= target.get("displaced_until", -1)
-	if tile.has("ember_burn_damage") and burn_ready:
-		_apply_ember_burn(actor, target, tile_id, tile, impact)
+	if tile.has("ember_burn_damage") and (spreads_burn or tick <= target.get("displaced_until", -1)):
+		_apply_ember_burn(actor, target, tile_id, tile, impact, not spreads_burn or was_burning)
 	if tile.has("cluster_pull_radius"):
 		_cluster_pull(actor, target, tile_id, impact, tile.cluster_pull_radius, tile.cluster_pull_force)
 	if tile.has("sweep_push_radius"):
@@ -1961,9 +1966,9 @@ func _cast_arsenal_attack(actor: Dictionary, target: Dictionary, tile_id: String
 		_prime_bastion_ward(actor, tile_id, tile)
 
 
-func _apply_ember_burn(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary, impact: Vector2) -> void:
+func _apply_ember_burn(actor: Dictionary, target: Dictionary, tile_id: String, tile: Dictionary, impact: Vector2, spread: bool) -> void:
 	var targets: Array = [target] if target.hp > 0 else []
-	if tile.has("ember_burn_radius"):
+	if spread and tile.has("ember_burn_radius"):
 		targets = _enemies_in_area(actor, impact, tile.ember_burn_radius)
 	for enemy: Dictionary in targets:
 		_ignite_ember(actor, enemy, tile_id, tile.ember_burn_damage, tile.ember_burn_ticks)
@@ -4213,8 +4218,7 @@ func _class_attack_damage(actor: Dictionary, target: Dictionary, tile_id: String
 			if position.distance_squared_to(target.pos) > 200.0 * 200.0:
 				amount += 5
 		"cinder_mage":
-			var impulse: Vector2 = target.impulse
-			if impulse.length_squared() > 1.0 and actor.get("burn_loop", -1) != _loop_index():
+			if tick <= target.get("displaced_until", -1) and actor.get("burn_loop", -1) != _loop_index():
 				actor["burn_loop"] = _loop_index()
 				target["burn_source"] = actor.id
 				target["burn_tile"] = tile_id

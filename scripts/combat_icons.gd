@@ -130,6 +130,9 @@ static func tile_stats(spec: Dictionary, extent := 16) -> HBoxContainer:
 	if burn > 0:
 		var beats := int(spec.get("ember_burn_ticks", 0))
 		row.add_child(stat("burn", "%d×%d" % [burn, beats], extent, "Burn: %d damage per beat for %d beats." % [burn, beats]))
+	var burning_bonus := int(spec.get("burning_bonus", 0))
+	if burning_bonus > 0:
+		row.add_child(stat("burn", "+%d" % burning_bonus, extent, "%d extra damage to an already burning target." % burning_bonus))
 	return row
 
 

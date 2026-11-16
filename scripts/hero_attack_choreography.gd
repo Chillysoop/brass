@@ -46,7 +46,7 @@ const MOTIF_COLORS := {
 	"guard_refrain": Color("#98d7c1"), "echo_chime": Color("#d1a6dd"),
 	"hammer_stamp": Color("#ffb478"), "quick_etch": Color("#c1bfdc"),
 	"mirror_dart": Color("#a5caff"), "veil_step": Color("#ac91f2"),
-	"cinder_brand": Color("#f7997f"), "wildfire_globe": Color("#e8af51"),
+	"cinder_brand": Color("#f7997f"), "wildfire_globe": Color("#e8af51"), "sear": Color("#ff693f"),
 }
 
 const MOTIF_VARIANTS := {
@@ -123,7 +123,7 @@ static func _style(base_id: String, tile: Dictionary) -> String:
 			return "spin"
 		"meteor_seal", "meteor_volley", "flare_mortar", "short_fuse", "furnace_burst", "cinder_wave", "wildfire_globe", "shieldshock":
 			return "burst"
-		"rail_shot", "star_piercer", "rivet_bolt", "tap_bolt", "sundering_bolt", "spark_shot", "backdraft_bolt", "tonic_dart":
+		"rail_shot", "star_piercer", "rivet_bolt", "tap_bolt", "sundering_bolt", "spark_shot", "backdraft_bolt", "tonic_dart", "sear":
 			return "bolt"
 		"chorus_bolt":
 			return "ward" if tile.has("chorus_guard") else "mark"

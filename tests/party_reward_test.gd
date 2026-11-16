@@ -22,7 +22,7 @@ const EXCLUSIVE_COMMONS := {
 	"apothecary": ["tonic_dart", "catalyst_flask"],
 	"rune_smith": ["hammer_stamp", "quick_etch"],
 	"starshot": ["backdraft_bolt", "parallax_shot"],
-	"cinder_mage": ["cinder_brand", "wildfire_globe"],
+	"cinder_mage": ["cinder_brand", "wildfire_globe", "sear"],
 	"duelist": ["pinpoint_lunge", "vanishing_cut"],
 }
 
@@ -92,7 +92,7 @@ func _check_class_decks() -> void:
 		_check(uncommon.filter(func(id: String): return signature_owners.has(id)) == [signature],
 			"%s should list only its own signature." % class_id)
 		var specialties := ClassDecks.specialties(class_id)
-		_check(specialties.size() == 4 and exclusive.all(func(id: String):
+		_check(specialties.size() == 2 + exclusive.size() and exclusive.all(func(id: String):
 			return id in specialties), "%s should have its own specialty list." % class_id)
 		for id: String in specialties:
 			var tier_sizes := TilePacking.forge_tiers(id).map(func(tier: Array): return tier.size())

@@ -7,7 +7,7 @@ const COMMON_IDS := [
 	"reversal_plate", "rampart_rush", "convergence_pulse", "severing_tether",
 	"tonic_dart", "catalyst_flask", "pinpoint_lunge", "vanishing_cut",
 	"aegis_intercept", "shieldshock", "domino_maul", "impact_driver", "phalanx_charge", "recoil_thrust",
-	"guard_refrain", "echo_chime", "hammer_stamp", "quick_etch", "mirror_dart", "veil_step", "cinder_brand", "wildfire_globe",
+	"guard_refrain", "echo_chime", "hammer_stamp", "quick_etch", "mirror_dart", "veil_step", "cinder_brand", "wildfire_globe", "sear",
 ]
 const UNCOMMON_IDS := [
 	"ward_lantern", "piercing_burst", "reverse_cut", "flare_mortar",
@@ -230,6 +230,11 @@ const SPECS := {
 		"ranged": true, "displaced_bonus": 10, "splash": 150.0, "splash_damage": 11,
 		"targets": ENEMY_TARGETS, "icon": "area",
 		"description": "Deal 10 extra damage if the target was pushed or pulled in the last 3 beats. Deal 11 damage to other enemies within 150 range of it.",
+	},
+	"sear": {
+		"label": "Sear", "width": 1, "range": 345.0, "damage": 8, "rarity": "common",
+		"ranged": true, "burning_bonus": 7, "targets": ENEMY_TARGETS, "icon": "shot",
+		"description": "Deal 7 extra damage to an already burning target.",
 	},
 	"needle_point": {
 		"label": "Needle Point", "short_label": "Needle", "width": 1, "range": 125.0, "damage": 7, "rarity": "uncommon",

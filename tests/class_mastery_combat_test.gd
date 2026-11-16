@@ -30,6 +30,8 @@ func _initialize() -> void:
 	_check_wayfarer_flank()
 	_check_phantom_step()
 	_check_cinder_specialties()
+	_check_cinder_passive_window()
+	_check_sear_burn_snapshot()
 	for failure in failures:
 		printerr(failure)
 	if failures.is_empty():
@@ -478,18 +480,100 @@ func _check_cinder_specialties() -> void:
 	var delayed := _tile_events(spread, "wildfire_globe", "ember_tick", 6 * beat)
 	_check(ignited.size() == 2 and delayed.size() == 2 and delayed[0].amount == ArenaSim.TILES.wildfire_globe.ember_burn_damage,
 		"Wildfire Globe spreads an existing burn to the cluster and credits its delayed damage.")
+	var original := _tile_events(spread, "cinder_brand", "ember_tick", 6 * beat)
+	_check(original.size() == 1 and original[0].actor == spread.units[1].id and original[0].target == spread.units[2].id
+		and delayed.size() == 2 and delayed[0].actor == spread.units[0].id,
+		"An ally's native burn keeps its source and ticks alongside the Cinder Mage's spread on the same enemy.")
 
-	var cold := _fixture("cinder_mage", "", [_tile("wildfire_globe", 0)])
+	var cold := _campaign_sandbox([[_tile("wildfire_globe", 0)], [_tile("bellows_strike", 0)]],
+		[{"id": "cinder_mage"}, {"id": "warden"}])
+	cold.units[2].pos = cold.units[1].pos + Vector2(145, -48)
+	cold.units[3].pos = cold.units[2].pos + Vector2(70, 40)
 	_step_to(cold, 3 * beat - 1)
-	_check(not cold.trace.any(func(event: Dictionary): return event.tile == "wildfire_globe" and event.kind == "retreat"),
-		"Wildfire Globe waits for its right edge before dashing.")
-	cold.units[1].impulse = Vector2(150, 0)
+	_check(cold.units[2].get("burn_left", 0) == 0 and cold.units[2].get("displaced_until", 0) > cold.tick
+		and cold.activations.size() == 1, "Wildfire Globe waits for its right edge with a displaced but cold target.")
 	cold.step()
-	_check(cold.units[1].get("burn_left", 0) > 0 and _tile_events(cold, "wildfire_globe", "ember_ignite", 3 * beat).is_empty(),
-		"Wildfire Globe can't use a burn that its own hit started through Cinder Mage's passive.")
+	var cold_ignite := _tile_events(cold, "wildfire_globe", "ember_ignite", 3 * beat)
+	_check(cold_ignite.size() == 1 and cold_ignite[0].target == cold.units[2].id and int(cold.units[2].get("burn_left", 0)) == 2
+		and cold.units[3].get("ember_burns", {}).is_empty(),
+		"A cold Globe and its own Cinder passive can ignite the primary without spreading their new burns.")
 	var dash := _tile_events(cold, "wildfire_globe", "retreat", 3 * beat)
-	_check(dash.size() == 1 and dash[0].to.distance_to(cold.units[1].pos) > dash[0].from.distance_to(cold.units[1].pos),
+	_check(dash.size() == 1 and dash[0].to.distance_to(cold.units[2].pos) > dash[0].from.distance_to(cold.units[2].pos),
 		"Wildfire Globe creates space after the hit even when the target did not start burning.")
+	_step_to(cold, 4 * beat - 1)
+	_check(not cold.trace.any(func(event: Dictionary): return event.kind == "ember_tick" or event.tile == "cinder_mage"),
+		"Neither Globe nor passive Burn ticks early on a cold target.")
+	cold.step()
+	var cold_delayed := _tile_events(cold, "wildfire_globe", "ember_tick", 4 * beat)
+	var passive_tick := _tile_events(cold, "cinder_mage", "hit", 4 * beat)
+	_check(cold_delayed.size() == 1 and cold_delayed[0].target == cold.units[2].id and passive_tick.size() == 2
+		and passive_tick[0].source_tile == "wildfire_globe" and passive_tick[1].source_tile == "wildfire_globe",
+		"The native and passive Burn slots tick separately with credit to the triggering tile one beat later.")
+
+
+func _check_cinder_passive_window() -> void:
+	var beat := ArenaSim.TICKS_PER_BEAT
+	var end_of_window := _fixture("cinder_mage", "furnace_coat", [_tile("shot", 2), _tile("shot", 4)])
+	var source: Dictionary = end_of_window.units[0]
+	var victim: Dictionary = end_of_window.units[1]
+	end_of_window.units[2].hp = 0
+	_step_to(end_of_window, beat)
+	end_of_window._displace("push", source, victim, "bellows_strike", Vector2.RIGHT, 380.0)
+	_step_to(end_of_window, 4 * beat - 1)
+	_check(victim.impulse.is_zero_approx() and victim.get("displaced_until") == 4 * beat,
+		"A real push leaves a live three-beat condition even after its impulse stops.")
+	victim.guard = ArenaSim.MAX_GUARD
+	end_of_window.step()
+	var blocked := _tile_events(end_of_window, "shot", "hit", 4 * beat)
+	_check(victim.get("burn_left", 0) == 2 and int(source.guard) == 5 and blocked.size() == 1 and blocked[0].amount == 0,
+		"A guarded hit at the inclusive edge of displacement applies the Cinder passive and Furnace Coat.")
+	end_of_window._displace("pull", source, victim, "pull", Vector2.LEFT, 380.0)
+	_step_to(end_of_window, 8 * beat)
+	var all_ticks := end_of_window.trace.filter(func(event: Dictionary): return event.tile == "cinder_mage" and event.kind == "hit")
+	_check(all_ticks.size() == 2 and all_ticks[0].tick == 5 * beat and all_ticks[1].tick == 6 * beat,
+		"A second displaced hit in the same loop cannot restart the passive Burn.")
+
+	var stale := _fixture("cinder_mage", "furnace_coat", [_tile("shot", 3)])
+	stale.units[2].hp = 0
+	_step_to(stale, beat)
+	stale._displace("push", stale.units[0], stale.units[1], "bellows_strike", Vector2.RIGHT, 380.0)
+	_step_to(stale, 5 * beat - 1)
+	stale.units[1].impulse = Vector2(150, 0)
+	stale.step()
+	_check(stale.units[1].get("burn_left", 0) == 0 and stale.units[0].guard == 0
+		and _tile_events(stale, "shot", "hit", 5 * beat).size() == 1,
+		"Unrelated movement and an expired displacement marker do not trigger either passive or mastery.")
+
+
+func _check_sear_burn_snapshot() -> void:
+	var beat := ArenaSim.TICKS_PER_BEAT
+	var first := _tile("sear", 0)
+	first["enchantment"] = "embered"
+	var sear := _fixture("cinder_mage", "", [first, _tile("sear", 1), _tile("sear", 3)])
+	var target: Dictionary = sear.units[1]
+	sear._displace("push", sear.units[0], target, "bellows_strike", Vector2.RIGHT, 325.0)
+	_step_to(sear, beat - 1)
+	_check(sear.activations.is_empty() and target.get("burn_left", 0) == 0 and target.get("ember_burns", {}).is_empty(),
+		"A Sear tile cannot hit, add Burn or boost damage before its one-beat right edge.")
+	sear.step()
+	var base: int = ArenaSim.TILES.sear.damage
+	var bonus: int = ArenaSim.TILES.sear.burning_bonus
+	var cold := _tile_events(sear, "sear", "hit", beat)
+	var embered := _tile_events(sear, "sear", "ember_ignite", beat)
+	_check(cold.size() == 1 and cold[0].get("burning_bonus", 0) == 0 and cold[0].amount == _critical_damage(cold[0], base)
+		and target.get("burn_left", 0) == 2 and embered.size() == 1 and embered[0].enchantment == "embered",
+		"The first Sear uses cold damage even if its passive and Embered add Burn at this edge.")
+	_step_to(sear, 2 * beat - 1)
+	target.guard = 5
+	sear.step()
+	var hot := _tile_events(sear, "sear", "hit", 2 * beat)
+	_check(hot.size() == 1 and hot[0].get("burning_bonus", 0) == bonus and hot[0].blocked == 5
+		and hot[0].amount == _critical_damage(hot[0], base + bonus) - 5,
+		"A pending Burn boosts the following Sear before its regular critical and Guard calculations.")
+	_step_to(sear, 4 * beat)
+	var expired := _tile_events(sear, "sear", "hit", 4 * beat)
+	_check(expired.size() == 1 and expired[0].get("burning_bonus", 0) == 0
+		and expired[0].amount == _critical_damage(expired[0], base), "Once Burn expires, Sear goes back to base damage.")
 
 
 func _check_direct_hit(sim: ArenaSim, id: String, tick: int, target: String, damage: int, premise: String) -> void:

@@ -109,6 +109,10 @@ const PATHS := {
 			"gains": {"damage": 1, "blink_echo_damage": 2, "blink_on_hit_retreat": 8.0},
 		},
 	},
+	"sear": {
+		"power": {"label": "Hot Needle", "gains": {"damage": 2, "range": 12.0}},
+		"technique": {"label": "Kindled Shot", "gains": {"damage": 1, "burning_bonus": 2}},
+	},
 	"cinder_brand": {
 		"power": {
 			"label": "Forgebrand",

@@ -92,7 +92,7 @@ func _check_delayed_burn() -> void:
 	if tile_id.is_empty():
 		return
 	enemy.hp = 3
-	sim._apply_ember_burn(hero, enemy, tile_id, ArenaSim.TILES[tile_id], enemy.pos)
+	sim._apply_ember_burn(hero, enemy, tile_id, ArenaSim.TILES[tile_id], enemy.pos, false)
 	sim.tick += ArenaSim.TICKS_PER_BEAT
 	sim._tick_ember_burns(enemy)
 	var totals := CombatTotals.new()

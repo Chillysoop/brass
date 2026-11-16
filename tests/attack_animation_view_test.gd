@@ -4,6 +4,7 @@ const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ArenaView = preload("res://scripts/arena_view.gd")
 const HeroChoreography = preload("res://scripts/hero_attack_choreography.gd")
 const CombatSpritePose = preload("res://scripts/combat_sprite_pose.gd")
+const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 
 var _failures: Array[String] = []
 
@@ -62,6 +63,7 @@ func _run() -> void:
 	_check_fast_windup(view)
 	_check_marshal_weathered_feedback(view, false)
 	_check_marshal_weathered_feedback(view, true)
+	_check_burn_status(view)
 	_check_movement_paths(view)
 	_check_fast_mobility(view)
 	view.queue_free()
@@ -133,6 +135,42 @@ func _check_marshal_weathered_feedback(view: ArenaView, partial: bool) -> void:
 	_expect(view._effects.any(is_weathered), "Successful mitigation of the Marshal's real %s sweep stays visible at 3×." % difficulty)
 	view._process(0.42)
 	_expect(not view._effects.any(is_weathered), "The weathered-sweep confirmation should fade after the cue.")
+
+
+func _check_burn_status(view: ArenaView) -> void:
+	var sim := ArenaSim.new()
+	sim.start([[], []], "duo", {"kind": "opening",
+		"heroes": [{"hero": "cinder_mage"}, {"hero": "warden"}]})
+	var target: Dictionary = sim.units[2]
+	var cinder: Dictionary = sim.units[0]
+	var warden: Dictionary = sim.units[1]
+	for unit: Dictionary in sim.units:
+		unit.next_attack = 99999
+	target.hp = 500
+	target.max_hp = 500
+	sim.step()
+	var applied_at := sim.tick
+	sim._displace("push", warden, target, "bash", Vector2.RIGHT, 380.0)
+	sim._class_attack_damage(cinder, target, "shot", 5)
+	_expect(view._burn_beats_left(target) == 2, "The live Cinder passive contributes its remaining Burn beats.")
+	sim._ignite_ember(warden, target, "shot", TileEnchantments.EMBER_DAMAGE, TileEnchantments.EMBER_BEATS, "embered")
+	_expect(view._burn_beats_left(target) == 2, "Overlapping passive and Embered durations are not added together.")
+	var native_id := "cinder_wave_upgrade_legendary_power"
+	var native: Dictionary = ArenaSim.TILES[native_id]
+	sim._apply_ember_burn(cinder, target, native_id, native, target.pos, true)
+	view.reset_view(sim.units)
+	var burn_beats: int = native.ember_burn_ticks
+	_expect(view._burn_beats_left(target) == burn_beats, "A longer tile Burn provides the current duration.")
+	for elapsed in range(1, burn_beats + 1):
+		while sim.tick < applied_at + elapsed * ArenaSim.TICKS_PER_BEAT and sim.outcome.is_empty():
+			var events := sim.step()
+			view.present(sim.units, events, sim.tick, sim.visual_cues, 3)
+		_expect(view._burn_beats_left(target) == burn_beats - elapsed,
+			"The Burn counter advances at resolved ticks during 3× playback and clears on expiry.")
+	var narrow_bar := Rect2(18, 70, 31, 5)
+	var near_edge := view._burn_badge_bounds(narrow_bar, 4, 7.0)
+	_expect(near_edge.position.x >= 2.0 and near_edge.end.y < narrow_bar.position.y - 16.0,
+		"At the arena edge the Burn badge wraps above a narrow bar without covering health or windup.")
 
 
 func _check_movement_paths(view: ArenaView) -> void:
