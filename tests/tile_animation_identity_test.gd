@@ -24,6 +24,12 @@ const FOCUS_IDS := [
 	"sweep", "sweep_upgrade_uncommon_power", "sweep_upgrade_epic_technique", "sweep_upgrade_legendary_technique",
 	"aegis_intercept", "aegis_intercept_upgrade_legendary_technique",
 	"aegis_intercept_upgrade_rare_power", "aegis_intercept_upgrade_rare_technique",
+	"jab", "shield_tap", "spark_shot", "rivet_bolt", "retreat_shot", "snap_shot",
+	"shrapnel_upgrade_uncommon_technique", "shrapnel_upgrade_legendary_power",
+	"guard_refrain", "guard_refrain_upgrade_rare_power", "guard_refrain_upgrade_rare_technique",
+	"pull", "pull_upgrade_epic_technique", "gravity_hook", "gravity_hook_upgrade_epic_technique",
+	"blink", "tonic_dart", "tonic_dart_upgrade_uncommon_power",
+	"sear_upgrade_epic_power", "sear_upgrade_legendary_power",
 ]
 
 var failures: Array[String] = []
@@ -85,6 +91,18 @@ class LabeledGallery extends Node2D:
 				draw_string(font, Vector2(side * 1200 + 10, row * 168 + 20), text, HORIZONTAL_ALIGNMENT_LEFT, 1180, 17, Color("#f4e5c5"))
 
 
+class ContactGallery extends Node2D:
+	var picture: Texture2D
+	var labels: Array = []
+	func _draw() -> void:
+		draw_texture(picture, Vector2.ZERO)
+		for row in range(labels.size()):
+			for side in range(2):
+				var id: String = labels[row][side]
+				draw_string(ThemeDB.fallback_font, Vector2(side * 540 + 8, row * 210 + 22),
+					ArenaSim.TILES[id].label, HORIZONTAL_ALIGNMENT_LEFT, 520, 17, Color("#f4e5c5"))
+
+
 func _initialize() -> void:
 	if DisplayServer.get_name() == "headless":
 		print("SKIP: tile animation identity requires the GPU renderer; run without --headless.")
@@ -98,7 +116,9 @@ func _run() -> void:
 	if "--focus" in OS.get_cmdline_user_args():
 		output += "-focus"
 	DirAccess.make_dir_recursive_absolute(output)
-	for path: String in ["scripts/tile_animation.gd", "scripts/tile_animation_catalog.gd", "scripts/tile_animation_effects.gd", "assets/sprite_fusion/vfx/manifest.json"]:
+	for path: String in ["scripts/tile_animation.gd", "scripts/tile_animation_catalog.gd", "scripts/tile_animation_effects.gd",
+		"scripts/attack_animation.gd", "scripts/sprite_fusion_vfx.gd", "scripts/combat_particles.gd",
+		"assets/combat_particles/particles.png", "assets/combat_particles/manifest.json", "assets/sprite_fusion/vfx/manifest.json"]:
 		source_versions[path] = FileAccess.get_sha256("res://" + path)
 	for value in range(256):
 		var count := 0
@@ -507,6 +527,44 @@ func _write_gallery(ranked: Array) -> void:
 		["horizon_round_upgrade_rare_technique", "horizon_round_upgrade_epic_technique"],
 		["aegis_intercept", "aegis_intercept_upgrade_legendary_technique"],
 		["aegis_intercept_upgrade_rare_power", "aegis_intercept_upgrade_rare_technique"]], "tiers-and-branches.png")
+	await _save_contact_pairs([
+		["retreat_shot_upgrade_legendary_power", "snap_shot_upgrade_legendary_power"],
+		["spark_shot_upgrade_epic_technique", "rivet_bolt_upgrade_epic_technique"],
+		["jab_upgrade_epic_technique", "shield_tap_upgrade_epic_technique"],
+		["volley", "piercing_burst_upgrade_rare_technique"],
+		["guard_refrain_upgrade_rare_power", "guard_refrain_upgrade_rare_technique"],
+		["tonic_dart", "tonic_dart_upgrade_uncommon_power"],
+	], "critical-pairs-actual-size.png")
+
+
+func _save_contact_pairs(pairs: Array, filename: String) -> void:
+	# Native-resolution contacts avoid judging particle ink from half-size thumbnails.
+	var proof := Image.create(1080, pairs.size() * 210, false, Image.FORMAT_RGBA8)
+	proof.fill(Color("#17222d"))
+	for row in range(pairs.size()):
+		for side in range(2):
+			var id: String = pairs[row][side]
+			var index := records.find_custom(func(record: Dictionary): return record.id == id)
+			if index < 0:
+				continue
+			var record: Dictionary = records[index]
+			var atlas := Image.load_from_file(record.atlas)
+			for column in range(3):
+				var phase: int = [0, 2, 4][column]
+				var source := Rect2i(phase * CELL.x + 190, record.row * CELL.y + 75, 180, 180)
+				proof.blend_rect(atlas, source, Vector2i(side * 540 + column * 180, row * 210 + 30))
+	var viewport := SubViewport.new()
+	viewport.size = proof.get_size()
+	viewport.render_target_update_mode = SubViewport.UPDATE_ONCE
+	root.add_child(viewport)
+	var gallery := ContactGallery.new()
+	gallery.picture = ImageTexture.create_from_image(proof)
+	gallery.labels = pairs
+	viewport.add_child(gallery)
+	await process_frame
+	await RenderingServer.frame_post_draw
+	viewport.get_texture().get_image().save_png(output.path_join(filename))
+	viewport.queue_free()
 
 
 func _save_pairs(pairs: Array, filename: String) -> void:

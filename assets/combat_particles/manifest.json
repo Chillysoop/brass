@@ -1,0 +1,198 @@
+{
+  "version": 1,
+  "generator": "Brass & Aether original authored pixel particle materials",
+  "atlas": "particles.png",
+  "frame_size": [
+    48,
+    48
+  ],
+  "columns": 12,
+  "anchor": [
+    24,
+    24
+  ],
+  "alpha": "Straight normal-alpha RGBA",
+  "sampler": "nearest",
+  "clips": {
+    "spark": {
+      "row": 0,
+      "frames": 12,
+      "fps": 24,
+      "anchor": [
+        24,
+        24
+      ],
+      "frame_size": [
+        48,
+        48
+      ],
+      "texture": "particles.png",
+      "native_seconds": 0.5
+    },
+    "ember": {
+      "row": 1,
+      "frames": 12,
+      "fps": 24,
+      "anchor": [
+        24,
+        24
+      ],
+      "frame_size": [
+        48,
+        48
+      ],
+      "texture": "particles.png",
+      "native_seconds": 0.5
+    },
+    "smoke": {
+      "row": 2,
+      "frames": 12,
+      "fps": 24,
+      "anchor": [
+        24,
+        24
+      ],
+      "frame_size": [
+        48,
+        48
+      ],
+      "texture": "particles.png",
+      "native_seconds": 0.5
+    },
+    "brass": {
+      "row": 3,
+      "frames": 12,
+      "fps": 24,
+      "anchor": [
+        24,
+        24
+      ],
+      "frame_size": [
+        48,
+        48
+      ],
+      "texture": "particles.png",
+      "native_seconds": 0.5
+    },
+    "aether": {
+      "row": 4,
+      "frames": 12,
+      "fps": 24,
+      "anchor": [
+        24,
+        24
+      ],
+      "frame_size": [
+        48,
+        48
+      ],
+      "texture": "particles.png",
+      "native_seconds": 0.5
+    },
+    "shield": {
+      "row": 5,
+      "frames": 12,
+      "fps": 24,
+      "anchor": [
+        24,
+        24
+      ],
+      "frame_size": [
+        48,
+        48
+      ],
+      "texture": "particles.png",
+      "native_seconds": 0.5
+    },
+    "heal": {
+      "row": 6,
+      "frames": 12,
+      "fps": 24,
+      "anchor": [
+        24,
+        24
+      ],
+      "frame_size": [
+        48,
+        48
+      ],
+      "texture": "particles.png",
+      "native_seconds": 0.5
+    },
+    "phase": {
+      "row": 7,
+      "frames": 12,
+      "fps": 24,
+      "anchor": [
+        24,
+        24
+      ],
+      "frame_size": [
+        48,
+        48
+      ],
+      "texture": "particles.png",
+      "native_seconds": 0.5
+    },
+    "crystal": {
+      "row": 8,
+      "frames": 12,
+      "fps": 24,
+      "anchor": [
+        24,
+        24
+      ],
+      "frame_size": [
+        48,
+        48
+      ],
+      "texture": "particles.png",
+      "native_seconds": 0.5
+    },
+    "slash": {
+      "row": 9,
+      "frames": 12,
+      "fps": 24,
+      "anchor": [
+        24,
+        24
+      ],
+      "frame_size": [
+        48,
+        48
+      ],
+      "texture": "particles.png",
+      "native_seconds": 0.5
+    },
+    "dust": {
+      "row": 10,
+      "frames": 12,
+      "fps": 24,
+      "anchor": [
+        24,
+        24
+      ],
+      "frame_size": [
+        48,
+        48
+      ],
+      "texture": "particles.png",
+      "native_seconds": 0.5
+    },
+    "arc": {
+      "row": 11,
+      "frames": 12,
+      "fps": 24,
+      "anchor": [
+        24,
+        24
+      ],
+      "frame_size": [
+        48,
+        48
+      ],
+      "texture": "particles.png",
+      "native_seconds": 0.5
+    }
+  }
+}

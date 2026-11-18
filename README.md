@@ -28,7 +28,9 @@ Attacks have a ready pose and a release effect that follows their actual timing.
 
 Sprite Fusion supplies the combat character art and animated effects. Wider tiles build up through longer, more elaborate weapon and spell preparations. Their impacts release when the playhead reaches the tile's right edge.
 
-Each combat tile has its own effect pattern. Forge paths change its shapes, motion, and supporting effects as rarity increases.
+Each combat tile combines Sprite Fusion contact art with original animated pixel particles. Authored emitters give abilities distinct material, motion and timing; forge paths reshape their particle wakes without wireframe overlays.
+
+The custom particle atlas contains twelve shaded materials and twelve lifecycle frames per material. Rebuild it with `node tools/bake_combat_particle_textures.mjs`.
 
 Tile rarity runs gray, green, blue, purple, and gold from Common to Legendary. Hero badges identify who has a tile equipped or who receives a reward. In shared storage, a signature tile's badge identifies its class of origin.
 

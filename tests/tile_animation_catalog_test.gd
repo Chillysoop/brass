@@ -8,6 +8,11 @@ const SHAPES := ["crescent", "chevron", "needle", "facet", "ring", "shield", "di
 	"flame", "rune", "bell", "hook", "hammer", "cross", "star", "flask"]
 const PATHS := ["drive", "sweep", "split", "fan", "orbit", "recoil", "converge", "drop", "stitch",
 	"relay", "spiral", "fold"]
+const GESTURES := ["lance", "cleave", "scatter", "fan", "recoil", "arc", "spiral", "tether",
+	"collapse", "drop", "orbit", "blink", "dash", "dome", "fountain", "pulse"]
+const MATERIALS := ["spark", "ember", "smoke", "brass", "aether", "shield", "heal", "phase", "crystal", "slash", "dust", "arc"]
+const SCATTERS := ["tight", "fan", "radial", "paired", "column"]
+const FINISHES := ["spray", "fall", "rise", "curl", "implode", "linger"]
 
 var failures: Array[String] = []
 
@@ -30,6 +35,15 @@ func _initialize() -> void:
 		_check(recipe.get("rank") == RARITIES.find(tile.rarity), "%s uses its actual rarity rank." % id)
 		_check(recipe.get("branch") == branches.get(id, "base"), "%s follows its real forge choice." % id)
 		_check(recipe.get("family") == profile.style, "%s retains the resolved choreography family." % id)
+		_check(recipe.get("particles") == Catalog.MOTIFS[base].get("particles"), "%s exposes its exact textured emitter prescription." % id)
+		_check(recipe.get("sprite_fusion") == profile.get("sprite_fusion", "")
+			and recipe.get("signature_effect") == profile.get("signature_effect", ""), "%s retains its Sprite Fusion and signature foundation." % id)
+		for layer: Dictionary in recipe.get("particle_layers", []):
+			_check(layer.get("kind") in recipe.features.map(func(feature: Dictionary): return feature.kind),
+				"%s only emits secondary responses for its real mechanics." % id)
+			_check(layer.get("material") in MATERIALS and layer.get("secondary") in MATERIALS
+				and layer.get("gesture") in GESTURES and layer.get("streams", 0) in range(1, 6)
+				and layer.get("pulses", 0) in range(1, 5), "%s has supported bounded mechanic particles." % id)
 
 	var signatures := {}
 	_check(Catalog.MOTIFS.size() == 129 and used.size() == 129, "All 129 authored identities are present and used.")
@@ -45,11 +59,17 @@ func _initialize() -> void:
 		var tempo: Array = row.get("tempo", [])
 		_check(tempo.size() == 3 and tempo[0] > 0.0 and tempo[0] < tempo[1]
 			and tempo[1] < tempo[2] and tempo[2] < 1.0, "%s has ordered full-block preparation phases." % id)
-		var details: Array = row.get("details", []).duplicate()
-		details.sort()
-		# Color, family, timing and small numeric differences cannot disguise repeated geometry.
-		var signature := JSON.stringify([row.shape, row.path, row.count, details])
-		_check(not signatures.has(signature), "%s repeats the primary visual gesture of %s." % [id, signatures.get(signature, "")])
+		var particles: Dictionary = row.get("particles", {})
+		_check(particles.get("gesture") in GESTURES and particles.get("material") in MATERIALS
+			and particles.get("secondary") in MATERIALS and particles.get("material") != particles.get("secondary"),
+			"%s uses an authored trajectory and two supported textured materials." % id)
+		_check(particles.get("streams", 0) in range(1, 6) and particles.get("pulses", 0) in range(1, 5)
+			and particles.get("scatter") in SCATTERS and particles.get("finish") in FINISHES,
+			"%s has bounded emission groups and a supported spatial/cadence finish." % id)
+		# Color, scale, old polygon shapes and opaque IDs cannot disguise repeated emitters.
+		var signature := JSON.stringify([particles.get("gesture"), particles.get("material"), particles.get("secondary"),
+			particles.get("streams"), particles.get("pulses"), particles.get("scatter"), particles.get("finish")])
+		_check(not signatures.has(signature), "%s repeats the authored particle prescription of %s." % [id, signatures.get(signature, "")])
 		signatures[signature] = id
 
 	var unknown := Choreography.profile("unlisted_animation_tile", {"damage": 1, "width": 2, "rarity": "common"})
@@ -61,7 +81,7 @@ func _initialize() -> void:
 	for failure: String in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("All %d runtime tile recipes, 129 authored motifs, forge branches, geometry, tempo and unknown fallbacks passed." % ArenaSim.TILES.size())
+		print("All %d runtime tile recipes, 129 textured particle prescriptions, actual mechanic layers, forge branches, full-block tempo and unknown fallbacks passed." % ArenaSim.TILES.size())
 	quit(0 if failures.is_empty() else 1)
 
 

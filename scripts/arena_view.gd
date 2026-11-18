@@ -1397,11 +1397,8 @@ func _draw_repairmaster_link(source: Vector2, target: Vector2, opacity: float) -
 
 func _draw_support_link(start: Vector2, end: Vector2, color: Color, icon := "guard") -> void:
 	var raised := Vector2(0.0, -12.0)
-	if start.distance_squared_to(end) > 49.0:
-		draw_line(start + raised, end + raised, Color("#254158", color.a * 0.88), 5.0, true)
-		draw_line(start + raised, end + raised, color, 2.5, true)
-		_draw_status_badge(icon, start.lerp(end, 0.50) + raised, color)
-	_draw_ellipse(end, Vector2(15.0, 7.0), Color("#254158", color.a * 0.44))
+	AttackAnimation.draw_support_link(self, start + raised, end + raised, color, icon,
+		fposmod(_animation_time * 0.85, 1.0))
 	_draw_status_badge(icon, end + raised, color)
 
 
@@ -1678,8 +1675,7 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 			var strike := int(effect.get("impact_index", -1))
 			if strike >= 0 and strike < route.size():
 				var pivot := _project(route[strike], field)
-				var flash := 1.0 - smoothstep(0.10, 0.78, progress)
-				draw_arc(pivot, lerpf(6.0, 14.0, progress), 0.0, TAU, 20, Color("#ffe6ad", flash), 2.0, true)
+				AttackAnimation.draw_status(self, "charge_impact", pivot, progress, status_scale)
 		"retreat":
 			_draw_retreat_path(from_point, to_point, progress)
 		"brass_cannon_impact":
@@ -1832,36 +1828,13 @@ func _project_charge_path(effect: Dictionary, field: Rect2) -> PackedVector2Arra
 func _draw_charge_path(points: PackedVector2Array, progress: float, tone: Color) -> void:
 	if points.size() < 2:
 		return
-	var opacity := 1.0 - smoothstep(0.28, 1.0, progress)
-	var light := Color(tone, opacity)
-	var edge := Color(INK, opacity * 0.90)
-	var landing := points[-1]
-	var direction := points[-2].direction_to(landing)
-	var pulse := lerpf(9.0, 18.0, progress)
 	AttackAnimation.draw_motion_path(self, points, progress, tone)
-	_draw_ellipse(landing, Vector2(pulse, pulse * 0.43), Color(light, opacity * 0.30))
-	draw_polyline(points, edge, 7.5, true)
-	draw_polyline(points, light, 3.1, true)
-	_draw_motion_chevron(landing, direction, 11.0, light, edge)
 
 
 func _draw_retreat_path(departure: Vector2, landing: Vector2, progress: float) -> void:
-	var length := departure.distance_to(landing)
-	if length < 1.0:
+	if departure.distance_squared_to(landing) < 1.0:
 		return
-	var opacity := 1.0 - smoothstep(0.22, 1.0, progress)
-	var light := Color("#a2efe1", opacity)
-	var edge := Color(INK, opacity * 0.90)
-	var direction := departure.direction_to(landing)
-	var pulse := lerpf(7.0, 15.0, progress)
 	AttackAnimation.draw_motion_path(self, PackedVector2Array([departure, landing]), progress, Color("#a2efe1"))
-	_draw_ellipse(landing, Vector2(pulse, pulse * 0.43), Color(light, opacity * 0.28))
-	draw_dashed_line(departure, landing, edge, 5.6, 5.0)
-	draw_dashed_line(departure, landing, light, 2.1, 5.0)
-	var arrow_size := clampf(length * 0.15, 4.0, 8.0)
-	if length >= 15.0:
-		_draw_motion_chevron(departure.lerp(landing, 0.52), direction, arrow_size, light, edge)
-	_draw_motion_chevron(landing, direction, arrow_size, light, edge)
 
 
 func _flanking_approaches(effect: Dictionary, field: Rect2) -> Array[Vector2]:

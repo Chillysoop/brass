@@ -50,16 +50,49 @@ const FEATURE_COUNTS := {
 }
 const AREA_FIELDS := ["splash", "radius", "sweep_push_radius", "cluster_pull_radius", "block_wave_radius", "ember_burn_radius"]
 
+# Local material responses describe mechanics without inventing another victim or hit.
+# Texture keys come from the authored combat particle atlas. Streams and pulses count
+# visual emissions; the combat simulation remains the sole owner of actual damage.
+const PARTICLE_LAYERS := {
+	"overflow": {"gesture": "fountain", "material": "shield", "secondary": "heal", "scatter": "radial", "finish": "rise"},
+	"intercept": {"gesture": "dome", "material": "shield", "secondary": "brass", "scatter": "tight", "finish": "linger"},
+	"harmony": {"gesture": "pulse", "material": "arc", "secondary": "shield", "scatter": "paired", "finish": "rise"},
+	"echo": {"gesture": "recoil", "material": "phase", "secondary": "aether", "scatter": "paired", "finish": "curl"},
+	"rune": {"gesture": "collapse", "material": "aether", "secondary": "brass", "scatter": "column", "finish": "linger"},
+	"chain": {"gesture": "arc", "material": "brass", "secondary": "spark", "scatter": "paired", "finish": "fall"},
+	"crit": {"gesture": "lance", "material": "crystal", "secondary": "spark", "scatter": "tight", "finish": "spray"},
+	"finish": {"gesture": "drop", "material": "slash", "secondary": "spark", "scatter": "tight", "finish": "fall"},
+	"repeat": {"gesture": "pulse", "material": "spark", "secondary": "aether", "scatter": "paired", "finish": "spray"},
+	"block": {"gesture": "recoil", "material": "shield", "secondary": "brass", "scatter": "column", "finish": "fall"},
+	"windup": {"gesture": "fountain", "material": "aether", "secondary": "ember", "scatter": "column", "finish": "rise"},
+	"travel": {"gesture": "dash", "material": "spark", "secondary": "dust", "scatter": "column", "finish": "spray"},
+	"ally": {"gesture": "arc", "material": "heal", "secondary": "shield", "scatter": "paired", "finish": "rise"},
+	"blink": {"gesture": "blink", "material": "phase", "secondary": "crystal", "scatter": "paired", "finish": "curl"},
+	"charge": {"gesture": "dash", "material": "dust", "secondary": "brass", "scatter": "column", "finish": "spray"},
+	"return": {"gesture": "recoil", "material": "phase", "secondary": "smoke", "scatter": "tight", "finish": "curl"},
+	"mark": {"gesture": "orbit", "material": "aether", "secondary": "arc", "scatter": "tight", "finish": "linger"},
+	"burn": {"gesture": "fountain", "material": "ember", "secondary": "smoke", "scatter": "column", "finish": "rise"},
+	"pierce": {"gesture": "lance", "material": "crystal", "secondary": "brass", "scatter": "tight", "finish": "spray"},
+	"pull": {"gesture": "spiral", "material": "aether", "secondary": "phase", "scatter": "radial", "finish": "implode"},
+	"push": {"gesture": "fan", "material": "dust", "secondary": "brass", "scatter": "fan", "finish": "spray"},
+	"splash": {"gesture": "pulse", "material": "smoke", "secondary": "dust", "scatter": "radial", "finish": "fall"},
+	"heal": {"gesture": "fountain", "material": "heal", "secondary": "aether", "scatter": "column", "finish": "rise"},
+	"guard": {"gesture": "dome", "material": "shield", "secondary": "aether", "scatter": "radial", "finish": "linger"},
+}
+
 
 static func recipe(id: String, tile: Dictionary, profile: Dictionary) -> Dictionary:
 	var base_id: String = tile.get("base_tile", id)
 	var motif: Dictionary = Catalog.MOTIFS.get(base_id, {})
 	if motif.is_empty():
 		return {}
+	var features := _features(tile)
 	return {
 		"motif": motif, "family": profile.style,
 		"beats": int(tile.get("width", 2)), "rank": maxi(0, RARITIES.find(tile.get("rarity", "common"))),
-		"branch": _branch(id), "features": _features(tile),
+		"branch": _branch(id), "features": features,
+		"particles": motif.get("particles", {}), "particle_layers": _particle_layers(features),
+		"sprite_fusion": profile.get("sprite_fusion", ""), "signature_effect": profile.get("signature_effect", ""),
 		"color": profile.color, "accent": profile.accent,
 	}
 
@@ -90,3 +123,18 @@ static func _features(tile: Dictionary) -> Array[Dictionary]:
 			count = 3 if tile.get("party_heal", false) or tile.has("heal_party_guard") else 2
 		features.append({"kind": kind, "amount": amount, "count": mini(count, 5), "area": area, "fields": fields})
 	return features
+
+
+static func _particle_layers(features: Array[Dictionary]) -> Array[Dictionary]:
+	var result: Array[Dictionary] = []
+	for feature: Dictionary in features:
+		var layer: Dictionary = PARTICLE_LAYERS.get(feature.kind, {}).duplicate()
+		if layer.is_empty():
+			continue
+		layer.kind = feature.kind
+		layer.streams = clampi(int(feature.count), 1, 5)
+		layer.pulses = 2 if feature.kind in ["echo", "harmony", "repeat", "chain"] else 1
+		layer.amount = feature.amount
+		layer.area = feature.area
+		result.append(layer)
+	return result
