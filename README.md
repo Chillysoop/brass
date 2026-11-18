@@ -26,6 +26,8 @@ Tiles pulse in their hero's color when they fire. Critical hits appear as larger
 
 Attacks have a ready pose and a release effect that follows their actual timing. Bash lunges, Slam drives down into a ripple, Shot recoils, Pull draws a tether, and Blink leaves a trail between its start and landing point. Tile upgrades vary the effect. Enemy windups and impacts distinguish moves such as charges, volleys, shields, and heals.
 
+Sprite Fusion supplies the combat character art and animated effects. Wider tiles build up through longer, more elaborate weapon and spell preparations. Their impacts release when the playhead reaches the tile's right edge.
+
 Tile rarity runs gray, green, blue, purple, and gold from Common to Legendary. Hero badges identify who has a tile equipped or who receives a reward. In shared storage, a signature tile's badge identifies its class of origin.
 
 Open **Combat stats** during or after a fight to rank tiles by damage, assists, kills, or healing. Tiles receive one assist per enemy they damage or move before a different tile kills it. **Retry in Practice** replays the original encounter with an editable copy of your equipment and pre-fight health.

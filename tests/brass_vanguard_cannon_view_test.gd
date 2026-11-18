@@ -15,7 +15,7 @@ func _initialize() -> void:
 func _run() -> void:
 	for id: String in [BrassVanguardCannon.VANGUARD, BrassVanguardCannon.CANNON]:
 		var art := GameIcons.enemy_art(id)
-		_expect(art != null and art.resource_path == "res://assets/combatants/%s.png" % id,
+		_expect(art != null and art.resource_path == "res://assets/sprite_fusion/characters/enemy_%s.png" % id,
 			"%s should use its own arena sprite." % id)
 	var view := ArenaView.new()
 	view.size = Vector2(850, 357)

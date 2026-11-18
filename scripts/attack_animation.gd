@@ -1,14 +1,16 @@
 extends RefCounted
 
+const SpriteFusionVfx = preload("res://scripts/sprite_fusion_vfx.gd")
 const INK := Color("#292130")
 const LIGHT := Color("#fff5de")
+const SIGNATURE_SECONDS := {"meteor": 0.64, "skyline": 0.49, "marshal_sweep": 0.49, "hammer": 0.46}
 
 
 static func lifetime(profile: Dictionary) -> float:
-	match profile.get("signature_effect", ""):
-		"meteor": return 0.64
-		"skyline", "marshal_sweep": return 0.49
-		"hammer": return 0.46
+	if not SpriteFusionVfx.release_key(profile).is_empty():
+		return SpriteFusionVfx.release_seconds(profile)
+	if SIGNATURE_SECONDS.has(profile.get("signature_effect", "")):
+		return SIGNATURE_SECONDS[profile.signature_effect]
 	match profile.style:
 		"shot", "slash", "thrust": return 0.22 + 0.025 * float(profile.weight)
 		"dash", "bolt", "pull": return 0.29 + 0.025 * float(profile.weight)
@@ -51,28 +53,41 @@ static func pose(profile: Dictionary, weight: float, facing: float, released: bo
 	return motion * Vector4(facing, 1.0, facing, 1.0) * force
 
 
-static func windup(canvas: CanvasItem, at: Vector2, facing: float, size: float, charge: float, profile: Dictionary) -> void:
-	var alpha := smoothstep(0.22, 1.0, charge) * 0.55
-	if alpha <= 0.01:
-		return
-	var color := Color(profile.color, alpha)
-	var style: String = profile.style
-	var radius := size * lerpf(0.23, 0.10, charge)
-	if profile.get("signature_effect", "") == "skyline":
-		var muzzle := at + Vector2(facing * size * 0.50, -size * 0.46)
-		_diamond(canvas, muzzle, size * lerpf(0.18, 0.06, charge), color, 2.0)
-	elif style in ["shot", "bolt", "thrust", "pull"]:
-		_diamond(canvas, at + Vector2(facing * size * 0.21, -size * 0.33), radius * 0.5, color, 1.5)
-	elif style in ["ward", "guard", "heal", "blink", "mark"]:
-		var center := at - Vector2(0, size * 0.24)
-		canvas.draw_arc(center, radius + size * 0.18, -2.6, -0.55, 12, color, 1.6, true)
-	else:
-		var center := at + Vector2(facing * size * 0.25, -size * (0.23 + 0.1 * charge))
-		canvas.draw_arc(center, radius + size * 0.10, -2.9, -0.2, 12, color, 1.8, true)
+static func hero_anticipation(start_tick: int, end_tick: int, tick: int, beats: float) -> Dictionary:
+	if tick < start_tick or tick >= end_tick or end_tick <= start_tick:
+		return {}
+	return {"charge": inverse_lerp(float(start_tick), float(end_tick), float(tick)), "beats": beats}
+
+
+static func windup(canvas: CanvasItem, at: Vector2, facing: float, size: float, charge: float,
+		profile: Dictionary, duration_beats := 2.0) -> void:
+	draw_hero_anticipation(canvas, at, facing, size, charge, profile, duration_beats)
+
+
+static func draw_hero_anticipation(canvas: CanvasItem, at: Vector2, facing: float, size: float,
+		charge: float, profile: Dictionary, duration_beats: float) -> void:
+	SpriteFusionVfx.draw_anticipation(canvas, at, facing, size, charge, profile, duration_beats)
+
+
+static func draw_cast_back(canvas: CanvasItem, profile: Dictionary, start: Vector2, target: Vector2,
+		arrival: Vector2, progress: float, visual_scale: float, hit: bool, footprint := Vector2.ZERO) -> void:
+	SpriteFusionVfx.draw_release(canvas, profile, start, target, arrival, progress,
+		visual_scale * float(profile.scale), hit, footprint, "back")
+
+
+static func draw_status(canvas: CanvasItem, kind: String, at: Vector2, progress: float,
+		visual_scale: float, footprint := Vector2.ZERO) -> bool:
+	return SpriteFusionVfx.draw_status(canvas, kind, at, progress, visual_scale, footprint)
 
 
 static func draw_cast(canvas: CanvasItem, profile: Dictionary, start: Vector2, target: Vector2, arrival: Vector2,
 		progress: float, visual_scale: float, hit: bool, footprint := Vector2.ZERO) -> void:
+	var official_contact := SpriteFusionVfx.draw_release(canvas, profile, start, target, arrival, progress,
+		visual_scale * float(profile.scale), hit, footprint, "front")
+	var signature_drawn := _draw_signature(canvas, profile, start, target, arrival, progress,
+		visual_scale * float(profile.scale), hit, footprint, official_contact)
+	if official_contact or signature_drawn:
+		return
 	var style: String = profile.style
 	var variant: int = profile.variant
 	var weight: float = profile.weight
@@ -89,23 +104,6 @@ static func draw_cast(canvas: CanvasItem, profile: Dictionary, start: Vector2, t
 	var front := start_chest + direction * size * 0.40
 	var close_end := front.move_toward(end_chest, size * (1.05 if hit else 0.62))
 	var expansion := sin(progress * PI * 0.5)
-	match profile.get("signature_effect", ""):
-		"meteor":
-			if hit:
-				_draw_meteor(canvas, target, footprint, size, progress)
-				return
-		"skyline":
-			_draw_skyline(canvas, start, end_chest, size, progress, hit)
-			return
-		"marshal_sweep":
-			if footprint.x > 0.0:
-				_draw_marshal_release(canvas, start, footprint, progress)
-				return
-		"hammer":
-			var strike_anchor := arrival if style == "dash" else start
-			_draw_hammer_swing(canvas, strike_anchor, target, size, progress, hit)
-			if style != "dash":
-				return
 	match style:
 		"slash":
 			var sweep := 1.25 + variant * 0.26
@@ -186,26 +184,43 @@ static func draw_cast(canvas: CanvasItem, profile: Dictionary, start: Vector2, t
 			_draw_glyph(canvas, style, start, target if hit else start, lift, size, variant, n, progress, ink, light)
 
 
+static func _draw_signature(canvas: CanvasItem, profile: Dictionary, start: Vector2, target: Vector2,
+		arrival: Vector2, progress: float, size: float, hit: bool, footprint: Vector2, official_contact: bool) -> bool:
+	var signature: String = profile.get("signature_effect", "")
+	if not SIGNATURE_SECONDS.has(signature):
+		return false
+	# Sheet clips can linger longer; weapon follow-through keeps its original real-time cadence.
+	var phase: float = progress * lifetime(profile) / float(SIGNATURE_SECONDS[signature])
+	if phase >= 1.0:
+		return official_contact
+	match signature:
+		"meteor":
+			if hit:
+				_draw_meteor(canvas, target, footprint, size, phase, not official_contact)
+				return true
+		"skyline":
+			_draw_skyline(canvas, start, target - Vector2(0.0, size * 0.88), size, phase, hit)
+			return true
+		"marshal_sweep":
+			if footprint.x > 0.0:
+				_draw_marshal_release(canvas, start, footprint, phase)
+				return true
+		"hammer":
+			var strike_anchor := arrival if profile.style == "dash" else start
+			_draw_hammer_swing(canvas, strike_anchor, target, size, phase, hit, not official_contact)
+			return profile.style != "dash"
+	return false
+
+
 static func draw_blink_transition(canvas: CanvasItem, start: Vector2, arrival: Vector2, progress: float) -> void:
 	if start.distance_squared_to(arrival) < 1.0:
 		return
-	var opacity := 1.0 - smoothstep(0.30, 1.0, progress)
-	var edge := Color("#382154", opacity * 0.95)
-	var violet := Color("#cfafff", opacity)
-	var light := Color("#f2e5ff", opacity)
-	var lift := Vector2(0.0, -11.0)
-	canvas.draw_dashed_line(start + lift, arrival + lift, edge, 5.4, 7.0)
-	canvas.draw_dashed_line(start + lift, arrival + lift, violet, 2.1, 7.0)
-	var portal := Vector2(19.0, 8.0)
-	var departure := portal * lerpf(1.12, 0.54, progress)
-	_ellipse(canvas, start, departure, 0.0, TAU, edge, 5.8)
-	_ellipse(canvas, start, departure, 0.0, TAU, violet, 2.6)
-	_diamond(canvas, start + lift, 6.5, violet, 2.3)
-	var landing := portal * lerpf(0.83, 1.53, progress)
-	_ellipse(canvas, arrival, landing, 0.0, TAU, edge, 6.5)
-	_ellipse(canvas, arrival, landing, 0.0, TAU, light, 3.3)
-	_ellipse(canvas, arrival, landing * 0.70, 0.0, TAU, violet, 2.0)
-	_sparks(canvas, arrival + lift * 0.55, 0.6, 16.0, 6, progress, light)
+	SpriteFusionVfx.draw_blink(canvas, start, arrival, progress)
+
+
+static func draw_motion_path(canvas: CanvasItem, points: PackedVector2Array, progress: float,
+		tone: Color, size := 26.0) -> void:
+	SpriteFusionVfx.draw_motion_path(canvas, points, progress, tone, size)
 
 
 static func _draw_skyline(canvas: CanvasItem, start: Vector2, target_chest: Vector2, size: float, progress: float,
@@ -234,7 +249,8 @@ static func _draw_skyline(canvas: CanvasItem, start: Vector2, target_chest: Vect
 		_sparks(canvas, target, direction.angle(), size * 0.9, 7, progress, trace)
 
 
-static func _draw_meteor(canvas: CanvasItem, hit: Vector2, footprint: Vector2, size: float, progress: float) -> void:
+static func _draw_meteor(canvas: CanvasItem, hit: Vector2, footprint: Vector2, size: float, progress: float,
+		draw_contact := true) -> void:
 	var opacity := 1.0 - progress
 	var travel := smoothstep(0.0, 0.34, progress)
 	var upward := Vector2(0.44, -0.90)
@@ -244,11 +260,12 @@ static func _draw_meteor(canvas: CanvasItem, hit: Vector2, footprint: Vector2, s
 	var dark := Color("#602922", opacity * 0.90)
 	var orange := Color("#f97136", opacity)
 	var gold := Color("#ffd489", opacity)
-	var ring := rim * lerpf(0.27, 1.0, smoothstep(0.0, 0.84, progress))
-	_ellipse(canvas, hit, ring, 0.0, TAU, dark, 5.2)
-	_ellipse(canvas, hit, ring, 0.0, TAU, gold, 2.8)
-	if progress < 0.72:
-		_ellipse(canvas, hit, ring * 0.79, 0.0, TAU, orange, 2.1)
+	if draw_contact:
+		var ring := rim * lerpf(0.27, 1.0, smoothstep(0.0, 0.84, progress))
+		_ellipse(canvas, hit, ring, 0.0, TAU, dark, 5.2)
+		_ellipse(canvas, hit, ring, 0.0, TAU, gold, 2.8)
+		if progress < 0.72:
+			_ellipse(canvas, hit, ring * 0.79, 0.0, TAU, orange, 2.1)
 	if progress < 0.40:
 		var fade := 1.0 - smoothstep(0.24, 0.40, progress)
 		var head := center + upward * size * lerpf(1.68, 0.0, travel)
@@ -268,11 +285,12 @@ static func _draw_meteor(canvas: CanvasItem, hit: Vector2, footprint: Vector2, s
 		canvas.draw_colored_polygon(meteor, Color("#593640", fade))
 		canvas.draw_circle(head - upward * size * 0.17 + across * size * 0.15, size * 0.25,
 			Color(gold, fade * 0.87), true, -1.0, true)
-	_sparks(canvas, center, 0.9, size * 1.72, 10, progress, gold)
+	if draw_contact:
+		_sparks(canvas, center, 0.9, size * 1.72, 10, progress, gold)
 
 
 static func _draw_hammer_swing(canvas: CanvasItem, start: Vector2, target: Vector2, size: float, progress: float,
-		hit: bool) -> void:
+		hit: bool, draw_contact := true) -> void:
 	var facing := 1.0 if target.x >= start.x else -1.0
 	var shoulder := start + Vector2(facing * size * 0.32, -size * 0.70)
 	var impact := target - Vector2(0.0, size * 0.55)
@@ -284,7 +302,7 @@ static func _draw_hammer_swing(canvas: CanvasItem, start: Vector2, target: Vecto
 	var white := Color("#fff3c5", opacity)
 	_arc(canvas, shoulder, size * lerpf(0.94, 1.40, progress), a + progress * 0.2, b,
 		shadow, gold, white, 4.4)
-	if hit:
+	if hit and draw_contact:
 		_diamond(canvas, impact, size * lerpf(0.32, 0.82, progress), white, 2.3)
 		_sparks(canvas, impact, 0.4, size * 1.1, 7, progress, gold)
 

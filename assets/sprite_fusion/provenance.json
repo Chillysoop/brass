@@ -1,0 +1,2121 @@
+{
+  "provider": "Sprite Fusion",
+  "requests": [
+    {
+      "name": "hero:warden:still",
+      "request_id": "req_2a196ca6-6dc6-4127-a2d5-79783a999953",
+      "operation": "generate",
+      "prompt": "Full body game character, a cheerful stocky human paladin in rounded antique brass plate armor with teal enamel trims, enormous riveted tower shield bearing a sun emblem, broad short sword in the other hand, ivory scarf and tiny crimson pennant. Lighthearted high fantasy clockwork crusader, original character. Three-quarter side view facing east to the right, combat-ready staggered stance with bent knees and sword arm drawn back, poised to stride and swing, feet visible with space around limbs and weapons. Warm gold highlights, deep blue-black outlines, hand painted pixel shading, rich readable silhouette, charming detailed fantasy strategy game sprite, subject centered.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "6a1eab80-b592-4be7-9966-bb4c7be8d324",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/6a1eab80-b592-4be7-9966-bb4c7be8d324/image.png?v=1794993906818"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/hero_warden.png"
+    },
+    {
+      "name": "hero:warden:attack",
+      "request_id": "req_c40ab300-a3ae-42f1-9b5f-c3f701228587",
+      "operation": "animate",
+      "prompt": "One complete combat attack cycle. This stout shield paladin plants his boots, lifts his sword arm back above his shoulder, braces the shield forward, performs a forceful sword slash to his right and shield bash, then settles back into his ready stance. Distinct visible arm joints and footwork, strong readable anticipation followed by a fast slash and a short recovery. Body stays anchored over his feet in place. Side-facing to the right throughout, all parts stay inside the canvas. Finite action.",
+      "inputs": [
+        {
+          "asset_id": "6a1eab80-b592-4be7-9966-bb4c7be8d324"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "a61827ba-ca69-40f2-ba26-4182fe9915a1",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/a61827ba-ca69-40f2-ba26-4182fe9915a1/spritesheet.png?v=1794993972633"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_warden_attack.png"
+    },
+    {
+      "name": "hero:bulwark:still",
+      "request_id": "req_c406643b-c07d-40d2-8e06-e72b82e38279",
+      "operation": "generate",
+      "prompt": "Stocky silver-and-navy knight with an enormous gold-rimmed rectangular tower shield, broad torso and sturdy boots. Protects allies by intercepting strikes. Friendly, facing right. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Facing east to the right. Combat-ready staggered pose with bent knees, weapon or casting arm drawn back and ready for motion, a clear separated arm and leg silhouette.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "25497025-dfcc-40d3-9837-e152c1ee7e69",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/25497025-dfcc-40d3-9837-e152c1ee7e69/image.png?v=1794994131259"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/hero_bulwark.png"
+    },
+    {
+      "name": "hero:breaker:still",
+      "request_id": "req_4de174e9-bb35-4f58-9a09-a2dcdbbedbee",
+      "operation": "generate",
+      "prompt": "Broad copper-and-rust brawler with two oversized square brass gauntlets and heavy shoulders. Knocks enemies into each other. Friendly, facing right. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Facing east to the right. Combat-ready staggered pose with bent knees, weapon or casting arm drawn back and ready for motion, a clear separated arm and leg silhouette.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "4b471453-501d-4b99-8437-52bb3487ed5c",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/4b471453-501d-4b99-8437-52bb3487ed5c/image.png?v=1794994149379"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/hero_breaker.png"
+    },
+    {
+      "name": "hero:hexwright:still",
+      "request_id": "req_6829c021-2c84-4045-b4ec-92bd3a234234",
+      "operation": "generate",
+      "prompt": "Small hooded teal-and-cream gravity witch with a pointed hat, short hooked staff and split robe. Pulls enemies with aether force. Friendly, facing right. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Facing east to the right. Combat-ready staggered pose with bent knees, weapon or casting arm drawn back and ready for motion, a clear separated arm and leg silhouette.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "6264fab8-191f-45f9-bac7-13a67e88b616",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/6264fab8-191f-45f9-bac7-13a67e88b616/image.png?v=1794994131248"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/hero_hexwright.png"
+    },
+    {
+      "name": "hero:wayfarer:still",
+      "request_id": "req_66c9a3a2-f2a0-4766-8d89-67241cb336a7",
+      "operation": "generate",
+      "prompt": "Lithe lilac-and-teal hooded explorer with a split coat, high boots and round portal compass. Teleports, retreats and attacks from new positions. Friendly, facing right. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Facing east to the right. Combat-ready staggered pose with bent knees, weapon or casting arm drawn back and ready for motion, a clear separated arm and leg silhouette.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "1c3889f0-be9c-483c-9e8d-f422e5c4abc7",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/1c3889f0-be9c-483c-9e8d-f422e5c4abc7/image.png?v=1794994153266"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/hero_wayfarer.png"
+    },
+    {
+      "name": "hero:lancer:still",
+      "request_id": "req_8cf623ec-59a6-40fe-b8a6-6386aa9b6062",
+      "operation": "generate",
+      "prompt": "Lean ivory-and-cobalt cavalry knight with a feathered helm, long forward lance and sky-blue pennant. Light leg silhouette and charging stance. Friendly, facing right. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Facing east to the right. Combat-ready staggered pose with bent knees, weapon or casting arm drawn back and ready for motion, a clear separated arm and leg silhouette.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "5bec3441-8f27-42ac-90e9-942cdbbe78a3",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/5bec3441-8f27-42ac-90e9-942cdbbe78a3/image.png?v=1794994151677"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/hero_lancer.png"
+    },
+    {
+      "name": "hero:cantor:still",
+      "request_id": "req_416dbf21-32c5-4d16-9966-75be906a73e3",
+      "operation": "generate",
+      "prompt": "Ivory-and-pine-green bell priest with a dark green choir mantle and large brass handbell on a short curved handle. Shares Guard and marks targets. Friendly, facing right. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Facing east to the right. Combat-ready staggered pose with bent knees, weapon or casting arm drawn back and ready for motion, a clear separated arm and leg silhouette.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "fb90f3df-496d-450c-9bfd-8893075840ea",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/fb90f3df-496d-450c-9bfd-8893075840ea/image.png?v=1794994170759"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/hero_cantor.png"
+    },
+    {
+      "name": "hero:apothecary:still",
+      "request_id": "req_41747de9-0ba5-4e94-bdb2-206b319d9962",
+      "operation": "generate",
+      "prompt": "Cream-and-sea-green field medic in a split cloak, broad medicine satchel and mechanical censer on a short staff. Heals and protects the party. Friendly, facing right. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Facing east to the right. Combat-ready staggered pose with bent knees, weapon or casting arm drawn back and ready for motion, a clear separated arm and leg silhouette.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "f807566a-adbb-4be2-b30f-78cd044fa7c1",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/f807566a-adbb-4be2-b30f-78cd044fa7c1/image.png?v=1794994174137"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/hero_apothecary.png"
+    },
+    {
+      "name": "hero:rune_smith:still",
+      "request_id": "req_b4bc4a59-6a2a-435d-945b-2f993114b416",
+      "operation": "generate",
+      "prompt": "Heavy russet-and-brass smith with angular shoulder plates and a broad rune-etched hammer with a contained orange glow. Charges follow-up attacks with wide strikes. Friendly, facing right. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Facing east to the right. Combat-ready staggered pose with bent knees, weapon or casting arm drawn back and ready for motion, a clear separated arm and leg silhouette.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "aab20f8d-b16a-400d-93c2-45895a13a4da",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/aab20f8d-b16a-400d-93c2-45895a13a4da/image.png?v=1794994172187"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/hero_rune_smith.png"
+    },
+    {
+      "name": "hero:starshot:still",
+      "request_id": "req_7ef82572-2799-46ee-8d58-ca58e11d6584",
+      "operation": "generate",
+      "prompt": "Agile teal longcoat marksman with a feathered hat, brass half-mask and compact ivory flintlock rifle with a cyan aiming lens. Long-range fire and evasive backsteps. Friendly, facing right. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Facing east to the right. Combat-ready staggered pose with bent knees, weapon or casting arm drawn back and ready for motion, a clear separated arm and leg silhouette.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "b4279869-5c17-46c6-b27f-ac412fb46777",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/b4279869-5c17-46c6-b27f-ac412fb46777/image.png?v=1794994201058"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/hero_starshot.png"
+    },
+    {
+      "name": "hero:cinder_mage:still",
+      "request_id": "req_16f1d8ea-2919-4ff2-80bd-e480822371f2",
+      "operation": "generate",
+      "prompt": "Slim ember-orange and maroon mage with a pointed split-hem coat, splayed casting glove and staff capped by a caged coal. Ignites and spreads Burn. Friendly, facing right. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Facing east to the right. Combat-ready staggered pose with bent knees, weapon or casting arm drawn back and ready for motion, a clear separated arm and leg silhouette.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "6b64e673-a5a3-4d20-ace6-bb2155c358b7",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/6b64e673-a5a3-4d20-ace6-bb2155c358b7/image.png?v=1794994189257"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/hero_cinder_mage.png"
+    },
+    {
+      "name": "hero:duelist:still",
+      "request_id": "req_483fa4bb-2a0b-453d-bde1-b3d37a02b038",
+      "operation": "generate",
+      "prompt": "Light copper-armored fencer in violet-and-turquoise cloth with a feathered hat and one swept rapier. Forward stance, quick repeat strikes and finishing blows. Friendly, facing right. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Facing east to the right. Combat-ready staggered pose with bent knees, weapon or casting arm drawn back and ready for motion, a clear separated arm and leg silhouette.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "276f42af-65dd-4f6e-8c56-f23fd1788e23",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/276f42af-65dd-4f6e-8c56-f23fd1788e23/image.png?v=1794994193606"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/hero_duelist.png"
+    },
+    {
+      "name": "enemy:brass_recruit:still",
+      "request_id": "req_57653f37-aef8-433e-8110-0cdd818322bb",
+      "operation": "generate",
+      "prompt": "Small rusty red clockwork knight with a winding key above its head, short sword, round brass buckler and squat boots. Brass Frontier novice melee unit. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "9c80c179-ac30-463f-93d5-163db2ef92f0",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/9c80c179-ac30-463f-93d5-163db2ef92f0/image.png?v=1794994272156"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_recruit.png"
+    },
+    {
+      "name": "enemy:brass_bruiser:still",
+      "request_id": "req_3ef70cb9-f25b-4dbe-87cb-b4b802c46d8c",
+      "operation": "generate",
+      "prompt": "Broad orange-and-rust automaton with twin piston stacks, huge rectangular striking fists and a small slotted visor. Heavy Brass Frontier close-range bruiser. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "5c25f7d4-fa3e-4f0d-bc81-f5af075e7341",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/5c25f7d4-fa3e-4f0d-bc81-f5af075e7341/image.png?v=1794994268446"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_bruiser.png"
+    },
+    {
+      "name": "enemy:scout:still",
+      "request_id": "req_ddf7468c-4670-4c67-8b8e-ea38d7033428",
+      "operation": "generate",
+      "prompt": "Small rust-colored clockwork scout with a narrow angular body and blade, built for a lighter silhouette than the shield automatons. Used in campaign and practice. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "80ca8776-0075-4249-b326-0b1a5a26cc95",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/80ca8776-0075-4249-b326-0b1a5a26cc95/image.png?v=1794994266766"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_scout.png"
+    },
+    {
+      "name": "enemy:brass_captain:still",
+      "request_id": "req_46d9d44b-4389-4765-b8f9-6100f019d75c",
+      "operation": "generate",
+      "prompt": "Tall narrow clockwork officer in a navy longcoat, pointed brass helmet, cream gear banner and hooked saber. Rivet Captain melee commander. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "188ab3a1-03a6-4133-83f5-13b97c2c68bd",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/188ab3a1-03a6-4133-83f5-13b97c2c68bd/image.png?v=1794994263016"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_captain.png"
+    },
+    {
+      "name": "enemy:brass_sapper:still",
+      "request_id": "req_35e5334e-42cd-4840-b5f1-ef245c9b52ca",
+      "operation": "generate",
+      "prompt": "Silver-and-turquoise tripod mortar automaton with twin upward barrels, cyan lens and glass power coils. Rivet Bombardier with a delayed ground blast. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "65492ef4-042f-4cf7-8290-dac63edbc747",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/65492ef4-042f-4cf7-8290-dac63edbc747/image.png?v=1794994280271"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_sapper.png"
+    },
+    {
+      "name": "enemy:brass_tollkeeper:still",
+      "request_id": "req_ce77e590-0f14-4987-9dd6-83a685ea51de",
+      "operation": "generate",
+      "prompt": "Broad brass-and-crimson toll-gate automaton with a crown-like helmet, gate-shaped shoulder arch, chimney turrets, striped barrier blade and square hammer fist. Heavy Brass Frontier boss. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "2de90c9f-e311-4a42-bff1-9f0f5b1e87b8",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/2de90c9f-e311-4a42-bff1-9f0f5b1e87b8/image.png?v=1794994284046"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_tollkeeper.png"
+    },
+    {
+      "name": "enemy:tollkeeper_drone:still",
+      "request_id": "req_92bb2294-ce74-4733-b324-2bd4cbef06fa",
+      "operation": "generate",
+      "prompt": "Small low copper-and-ochre repair automaton on three crab-like legs, mint glass canister, one articulated wrench arm and mint lens. Mobile assistant to the Tollkeeper. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "dc5a7e5e-e2cb-4a31-9c89-c6417e39b238",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/dc5a7e5e-e2cb-4a31-9c89-c6417e39b238/image.png?v=1794994284349"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_tollkeeper_drone.png"
+    },
+    {
+      "name": "enemy:brass_repairmaster:still",
+      "request_id": "req_f3d7ebe9-6468-4040-97fe-442416f66435",
+      "operation": "generate",
+      "prompt": "Bulky brass-and-dark-iron mechanic automaton wearing a copper apron with spanners, carrying a huge hammer and a tool nozzle. Green visor and large green repair tank with pressure gauge on its back. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "3a383262-bd72-4a01-99ac-381a82406851",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/3a383262-bd72-4a01-99ac-381a82406851/image.png?v=1794994308077"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_repairmaster.png"
+    },
+    {
+      "name": "enemy:repairmaster_drone:still",
+      "request_id": "req_a685a337-e40d-4a2a-b678-3767511589ed",
+      "operation": "generate",
+      "prompt": "Stationary copper-and-brass crab repair drone with four pointed legs, pincer forelimbs, green central lens and a tall luminous green reservoir. Separate design from the Tollkeeper repair drone. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "068774f5-82a2-4fee-82e5-33f71cba3a44",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/068774f5-82a2-4fee-82e5-33f71cba3a44/image.png?v=1794994297930"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_repairmaster_drone.png"
+    },
+    {
+      "name": "enemy:regent:still",
+      "request_id": "req_c0189ce7-a0f2-4c63-8686-712c1a2f8be4",
+      "operation": "generate",
+      "prompt": "Huge black-iron and royal-plum automaton with a three-pronged crown and raised chain flail. Iron Regent final boss, imposing heavy silhouette. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "a1655ed9-83ad-4cba-92eb-5e5be5be3c0f",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/a1655ed9-83ad-4cba-92eb-5e5be5be3c0f/image.png?v=1794994303945"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_regent.png"
+    },
+    {
+      "name": "enemy:glass_recruit:still",
+      "request_id": "req_11716721-5ef7-40d1-afb5-37b4aed3e128",
+      "operation": "generate",
+      "prompt": "Short skinny Glass Foundry workshop automaton with cyan visor, glass blowpipe and small amber boiler backpack. Glass Apprentice. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "deb70883-3efd-4182-a76b-6c5de77a4d47",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/deb70883-3efd-4182-a76b-6c5de77a4d47/image.png?v=1794994317329"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_recruit.png"
+    },
+    {
+      "name": "enemy:glass_hunter:still",
+      "request_id": "req_9ee5b1b2-f279-4a77-852d-4d021a50cb17",
+      "operation": "generate",
+      "prompt": "Teal-and-silver mechanical Glass Foundry hunter carrying a long glass rifle. Angular lens and narrow ranged stance. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "0094327b-6131-44f4-9853-4748058fbd7f",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/0094327b-6131-44f4-9853-4748058fbd7f/image.png?v=1794994327286"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_hunter.png"
+    },
+    {
+      "name": "enemy:glass_skirmisher:still",
+      "request_id": "req_81c4cc63-2ea8-419c-a743-1ef95c68d104",
+      "operation": "generate",
+      "prompt": "Small agile cyan glass construct with twin pointed glass shards and a light rapid melee silhouette. Kiln Skirmisher. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "c04ae07e-5fa4-41f3-b199-acebbbe4057a",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/c04ae07e-5fa4-41f3-b199-acebbbe4057a/image.png?v=1794994334024"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_skirmisher.png"
+    },
+    {
+      "name": "enemy:glass_overseer:still",
+      "request_id": "req_8900c148-6ffb-4382-af5d-b0a5b8b99c0e",
+      "operation": "generate",
+      "prompt": "Tall charcoal furnace foreman automaton with ash-gray plates, amber cage pauldron and heavy furnace tongs. Kiln Overseer. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "9d7c0703-b290-4813-8472-ce9950aefcaf",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/9d7c0703-b290-4813-8472-ce9950aefcaf/image.png?v=1794994335114"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_overseer.png"
+    },
+    {
+      "name": "enemy:glass_duelist:still",
+      "request_id": "req_0f232bff-7ea9-4af7-af57-9e73ecbe04ce",
+      "operation": "generate",
+      "prompt": "Slim silver-and-turquoise mechanical duelist with tapered pointed helmet, swept-back brass fins and a long hooked lance. Blink-striking Kiln Duelist. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "c50872b6-bac5-497b-b059-2b79bc4ba5b6",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/c50872b6-bac5-497b-b059-2b79bc4ba5b6/image.png?v=1794994343237"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_duelist.png"
+    },
+    {
+      "name": "enemy:glass_twin:still",
+      "request_id": "req_932992a6-b8ce-4674-a484-22022d2c22d4",
+      "operation": "generate",
+      "prompt": "Stocky copper-and-aquamarine Crucible automaton with broad kiln armor and glass-powered hammer silhouette. Glass member of the Crucible Twins. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "97d9d173-e0f3-415d-b692-5a1c8a97a1ab",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/97d9d173-e0f3-415d-b692-5a1c8a97a1ab/image.png?v=1794994350171"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_twin.png"
+    },
+    {
+      "name": "enemy:ember_twin:still",
+      "request_id": "req_d5c64954-7b68-4892-a704-04bf0a5521b9",
+      "operation": "generate",
+      "prompt": "Compact aggressive copper-and-red Crucible automaton with one huge orange heat hammer and heavy boots. Ember member of the Crucible Twins. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "8542fe5d-9e6a-4638-a2c4-ed9d0573ec92",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/8542fe5d-9e6a-4638-a2c4-ed9d0573ec92/image.png?v=1794994349273"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_ember_twin.png"
+    },
+    {
+      "name": "enemy:prism_warden:still",
+      "request_id": "req_213cd1bd-8b3c-4fea-b2ff-f8addeb2677e",
+      "operation": "generate",
+      "prompt": "Tall teal-glass guardian with dark iron limbs, stained-glass chest prism and long silver polearm. Ruby and pale-gold shard accents, wide planted stance. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "8d6424af-73d9-4e8c-9719-2c58ee1a0467",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/8d6424af-73d9-4e8c-9719-2c58ee1a0467/image.png?v=1794994358639"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_prism_warden.png"
+    },
+    {
+      "name": "enemy:tempered_colossus:still",
+      "request_id": "req_ed45ec34-2ae7-4516-9f23-6d015c24058e",
+      "operation": "generate",
+      "prompt": "Massive squat midnight cast-iron automaton with furnace-bronze joints, pale turquoise glass armor, amber belly furnace and broad fists. Layered glass vanes form its kiln guard. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "67c893fa-fbc2-4e5f-95da-f77c9b4aaec5",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/67c893fa-fbc2-4e5f-95da-f77c9b4aaec5/image.png?v=1794994393877"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_tempered_colossus.png"
+    },
+    {
+      "name": "enemy:relay_recruit:still",
+      "request_id": "req_7d286588-e121-4584-9499-14eed30da92e",
+      "operation": "generate",
+      "prompt": "Squat ivory-and-plum clockwork novice sentry with short baton and round shield. Relay Initiate. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "198cae4f-8d30-4175-a0aa-74f16cec244e",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/198cae4f-8d30-4175-a0aa-74f16cec244e/image.png?v=1794994369255"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_relay_recruit.png"
+    },
+    {
+      "name": "enemy:relay_guard:still",
+      "request_id": "req_f4fd635c-34f7-4667-9570-e14e19b043c7",
+      "operation": "generate",
+      "prompt": "Ivory-and-violet enamel clockwork infantry with a large brass dish shield and turquoise emitter. Maintains shield links to allies. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "8425e609-6363-4f2b-a641-f56668cde11a",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/8425e609-6363-4f2b-a641-f56668cde11a/image.png?v=1794994384054"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_relay_guard.png"
+    },
+    {
+      "name": "enemy:relay_lancer:still",
+      "request_id": "req_eb5c87bf-213f-46a7-817e-31f3aaa1eee0",
+      "operation": "generate",
+      "prompt": "Towering ivory-and-brass cavalry foot knight with a horizontal cyan electrical lance and wedge shield. Crown Lancer. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "3ba12ab7-5a0d-4123-a373-48affe71a3d1",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/3ba12ab7-5a0d-4123-a373-48affe71a3d1/image.png?v=1794994412083"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_relay_lancer.png"
+    },
+    {
+      "name": "hero:bulwark:attack",
+      "request_id": "req_c13f453a-b9aa-4974-bca4-6ff551beff55",
+      "operation": "animate",
+      "prompt": "One complete combat attack cycle. Brace the massive tower shield, draw back the weapon arm, surge the shield forward in a weighty bash and recover. Distinct visible arm movement and footwork, clear anticipation then a fast release then a short recovery. The character stays anchored over the feet, facing east to the right throughout. Preserve all equipment, colors and appearance. Finite action.",
+      "inputs": [
+        {
+          "asset_id": "25497025-dfcc-40d3-9837-e152c1ee7e69"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "577b07c8-1f6e-43d3-88bf-3dfd67da10ab",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/577b07c8-1f6e-43d3-88bf-3dfd67da10ab/spritesheet.png?v=1794994697362"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_bulwark_attack.png"
+    },
+    {
+      "name": "hero:breaker:attack",
+      "request_id": "req_13d7336a-9611-4782-bb0a-e229d6268a00",
+      "operation": "animate",
+      "prompt": "One complete combat attack cycle. Draw both enormous mechanical gauntlets back, plant the boots, smash a heavy straight punch and follow with the other fist, recover. Distinct visible arm movement and footwork, clear anticipation then a fast release then a short recovery. The character stays anchored over the feet, facing east to the right throughout. Preserve all equipment, colors and appearance. Finite action.",
+      "inputs": [
+        {
+          "asset_id": "4b471453-501d-4b99-8437-52bb3487ed5c"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "a6af98ac-44da-4f32-ac4d-69a6015ccb13",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/a6af98ac-44da-4f32-ac4d-69a6015ccb13/spritesheet.png?v=1794994642654"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_breaker_attack.png"
+    },
+    {
+      "name": "hero:hexwright:attack",
+      "request_id": "req_61582656-0bae-4229-a0b0-a1c68fc60baa",
+      "operation": "animate",
+      "prompt": "One complete combat attack cycle. Plant her boots, lift the hook staff and spiral her free casting hand, sweep the hooked staff forward to release gravity magic, recover. Distinct visible arm movement and footwork, clear anticipation then a fast release then a short recovery. The character stays anchored over the feet, facing east to the right throughout. Preserve all equipment, colors and appearance. Finite action.",
+      "inputs": [
+        {
+          "asset_id": "6264fab8-191f-45f9-bac7-13a67e88b616"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "62af2bca-b2cf-4956-90f8-dfdcc0387de9",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/62af2bca-b2cf-4956-90f8-dfdcc0387de9/spritesheet.png?v=1794994650512"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_hexwright_attack.png"
+    },
+    {
+      "name": "hero:wayfarer:attack",
+      "request_id": "req_feeb834c-437d-4d88-8878-e0f34d41fdca",
+      "operation": "animate",
+      "prompt": "One complete combat attack cycle. Bring the portal compass up, gather light between her hands, step and snap a sharp palm strike outward, recover. Distinct visible arm movement and footwork, clear anticipation then a fast release then a short recovery. The character stays anchored over the feet, facing east to the right throughout. Preserve all equipment, colors and appearance. Finite action.",
+      "inputs": [
+        {
+          "asset_id": "1c3889f0-be9c-483c-9e8d-f422e5c4abc7"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "64d853ea-9380-47ed-b55a-c96d3f4c0301",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/64d853ea-9380-47ed-b55a-c96d3f4c0301/spritesheet.png?v=1794994662324"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_wayfarer_attack.png"
+    },
+    {
+      "name": "hero:lancer:attack",
+      "request_id": "req_9b184a5d-8ddf-4f51-b978-02c92fb3ca79",
+      "operation": "animate",
+      "prompt": "One complete combat attack cycle. Lower the long lance into a braced two-handed thrust, shift body weight onto the front foot, thrust forcefully to the right and recover. Distinct visible arm movement and footwork, clear anticipation then a fast release then a short recovery. The character stays anchored over the feet, facing east to the right throughout. Preserve all equipment, colors and appearance. Finite action.",
+      "inputs": [
+        {
+          "asset_id": "5bec3441-8f27-42ac-90e9-942cdbbe78a3"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "210dc87e-3f35-43bd-848b-c7bfa50597dd",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/210dc87e-3f35-43bd-848b-c7bfa50597dd/spritesheet.png?v=1794994706586"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_lancer_attack.png"
+    },
+    {
+      "name": "hero:cantor:attack",
+      "request_id": "req_ed6e09b2-22f4-45cd-813d-49ddc555d249",
+      "operation": "animate",
+      "prompt": "One complete combat attack cycle. Lift the large handbell back, brace the feet, swing and ring it in a broad deliberate arc, settle the bell at the side again. Distinct visible arm movement and footwork, clear anticipation then a fast release then a short recovery. The character stays anchored over the feet, facing east to the right throughout. Preserve all equipment, colors and appearance. Finite action.",
+      "inputs": [
+        {
+          "asset_id": "fb90f3df-496d-450c-9bfd-8893075840ea"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "15968ff5-cfee-4bfc-9006-4710c440d21f",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/15968ff5-cfee-4bfc-9006-4710c440d21f/spritesheet.png?v=1794994678157"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_cantor_attack.png"
+    },
+    {
+      "name": "hero:apothecary:attack",
+      "request_id": "req_30130ef6-abc7-464e-9b2b-4397616212cd",
+      "operation": "animate",
+      "prompt": "One complete combat attack cycle. Draw the censer and free hand inward, shake and charge the healing canister, sweep the censer staff forward to release a spray, recover. Distinct visible arm movement and footwork, clear anticipation then a fast release then a short recovery. The character stays anchored over the feet, facing east to the right throughout. Preserve all equipment, colors and appearance. Finite action.",
+      "inputs": [
+        {
+          "asset_id": "f807566a-adbb-4be2-b30f-78cd044fa7c1"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "3cdba2e3-2be1-4841-9b22-8e9b3d63631e",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/3cdba2e3-2be1-4841-9b22-8e9b3d63631e/spritesheet.png?v=1794994701709"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_apothecary_attack.png"
+    },
+    {
+      "name": "hero:rune_smith:attack",
+      "request_id": "req_a6f050c6-7aef-4258-984b-0ee1ca7459c7",
+      "operation": "animate",
+      "prompt": "One complete combat attack cycle. Lift the rune-etched hammer high behind the shoulder with both arms, plant the feet, swing down in a heavy hammer smash and recover. Distinct visible arm movement and footwork, clear anticipation then a fast release then a short recovery. The character stays anchored over the feet, facing east to the right throughout. Preserve all equipment, colors and appearance. Finite action.",
+      "inputs": [
+        {
+          "asset_id": "aab20f8d-b16a-400d-93c2-45895a13a4da"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "cfa69d7c-4d04-4d8a-9a59-071213763bc1",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/cfa69d7c-4d04-4d8a-9a59-071213763bc1/spritesheet.png?v=1794994713673"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_rune_smith_attack.png"
+    },
+    {
+      "name": "hero:cinder_mage:attack",
+      "request_id": "req_36f140dc-96d7-41b0-b531-30cb739cb3aa",
+      "operation": "animate",
+      "prompt": "One complete combat attack cycle. Draw the glowing casting glove back while raising the coal staff, coil flame between the hands, throw the casting palm forward and recover. Distinct visible arm movement and footwork, clear anticipation then a fast release then a short recovery. The character stays anchored over the feet, facing east to the right throughout. Preserve all equipment, colors and appearance. Finite action.",
+      "inputs": [
+        {
+          "asset_id": "6b64e673-a5a3-4d20-ace6-bb2155c358b7"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "d56980dc-eec4-4429-a560-b17f1a847351",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/d56980dc-eec4-4429-a560-b17f1a847351/spritesheet.png?v=1794994725649"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_cinder_mage_attack.png"
+    },
+    {
+      "name": "hero:duelist:attack",
+      "request_id": "req_ae1e57e5-50d4-49c3-a6d0-786af362dfbe",
+      "operation": "animate",
+      "prompt": "One complete combat attack cycle. Draw the rapier arm back with a fencing guard, make a fast precise lunge to the right, retract the blade, recover onto the back foot. Distinct visible arm movement and footwork, clear anticipation then a fast release then a short recovery. The character stays anchored over the feet, facing east to the right throughout. Preserve all equipment, colors and appearance. Finite action.",
+      "inputs": [
+        {
+          "asset_id": "276f42af-65dd-4f6e-8c56-f23fd1788e23"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "4bb82819-c57a-457f-9235-3324ce3df093",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/4bb82819-c57a-457f-9235-3324ce3df093/spritesheet.png?v=1794994729274"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_duelist_attack.png"
+    },
+    {
+      "name": "hero:warden:run",
+      "request_id": "req_0b6b1c72-1c1f-4d35-ab3d-dda53fae9666",
+      "operation": "animate",
+      "prompt": "Brisk jogging animation in place, a seamless side-facing loop. The shield paladin steps left leg forward then right leg forward, boots alternately lift and plant, arms and shield bob slightly with the stride, scarf and pennant trail. Character stays anchored on the spot and always faces east to the right. Keep the same silhouette, equipment and colors.",
+      "inputs": [
+        {
+          "asset_id": "6a1eab80-b592-4be7-9966-bb4c7be8d324"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "55f9fd58-5ae9-4c47-8545-d92c45626167",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/55f9fd58-5ae9-4c47-8545-d92c45626167/spritesheet.png?v=1794994733735"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_warden_run.png"
+    },
+    {
+      "name": "hero:starshot:still",
+      "request_id": "req_26feb706-9977-43cb-b2eb-e6e62967c0cc",
+      "operation": "edit",
+      "prompt": "Make this marksman clearly a woman with visible auburn hair flowing beneath her feathered teal hat, feminine face and agile build. Keep her teal longcoat, cream scarf, brass half-mask, cyan-lensed long rifle and exact right-facing combat-ready stance. Preserve the outfit design, bright brass highlights and pixel art style.",
+      "inputs": [
+        {
+          "asset_id": "b4279869-5c17-46c6-b27f-ac412fb46777"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "a7381303-6a72-4b53-8c53-432b59ed63c1",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/a7381303-6a72-4b53-8c53-432b59ed63c1/image.png?v=1794994774340"
+        },
+        {
+          "index": 1,
+          "asset_id": "af5c6cf3-dfd5-40da-8130-da7109b91533",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/af5c6cf3-dfd5-40da-8130-da7109b91533/image.png?v=1794994774842"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/hero_starshot.png"
+    },
+    {
+      "name": "enemy:marshal:still",
+      "request_id": "req_aa55dfbc-c4a0-4c99-b633-e737afe6a5de",
+      "operation": "generate",
+      "prompt": "Tall brass furnace-armored gladiator with rusty crimson accents, heavy fists, bright cyan eye and a teal gyroscopic chest counterweight. Gilded Marshal boss with plating and broad sweeps. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "7056a0e9-6ecd-44ae-9668-3ad920d6bf0c",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/7056a0e9-6ecd-44ae-9668-3ad920d6bf0c/image.png?v=1794994836176"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_marshal.png"
+    },
+    {
+      "name": "enemy:relay_runner:still",
+      "request_id": "req_3e5cc6ad-a84b-46e7-bf69-a90578b9434f",
+      "operation": "generate",
+      "prompt": "Long-legged plum-and-silver clockwork signal runner with a trailing pennant and small blade. Fast Crown infantry. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "2fea8d70-6e6b-4acc-9430-a8a6f87c9faf",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/2fea8d70-6e6b-4acc-9430-a8a6f87c9faf/image.png?v=1794994838498"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_relay_runner.png"
+    },
+    {
+      "name": "enemy:crown_mender:still",
+      "request_id": "req_80bc38ed-e8eb-4cd5-86cf-a23dd8773085",
+      "operation": "generate",
+      "prompt": "Crown relay support figure in ivory, plum and brass with a repair focus. Keeps distance and restores allies. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "daa6c927-18c0-4edd-b400-c97a37d0ab5d",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/daa6c927-18c0-4edd-b400-c97a37d0ab5d/image.png?v=1794994846360"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_crown_mender.png"
+    },
+    {
+      "name": "enemy:relay_captain:still",
+      "request_id": "req_0ff7ab1d-6502-4e6b-923f-035cc503e68f",
+      "operation": "generate",
+      "prompt": "Tall ivory-and-navy clockwork officer with brass trim, violet crest and large signal mace capped by a turquoise antenna head. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "ef097fd1-a563-4955-b8b4-f95ea5d2cdd4",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/ef097fd1-a563-4955-b8b4-f95ea5d2cdd4/image.png?v=1794994837524"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_relay_captain.png"
+    },
+    {
+      "name": "enemy:relay_marshal:still",
+      "request_id": "req_34d2c91a-6f54-4da4-b603-f10abba1e456",
+      "operation": "generate",
+      "prompt": "Tall ivory-and-indigo clockwork commander with a violet cape, crescent aerials behind its shoulders and grounded signal halberd with opposing tuning-fork prongs. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "75645aa8-d492-4f22-a9bc-fa2e7eb6f56f",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/75645aa8-d492-4f22-a9bc-fa2e7eb6f56f/image.png?v=1794994842351"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_relay_marshal.png"
+    },
+    {
+      "name": "enemy:crown_regent:still",
+      "request_id": "req_1b143c1b-f062-4705-8406-0a901a6d6001",
+      "operation": "generate",
+      "prompt": "Wide ceremonial navy-and-ivory automaton with a floating bell-shaped armored skirt, purple mantle, bronze crown and two teal receiver dishes above its shoulders. One massive forward gauntlet. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "deeb084d-1eac-4f07-a985-c87922f7e23d",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/deeb084d-1eac-4f07-a985-c87922f7e23d/image.png?v=1794994834620"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_crown_regent.png"
+    },
+    {
+      "name": "enemy:dock_recruit:still",
+      "request_id": "req_eaea2c55-7d67-4f71-8b53-65951c2e915e",
+      "operation": "generate",
+      "prompt": "Slim navy-and-sea-green nautical salvage automaton with rolled sleeves and a short boarding wrench. Dockhand with parry and riposte attacks. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "b56c0b66-3824-42e8-a640-960cf050d2af",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/b56c0b66-3824-42e8-a640-960cf050d2af/image.png?v=1794994853061"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_dock_recruit.png"
+    },
+    {
+      "name": "enemy:dock_bruiser:still",
+      "request_id": "req_aa2b67a2-3143-4f62-917d-14b2e20e878c",
+      "operation": "generate",
+      "prompt": "Bulky navy iron salvage automaton with sea-green shoulders, round brass slit helmet and large square mooring hammer. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "6d4338e1-6f6a-4dd2-85d3-ffd11cadd747",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/6d4338e1-6f6a-4dd2-85d3-ffd11cadd747/image.png?v=1794994854355"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_dock_bruiser.png"
+    },
+    {
+      "name": "enemy:dock_winch:still",
+      "request_id": "req_47f472f0-4577-4d68-823c-6f1aeaa4a8d8",
+      "operation": "generate",
+      "prompt": "Wiry hunched slate-coated salvage automaton with jade visor, portable brass reel and hooked cable. Winch Operator. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "716b9b13-1c26-4ebb-8be1-4372efb852c7",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/716b9b13-1c26-4ebb-8be1-4372efb852c7/image.png?v=1794994859940"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_dock_winch.png"
+    },
+    {
+      "name": "enemy:dock_corsair:still",
+      "request_id": "req_718902cd-c2be-4e8a-ac76-69443cb550a0",
+      "operation": "generate",
+      "prompt": "Hulking sea-green-and-navy salvage automaton with barnacled shoulders, oversized spring hook launcher and yellow lantern eye. Pulls targets into boarding range. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "9e8ace50-5a54-4c88-9e84-d0d5928c17ed",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/9e8ace50-5a54-4c88-9e84-d0d5928c17ed/image.png?v=1794994852917"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_dock_corsair.png"
+    },
+    {
+      "name": "enemy:wreckmaster:still",
+      "request_id": "req_15f69779-e72a-4541-bf05-5e0cd7e06f8a",
+      "operation": "generate",
+      "prompt": "Massive sea-worn navy and verdigris salvage automaton with a broken ship-wheel crest, cyan diving viewport, short harpoon launcher with rope spool and huge piling fist. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "cf8d1171-d297-482e-ab74-61684dc2ee68",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/cf8d1171-d297-482e-ab74-61684dc2ee68/image.png?v=1794994866372"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_wreckmaster.png"
+    },
+    {
+      "name": "enemy:tidekeeper:still",
+      "request_id": "req_606cbef1-9452-471e-a85d-65c0a194ee71",
+      "operation": "generate",
+      "prompt": "Massive squat diving-bell automaton with domed navy head, amber portholes, brass waist winches, twin shoulder chain harpoons and large fluke anchor across its body. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "159b749b-6341-4553-b6bd-2ba71ef309f5",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/159b749b-6341-4553-b6bd-2ba71ef309f5/image.png?v=1794994865738"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_tidekeeper.png"
+    },
+    {
+      "name": "enemy:drowned_admiral:still",
+      "request_id": "req_6ba66f6a-c248-496c-96b5-1b16acbbe338",
+      "operation": "generate",
+      "prompt": "Tall bulky maritime automaton in a jagged brass-trimmed navy tricorne and ragged armored frock coat. Icy turquoise eyes, asymmetric shoulders and barnacled chain-claw anchor. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "8ddcc513-e664-45f9-bbb0-ce7b9b2620fe",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/8ddcc513-e664-45f9-bbb0-ce7b9b2620fe/image.png?v=1794994869761"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_drowned_admiral.png"
+    },
+    {
+      "name": "enemy:brass_vanguard:still",
+      "request_id": "req_d2aeb8e7-582d-465d-ac0c-e2928a078864",
+      "operation": "generate",
+      "prompt": "Tall dark-iron and brass armored clockwork captain with a long pointed drill lance, crimson plume and broad red gear-emblem cape. Cyan visor and charging stance. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "6405102e-98f7-417b-8306-d94391b408e0",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/6405102e-98f7-417b-8306-d94391b408e0/image.png?v=1794994875958"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_vanguard.png"
+    },
+    {
+      "name": "enemy:brass_cannon:still",
+      "request_id": "req_8f72bf8a-1740-4843-86f2-79e57918f08c",
+      "operation": "generate",
+      "prompt": "Squat heavily plated brass siege automaton gripping an enormous forward cannon with a broad circular muzzle. Verdigris shoulders, single amber lens, red reservoir and pressure gauge. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "512ff936-53fe-4abb-9066-5d6ebf50c4ec",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/512ff936-53fe-4abb-9066-5d6ebf50c4ec/image.png?v=1794994870439"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_cannon.png"
+    },
+    {
+      "name": "enemy:brass_bellmaker:still",
+      "request_id": "req_ca45a444-4602-4622-943c-fd38a2cb75fa",
+      "operation": "generate",
+      "prompt": "Imposing brass clockwork monster with an enormous inverted toll-bell carapace, dark shoulder hinges and heavy fists. Its broad bell silhouette defines the boss. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "5e101bc5-2a4c-4c3a-bd8e-77114c2210c8",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/5e101bc5-2a4c-4c3a-bd8e-77114c2210c8/image.png?v=1794994876380"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_bellmaker.png"
+    },
+    {
+      "name": "enemy:brass_runner:still",
+      "request_id": "req_0972ca85-36c6-40ea-a935-f82b16c1ed3d",
+      "operation": "generate",
+      "prompt": "Light long-legged brass automaton with one large teal lens, fin-like head, thin articulated legs and a small cyan tank. Wire Runner. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "01ab1ac3-fcbe-45ac-b572-5c7d763f2feb",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/01ab1ac3-fcbe-45ac-b572-5c7d763f2feb/image.png?v=1794994880898"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_runner.png"
+    },
+    {
+      "name": "enemy:brass_riveter:still",
+      "request_id": "req_8c535305-e8a8-4e58-867c-e30a6e8e16b1",
+      "operation": "generate",
+      "prompt": "Compact two-wheeled brass rivet cannon with a forward pneumatic barrel, round gauge, piping and cyan reservoir. Pneumatic Riveter. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "e0c9fc71-90d2-494d-937a-9a5ecdc8538d",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/e0c9fc71-90d2-494d-937a-9a5ecdc8538d/image.png?v=1794994883570"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_riveter.png"
+    },
+    {
+      "name": "enemy:brass_shieldwright:still",
+      "request_id": "req_61bd5785-ec8a-4c52-bf7f-4c437c8c37a1",
+      "operation": "generate",
+      "prompt": "Heavy brass guardian with a broad rectangular dark shield bearing a brass gear, domed lens helmet and cyan tank backpack. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "7387627e-4973-49c0-b8d6-acce83c13162",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/7387627e-4973-49c0-b8d6-acce83c13162/image.png?v=1794994889582"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_shieldwright.png"
+    },
+    {
+      "name": "enemy:brass_linksmith:still",
+      "request_id": "req_af35aee8-5ec6-4de0-aefa-21e8d8b6630e",
+      "operation": "generate",
+      "prompt": "Thin brass support automaton with a huge cyan cable spool on its back, dangling turquoise hose and one open pincer arm. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "9bb8f548-e101-4d26-88c4-4e73b43ac0ac",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/9bb8f548-e101-4d26-88c4-4e73b43ac0ac/image.png?v=1794994885375"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_linksmith.png"
+    },
+    {
+      "name": "enemy:brass_springjack:still",
+      "request_id": "req_f7402187-e7ea-484f-93a7-5bb36e6b382a",
+      "operation": "generate",
+      "prompt": "Brass armored hammer automaton with exposed cyan coil-spring shins, wheel-shaped shoulder mechanism and oversized cylindrical maul. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "eea03b2a-18d3-4374-a06b-6125d09a1b1b",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/eea03b2a-18d3-4374-a06b-6125d09a1b1b/image.png?v=1794994891139"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_springjack.png"
+    },
+    {
+      "name": "enemy:brass_rivet_hound:still",
+      "request_id": "req_0f358745-e721-4e88-9da8-df31fa937740",
+      "operation": "generate",
+      "prompt": "Lean four-legged brass mechanical hound with angular snout, blue eyes, exposed cyan spine coil and segmented tail. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "6bb46a7f-282a-446d-8d04-ecaf8691ad73",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/6bb46a7f-282a-446d-8d04-ecaf8691ad73/image.png?v=1794994917335"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_rivet_hound.png"
+    },
+    {
+      "name": "enemy:brass_manifold:still",
+      "request_id": "req_a3341a9f-1976-4688-aa0c-a4b13c225584",
+      "operation": "generate",
+      "prompt": "Squat broad brass furnace automaton with three orange-red chest vents, cyan shoulder reservoir and huge piston fists. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "972d0760-62e9-4cc9-8997-73fd60bbd8bf",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/972d0760-62e9-4cc9-8997-73fd60bbd8bf/image.png?v=1794994895038"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_manifold.png"
+    },
+    {
+      "name": "enemy:brass_sparkbow:still",
+      "request_id": "req_85e2ffcc-8c13-46f1-8dd3-295119dd0c03",
+      "operation": "generate",
+      "prompt": "Light brass tripod arbalist automaton with teal lens and a wide forward bow powered by a cyan spring. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "7c0359bb-0150-4d1e-afc5-4a10f6586e9a",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/7c0359bb-0150-4d1e-afc5-4a10f6586e9a/image.png?v=1794994902793"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_sparkbow.png"
+    },
+    {
+      "name": "enemy:brass_magnetar:still",
+      "request_id": "req_73569ce0-e8be-4d69-a888-6fb1bf6be157",
+      "operation": "generate",
+      "prompt": "Short wide brass automaton with a huge red horseshoe magnet over its head, pincer arms and cyan power cylinders. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "0170f14b-633a-4317-8db0-b294f216de2f",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/0170f14b-633a-4317-8db0-b294f216de2f/image.png?v=1794994919839"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_magnetar.png"
+    },
+    {
+      "name": "enemy:brass_grounder:still",
+      "request_id": "req_f50a4b5f-c639-4894-9860-0a764f722d8c",
+      "operation": "generate",
+      "prompt": "Stocky brass electrical trooper with slotted face, glowing cyan backpack and upright rod capped by teal insulators. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "3e417a4a-c543-4fe9-b995-f3e836d22e44",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/3e417a4a-c543-4fe9-b995-f3e836d22e44/image.png?v=1794994909122"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_grounder.png"
+    },
+    {
+      "name": "hero:starshot:attack",
+      "request_id": "req_9c827d56-3e86-4916-93a5-1d066b769a26",
+      "operation": "animate",
+      "prompt": "One full rifle attack cycle. The red-haired female marksman plants her boots, raises her ivory-and-brass rifle to her shoulder, draws a steady aim, fires the weapon to the right with a sharp visible recoil, then lowers it back to her ready stance. Hair, hat feather and coat hem react subtly to the recoil. Clear slower anticipation, a quick trigger pull and a short recovery. Anchored on the spot, facing east to the right throughout, preserve her appearance and equipment.",
+      "inputs": [
+        {
+          "asset_id": "a7381303-6a72-4b53-8c53-432b59ed63c1"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "478b1aba-4433-4237-a98d-c56df4e2d79b",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/478b1aba-4433-4237-a98d-c56df4e2d79b/spritesheet.png?v=1794994927708"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_starshot_attack.png"
+    },
+    {
+      "name": "enemy:brass_flywheel:still",
+      "request_id": "req_65068eb4-7d66-4992-b931-71ec0fbb3600",
+      "operation": "generate",
+      "prompt": "Brass one-wheel automaton with a large luminous cyan spoked flywheel, angular lens head and two thin pincer arms. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "6e482c26-e963-447a-81fa-4f378b5d8ae4",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/6e482c26-e963-447a-81fa-4f378b5d8ae4/image.png?v=1794994977297"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_flywheel.png"
+    },
+    {
+      "name": "enemy:brass_pressure_sentinel:still",
+      "request_id": "req_b047788b-0d9f-4c52-9666-785edd2e4a71",
+      "operation": "generate",
+      "prompt": "Large round brass boiler guardian with pressure gauge chest, red valve wheel, tall smokestack and heavy fists. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "a12a69dc-8423-4623-84e9-c8fe8c5ee407",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/a12a69dc-8423-4623-84e9-c8fe8c5ee407/image.png?v=1794994973119"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_brass_pressure_sentinel.png"
+    },
+    {
+      "name": "enemy:glass_refraction_engine:still",
+      "request_id": "req_ffdad3f7-acd3-44c4-bac8-d6eff949cfd5",
+      "operation": "generate",
+      "prompt": "Angular black-iron and faceted turquoise optical machine on three articulated legs, dominated by a huge central triangular beam-emitter prism. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "665182e5-a768-4ba9-9be3-3b411cd797bd",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/665182e5-a768-4ba9-9be3-3b411cd797bd/image.png?v=1794994972021"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_refraction_engine.png"
+    },
+    {
+      "name": "enemy:glass_cullet_slinger:still",
+      "request_id": "req_37e76149-2049-4fcd-b9a4-ae7a39db128a",
+      "operation": "generate",
+      "prompt": "Small hooded cream-clad workshop slinger with round brass goggles, short slingshot and a satchel of turquoise glass beads. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "8da02389-624b-4170-a569-5d428c322412",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/8da02389-624b-4170-a569-5d428c322412/image.png?v=1794994973250"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_cullet_slinger.png"
+    },
+    {
+      "name": "enemy:glass_kiln_porter:still",
+      "request_id": "req_1831e431-50f3-42aa-b61d-8533d1b85484",
+      "operation": "generate",
+      "prompt": "Broad bearded workshop laborer with goggles and dark apron, carrying an enormous orange-and-cyan glass furnace hammer over one shoulder. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "59fa8d3c-4f2c-4090-9013-77ddb0c84a28",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/59fa8d3c-4f2c-4090-9013-77ddb0c84a28/image.png?v=1794994977258"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_kiln_porter.png"
+    },
+    {
+      "name": "enemy:glass_facet_hound:still",
+      "request_id": "req_fc4b7fcf-8083-47d2-b533-eb2a0814409c",
+      "operation": "generate",
+      "prompt": "Four-legged brass-and-faceted-glass hound with sharp turquoise plates, amber core and pointed snout. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "140935ce-1850-4beb-bbf3-1bb738a88a1b",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/140935ce-1850-4beb-bbf3-1bb738a88a1b/image.png?v=1794994976722"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_facet_hound.png"
+    },
+    {
+      "name": "enemy:glass_lacquerer:still",
+      "request_id": "req_d08c60b8-3b8d-4160-9cdd-bcdb932d82bb",
+      "operation": "generate",
+      "prompt": "Cream-and-teal workshop caster with brass goggles, hair in a bun, glowing orange brush-like staff and amber lantern. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "74cdd99a-a190-4ffd-aa19-51e0d0399de0",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/74cdd99a-a190-4ffd-aa19-51e0d0399de0/image.png?v=1794994986042"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_lacquerer.png"
+    },
+    {
+      "name": "enemy:glass_crucible_binder:still",
+      "request_id": "req_cce049f7-253a-47fd-acb9-b936262225c5",
+      "operation": "generate",
+      "prompt": "Stout bald furnace worker with brass goggles, boiler backpack and long-handled glowing orange crucible tongs. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "4b5cfde5-9fec-4714-9085-a6cde8a9997b",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/4b5cfde5-9fec-4714-9085-a6cde8a9997b/image.png?v=1794994990898"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_crucible_binder.png"
+    },
+    {
+      "name": "enemy:glass_mirrorback:still",
+      "request_id": "req_b2eae23b-c4e8-4b0b-bd1b-a36e9988b0f0",
+      "operation": "generate",
+      "prompt": "Red-haired goggled shield fighter in cream and brass with a tall luminous turquoise mirror shield and slender blade. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "b2e22a67-83bc-42c1-91a5-c7d77ef86405",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/b2e22a67-83bc-42c1-91a5-c7d77ef86405/image.png?v=1794994987852"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_mirrorback.png"
+    },
+    {
+      "name": "enemy:glass_annealer:still",
+      "request_id": "req_f1da4899-fc25-4e85-8f95-e8366be1a189",
+      "operation": "generate",
+      "prompt": "Broad white-bearded goggled smith with huge orange-lit furnace gauntlets and a twin-cylinder boiler backpack. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "ee518412-e344-4903-9042-dff9d36af678",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/ee518412-e344-4903-9042-dff9d36af678/image.png?v=1794994992480"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_annealer.png"
+    },
+    {
+      "name": "enemy:glass_lens_arbalist:still",
+      "request_id": "req_39e7fad0-0cc4-457b-b69d-a10cc770b2a6",
+      "operation": "generate",
+      "prompt": "Nimble dark-haired pointed-ear arbalist with brass goggles and a tripod-mounted turquoise prism crossbow. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "12842daf-2b9b-4e34-82bf-a16fde97798c",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/12842daf-2b9b-4e34-82bf-a16fde97798c/image.png?v=1794994992480"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_lens_arbalist.png"
+    },
+    {
+      "name": "enemy:glass_kiln_ram:still",
+      "request_id": "req_2905d5ac-2325-4ef4-b0fe-ee790fb9594d",
+      "operation": "generate",
+      "prompt": "Heavy black-and-brass quadruped mechanical ram with curled bronze horns, turquoise forehead prism and orange furnace core. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "ca6c48ed-2dd2-4b48-bfcd-c66a292ba36b",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/ca6c48ed-2dd2-4b48-bfcd-c66a292ba36b/image.png?v=1794994994879"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_kiln_ram.png"
+    },
+    {
+      "name": "enemy:glass_shard_conductor:still",
+      "request_id": "req_92dcf779-7ab6-425d-91db-bc86211d2ad3",
+      "operation": "generate",
+      "prompt": "Elegant silver-haired pointed-ear conductor in layered teal-glass robes with a tall twin-prong crystal staff. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "d5bdf9ef-7efe-4fbf-a6c3-1a501225a063",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/d5bdf9ef-7efe-4fbf-a6c3-1a501225a063/image.png?v=1794995004847"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_shard_conductor.png"
+    },
+    {
+      "name": "enemy:glass_ash_siphon:still",
+      "request_id": "req_6658939c-25ee-4a83-add7-718e34f587f9",
+      "operation": "generate",
+      "prompt": "Hunched hooded figure with orange eyes, brass breathing mask, cyan reservoir and orange hoses, holding an amber siphon vessel. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "8a0f9ace-1007-45df-8a1a-d9102d8ecc91",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/8a0f9ace-1007-45df-8a1a-d9102d8ecc91/image.png?v=1794995002168"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_ash_siphon.png"
+    },
+    {
+      "name": "enemy:glass_quench_sentinel:still",
+      "request_id": "req_b5c2a32e-111d-4fb5-9ef3-22baa8473f6b",
+      "operation": "generate",
+      "prompt": "Broad silver-and-brass armored guardian with faceted turquoise chest crystal, teal tabard and a tall crystal halberd. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "62e3d7b0-d574-49ac-bc55-4c23adfef7b7",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/62e3d7b0-d574-49ac-bc55-4c23adfef7b7/image.png?v=1794995006936"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_quench_sentinel.png"
+    },
+    {
+      "name": "enemy:glass_furnace_knight:still",
+      "request_id": "req_aa0fbb97-d5da-4d94-a6f5-210e351e5e04",
+      "operation": "generate",
+      "prompt": "Massive black furnace knight with a glowing orange chest grate, amber slit visor, cyan shoulder tank and huge fists. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "3be50eb5-5108-4090-8cdc-cad267ed1f0d",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/3be50eb5-5108-4090-8cdc-cad267ed1f0d/image.png?v=1794995013926"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_glass_furnace_knight.png"
+    },
+    {
+      "name": "enemy:crown_page:still",
+      "request_id": "req_ff4e2010-376c-47f0-8e2d-2a40bd9d4997",
+      "operation": "generate",
+      "prompt": "Young ivory-and-brass armored page with a teal feathered helmet, short sword and small crown-emblem round shield. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "8c5b0e27-88f7-4ee8-9648-b5967d6f25a2",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/8c5b0e27-88f7-4ee8-9648-b5967d6f25a2/image.png?v=1794995010979"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_crown_page.png"
+    },
+    {
+      "name": "enemy:crown_slinger:still",
+      "request_id": "req_57a90c34-b2f9-434d-8fc1-0bfb96fbdd8f",
+      "operation": "generate",
+      "prompt": "Light teal-hooded Crown skirmisher with cream sleeves, leather belts and a long hand sling. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "65686f75-b535-4b2c-afce-376872fc7920",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/65686f75-b535-4b2c-afce-376872fc7920/image.png?v=1794995009959"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_crown_slinger.png"
+    },
+    {
+      "name": "enemy:crown_glaiveguard:still",
+      "request_id": "req_f0d9c625-4c6b-4651-84de-e0d6bf3d8594",
+      "operation": "generate",
+      "prompt": "Broad ivory-and-brass crested guard with teal scarf and a huge curved silver glaive held across the body. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "029553f9-62e1-4258-8b1b-b6f9d5b59ea5",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/029553f9-62e1-4258-8b1b-b6f9d5b59ea5/image.png?v=1794995015058"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_crown_glaiveguard.png"
+    },
+    {
+      "name": "enemy:crown_spotter:still",
+      "request_id": "req_0913c164-64f5-4dca-98ae-2c3ed5c914f6",
+      "operation": "generate",
+      "prompt": "Light Crown scout with teal scarf, brass telescope and small red crown banner behind the shoulder. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "fd8cf7e5-56c0-4b97-8357-ee62940d0d47",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/fd8cf7e5-56c0-4b97-8357-ee62940d0d47/image.png?v=1794995022390"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_crown_spotter.png"
+    },
+    {
+      "name": "enemy:crown_war_drummer:still",
+      "request_id": "req_f50db52b-1582-4e6b-931a-9f0c02f64c95",
+      "operation": "generate",
+      "prompt": "Broad bearded ivory-and-brass military drummer with teal plume, epaulets and a large red crown drum. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "9b17333d-9b36-4492-8ba0-68f33a6d0d66",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/9b17333d-9b36-4492-8ba0-68f33a6d0d66/image.png?v=1794995022177"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_crown_war_drummer.png"
+    },
+    {
+      "name": "enemy:crown_feintblade:still",
+      "request_id": "req_1edc8a36-8b16-4bc6-8e68-d4b88e3c327a",
+      "operation": "generate",
+      "prompt": "Lean masked ivory-and-teal duelist in a brass-trimmed tricorn, long teal cape and narrow rapier. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "5f5dfb23-d32b-456d-9ba4-406311c79e9a",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/5f5dfb23-d32b-456d-9ba4-406311c79e9a/image.png?v=1794995044744"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_crown_feintblade.png"
+    },
+    {
+      "name": "enemy:crown_twinspur:still",
+      "request_id": "req_c36b2b65-0cc3-470d-afbe-2a2f219d325f",
+      "operation": "generate",
+      "prompt": "Agile ivory-armored fighter with a teal plume and scarf, short blades in both hands and a low wide stance. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "b03e65da-76fd-42ca-8125-570340fb6e0e",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/b03e65da-76fd-42ca-8125-570340fb6e0e/image.png?v=1794995027116"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_crown_twinspur.png"
+    },
+    {
+      "name": "enemy:crown_ballista:still",
+      "request_id": "req_b8dfbd90-bc03-4664-b2c5-f5e98bde77f0",
+      "operation": "generate",
+      "prompt": "Compact four-legged brass-and-ivory mechanical ballista with crown shield, small banner, cyan cylinders and long quarrel. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "e5175255-8c6c-445f-8ff8-290b782b16f3",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/e5175255-8c6c-445f-8ff8-290b782b16f3/image.png?v=1794995031080"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_crown_ballista.png"
+    },
+    {
+      "name": "hero:bulwark:run",
+      "request_id": "req_c5a552db-c9d7-4d03-b6e9-ffc8574c5994",
+      "operation": "animate",
+      "prompt": "Brisk jogging animation in place, a seamless side-facing loop. Alternate the front leg and rear leg with distinct bent-knee steps, boots lift and plant. Arms and equipment sway naturally, cloth and hair follow the stride. Hold the Bulwark weapons and tools in a ready travelling pose. The torso stays centered on the spot, facing east toward the right at all times, same face, clothing, colors and silhouette.",
+      "inputs": [
+        {
+          "asset_id": "25497025-dfcc-40d3-9837-e152c1ee7e69"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "c7a88978-d942-4e47-9bcc-aaa6557305d3",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/c7a88978-d942-4e47-9bcc-aaa6557305d3/spritesheet.png?v=1794995035503"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_bulwark_run.png"
+    },
+    {
+      "name": "hero:breaker:run",
+      "request_id": "req_9a1ac864-d06f-4398-89c1-2daa6f8a72b4",
+      "operation": "animate",
+      "prompt": "Brisk jogging animation in place, a seamless side-facing loop. Alternate the front leg and rear leg with distinct bent-knee steps, boots lift and plant. Arms and equipment sway naturally, cloth and hair follow the stride. Hold the Breaker weapons and tools in a ready travelling pose. The torso stays centered on the spot, facing east toward the right at all times, same face, clothing, colors and silhouette.",
+      "inputs": [
+        {
+          "asset_id": "4b471453-501d-4b99-8437-52bb3487ed5c"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "66e90593-56b5-4dab-9953-d1a89bce20c3",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/66e90593-56b5-4dab-9953-d1a89bce20c3/spritesheet.png?v=1794995046000"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_breaker_run.png"
+    },
+    {
+      "name": "hero:hexwright:run",
+      "request_id": "req_76855598-dd11-43a0-b1a2-ef88ae8ad74f",
+      "operation": "animate",
+      "prompt": "Brisk jogging animation in place, a seamless side-facing loop. Alternate the front leg and rear leg with distinct bent-knee steps, boots lift and plant. Arms and equipment sway naturally, cloth and hair follow the stride. Hold the Hexwright weapons and tools in a ready travelling pose. The torso stays centered on the spot, facing east toward the right at all times, same face, clothing, colors and silhouette.",
+      "inputs": [
+        {
+          "asset_id": "6264fab8-191f-45f9-bac7-13a67e88b616"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "7ca4b84e-5c4e-4b2a-82a6-996df51a22c9",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/7ca4b84e-5c4e-4b2a-82a6-996df51a22c9/spritesheet.png?v=1794995054511"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_hexwright_run.png"
+    },
+    {
+      "name": "hero:wayfarer:run",
+      "request_id": "req_a670397e-9d2e-456b-b048-6648036128d9",
+      "operation": "animate",
+      "prompt": "Brisk jogging animation in place, a seamless side-facing loop. Alternate the front leg and rear leg with distinct bent-knee steps, boots lift and plant. Arms and equipment sway naturally, cloth and hair follow the stride. Hold the Wayfarer weapons and tools in a ready travelling pose. The torso stays centered on the spot, facing east toward the right at all times, same face, clothing, colors and silhouette.",
+      "inputs": [
+        {
+          "asset_id": "1c3889f0-be9c-483c-9e8d-f422e5c4abc7"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "cb17247d-8b16-467d-a418-75864e890f64",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/cb17247d-8b16-467d-a418-75864e890f64/spritesheet.png?v=1794995062244"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_wayfarer_run.png"
+    },
+    {
+      "name": "hero:lancer:run",
+      "request_id": "req_aa142006-8daa-4d9e-9586-a343f5517b16",
+      "operation": "animate",
+      "prompt": "Brisk jogging animation in place, a seamless side-facing loop. Alternate the front leg and rear leg with distinct bent-knee steps, boots lift and plant. Arms and equipment sway naturally, cloth and hair follow the stride. Hold the Lancer weapons and tools in a ready travelling pose. The torso stays centered on the spot, facing east toward the right at all times, same face, clothing, colors and silhouette.",
+      "inputs": [
+        {
+          "asset_id": "5bec3441-8f27-42ac-90e9-942cdbbe78a3"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "9855d6b9-3e48-47f2-a8c8-74fa6837f05e",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/9855d6b9-3e48-47f2-a8c8-74fa6837f05e/spritesheet.png?v=1794995094933"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_lancer_run.png"
+    },
+    {
+      "name": "enemy:crown_storm_templar:still",
+      "request_id": "req_4f6b4a2c-7a48-4523-8bf6-e7deae61d5b2",
+      "operation": "generate",
+      "prompt": "Tall ivory-and-brass armored templar with a large crown-emblem tower shield and blue-charged heavy mace. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "dc9426e4-0cc1-4584-a612-13825626ca8a",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/dc9426e4-0cc1-4584-a612-13825626ca8a/image.png?v=1794995162340"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_crown_storm_templar.png"
+    },
+    {
+      "name": "enemy:crown_banneret:still",
+      "request_id": "req_0c034f3d-8468-476d-8286-e6e7738e9d44",
+      "operation": "generate",
+      "prompt": "Ivory-and-brass armored standard bearer with red helmet plume, long teal crown banner and short sword. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "9860fc1e-62ec-4291-a544-cb4f74f657f4",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/9860fc1e-62ec-4291-a544-cb4f74f657f4/image.png?v=1794995168094"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_crown_banneret.png"
+    },
+    {
+      "name": "enemy:crown_galvanist:still",
+      "request_id": "req_317bc143-d63a-4a2a-911d-4f9839af096c",
+      "operation": "generate",
+      "prompt": "White-haired goggled Crown engineer in cream-and-teal coat carrying two brass Tesla-coil rods with blue electrical arcs. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "cbd22a65-c1cf-432b-a6b5-dfb2c8c17591",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/cbd22a65-c1cf-432b-a6b5-dfb2c8c17591/image.png?v=1794995163552"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_crown_galvanist.png"
+    },
+    {
+      "name": "enemy:crown_beacon_sentry:still",
+      "request_id": "req_6765f856-ec01-4113-97c3-a783b266c724",
+      "operation": "generate",
+      "prompt": "Slender brass rifle automaton with one huge glowing cyan head lens, ivory armor, teal tabard and upright coil behind the shoulder. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "7cf7aebc-9475-4075-b76b-7631e1b0424c",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/7cf7aebc-9475-4075-b76b-7631e1b0424c/image.png?v=1794995170401"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_crown_beacon_sentry.png"
+    },
+    {
+      "name": "enemy:crown_oathbreaker:still",
+      "request_id": "req_a1441742-9f6e-4ffe-9df6-66c40cfb8d10",
+      "operation": "generate",
+      "prompt": "Broad ivory-and-brass armored knight with crown-shaped closed helmet, ragged dark-teal mantle, heavy mace and tall cracked shield with orange fault line. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "084b95b9-c78b-4d98-a66c-cbdbe791d52c",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/084b95b9-c78b-4d98-a66c-cbdbe791d52c/image.png?v=1794995167603"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_crown_oathbreaker.png"
+    },
+    {
+      "name": "enemy:crown_chorister:still",
+      "request_id": "req_1ebc5673-bb63-4d52-9044-1459334356eb",
+      "operation": "generate",
+      "prompt": "Upright cream-and-teal ceremonial chanter with a gear halo, glowing gold tuning-fork staff and hanging brass chimes. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "5551ce7a-8aae-49d3-b676-78331b2b04ca",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/5551ce7a-8aae-49d3-b676-78331b2b04ca/image.png?v=1794995166522"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_crown_chorister.png"
+    },
+    {
+      "name": "enemy:dock_saltblade:still",
+      "request_id": "req_2f684ff7-dd33-4cbb-bb60-ec9c7dd47af7",
+      "operation": "generate",
+      "prompt": "Agile navy-and-sea-green pirate fighter with a bandanna, short curved boarding saber, leather belts and wide stance. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "7dbf29ee-d34e-4901-822f-e661376e41a6",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/7dbf29ee-d34e-4901-822f-e661376e41a6/image.png?v=1794995185946"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_dock_saltblade.png"
+    },
+    {
+      "name": "enemy:dock_torchbearer:still",
+      "request_id": "req_8f0c087c-f43b-4a8d-9fae-d121775c03fa",
+      "operation": "generate",
+      "prompt": "Lean nautical raider in navy cap and jacket holding a bright cyan lantern and short wooden cudgel. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "20dcd854-457c-4b12-972d-a2799eeaeec2",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/20dcd854-457c-4b12-972d-a2799eeaeec2/image.png?v=1794995178646"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_dock_torchbearer.png"
+    },
+    {
+      "name": "enemy:dock_bilge_sapper:still",
+      "request_id": "req_0dfe483e-13f7-4885-8408-2e9d2ac32b63",
+      "operation": "generate",
+      "prompt": "Low crouching nautical diver with round brass helmet, cyan porthole and a huge turquoise fluid barrel on its back. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "dc94b5a9-ebd4-4891-a997-e0ddeff40580",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/dc94b5a9-ebd4-4891-a997-e0ddeff40580/image.png?v=1794995186759"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_dock_bilge_sapper.png"
+    },
+    {
+      "name": "enemy:dock_shellback:still",
+      "request_id": "req_e2e69777-cf1d-4cbf-bf8d-c28c5984d6d6",
+      "operation": "generate",
+      "prompt": "Broad bearded nautical bruiser in navy cloth with brass-trimmed teal barrel armor on its back and a short fluke-axe. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "d03e35e1-23b7-49b4-b402-9d5acee47b23",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/d03e35e1-23b7-49b4-b402-9d5acee47b23/image.png?v=1794995212202"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_dock_shellback.png"
+    },
+    {
+      "name": "enemy:dock_hull_harrier:still",
+      "request_id": "req_eb5a7186-fa75-421a-b97b-cc838191c48a",
+      "operation": "generate",
+      "prompt": "Wiry older salvage raider in torn navy cloth and bandanna, spinning a long rope loop and carrying coils at the belt. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "e8080a33-89a5-478e-b6af-bf5ad8748cfd",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/e8080a33-89a5-478e-b6af-bf5ad8748cfd/image.png?v=1794995184874"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_dock_hull_harrier.png"
+    },
+    {
+      "name": "enemy:powder_runner:still",
+      "request_id": "req_e23a720e-538a-4b68-9de5-c47beec51a75",
+      "operation": "generate",
+      "prompt": "Small agile pointed-ear pirate with teal bandanna, dark vest and crimson powder satchel with a lit fuse. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "599ac9a5-5dda-4e3c-bfb2-515cde4f3607",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/599ac9a5-5dda-4e3c-bfb2-515cde4f3607/image.png?v=1794995190104"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_powder_runner.png"
+    },
+    {
+      "name": "enemy:deck_ram:still",
+      "request_id": "req_b7b1751b-8ee0-40a9-b836-ac4cbb7370d1",
+      "operation": "generate",
+      "prompt": "Powerful nautical bruiser with striped trousers, carrying a massive brass seahorse-headed timber ram and hanging amber lantern. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "36c09f42-5edd-4e38-9884-5e638715cc3a",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/36c09f42-5edd-4e38-9884-5e638715cc3a/image.png?v=1794995201516"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_deck_ram.png"
+    },
+    {
+      "name": "enemy:patch_rigger:still",
+      "request_id": "req_ae4399cd-e278-4e80-b4ad-e45fbad75099",
+      "operation": "generate",
+      "prompt": "Lean goggled salvage hand with teal scarf, large rope coil over one arm and timber repair bundle over the opposite shoulder. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "3f3d85b2-7bc8-4f19-bc64-7102ec156df2",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/3f3d85b2-7bc8-4f19-bc64-7102ec156df2/image.png?v=1794995204585"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_patch_rigger.png"
+    },
+    {
+      "name": "enemy:reef_diver:still",
+      "request_id": "req_f536f0f8-cad8-4bbb-a80e-d8a8a6f93417",
+      "operation": "generate",
+      "prompt": "Heavy antique brass diving-suit raider with round amber-paned helmet, navy moon-emblem armor and long harpoon spear. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "7831b333-e373-40bb-ab45-892fd37a2500",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/7831b333-e373-40bb-ab45-892fd37a2500/image.png?v=1794995203623"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_reef_diver.png"
+    },
+    {
+      "name": "enemy:signal_gunner:still",
+      "request_id": "req_23704d4c-947d-4eef-865e-891a3142970b",
+      "operation": "generate",
+      "prompt": "Agile red-haired pointed-ear rifle pirate with feathered tricorn, navy-and-teal coat and brass rifle capped by an amber signal lamp. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "d7b78cd8-6582-4c76-876e-b1f1bb1dd674",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/d7b78cd8-6582-4c76-876e-b1f1bb1dd674/image.png?v=1794995205460"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_signal_gunner.png"
+    },
+    {
+      "name": "enemy:chain_warden:still",
+      "request_id": "req_3722c737-09a9-44da-9d03-5fdecb5e0c10",
+      "operation": "generate",
+      "prompt": "Broad tattooed bearded pirate in navy cloth and teal sash with huge brass anchor and chain loop in the other hand. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "d7ea9d81-80f2-4e98-8e6e-d45cec86a2a6",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/d7ea9d81-80f2-4e98-8e6e-d45cec86a2a6/image.png?v=1794995219278"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_chain_warden.png"
+    },
+    {
+      "name": "enemy:wreck_bell:still",
+      "request_id": "req_88d6fe56-3994-41de-be73-7d568b829591",
+      "operation": "generate",
+      "prompt": "Hunched old pirate in ragged navy cloth with a huge verdigris brass bell lashed over one shoulder and a heavy bell staff. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "c7fdbff9-91b9-4a9d-baa4-2c9898200efd",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/c7fdbff9-91b9-4a9d-baa4-2c9898200efd/image.png?v=1794995219940"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_wreck_bell.png"
+    },
+    {
+      "name": "enemy:clockwork:still",
+      "request_id": "req_abca6770-afbc-40d7-8573-84a29ee83b3b",
+      "operation": "generate",
+      "prompt": "Practice opponent. Compact red-and-brass clockwork knight hunched behind a rust round shield, heavy mechanical fists and thick boots. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "a70848ce-f6ca-4433-845d-0c6b6a499553",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/a70848ce-f6ca-4433-845d-0c6b6a499553/image.png?v=1794995218550"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_clockwork.png"
+    },
+    {
+      "name": "hero:cantor:run",
+      "request_id": "req_207c81f6-b1c0-4159-a6a5-809eff1c57d8",
+      "operation": "animate",
+      "prompt": "Brisk jogging animation in place, a seamless side-facing loop. Alternate the front leg and rear leg with distinct bent-knee steps, boots lift and plant. Arms and equipment sway naturally, cloth and hair follow the stride. Hold the Cantor weapons and tools in a ready travelling pose. The torso stays centered on the spot, facing east toward the right at all times, same face, clothing, colors and silhouette.",
+      "inputs": [
+        {
+          "asset_id": "fb90f3df-496d-450c-9bfd-8893075840ea"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "ec2f9ea4-e155-42f1-a4ce-56809e7d65bd",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/ec2f9ea4-e155-42f1-a4ce-56809e7d65bd/spritesheet.png?v=1794995228986"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_cantor_run.png"
+    },
+    {
+      "name": "hero:apothecary:run",
+      "request_id": "req_bc3fa905-7858-48f2-8d71-fac632aaaf56",
+      "operation": "animate",
+      "prompt": "Brisk jogging animation in place, a seamless side-facing loop. Alternate the front leg and rear leg with distinct bent-knee steps, boots lift and plant. Arms and equipment sway naturally, cloth and hair follow the stride. Hold the Apothecary weapons and tools in a ready travelling pose. The torso stays centered on the spot, facing east toward the right at all times, same face, clothing, colors and silhouette.",
+      "inputs": [
+        {
+          "asset_id": "f807566a-adbb-4be2-b30f-78cd044fa7c1"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "7deb3e5d-d478-4d9c-80d7-628e6f7b2f05",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/7deb3e5d-d478-4d9c-80d7-628e6f7b2f05/spritesheet.png?v=1794995242959"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_apothecary_run.png"
+    },
+    {
+      "name": "hero:rune_smith:run",
+      "request_id": "req_daaa77e9-b959-4fbf-83a3-70c6f3716a8e",
+      "operation": "animate",
+      "prompt": "Brisk jogging animation in place, a seamless side-facing loop. Alternate the front leg and rear leg with distinct bent-knee steps, boots lift and plant. Arms and equipment sway naturally, cloth and hair follow the stride. Hold the Rune Smith weapons and tools in a ready travelling pose. The torso stays centered on the spot, facing east toward the right at all times, same face, clothing, colors and silhouette.",
+      "inputs": [
+        {
+          "asset_id": "aab20f8d-b16a-400d-93c2-45895a13a4da"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "0e7fc687-06ab-43cc-8617-45fba6313ede",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/0e7fc687-06ab-43cc-8617-45fba6313ede/spritesheet.png?v=1794995248992"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_rune_smith_run.png"
+    },
+    {
+      "name": "hero:starshot:run",
+      "request_id": "req_fed756cf-36d1-4370-9753-3f01f65758eb",
+      "operation": "animate",
+      "prompt": "Brisk jogging animation in place, a seamless side-facing loop. Alternate the front leg and rear leg with distinct bent-knee steps, boots lift and plant. Arms and equipment sway naturally, cloth and hair follow the stride. Hold the Starshot weapons and tools in a ready travelling pose. The torso stays centered on the spot, facing east toward the right at all times, same face, clothing, colors and silhouette.",
+      "inputs": [
+        {
+          "asset_id": "a7381303-6a72-4b53-8c53-432b59ed63c1"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "ea5399e6-0806-4206-852b-df0c36704a04",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/ea5399e6-0806-4206-852b-df0c36704a04/spritesheet.png?v=1794995265362"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_starshot_run.png"
+    },
+    {
+      "name": "hero:cinder_mage:run",
+      "request_id": "req_9a21f6fa-5cc1-4568-b472-c4029cf58503",
+      "operation": "animate",
+      "prompt": "Brisk jogging animation in place, a seamless side-facing loop. Alternate the front leg and rear leg with distinct bent-knee steps, boots lift and plant. Arms and equipment sway naturally, cloth and hair follow the stride. Hold the Cinder Mage weapons and tools in a ready travelling pose. The torso stays centered on the spot, facing east toward the right at all times, same face, clothing, colors and silhouette.",
+      "inputs": [
+        {
+          "asset_id": "6b64e673-a5a3-4d20-ace6-bb2155c358b7"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "837004d5-b5cd-4042-9fc8-00403624514e",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/837004d5-b5cd-4042-9fc8-00403624514e/spritesheet.png?v=1794995297189"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_cinder_mage_run.png"
+    },
+    {
+      "name": "hero:duelist:run",
+      "request_id": "req_affde099-e8e2-4019-9a90-26325d2c237d",
+      "operation": "animate",
+      "prompt": "Brisk jogging animation in place, a seamless side-facing loop. Alternate the front leg and rear leg with distinct bent-knee steps, boots lift and plant. Arms and equipment sway naturally, cloth and hair follow the stride. Hold the Duelist weapons and tools in a ready travelling pose. The torso stays centered on the spot, facing east toward the right at all times, same face, clothing, colors and silhouette.",
+      "inputs": [
+        {
+          "asset_id": "276f42af-65dd-4f6e-8c56-f23fd1788e23"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "795bef1d-8cf6-4f90-abeb-e8872ae999ca",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/795bef1d-8cf6-4f90-abeb-e8872ae999ca/spritesheet.png?v=1794995290081"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/hero_duelist_run.png"
+    },
+    {
+      "name": "enemy:brass_tollkeeper:attack",
+      "request_id": "req_964f1f76-d680-4e6a-b517-d240338481fc",
+      "operation": "animate",
+      "prompt": "One complete boss attack cycle. The crowned toll-gate automaton draws its heavy hammer fist upward, braces its broad legs, strikes down in a powerful ground slam to the left, then recovers behind its barrier blade. Long clear anticipation before one forceful release with a short recovery. Visible arm joints and weight shift, always keep the original view and equipment. Body stays anchored in place and keeps its original facing. Finite action.",
+      "inputs": [
+        {
+          "asset_id": "2de90c9f-e311-4a42-bff1-9f0f5b1e87b8"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "b54d29fd-2222-4cb1-b65e-58100e09efba",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/b54d29fd-2222-4cb1-b65e-58100e09efba/spritesheet.png?v=1794995277591"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/enemy_brass_tollkeeper_attack.png"
+    },
+    {
+      "name": "enemy:marshal:attack",
+      "request_id": "req_51a156ab-f3dd-4bd7-9751-ca9cd92b3349",
+      "operation": "animate",
+      "prompt": "One complete boss attack cycle. The heavy Gilded Marshal pulls both armored fists back, plants its boots, sweeps a broad gauntlet across the space in front of it to the left, then recovers into its original fighting stance. Long clear anticipation before one forceful release with a short recovery. Visible arm joints and weight shift, always keep the original view and equipment. Body stays anchored in place and keeps its original facing. Finite action.",
+      "inputs": [
+        {
+          "asset_id": "7056a0e9-6ecd-44ae-9668-3ad920d6bf0c"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "ee1ad96a-0bd7-47f1-a320-77d8c76671b8",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/ee1ad96a-0bd7-47f1-a320-77d8c76671b8/spritesheet.png?v=1794995303585"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/enemy_marshal_attack.png"
+    },
+    {
+      "name": "enemy:tempered_colossus:attack",
+      "request_id": "req_7a87e50e-88cd-4572-8d02-4641507a08ba",
+      "operation": "animate",
+      "prompt": "One complete boss attack cycle. The enormous furnace colossus raises both huge armored fists over its head, its chest furnace flares, then it slams down and sweeps one fist toward the left, before recovering its original braced stance. Long clear anticipation before one forceful release with a short recovery. Visible arm joints and weight shift, always keep the original view and equipment. Body stays anchored in place and keeps its original facing. Finite action.",
+      "inputs": [
+        {
+          "asset_id": "67c893fa-fbc2-4e5f-95da-f77c9b4aaec5"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "f4ed8475-da41-422f-a75e-f76a456f4f0f",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/f4ed8475-da41-422f-a75e-f76a456f4f0f/spritesheet.png?v=1794995292144"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/enemy_tempered_colossus_attack.png"
+    },
+    {
+      "name": "enemy:drowned_admiral:attack",
+      "request_id": "req_5cacb6bf-e877-4fd7-8a13-e567e34bcb1c",
+      "operation": "animate",
+      "prompt": "One complete boss attack cycle. The undead nautical admiral draws its anchor and chain back, winds a broad shoulder turn, swings its anchor in a low powerful sweep toward the left, and returns to its ready stance. Long clear anticipation before one forceful release with a short recovery. Visible arm joints and weight shift, always keep the original view and equipment. Body stays anchored in place and keeps its original facing. Finite action.",
+      "inputs": [
+        {
+          "asset_id": "8ddcc513-e664-45f9-bbb0-ce7b9b2620fe"
+        }
+      ],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "a4d4ed03-f9fd-40ec-9f31-1c5353b0345f",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/a4d4ed03-f9fd-40ec-9f31-1c5353b0345f/spritesheet.png?v=1794995305339"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/animations/enemy_drowned_admiral_attack.png"
+    },
+    {
+      "name": "enemy:tar_pitcher:still",
+      "request_id": "req_86f35314-6228-40b1-8485-9a92a4b603b7",
+      "operation": "generate",
+      "prompt": "Broad bearded tattooed pirate with a dark bandanna, striped trousers and two dripping brass tar buckets. Full-body elevated three-quarter combat view, facing left. Original lighthearted brass-and-aether high fantasy strategy game. Antique brass and enamel equipment, warm gold highlights, deep blue-black outlines, hand painted pixel shading with rich readable shapes. Full body elevated three-quarter side view, feet visible, subject centered with space around limbs and weapons, all weapons fit in view. Faces west toward the left, distinct readable equipment and threatening but whimsical expression, side-view combat-ready pose, individual character.",
+      "inputs": [],
+      "outputs": [
+        {
+          "index": 0,
+          "asset_id": "23333f2e-72eb-496c-aac4-fa1bf0ff8188",
+          "asset_url": "https://media.spritefusion.com/pixel-art-assets/774843fd-f725-457b-862c-1f4e2e0598a3/23333f2e-72eb-496c-aac4-fa1bf0ff8188/image.png?v=1794995400844"
+        }
+      ],
+      "path": "res://assets/sprite_fusion/characters/enemy_tar_pitcher.png"
+    }
+  ]
+}

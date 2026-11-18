@@ -97,7 +97,24 @@ static func profile(id: String, tile: Dictionary) -> Dictionary:
 		"weight": clampf(0.66 + width * 0.10 + damage * 0.004 + rarity * 0.06 + variation * 0.10, 0.6, 1.8),
 		"trail_count": mini(5, trail_count),
 		"signature_effect": signature_effect,
+		"sprite_fusion": _sprite_fusion(base_id, tile, style),
 	}
+
+
+static func _sprite_fusion(base_id: String, tile: Dictionary, style: String) -> String:
+	if tile.has("ember_burn_damage") or tile.has("burning_bonus") or base_id in ["cinder_wave", "furnace_burst", "cinder_brand", "wildfire_globe"]:
+		return "fire"
+	if base_id == "meteor_seal":
+		return "explosion"
+	if tile.has("chorus_guard") or base_id in ["guard_refrain", "echo_chime", "chorus_bolt"]:
+		return "holy_light"
+	if tile.has("convergence_damage_per_pull") or tile.has("isolation_damage") or style == "pull":
+		return "black_hole"
+	return {
+		"slash": "slash", "spin": "slash", "thrust": "impact", "heavy": "impact",
+		"burst": "explosion", "mine": "explosion", "shot": "muzzle", "bolt": "energy",
+		"blink": "blink", "dash": "impact", "guard": "shield", "ward": "holy_light", "heal": "heal", "mark": "energy",
+	}.get(style, "impact")
 
 
 static func _style(base_id: String, tile: Dictionary) -> String:

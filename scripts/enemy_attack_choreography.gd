@@ -181,12 +181,28 @@ static func profile(id: String, attack: Dictionary = {}) -> Dictionary:
 	var key: String = ALIASES.get(id, id)
 	var spec: Array = MOVES.get(key, [])
 	if spec.is_empty():
-		return _fallback(key, attack)
+		var fallback := _fallback(key, attack)
+		fallback["sprite_fusion"] = _sprite_fusion(key, fallback.style)
+		return fallback
 	return {
 		"style": spec[0], "color": PALETTE[spec[1]], "accent": PALETTE[spec[2]],
 		"variant": spec[3], "scale": spec[4], "weight": spec[5], "trail_count": spec[6],
 		"signature_effect": "marshal_sweep" if key == "marshal_sweep" else "",
+		"sprite_fusion": _sprite_fusion(key, spec[0]),
 	}
+
+
+static func _sprite_fusion(id: String, style: String) -> String:
+	if id.contains("cinder") or id.contains("torch") or id in ["powder_runner", "fuse_burst", "glass_furnace_knight"]:
+		return "fire"
+	if id.contains("choir") or id.contains("chorister") or id.contains("cantor"):
+		return "holy_light"
+	return {
+		"slash": "slash", "spin": "slash", "thrust": "impact", "heavy": "impact",
+		"burst": "explosion", "mine": "explosion", "shot": "muzzle", "bolt": "energy",
+		"pull": "black_hole", "blink": "blink", "dash": "impact", "guard": "shield",
+		"ward": "holy_light", "heal": "heal", "mark": "energy",
+	}.get(style, "impact")
 
 
 static func _fallback(id: String, attack: Dictionary) -> Dictionary:

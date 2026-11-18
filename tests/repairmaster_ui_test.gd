@@ -15,7 +15,7 @@ func _initialize() -> void:
 func _run() -> void:
 	for art_id: String in [Repairmaster.BOSS_ID, Repairmaster.DRONE_ID]:
 		var art := GameIcons.enemy_art(art_id)
-		_expect(art != null and art.resource_path == "res://assets/combatants/%s.png" % art_id,
+		_expect(art != null and art.resource_path == "res://assets/sprite_fusion/characters/enemy_%s.png" % art_id,
 			"%s should resolve to its own imported combat sprite." % art_id)
 	var view := ArenaView.new()
 	root.add_child(view)

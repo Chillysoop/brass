@@ -7,6 +7,7 @@ const AttackAnimation = preload("res://scripts/attack_animation.gd")
 const HeroChoreography = preload("res://scripts/hero_attack_choreography.gd")
 const EnemyChoreography = preload("res://scripts/enemy_attack_choreography.gd")
 const CombatSpritePose = preload("res://scripts/combat_sprite_pose.gd")
+const CombatSpriteSheet = preload("res://scripts/combat_sprite_sheet.gd")
 const WORLD_SIZE := Vector2(1000.0, 520.0)
 const MAX_CASTS := 48
 const MAX_COMBAT_NUMBERS := 64
@@ -194,6 +195,8 @@ var _positions: Dictionary = {}
 var _curved_charges: Dictionary = {}
 var _sprite_geometry: Dictionary = {}
 var _combat_sprites: Dictionary = {}
+var _sprite_hits: Dictionary = {}
+var _sprite_deaths: Dictionary = {}
 var _gait_phases: Dictionary = {}
 var _gait_strengths: Dictionary = {}
 var _effects: Array[Dictionary] = []
@@ -245,12 +248,14 @@ func reset_view(units_data: Array, lanes: Array = [], reinforcement: Dictionary 
 				continue
 			var right_edge := (int(entry.start) + int(ArenaSim.TILES[entry.id].width)) * ArenaSim.TICKS_PER_BEAT
 			clips.append({"right_edge": right_edge,
-				"ready": maxi(int(entry.start) * ArenaSim.TICKS_PER_BEAT, right_edge - 31),
+				"ready": int(entry.start) * ArenaSim.TICKS_PER_BEAT, "beats": ArenaSim.TILES[entry.id].width,
 				"profile": _hero_profile(entry.id)})
 		_hero_clips.append(clips)
 	_positions.clear()
 	_curved_charges.clear()
 	_combat_sprites.clear()
+	_sprite_hits.clear()
+	_sprite_deaths.clear()
 	_gait_phases.clear()
 	_gait_strengths.clear()
 	_animation_time = 0.0
@@ -290,6 +295,18 @@ func present(units_data: Array, events: Array, tick := 0, attack_cues: Array = [
 		var tile: String = event.get("tile", "")
 		if event.kind in ["hit", "heal", "guard"]:
 			_add_combat_number(event)
+		if event.kind == "hit" and int(event.get("amount", 0)) > 0:
+			_sprite_hits[event.target] = 0.0
+		elif event.kind == "defeat_unit":
+			for fallen: Dictionary in units:
+				if fallen.id == event.target:
+					var identity := _character_identity(fallen)
+					var sheet: RefCounted = CombatSpriteSheet.for_identity(fallen.side, identity)
+					var duration := 0.65
+					if sheet != null and sheet.has_animation("death"):
+						duration = maxf(duration, sheet.duration("death") / minf(1.75, _attack_rate) + 0.25)
+					_sprite_deaths[fallen.id] = {"unit": fallen.duplicate(true), "age": 0.0, "duration": duration}
+					break
 		if tile == "relay_link_broken" and str(event.target).begins_with("crown_regent"):
 			continue
 		var kind: String = ENCOUNTER_EFFECTS.get(tile, event.get("kind", ""))
@@ -327,7 +344,16 @@ func _process(delta: float) -> void:
 	if playback_paused:
 		return
 	_animation_time += delta
-	var changed := false
+	var changed := not _sprite_hits.is_empty() or not _sprite_deaths.is_empty()
+	for id: String in _sprite_hits.keys():
+		_sprite_hits[id] += delta
+		if float(_sprite_hits[id]) >= 0.25:
+			_sprite_hits.erase(id)
+	for id: String in _sprite_deaths.keys():
+		var death: Dictionary = _sprite_deaths[id]
+		death.age += delta
+		if float(death.age) >= float(death.duration):
+			_sprite_deaths.erase(id)
 	var blend := 1.0 - exp(-delta * 29.0)
 	for unit in units:
 		var position: Vector2 = unit.pos
@@ -370,7 +396,8 @@ func _process(delta: float) -> void:
 				_actor_casts.erase(cast.actor)
 			_attack_casts.remove_at(index)
 		changed = true
-	if changed or _has_animated_warning():
+	if changed or _has_animated_warning() or units.any(func(unit: Dictionary):
+		return unit.hp > 0 and CombatSpriteSheet.for_identity(unit.side, _character_identity(unit)) != null):
 		queue_redraw()
 
 
@@ -433,8 +460,21 @@ func _draw() -> void:
 		_draw_reinforcement_markers(field)
 	for effect in _effects:
 		_draw_ground_effect(effect, field)
+	for cast: Dictionary in _attack_casts:
+		var moving: bool = cast.profile.style in ["blink", "dash"]
+		var origin: Vector2 = cast.from if moving else cast.get("strike_from", cast.from)
+		var start := _project(origin, field)
+		var target := _project(cast.to, field)
+		var arrival := _project(cast.get("arrival", cast.from), field)
+		var radius := clampf(float(cast.get("radius", 0.0)), 0.0, 240.0)
+		var cast_size := clampf(sprite_scale * 61.0, 16.0, 39.0)
+		AttackAnimation.draw_cast_back(self, cast.profile, start, target, arrival,
+			float(cast.age) / float(cast.lifetime), cast_size, cast.get("landed", true), radius * field.size / WORLD_SIZE)
 	_draw_afterimages(field, sprite_scale)
 	var ordered_units := units.duplicate()
+	for death: Dictionary in _sprite_deaths.values():
+		if not ordered_units.any(func(unit: Dictionary): return unit.id == death.unit.id):
+			ordered_units.append(death.unit)
 	ordered_units.sort_custom(func(a: Dictionary, b: Dictionary) -> bool:
 		var first: Vector2 = _positions.get(a.id, a.pos)
 		var second: Vector2 = _positions.get(b.id, b.pos)
@@ -445,6 +485,9 @@ func _draw() -> void:
 	var cannon_muzzles: Dictionary[String, Vector2] = {}
 	for unit in ordered_units:
 		if unit.hp <= 0:
+			if _sprite_deaths.has(unit.id):
+				var death: Dictionary = _sprite_deaths[unit.id]
+				_draw_death(death, _project(death.unit.pos, field), sprite_scale)
 			continue
 		var point := _project(_positions.get(unit.id, unit.pos), field)
 		var bounds := _draw_unit(unit, point, sprite_scale, cannon_muzzles, windup_callouts)
@@ -539,6 +582,22 @@ func _draw_afterimages(field: Rect2, unit_scale: float) -> void:
 
 
 func _draw_echo(unit: Dictionary, point: Vector2, unit_scale: float, facing: float, opacity: float) -> void:
+	var sheet: RefCounted = CombatSpriteSheet.for_identity("hero", _character_identity(unit))
+	if sheet != null:
+		var height := maxf(39.0, unit_scale * sheet.display_height(132.0))
+		var ring := Vector2(height * 0.27, height * 0.12)
+		_draw_ellipse(point, ring, Color("#422a60", opacity * 0.65))
+		_draw_ellipse(point, ring * 0.82, Color("#c7a9ff", opacity * 0.72))
+		var cast: Dictionary = _actor_casts.get(unit.id, {})
+		var animation := "idle"
+		var frame := 0
+		if cast.get("from_afterimage", false) and sheet.is_animated("attack"):
+			animation = "attack"
+			frame = sheet.attack_frame(float(cast.age) / float(cast.lifetime), true)
+		draw_set_transform(point)
+		sheet.draw_frame(self, animation, frame, height, facing, Color("#bc91f4", opacity * 0.81))
+		draw_set_transform(Vector2.ZERO)
+		return
 	var texture := GameIcons.hero_art(unit.get("class", unit.get("sprite", unit.id)))
 	if texture == null:
 		return
@@ -552,12 +611,86 @@ func _draw_echo(unit: Dictionary, point: Vector2, unit_scale: float, facing: flo
 	draw_set_transform(Vector2.ZERO)
 
 
-func _combat_sprite(id: String, key: String, texture: Texture2D, friendly: bool) -> CombatSpritePose:
+func _combat_sprite(id: String, key: String, texture: Texture2D, native_facing: float) -> CombatSpritePose:
 	if not _combat_sprites.has(id):
 		if not _sprite_geometry.has(key):
-			_sprite_geometry[key] = CombatSpritePose.geometry(texture, 1.0 if friendly else -1.0)
+			_sprite_geometry[key] = CombatSpritePose.geometry(texture, native_facing)
 		_combat_sprites[id] = CombatSpritePose.new(_sprite_geometry[key])
 	return _combat_sprites[id]
+
+
+func _character_identity(unit: Dictionary) -> String:
+	if unit.side == "hero":
+		return unit.get("class", GameIcons.hero_class_for_label(unit.name))
+	return unit.get("sprite", unit.id)
+
+
+func _model_height(art_key: String) -> float:
+	if art_key in ["tempered_colossus", "crown_regent", "wreckmaster", "tidekeeper", "drowned_admiral"]:
+		return 218.0
+	if art_key in ["marshal", "regent", "glass_twin", "ember_twin", "prism_warden", "relay_captain", "relay_marshal", "brass_bellmaker", "brass_tollkeeper", "brass_repairmaster", "glass_refraction_engine"]:
+		return 191.0
+	if art_key in ["brass_captain", "brass_vanguard"]:
+		return 161.0
+	if art_key == "brass_cannon":
+		return 186.0
+	if art_key == "brass_bruiser":
+		return 145.0
+	if art_key == "clockwork":
+		return 154.0
+	if art_key in ["tollkeeper_drone", "repairmaster_drone"]:
+		return 108.0
+	return 132.0
+
+
+func _sheet_frame(sheet: RefCounted, unit: Dictionary, prepare: Dictionary, cast: Dictionary, motion: float) -> Dictionary:
+	var next_tile_moving := (motion > 0.08 and not prepare.is_empty() and not cast.is_empty()
+		and int(prepare.get("start_tick", -1)) >= int(cast.get("tick", 0)) and float(cast.age) > 0.08)
+	if not cast.is_empty() and not next_tile_moving and not cast.get("from_afterimage", false) and sheet.is_animated("attack"):
+		return {"state": "attack", "frame": sheet.attack_frame(float(cast.age) / float(cast.lifetime), true)}
+	if _sprite_hits.has(unit.id) and sheet.is_animated("hit"):
+		var progress := float(_sprite_hits[unit.id]) / 0.25
+		return {"state": "hit", "frame": mini(sheet.frame_count("hit") - 1, floori(progress * sheet.frame_count("hit")))}
+	if not prepare.is_empty() and sheet.is_animated("attack"):
+		if motion > 0.08 and prepare.charge < 0.66 and sheet.is_animated("run"):
+			return {"state": "run", "frame": sheet.frame_at("run", _animation_time * minf(1.75, _attack_rate))}
+		var preparation: float = prepare.charge
+		if motion > 0.08:
+			preparation = inverse_lerp(0.66, 1.0, preparation)
+		return {"state": "attack", "frame": sheet.attack_frame(preparation, false)}
+	var state := "run" if motion > 0.08 else "idle"
+	if sheet.is_animated(state):
+		return {"state": state, "frame": sheet.frame_at(state, _animation_time * minf(1.75, _attack_rate))}
+	return {}
+
+
+func _draw_death(death: Dictionary, point: Vector2, unit_scale: float) -> void:
+	var unit: Dictionary = death.unit
+	var identity := _character_identity(unit)
+	var sheet: RefCounted = CombatSpriteSheet.for_identity(unit.side, identity)
+	var height := _model_height(unit.get("sprite", identity))
+	if sheet != null:
+		height = sheet.display_height(height)
+	height = maxf(39.0, unit_scale * height)
+	var fade := 1.0 - smoothstep(float(death.duration) - 0.25, float(death.duration), float(death.age))
+	var tint := Color.WHITE
+	tint.a = fade
+	var facing: float = unit.get("facing", 1.0 if unit.side == "hero" else -1.0)
+	if sheet != null:
+		var animation := "death" if sheet.has_animation("death") else "idle"
+		var age := float(death.age) * minf(1.75, _attack_rate)
+		var fall := 0.0 if animation == "death" else smoothstep(0.0, 0.22, float(death.age))
+		draw_set_transform(point, -0.3 * facing * fall, Vector2(1.0, 1.0 - fall * 0.18))
+		sheet.draw_frame(self, animation, sheet.frame_at(animation, age), height, facing, tint)
+	else:
+		var texture := GameIcons.hero_art(identity) if unit.side == "hero" else GameIcons.enemy_art(identity)
+		if texture == null:
+			return
+		var width := height * texture.get_size().aspect()
+		var flip := 1.0 if (facing > 0.0) == (unit.side == "hero") else -1.0
+		draw_set_transform(point, -0.3 * facing, Vector2(flip, 0.85))
+		draw_texture_rect(texture, Rect2(-width * 0.5, -height, width, height), false, tint)
+	draw_set_transform(Vector2.ZERO)
 
 
 func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float,
@@ -569,25 +702,18 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float,
 	var art_key := String(unit.get("sprite", unit.id))
 	var hero_class := ""
 	if friendly:
-		hero_class = unit.get("class", art_key)
+		hero_class = _character_identity(unit)
 		art_key = GameIcons.portrait(hero_class)
 	var texture: Texture2D = GameIcons.hero_art(hero_class) if friendly else GameIcons.enemy_art(art_key)
+	var sheet: RefCounted = CombatSpriteSheet.for_identity(unit.side, _character_identity(unit))
+	var geometry_key := art_key
+	if sheet != null:
+		texture = sheet.idle_texture()
+		geometry_key = "sprite_fusion/" + unit.side + "/" + _character_identity(unit)
 	var radius := maxf(8.0, float(unit.radius) * unit_scale)
-	var model_height := 132.0
-	if art_key in ["tempered_colossus", "crown_regent", "wreckmaster", "tidekeeper", "drowned_admiral"]:
-		model_height = 218.0
-	elif art_key in ["marshal", "regent", "glass_twin", "ember_twin", "prism_warden", "relay_captain", "relay_marshal", "brass_bellmaker", "brass_tollkeeper", "brass_repairmaster", "glass_refraction_engine"]:
-		model_height = 191.0
-	elif art_key in ["brass_captain", "brass_vanguard"]:
-		model_height = 161.0
-	elif art_key == "brass_cannon":
-		model_height = 186.0
-	elif art_key == "brass_bruiser":
-		model_height = 145.0
-	elif art_key == "clockwork":
-		model_height = 154.0
-	elif art_key in ["tollkeeper_drone", "repairmaster_drone"]:
-		model_height = 108.0
+	var model_height := _model_height(unit.get("sprite", GameIcons.portrait(hero_class)))
+	if sheet != null:
+		model_height = sheet.display_height(model_height)
 	var art_height := maxf(39.0, unit_scale * model_height)
 	var motion: float = _gait_strengths.get(unit.id, 0.0)
 	var stride: float = _gait_phases.get(unit.id, 0.0)
@@ -598,7 +724,8 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float,
 	var release_duration := AttackAnimation.release_duration(cast.profile) if not cast.is_empty() else 0.18
 	var from_afterimage: bool = cast.get("from_afterimage", false)
 	var acting := not cast.is_empty() and not from_afterimage and float(cast.age) < release_duration
-	var facing := _sprite_facing(unit, cast if acting else {})
+	var sheet_attacking: bool = sheet != null and sheet.is_animated("attack") and not from_afterimage and not cast.is_empty()
+	var facing := _sprite_facing(unit, cast if acting or sheet_attacking else {})
 	var pose := Vector4.ZERO
 	var brace := 0.0
 	var arm_swing := sin(stride) * motion * 0.19
@@ -626,17 +753,31 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float,
 			lean += hit_direction.x * recoil * 0.08
 	_draw_ellipse(point + Vector2(1.5, 2.0), Vector2(radius * 1.2, radius * 0.36), Color(0.1, 0.09, 0.08, 0.43))
 	if texture:
-		var flip := 1.0 if (facing > 0.0) == friendly else -1.0
+		var native_facing := 1.0 if friendly else -1.0
+		if sheet != null:
+			native_facing = sheet.native_facing()
+		var flip := 1.0 if (facing > 0.0) == (native_facing > 0.0) else -1.0
 		var scale := Vector2(flip * (1.0 - pose.w * 0.67), 1.0 + pose.w)
 		var transform := Transform2D(lean, scale, 0.0, point + bounce)
 		if art_key == "brass_cannon":
 			arms = Vector3.ZERO
 			if cast.get("tile") == CANNON_SHOT:
 				cannon_muzzles[unit.id] = transform * (CANNON_MUZZLE_OFFSET * art_height)
-		draw_set_transform_matrix(transform)
 		var tint := RIGHT_RELAY_COLOR.lerp(Color.WHITE, 0.32) if unit.get("crown_role") == "relay_right" else Color.WHITE
-		_combat_sprite(unit.id, art_key, texture, friendly).draw(self, art_height,
-			CombatSpritePose.leg_pose(stride, motion * (1.0 - brace * 0.75), brace), arms, tint.lerp(GOLD, flash * 0.6))
+		tint = tint.lerp(GOLD, flash * 0.6)
+		var frame := _sheet_frame(sheet, unit, prepare, cast, motion) if sheet != null else {}
+		if not frame.is_empty():
+			draw_set_transform(point)
+			sheet.draw_frame(self, frame.state, frame.frame, art_height, facing, tint)
+		else:
+			var mesh_height := art_height
+			if sheet != null:
+				var layout: Dictionary = sheet.fallback_layout(art_height)
+				mesh_height = layout.height
+				transform.origin += transform.basis_xform(layout.offset)
+			draw_set_transform_matrix(transform)
+			_combat_sprite(unit.id, geometry_key, texture, native_facing).draw(self, mesh_height,
+				CombatSpritePose.leg_pose(stride, motion * (1.0 - brace * 0.75), brace), arms, tint)
 		draw_set_transform(Vector2.ZERO)
 	else:
 		var body_center := point + bounce - Vector2(0.0, art_height * 0.37)
@@ -647,8 +788,7 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float,
 		var initial := String(unit.name).left(1)
 		_draw_centered(initial, body_center + Vector2(0.0, 5.0), 15, WHITE)
 	if not acting and not prepare.is_empty():
-		var emphasis: float = maxf(0.52, prepare.charge) if not friendly and _attack_rate > 1.0 else prepare.charge
-		AttackAnimation.windup(self, point + bounce, facing, art_height, emphasis, prepare.profile)
+		AttackAnimation.windup(self, point + bounce, facing, art_height, prepare.charge, prepare.profile, prepare.get("beats", 2.0))
 	var health_width := clampf(radius * 2.7, 31.0, 58.0)
 	var bar_offset := 7.0 if friendly else 13.0
 	var bar := Rect2(point + Vector2(-health_width * 0.5, -art_height - bar_offset), Vector2(health_width, 5.0))
@@ -973,14 +1113,16 @@ func _windup_details(unit: Dictionary) -> Dictionary:
 			return {}
 		var window: Vector2i = _windups[unit.id]
 		var charge := clampf(inverse_lerp(float(window.x), float(window.y), float(combat_tick)), 0.0, 1.0)
-		return {"charge": charge, "profile": _enemy_profile(unit.get("intent_attack_id", unit.get("sprite", unit.id)), unit.get("attack", {}))}
+		return {"charge": charge, "start_tick": window.x, "beats": float(window.y - window.x) / ArenaSim.TICKS_PER_BEAT,
+			"profile": _enemy_profile(unit.get("intent_attack_id", unit.get("sprite", unit.id)), unit.get("attack", {}))}
 	var lane: int = unit.lane
 	if combat_tick <= 0 or lane < 0 or lane >= _hero_clips.size():
 		return {}
 	var loop_tick := posmod(combat_tick - 1, ArenaSim.LOOP_TICKS) + 1
 	for clip: Dictionary in _hero_clips[lane]:
-		if loop_tick > clip.ready and loop_tick < clip.right_edge:
-			return {"charge": inverse_lerp(float(clip.ready), float(clip.right_edge), float(loop_tick)), "profile": clip.profile}
+		if loop_tick >= clip.ready and loop_tick < clip.right_edge:
+			return {"charge": inverse_lerp(float(clip.ready), float(clip.right_edge), float(loop_tick)),
+				"start_tick": combat_tick - loop_tick + clip.ready, "beats": clip.beats, "profile": clip.profile}
 	return {}
 
 
@@ -1470,6 +1612,13 @@ func _draw_ground_effect(effect: Dictionary, field: Rect2) -> void:
 	var to_point := _project(effect.to, field)
 	var progress := float(effect.age) / float(EFFECT_LENGTHS[kind])
 	var opacity := 1.0 - progress
+	var status_center := from_point.lerp(to_point, 0.5) if kind == "hammer_collision" else to_point
+	var status_footprint := float(effect.get("radius", 0.0)) * field.size / WORLD_SIZE
+	var status_scale := clampf(minf(field.size.x / WORLD_SIZE.x, field.size.y / WORLD_SIZE.y) * 61.0, 16.0, 39.0)
+	if AttackAnimation.draw_status(self, kind, status_center, progress, status_scale, status_footprint):
+		if kind == "guard" and effect.actor != effect.target and effect.amount > 0:
+			_draw_support_link(from_point, to_point, Color(RELAY_SHIELD_COLOR, opacity))
+		return
 	match kind:
 		"counter", "arc", "ranged_warning", "haste":
 			var lift := Vector2(0.0, -19.0)
@@ -1689,6 +1838,7 @@ func _draw_charge_path(points: PackedVector2Array, progress: float, tone: Color)
 	var landing := points[-1]
 	var direction := points[-2].direction_to(landing)
 	var pulse := lerpf(9.0, 18.0, progress)
+	AttackAnimation.draw_motion_path(self, points, progress, tone)
 	_draw_ellipse(landing, Vector2(pulse, pulse * 0.43), Color(light, opacity * 0.30))
 	draw_polyline(points, edge, 7.5, true)
 	draw_polyline(points, light, 3.1, true)
@@ -1704,6 +1854,7 @@ func _draw_retreat_path(departure: Vector2, landing: Vector2, progress: float) -
 	var edge := Color(INK, opacity * 0.90)
 	var direction := departure.direction_to(landing)
 	var pulse := lerpf(7.0, 15.0, progress)
+	AttackAnimation.draw_motion_path(self, PackedVector2Array([departure, landing]), progress, Color("#a2efe1"))
 	_draw_ellipse(landing, Vector2(pulse, pulse * 0.43), Color(light, opacity * 0.28))
 	draw_dashed_line(departure, landing, edge, 5.6, 5.0)
 	draw_dashed_line(departure, landing, light, 2.1, 5.0)

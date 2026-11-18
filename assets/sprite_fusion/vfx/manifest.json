@@ -1,0 +1,517 @@
+{
+  "generator": "Official Sprite Fusion MIT TypeScript effects",
+  "frame_size": 192,
+  "anchor": [
+    96,
+    132
+  ],
+  "layers": [
+    "back",
+    "front"
+  ],
+  "sources": [
+    {
+      "slug": "slash",
+      "page": "https://www.spritefusion.com/pixel-art-vfx/slash",
+      "download": "https://www.spritefusion.com/downloads/pixel-art-vfx/slash.zip",
+      "file": "source/slash.ts"
+    },
+    {
+      "slug": "impact",
+      "page": "https://www.spritefusion.com/pixel-art-vfx/impact",
+      "download": "https://www.spritefusion.com/downloads/pixel-art-vfx/impact.zip",
+      "file": "source/impact.ts"
+    },
+    {
+      "slug": "muzzle-flash",
+      "page": "https://www.spritefusion.com/pixel-art-vfx/muzzle-flash",
+      "download": "https://www.spritefusion.com/downloads/pixel-art-vfx/muzzle-flash.zip",
+      "file": "source/muzzle-flash.ts"
+    },
+    {
+      "slug": "movement",
+      "page": "https://www.spritefusion.com/pixel-art-vfx/movement",
+      "download": "https://www.spritefusion.com/downloads/pixel-art-vfx/movement.zip",
+      "file": "source/movement.ts"
+    },
+    {
+      "slug": "fire",
+      "page": "https://www.spritefusion.com/pixel-art-vfx/fire",
+      "download": "https://www.spritefusion.com/downloads/pixel-art-vfx/fire.zip",
+      "file": "source/fire.ts"
+    },
+    {
+      "slug": "energy",
+      "page": "https://www.spritefusion.com/pixel-art-vfx/energy",
+      "download": "https://www.spritefusion.com/downloads/pixel-art-vfx/energy.zip",
+      "file": "source/energy.ts"
+    },
+    {
+      "slug": "shield",
+      "page": "https://www.spritefusion.com/pixel-art-vfx/shield",
+      "download": "https://www.spritefusion.com/downloads/pixel-art-vfx/shield.zip",
+      "file": "source/shield.ts"
+    },
+    {
+      "slug": "black-hole",
+      "page": "https://www.spritefusion.com/pixel-art-vfx/black-hole",
+      "download": "https://www.spritefusion.com/downloads/pixel-art-vfx/black-hole.zip",
+      "file": "source/black-hole.ts"
+    },
+    {
+      "slug": "holy-light",
+      "page": "https://www.spritefusion.com/pixel-art-vfx/holy-light",
+      "download": "https://www.spritefusion.com/downloads/pixel-art-vfx/holy-light.zip",
+      "file": "source/holy-light.ts"
+    },
+    {
+      "slug": "heal",
+      "page": "https://www.spritefusion.com/pixel-art-vfx/heal",
+      "download": "https://www.spritefusion.com/downloads/pixel-art-vfx/heal.zip",
+      "file": "source/heal.ts"
+    },
+    {
+      "slug": "explosion",
+      "page": "https://www.spritefusion.com/pixel-art-vfx/explosion",
+      "download": "https://www.spritefusion.com/downloads/pixel-art-vfx/explosion.zip",
+      "file": "source/explosion.ts"
+    }
+  ],
+  "clips": {
+    "slash": {
+      "source": "slash",
+      "frames": 32,
+      "columns": 8,
+      "from_seconds": 0.06666666666666667,
+      "to_seconds": 0.6,
+      "options": {},
+      "frame_size": [
+        116,
+        121
+      ],
+      "anchor": [
+        37,
+        61
+      ],
+      "empty_layers": [
+        "back"
+      ],
+      "back": "slash_back.png",
+      "front": "slash_front.png"
+    },
+    "impact": {
+      "source": "impact",
+      "frames": 32,
+      "columns": 8,
+      "from_seconds": 0,
+      "to_seconds": 0.5,
+      "options": {
+        "angle": 0,
+        "size": 1.4
+      },
+      "frame_size": [
+        155,
+        89
+      ],
+      "anchor": [
+        74,
+        35
+      ],
+      "empty_layers": [
+        "back"
+      ],
+      "back": "impact_back.png",
+      "front": "impact_front.png"
+    },
+    "muzzle": {
+      "source": "muzzle-flash",
+      "frames": 32,
+      "columns": 8,
+      "from_seconds": 0,
+      "to_seconds": 0.55,
+      "options": {
+        "angle": 0,
+        "casing": false
+      },
+      "frame_size": [
+        53,
+        50
+      ],
+      "anchor": [
+        21,
+        25
+      ],
+      "empty_layers": [],
+      "back": "muzzle_back.png",
+      "front": "muzzle_front.png"
+    },
+    "dash": {
+      "source": "movement",
+      "frames": 32,
+      "columns": 8,
+      "from_seconds": 0.13333333333333333,
+      "to_seconds": 0.77,
+      "options": {
+        "kind": "dash",
+        "distance": 75,
+        "time": 0.16
+      },
+      "frame_size": [
+        157,
+        74
+      ],
+      "anchor": [
+        61,
+        57
+      ],
+      "empty_layers": [],
+      "back": "dash_back.png",
+      "front": "dash_front.png"
+    },
+    "blink": {
+      "source": "movement",
+      "frames": 32,
+      "columns": 8,
+      "from_seconds": 0.3,
+      "to_seconds": 1.35,
+      "options": {
+        "kind": "blink",
+        "to": 192
+      },
+      "frame_size": [
+        138,
+        138
+      ],
+      "anchor": [
+        69,
+        87
+      ],
+      "empty_layers": [
+        "back"
+      ],
+      "back": "blink_back.png",
+      "front": "blink_front.png"
+    },
+    "fire": {
+      "source": "fire",
+      "frames": 32,
+      "columns": 8,
+      "from_seconds": 0.22,
+      "to_seconds": 1.8,
+      "options": {
+        "box": [
+          174,
+          236,
+          36,
+          28
+        ],
+        "duration": 0.62,
+        "size": 0.8
+      },
+      "frame_size": [
+        82,
+        82
+      ],
+      "anchor": [
+        41,
+        57
+      ],
+      "empty_layers": [],
+      "back": "fire_back.png",
+      "front": "fire_front.png"
+    },
+    "energy_charge": {
+      "source": "energy",
+      "frames": 48,
+      "columns": 8,
+      "from_seconds": 0,
+      "to_seconds": 2.79,
+      "options": {
+        "kind": "charge",
+        "charge": 2.8,
+        "colors": "cyan"
+      },
+      "frame_size": [
+        152,
+        132
+      ],
+      "anchor": [
+        78,
+        72
+      ],
+      "empty_layers": [
+        "back"
+      ],
+      "back": "energy_charge_back.png",
+      "front": "energy_charge_front.png"
+    },
+    "gold_charge": {
+      "source": "energy",
+      "frames": 48,
+      "columns": 8,
+      "from_seconds": 0,
+      "to_seconds": 2.79,
+      "options": {
+        "kind": "charge",
+        "charge": 2.8,
+        "colors": "gold"
+      },
+      "frame_size": [
+        152,
+        132
+      ],
+      "anchor": [
+        78,
+        72
+      ],
+      "empty_layers": [
+        "back"
+      ],
+      "back": "gold_charge_back.png",
+      "front": "gold_charge_front.png"
+    },
+    "energy": {
+      "source": "energy",
+      "frames": 32,
+      "columns": 8,
+      "from_seconds": 0.3,
+      "to_seconds": 0.87,
+      "options": {
+        "kind": "orb",
+        "radius": 15,
+        "colors": "cyan"
+      },
+      "frame_size": [
+        98,
+        97
+      ],
+      "anchor": [
+        49,
+        47
+      ],
+      "empty_layers": [],
+      "back": "energy_back.png",
+      "front": "energy_front.png"
+    },
+    "gold_ray": {
+      "source": "energy",
+      "frames": 8,
+      "columns": 8,
+      "from_seconds": 0.6333333333333333,
+      "to_seconds": 0.94,
+      "options": {
+        "kind": "beam",
+        "x": 92,
+        "to": [
+          292,
+          264
+        ],
+        "charge": 0.55,
+        "hold": 0.08,
+        "width": 3.5,
+        "colors": "gold"
+      },
+      "frame_size": [
+        178,
+        112
+      ],
+      "anchor": [
+        82,
+        56
+      ],
+      "empty_layers": [],
+      "back": "gold_ray_back.png",
+      "front": "gold_ray_front.png"
+    },
+    "arc_ray": {
+      "source": "energy",
+      "frames": 8,
+      "columns": 8,
+      "from_seconds": 0.6333333333333333,
+      "to_seconds": 0.94,
+      "options": {
+        "kind": "beam",
+        "x": 92,
+        "to": [
+          292,
+          264
+        ],
+        "charge": 0.55,
+        "hold": 0.08,
+        "width": 3.5,
+        "colors": "cyan"
+      },
+      "frame_size": [
+        178,
+        112
+      ],
+      "anchor": [
+        82,
+        56
+      ],
+      "empty_layers": [],
+      "back": "arc_ray_back.png",
+      "front": "arc_ray_front.png"
+    },
+    "shield_charge": {
+      "source": "shield",
+      "frames": 24,
+      "columns": 8,
+      "from_seconds": 0,
+      "to_seconds": 0.74,
+      "options": {
+        "radius": 29,
+        "hold": 0.8,
+        "hits": []
+      },
+      "frame_size": [
+        68,
+        67
+      ],
+      "anchor": [
+        34,
+        48
+      ],
+      "empty_layers": [],
+      "back": "shield_charge_back.png",
+      "front": "shield_charge_front.png"
+    },
+    "shield": {
+      "source": "shield",
+      "frames": 32,
+      "columns": 8,
+      "from_seconds": 0.75,
+      "to_seconds": 1.35,
+      "options": {
+        "radius": 29,
+        "hold": 0.8,
+        "hits": []
+      },
+      "frame_size": [
+        68,
+        67
+      ],
+      "anchor": [
+        34,
+        48
+      ],
+      "empty_layers": [],
+      "back": "shield_back.png",
+      "front": "shield_front.png"
+    },
+    "black_hole": {
+      "source": "black-hole",
+      "frames": 40,
+      "columns": 8,
+      "from_seconds": 0.25,
+      "to_seconds": 1.75,
+      "options": {
+        "radius": 18,
+        "life": 0.42
+      },
+      "frame_size": [
+        192,
+        192
+      ],
+      "anchor": [
+        96,
+        132
+      ],
+      "empty_layers": [],
+      "back": "black_hole_back.png",
+      "front": "black_hole_front.png"
+    },
+    "holy_charge": {
+      "source": "holy-light",
+      "frames": 24,
+      "columns": 8,
+      "from_seconds": 0,
+      "to_seconds": 0.415,
+      "options": {
+        "width": 11,
+        "hold": 0.25
+      },
+      "frame_size": [
+        72,
+        163
+      ],
+      "anchor": [
+        36,
+        132
+      ],
+      "empty_layers": [],
+      "back": "holy_charge_back.png",
+      "front": "holy_charge_front.png"
+    },
+    "holy_light": {
+      "source": "holy-light",
+      "frames": 40,
+      "columns": 8,
+      "from_seconds": 0.43333333333333335,
+      "to_seconds": 1.19,
+      "options": {
+        "width": 11,
+        "hold": 0.25
+      },
+      "frame_size": [
+        192,
+        192
+      ],
+      "anchor": [
+        96,
+        132
+      ],
+      "empty_layers": [],
+      "back": "holy_light_back.png",
+      "front": "holy_light_front.png"
+    },
+    "heal": {
+      "source": "heal",
+      "frames": 48,
+      "columns": 8,
+      "from_seconds": 0,
+      "to_seconds": 2.4,
+      "options": {
+        "kind": "heal",
+        "count": 10
+      },
+      "frame_size": [
+        53,
+        113
+      ],
+      "anchor": [
+        29,
+        94
+      ],
+      "empty_layers": [],
+      "back": "heal_back.png",
+      "front": "heal_front.png"
+    },
+    "explosion": {
+      "source": "explosion",
+      "frames": 40,
+      "columns": 8,
+      "from_seconds": 0,
+      "to_seconds": 1.2,
+      "options": {
+        "size": 1.2,
+        "earth": 0.5,
+        "chunks": 7,
+        "fire": 0.7,
+        "scorch": 13,
+        "shockwave": 66
+      },
+      "frame_size": [
+        192,
+        192
+      ],
+      "anchor": [
+        96,
+        132
+      ],
+      "empty_layers": [],
+      "back": "explosion_back.png",
+      "front": "explosion_front.png"
+    }
+  }
+}

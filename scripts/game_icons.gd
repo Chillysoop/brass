@@ -170,7 +170,9 @@ static func pilot_enemy_art(id: String) -> Texture2D:
 static func enemy_art(id: String) -> Texture2D:
 	if _enemy_textures.has(id):
 		return _enemy_textures[id]
-	var path := "res://assets/combatants/%s.png" % id
+	var path := "res://assets/sprite_fusion/characters/enemy_%s.png" % id
+	if not ResourceLoader.exists(path, "Texture2D"):
+		path = "res://assets/combatants/%s.png" % id
 	var texture: Texture2D
 	if ResourceLoader.exists(path, "Texture2D"):
 		texture = load(path) as Texture2D
@@ -238,7 +240,9 @@ static func portrait(class_id: String) -> String:
 static func hero_art(class_id: String) -> Texture2D:
 	var id := portrait(class_id)
 	if not _hero_textures.has(id):
-		var path := "res://assets/combatants/%s.png" % id
+		var path := "res://assets/sprite_fusion/characters/hero_%s.png" % class_id
+		if not ResourceLoader.exists(path, "Texture2D"):
+			path = "res://assets/combatants/%s.png" % id
 		if not ResourceLoader.exists(path, "Texture2D"):
 			path = "res://assets/%s.png" % id
 		if ResourceLoader.exists(path, "Texture2D"):
