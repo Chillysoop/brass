@@ -1,5 +1,6 @@
 extends RefCounted
 
+const TileAnimation = preload("res://scripts/tile_animation.gd")
 const RARITIES := ["common", "uncommon", "rare", "epic", "legendary"]
 const WHITE := Color("#fff4d5")
 const PALETTES := {
@@ -88,7 +89,7 @@ static func profile(id: String, tile: Dictionary) -> Dictionary:
 	var signature_effect: String = SIGNATURE_EFFECTS.get(base_id, "")
 	if base_id == "horizon_round" and id != base_id and not technique:
 		signature_effect = "skyline"
-	return {
+	var result := {
 		"style": style,
 		"color": color.lerp(accent, variation * 0.20),
 		"accent": accent.lerp(WHITE, variation * 0.22),
@@ -99,6 +100,8 @@ static func profile(id: String, tile: Dictionary) -> Dictionary:
 		"signature_effect": signature_effect,
 		"sprite_fusion": _sprite_fusion(base_id, tile, style),
 	}
+	result["tile_animation"] = TileAnimation.recipe(id, tile, result)
+	return result
 
 
 static func _sprite_fusion(base_id: String, tile: Dictionary, style: String) -> String:
@@ -106,7 +109,19 @@ static func _sprite_fusion(base_id: String, tile: Dictionary, style: String) -> 
 		return "fire"
 	if base_id == "meteor_seal":
 		return "explosion"
-	if tile.has("chorus_guard") or base_id in ["guard_refrain", "echo_chime", "chorus_bolt"]:
+	if base_id == "chorus_bolt":
+		if tile.has("bastion_party_guard"):
+			return "holy_light"
+		if tile.has("chorus_guard"):
+			return "shield"
+		if tile.has("chorus_mark_bonus") and not tile.has("chorus_echo_damage"):
+			return "holy_light"
+		return "energy"
+	if base_id in ["pull", "tether_dart"]:
+		return "energy"
+	if base_id in ["grapple", "hook_bash", "hook_sweep"]:
+		return "impact"
+	if tile.has("chorus_guard") or base_id in ["guard_refrain", "echo_chime"]:
 		return "holy_light"
 	if tile.has("convergence_damage_per_pull") or tile.has("isolation_damage") or style == "pull":
 		return "black_hole"

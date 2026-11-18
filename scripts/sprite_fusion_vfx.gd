@@ -50,7 +50,7 @@ static func draw_release(canvas: CanvasItem, profile: Dictionary, start: Vector2
 	match profile.get("style", ""):
 		"shot":
 			var muzzle := start + Vector2(0.0, -size * 1.25) + direction * size * 0.45
-			var contact := target + Vector2(0.0, -size)
+			var contact := target + Vector2(0.0, -size) if hit else muzzle + direction * size * 1.15
 			_draw_release_ray(canvas, "gold_ray", muzzle, contact, progress * release_seconds(profile), size, layer, color)
 			draw_clip(canvas, "muzzle" if key == "muzzle" else key, muzzle, progress, scale * 1.2, layer,
 				direction.angle() if key == "muzzle" else 0.0, color)
@@ -59,7 +59,7 @@ static func draw_release(canvas: CanvasItem, profile: Dictionary, start: Vector2
 				direction.angle() if key == "muzzle" else 0.0, color)
 		"bolt":
 			var muzzle := start + Vector2(0.0, -size * 1.65) + direction * size * 0.42
-			var contact := target + Vector2(0.0, -size)
+			var contact := target + Vector2(0.0, -size) if hit else muzzle + direction * size * 1.15
 			_draw_release_ray(canvas, "gold_ray" if key == "fire" else "arc_ray", muzzle, contact,
 				progress * release_seconds(profile), size, layer, color)
 			draw_clip(canvas, key, muzzle, progress, scale * 0.80, layer, 0.0, color)
@@ -72,7 +72,7 @@ static func draw_release(canvas: CanvasItem, profile: Dictionary, start: Vector2
 			if hit:
 				draw_clip(canvas, key, target + chest, progress, scale, layer, arrival.direction_to(target).angle(), color)
 		"slash", "spin":
-			var anchor := start.lerp(target, 0.48) + chest
+			var anchor := (start.lerp(target, 0.48) if hit else start.move_toward(target, size * 0.6)) + chest
 			draw_clip(canvas, key, anchor, progress, scale, layer, direction.angle(), color)
 		"guard", "ward", "heal", "mark":
 			draw_clip(canvas, key, target if hit else start, progress, scale, layer, 0.0, color)

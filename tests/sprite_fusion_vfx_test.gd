@@ -25,6 +25,15 @@ func _initialize() -> void:
 			var compact: Vector2i = Vector2i.ONE if layer in clip.empty_layers else Vector2i(clip.frame_size[0] * 8, clip.frame_size[1] * ceili(float(Vfx.CLIPS[key]) / 8))
 			_check(texture != null and texture.get_size() == Vector2(compact),
 				"The %s %s layer must contain complete, evenly sized frames." % [key, layer])
+			if key in ["black_hole", "explosion"] and layer not in clip.empty_layers:
+				var image := texture.get_image()
+				var extent := Vector2i(clip.frame_size[0], clip.frame_size[1])
+				for frame in range(int(clip.frames)):
+					var origin := Vector2i(frame % 8, frame / 8) * extent
+					for corner: Vector2i in [Vector2i.ZERO, Vector2i(extent.x - 1, 0),
+							Vector2i(0, extent.y - 1), extent - Vector2i.ONE]:
+						_check(image.get_pixelv(origin + corner).a < 0.02,
+							"The %s %s radial glow must not fill a clipped rectangular frame corner." % [key, layer])
 	for key: String in ["slash", "impact", "muzzle", "gold_ray", "arc_ray", "explosion", "holy_light", "shield", "heal", "dash", "blink", "fire"]:
 		var texture := load(Vfx.ROOT + key + "_front.png") as Texture2D
 		var clip: Dictionary = manifest.clips[key]
@@ -42,7 +51,11 @@ func _initialize() -> void:
 		"A long tile prepares from the beginning, uses simulation progress, and stops at the exact release edge.")
 	_check(HeroChoreography.profile("sear", ArenaSim.TILES.sear).sprite_fusion == "fire"
 		and HeroChoreography.profile("wildfire_globe", ArenaSim.TILES.wildfire_globe).sprite_fusion == "fire"
-		and HeroChoreography.profile("chorus_bolt", ArenaSim.TILES.chorus_bolt).sprite_fusion == "holy_light"
+		and HeroChoreography.profile("chorus_bolt", ArenaSim.TILES.chorus_bolt).sprite_fusion == "energy"
+		and HeroChoreography.profile("chorus_bolt_upgrade_rare_power", ArenaSim.TILES.chorus_bolt_upgrade_rare_power).sprite_fusion == "holy_light"
+		and HeroChoreography.profile("chorus_bolt_upgrade_epic_technique", ArenaSim.TILES.chorus_bolt_upgrade_epic_technique).sprite_fusion == "shield"
+		and HeroChoreography.profile("pull", ArenaSim.TILES.pull).sprite_fusion == "energy"
+		and HeroChoreography.profile("gravity_hook", ArenaSim.TILES.gravity_hook).sprite_fusion == "black_hole"
 		and HeroChoreography.profile("convergence_pulse", ArenaSim.TILES.convergence_pulse).sprite_fusion == "black_hole"
 		and EnemyChoreography.profile("crown_chorister").sprite_fusion == "holy_light",
 		"Fire, song, gravity, and enemy support must select effects by their actual combat identity.")

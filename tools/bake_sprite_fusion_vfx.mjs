@@ -5,7 +5,8 @@ import path from 'node:path';
 
 const references = process.argv[2];
 if (!references) throw new Error('Provide the directory of official Sprite Fusion VFX JSON references.');
-const destination = path.resolve(import.meta.dirname, '../assets/sprite_fusion/vfx');
+const destination = process.argv[3] ? path.resolve(process.argv[3])
+  : path.resolve(import.meta.dirname, '../assets/sprite_fusion/vfx');
 await mkdir(path.join(destination, 'source'), { recursive: true });
 
 const frameSize = 192;
@@ -28,11 +29,14 @@ const definitions = [
     options: { kind: 'beam', x: center.x - 100, to: [center.x + 100, center.y], charge: 0.55, hold: 0.08, width: 3.5, colors: 'cyan' } },
   { id: 'shield_charge', source: 'shield', begin: 0, end: 0.74, frames: 24, options: { radius: 29, hold: 0.8, hits: [] } },
   { id: 'shield', source: 'shield', begin: 0.75, end: 1.35, frames: 32, options: { radius: 29, hold: 0.8, hits: [] } },
-  { id: 'black_hole', source: 'black-hole', begin: 0.25, end: 1.75, frames: 40, options: { radius: 18, life: 0.42 } },
+  // The collapse glow has a 210px radius. A 192px canvas clips it into an opaque rectangle.
+  { id: 'black_hole', source: 'black-hole', begin: 0.25, end: 1.75, frames: 40,
+    canvasSize: 512, canvasAnchor: [256, 256], options: { radius: 18, life: 0.42 } },
   { id: 'holy_charge', source: 'holy-light', begin: 0, end: 0.415, frames: 24, options: { width: 11, hold: 0.25 } },
   { id: 'holy_light', source: 'holy-light', begin: 26 / 60, end: 1.19, frames: 40, options: { width: 11, hold: 0.25 } },
   { id: 'heal', source: 'heal', begin: 0, end: 2.4, frames: 48, options: { kind: 'heal', count: 10 } },
   { id: 'explosion', source: 'explosion', begin: 0, end: 1.2, frames: 40,
+    canvasSize: 512, canvasAnchor: [256, 256],
     options: { size: 1.2, earth: 0.5, chunks: 7, fire: 0.7, scorch: 13, shockwave: 66 } },
 ];
 
@@ -50,14 +54,22 @@ for (const slug of [...new Set(definitions.map(definition => definition.source))
 }
 
 const manifest = { generator: 'Official Sprite Fusion MIT TypeScript effects', frame_size: frameSize, anchor,
-  layers: ['back', 'front'], sources, clips: {} };
+  layers: ['back', 'front'], sources,
+  bake: { tool: 'tools/bake_sprite_fusion_vfx.mjs',
+    alpha: 'Source color plus encoded additive illumination, normal-alpha output',
+    padded_radial_clips: ['black_hole', 'explosion'],
+    note: 'Padded bake canvases retain the original source palette, time samples and pixel scale while avoiding clipped radial glows.' },
+  clips: {} };
 for (const definition of definitions) {
+  const sampleSize = definition.canvasSize ?? frameSize;
+  const sampleAnchor = definition.canvasAnchor ?? anchor;
   const columns = 8;
   const rows = Math.ceil(definition.frames / columns);
-  const width = frameSize * columns;
-  const height = frameSize * rows;
+  const width = sampleSize * columns;
+  const height = sampleSize * rows;
   const layers = { back: Buffer.alloc(width * height * 4), front: Buffer.alloc(width * height * 4) };
-  const effect = factories.get(definition.source)({ ...center, ...definition.options });
+  const effect = factories.get(definition.source)({ ...center,
+    x: sampleAnchor[0] * 2, y: sampleAnchor[1] * 2, ...definition.options });
   let elapsed = 0;
   for (let index = 0; index < definition.frames; index++) {
     const time = definition.begin + (definition.end - definition.begin) * index / (definition.frames - 1);
@@ -66,9 +78,9 @@ for (const definition of definitions) {
       elapsed += 1 / 60;
     }
     for (const layer of ['back', 'front']) {
-      const color = new Uint32Array(frameSize * frameSize);
-      const light = new Uint32Array(frameSize * frameSize);
-      effect.draw({ w: frameSize, h: frameSize, ox: 0, oy: 0, color, light }, layer);
+      const color = new Uint32Array(sampleSize * sampleSize);
+      const light = new Uint32Array(sampleSize * sampleSize);
+      effect.draw({ w: sampleSize, h: sampleSize, ox: 0, oy: 0, color, light }, layer);
       for (let pixel = 0; pixel < color.length; pixel++) {
         const c = color[pixel];
         const l = light[pixel];
@@ -76,8 +88,8 @@ for (const definition of definitions) {
         const glow = Math.max(l & 255, (l >>> 8) & 255, (l >>> 16) & 255) / 255;
         const alpha = opacity + glow * (1 - opacity);
         if (alpha <= 0) continue;
-        const offset = ((Math.floor(index / columns) * frameSize + Math.floor(pixel / frameSize)) * width
-          + (index % columns) * frameSize + pixel % frameSize) * 4;
+        const offset = ((Math.floor(index / columns) * sampleSize + Math.floor(pixel / sampleSize)) * width
+          + (index % columns) * sampleSize + pixel % sampleSize) * 4;
         for (let channel = 0; channel < 3; channel++) {
           const foreground = (c >>> (channel * 8)) & 255;
           const illumination = (l >>> (channel * 8)) & 255;
@@ -87,17 +99,18 @@ for (const definition of definitions) {
       }
     }
   }
-  const crop = occupiedBounds(layers, width, definition.frames, columns);
+  const crop = occupiedBounds(layers, width, definition.frames, columns, sampleSize);
   const emptyLayers = [];
   for (const layer of ['back', 'front']) {
-    const compact = cropAtlas(layers[layer], width, definition.frames, columns, crop);
+    const compact = cropAtlas(layers[layer], width, definition.frames, columns, crop, sampleSize);
     if (compact.empty) emptyLayers.push(layer);
     await writeFile(path.join(destination, `${definition.id}_${layer}.png`),
       compact.empty ? png(1, 1, Buffer.alloc(4)) : png(crop.width * columns, crop.height * rows, compact.pixels));
   }
   manifest.clips[definition.id] = { source: definition.source, frames: definition.frames, columns,
     from_seconds: definition.begin, to_seconds: definition.end, options: definition.options,
-    frame_size: [crop.width, crop.height], anchor: [anchor[0] - crop.x, anchor[1] - crop.y], empty_layers: emptyLayers,
+    render_frame_size: [sampleSize, sampleSize], render_anchor: sampleAnchor,
+    frame_size: [crop.width, crop.height], anchor: [sampleAnchor[0] - crop.x, sampleAnchor[1] - crop.y], empty_layers: emptyLayers,
     back: `${definition.id}_back.png`, front: `${definition.id}_front.png` };
   process.stdout.write(`${definition.id} ${definition.frames} frames ${crop.width}x${crop.height} ${2 - emptyLayers.length} layers\n`);
 }
@@ -116,7 +129,7 @@ function png(width, height, rgba) {
     chunk('IDAT', deflateSync(scanlines, { level: 9 })), chunk('IEND', Buffer.alloc(0))]);
 }
 
-function occupiedBounds(layers, width, count, columns) {
+function occupiedBounds(layers, width, count, columns, frameSize) {
   let left = frameSize;
   let top = frameSize;
   let right = 0;
@@ -143,7 +156,7 @@ function occupiedBounds(layers, width, count, columns) {
   return { x: left, y: top, width: right - left, height: bottom - top };
 }
 
-function cropAtlas(pixels, sourceWidth, count, columns, crop) {
+function cropAtlas(pixels, sourceWidth, count, columns, crop, frameSize) {
   const width = columns * crop.width;
   const packed = Buffer.alloc(width * Math.ceil(count / columns) * crop.height * 4);
   let empty = true;

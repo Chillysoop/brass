@@ -77,6 +77,15 @@
       "file": "source/explosion.ts"
     }
   ],
+  "bake": {
+    "tool": "tools/bake_sprite_fusion_vfx.mjs",
+    "alpha": "Source color plus encoded additive illumination, normal-alpha output",
+    "padded_radial_clips": [
+      "black_hole",
+      "explosion"
+    ],
+    "note": "Padded bake canvases retain the original source palette, time samples and pixel scale while avoiding clipped radial glows."
+  },
   "clips": {
     "slash": {
       "source": "slash",
@@ -85,6 +94,14 @@
       "from_seconds": 0.06666666666666667,
       "to_seconds": 0.6,
       "options": {},
+      "render_frame_size": [
+        192,
+        192
+      ],
+      "render_anchor": [
+        96,
+        132
+      ],
       "frame_size": [
         116,
         121
@@ -109,6 +126,14 @@
         "angle": 0,
         "size": 1.4
       },
+      "render_frame_size": [
+        192,
+        192
+      ],
+      "render_anchor": [
+        96,
+        132
+      ],
       "frame_size": [
         155,
         89
@@ -133,6 +158,14 @@
         "angle": 0,
         "casing": false
       },
+      "render_frame_size": [
+        192,
+        192
+      ],
+      "render_anchor": [
+        96,
+        132
+      ],
       "frame_size": [
         53,
         50
@@ -156,6 +189,14 @@
         "distance": 75,
         "time": 0.16
       },
+      "render_frame_size": [
+        192,
+        192
+      ],
+      "render_anchor": [
+        96,
+        132
+      ],
       "frame_size": [
         157,
         74
@@ -178,6 +219,14 @@
         "kind": "blink",
         "to": 192
       },
+      "render_frame_size": [
+        192,
+        192
+      ],
+      "render_anchor": [
+        96,
+        132
+      ],
       "frame_size": [
         138,
         138
@@ -208,6 +257,14 @@
         "duration": 0.62,
         "size": 0.8
       },
+      "render_frame_size": [
+        192,
+        192
+      ],
+      "render_anchor": [
+        96,
+        132
+      ],
       "frame_size": [
         82,
         82
@@ -231,6 +288,14 @@
         "charge": 2.8,
         "colors": "cyan"
       },
+      "render_frame_size": [
+        192,
+        192
+      ],
+      "render_anchor": [
+        96,
+        132
+      ],
       "frame_size": [
         152,
         132
@@ -256,6 +321,14 @@
         "charge": 2.8,
         "colors": "gold"
       },
+      "render_frame_size": [
+        192,
+        192
+      ],
+      "render_anchor": [
+        96,
+        132
+      ],
       "frame_size": [
         152,
         132
@@ -281,6 +354,14 @@
         "radius": 15,
         "colors": "cyan"
       },
+      "render_frame_size": [
+        192,
+        192
+      ],
+      "render_anchor": [
+        96,
+        132
+      ],
       "frame_size": [
         98,
         97
@@ -311,6 +392,14 @@
         "width": 3.5,
         "colors": "gold"
       },
+      "render_frame_size": [
+        192,
+        192
+      ],
+      "render_anchor": [
+        96,
+        132
+      ],
       "frame_size": [
         178,
         112
@@ -341,6 +430,14 @@
         "width": 3.5,
         "colors": "cyan"
       },
+      "render_frame_size": [
+        192,
+        192
+      ],
+      "render_anchor": [
+        96,
+        132
+      ],
       "frame_size": [
         178,
         112
@@ -364,6 +461,14 @@
         "hold": 0.8,
         "hits": []
       },
+      "render_frame_size": [
+        192,
+        192
+      ],
+      "render_anchor": [
+        96,
+        132
+      ],
       "frame_size": [
         68,
         67
@@ -387,6 +492,14 @@
         "hold": 0.8,
         "hits": []
       },
+      "render_frame_size": [
+        192,
+        192
+      ],
+      "render_anchor": [
+        96,
+        132
+      ],
       "frame_size": [
         68,
         67
@@ -409,13 +522,21 @@
         "radius": 18,
         "life": 0.42
       },
+      "render_frame_size": [
+        512,
+        512
+      ],
+      "render_anchor": [
+        256,
+        256
+      ],
       "frame_size": [
-        192,
-        192
+        512,
+        512
       ],
       "anchor": [
-        96,
-        132
+        256,
+        256
       ],
       "empty_layers": [],
       "back": "black_hole_back.png",
@@ -431,6 +552,14 @@
         "width": 11,
         "hold": 0.25
       },
+      "render_frame_size": [
+        192,
+        192
+      ],
+      "render_anchor": [
+        96,
+        132
+      ],
       "frame_size": [
         72,
         163
@@ -453,6 +582,14 @@
         "width": 11,
         "hold": 0.25
       },
+      "render_frame_size": [
+        192,
+        192
+      ],
+      "render_anchor": [
+        96,
+        132
+      ],
       "frame_size": [
         192,
         192
@@ -475,6 +612,14 @@
         "kind": "heal",
         "count": 10
       },
+      "render_frame_size": [
+        192,
+        192
+      ],
+      "render_anchor": [
+        96,
+        132
+      ],
       "frame_size": [
         53,
         113
@@ -501,13 +646,21 @@
         "scorch": 13,
         "shockwave": 66
       },
+      "render_frame_size": [
+        512,
+        512
+      ],
+      "render_anchor": [
+        256,
+        256
+      ],
       "frame_size": [
-        192,
-        192
+        477,
+        399
       ],
       "anchor": [
-        96,
-        132
+        229,
+        256
       ],
       "empty_layers": [],
       "back": "explosion_back.png",

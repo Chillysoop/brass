@@ -1,6 +1,7 @@
 extends RefCounted
 
 const SpriteFusionVfx = preload("res://scripts/sprite_fusion_vfx.gd")
+const TileAnimationEffects = preload("res://scripts/tile_animation_effects.gd")
 const INK := Color("#292130")
 const LIGHT := Color("#fff5de")
 const SIGNATURE_SECONDS := {"meteor": 0.64, "skyline": 0.49, "marshal_sweep": 0.49, "hammer": 0.46}
@@ -67,12 +68,19 @@ static func windup(canvas: CanvasItem, at: Vector2, facing: float, size: float, 
 static func draw_hero_anticipation(canvas: CanvasItem, at: Vector2, facing: float, size: float,
 		charge: float, profile: Dictionary, duration_beats: float) -> void:
 	SpriteFusionVfx.draw_anticipation(canvas, at, facing, size, charge, profile, duration_beats)
+	var recipe: Dictionary = profile.get("tile_animation", {})
+	if not recipe.is_empty():
+		TileAnimationEffects.draw_anticipation(canvas, recipe, at, facing, size, charge, profile.color, duration_beats)
 
 
 static func draw_cast_back(canvas: CanvasItem, profile: Dictionary, start: Vector2, target: Vector2,
 		arrival: Vector2, progress: float, visual_scale: float, hit: bool, footprint := Vector2.ZERO) -> void:
 	SpriteFusionVfx.draw_release(canvas, profile, start, target, arrival, progress,
 		visual_scale * float(profile.scale), hit, footprint, "back")
+	var recipe: Dictionary = profile.get("tile_animation", {})
+	if not recipe.is_empty():
+		TileAnimationEffects.draw_release(canvas, recipe, start, target, arrival, progress,
+			visual_scale * float(profile.scale), hit, footprint, "back")
 
 
 static func draw_status(canvas: CanvasItem, kind: String, at: Vector2, progress: float,
@@ -86,6 +94,10 @@ static func draw_cast(canvas: CanvasItem, profile: Dictionary, start: Vector2, t
 		visual_scale * float(profile.scale), hit, footprint, "front")
 	var signature_drawn := _draw_signature(canvas, profile, start, target, arrival, progress,
 		visual_scale * float(profile.scale), hit, footprint, official_contact)
+	var recipe: Dictionary = profile.get("tile_animation", {})
+	if not recipe.is_empty():
+		TileAnimationEffects.draw_release(canvas, recipe, start, target, arrival, progress,
+			visual_scale * float(profile.scale), hit, footprint, "front")
 	if official_contact or signature_drawn:
 		return
 	var style: String = profile.style
