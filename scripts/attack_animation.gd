@@ -65,7 +65,7 @@ static func windup(canvas: CanvasItem, at: Vector2, facing: float, size: float, 
 
 static func draw_hero_anticipation(canvas: CanvasItem, at: Vector2, facing: float, size: float,
 		charge: float, profile: Dictionary, duration_beats: float) -> void:
-	var recipe: Dictionary = profile.get("tile_animation", {})
+	var recipe := _emission_recipe(profile)
 	if not recipe.is_empty():
 		TileAnimationEffects.draw_anticipation(canvas, recipe, at, facing, size, charge, profile.color, duration_beats)
 	else:
@@ -74,7 +74,7 @@ static func draw_hero_anticipation(canvas: CanvasItem, at: Vector2, facing: floa
 
 static func draw_cast_back(canvas: CanvasItem, profile: Dictionary, start: Vector2, target: Vector2,
 		arrival: Vector2, progress: float, visual_scale: float, hit: bool, footprint := Vector2.ZERO) -> void:
-	var recipe: Dictionary = profile.get("tile_animation", {})
+	var recipe := _emission_recipe(profile)
 	if not recipe.is_empty():
 		TileAnimationEffects.draw_release(canvas, recipe, start, target, arrival, progress,
 			visual_scale * float(profile.scale), hit, footprint, "back")
@@ -93,12 +93,28 @@ static func draw_status(canvas: CanvasItem, kind: String, at: Vector2, progress:
 static func draw_cast(canvas: CanvasItem, profile: Dictionary, start: Vector2, target: Vector2, arrival: Vector2,
 		progress: float, visual_scale: float, hit: bool, footprint := Vector2.ZERO) -> void:
 	var size := visual_scale * float(profile.scale)
-	var recipe: Dictionary = profile.get("tile_animation", {})
+	var recipe := _emission_recipe(profile)
 	if not recipe.is_empty():
 		TileAnimationEffects.draw_release(canvas, recipe, start, target, arrival, progress, size, hit, footprint, "front")
 	else:
 		SpriteFusionVfx.draw_release(canvas, profile, start, target, arrival, progress, size, hit, footprint, "front")
+	TileAnimationEffects.draw_weapon_trace(canvas, profile, progress, size)
 	_draw_signature(canvas, profile, start, target, arrival, progress, size, hit, footprint)
+
+
+static func _emission_recipe(profile: Dictionary) -> Dictionary:
+	var recipe: Dictionary = profile.get("tile_animation", {})
+	if recipe.is_empty() or not profile.has("emission_sockets"):
+		return recipe
+	var local := recipe.duplicate()
+	local.emission_sockets = profile.emission_sockets
+	local.actor_origin = profile.get("actor_origin", Vector2.ZERO)
+	return local
+
+
+static func _socket(profile: Dictionary, name: String, fallback: Vector2) -> Vector2:
+	var value: Variant = profile.get("emission_sockets", {}).get(name)
+	return value if value is Vector2 else fallback
 
 
 static func _draw_signature(canvas: CanvasItem, profile: Dictionary, start: Vector2, target: Vector2,
@@ -110,7 +126,7 @@ static func _draw_signature(canvas: CanvasItem, profile: Dictionary, start: Vect
 		return
 	var p := age / duration
 	var direction := start.direction_to(target) if start.distance_squared_to(target) > 0.01 else Vector2.RIGHT
-	var source := start - Vector2(0, size * 0.85)
+	var source := _socket(profile, "muzzle" if signature == "skyline" else "hand", start - Vector2(0, size * 0.85))
 	var contact := target - Vector2(0, size * 0.7) if hit else source + direction * size * 0.8
 	var particles = TileAnimationEffects.Particles
 	var color: Color = profile.get("color", Color.WHITE)
@@ -130,7 +146,7 @@ static func _draw_signature(canvas: CanvasItem, profile: Dictionary, start: Vect
 				particles.stamp(canvas, "arc", pos, p, size * (0.78 - t * 0.25), direction.angle(),
 					particles.tint(Color("#a1efff"), (1.0 - p) * (0.85 - t * 0.35), "arc"), Vector2(1.6, 0.65))
 		"hammer":
-			var shoulder := arrival - Vector2(0, size * 0.75) if profile.style == "dash" else source
+			var shoulder := _socket(profile, "blade", arrival - Vector2(0, size * 0.75) if profile.style == "dash" else source)
 			var center := shoulder.lerp(contact, 0.6)
 			for index in range(9):
 				var angle := direction.angle() - 1.8 + float(index) * 0.27 + p * 0.8

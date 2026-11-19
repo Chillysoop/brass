@@ -49,7 +49,7 @@ static func draw_release(canvas: CanvasItem, profile: Dictionary, start: Vector2
 	var scale := clampf(size / 43.0, 0.36, 1.05)
 	match profile.get("style", ""):
 		"shot":
-			var muzzle := start + Vector2(0.0, -size * 1.25) + direction * size * 0.45
+			var muzzle := _socket(profile, "muzzle", start + Vector2(0.0, -size * 1.25) + direction * size * 0.45)
 			var contact := target + Vector2(0.0, -size) if hit else muzzle + direction * size * 1.15
 			_draw_release_ray(canvas, "gold_ray", muzzle, contact, progress * release_seconds(profile), size, layer, color)
 			draw_clip(canvas, "muzzle" if key == "muzzle" else key, muzzle, progress, scale * 1.2, layer,
@@ -58,7 +58,7 @@ static func draw_release(canvas: CanvasItem, profile: Dictionary, start: Vector2
 				draw_clip(canvas, "impact" if key == "muzzle" else key, contact, progress, scale * (1.65 if key == "fire" else 1.0), layer,
 				direction.angle() if key == "muzzle" else 0.0, color)
 		"bolt":
-			var muzzle := start + Vector2(0.0, -size * 1.65) + direction * size * 0.42
+			var muzzle := _socket(profile, "cast", start + Vector2(0.0, -size * 1.65) + direction * size * 0.42)
 			var contact := target + Vector2(0.0, -size) if hit else muzzle + direction * size * 1.15
 			_draw_release_ray(canvas, "gold_ray" if key == "fire" else "arc_ray", muzzle, contact,
 				progress * release_seconds(profile), size, layer, color)
@@ -72,7 +72,7 @@ static func draw_release(canvas: CanvasItem, profile: Dictionary, start: Vector2
 			if hit:
 				draw_clip(canvas, key, target + chest, progress, scale, layer, arrival.direction_to(target).angle(), color)
 		"slash", "spin":
-			var anchor := (start.lerp(target, 0.48) if hit else start.move_toward(target, size * 0.6)) + chest
+			var anchor := _socket(profile, "blade", (start.lerp(target, 0.48) if hit else start.move_toward(target, size * 0.6)) + chest)
 			draw_clip(canvas, key, anchor, progress, scale, layer, direction.angle(), color)
 		"guard", "ward", "heal", "mark":
 			draw_clip(canvas, key, target if hit else start, progress, scale, layer, 0.0, color)
@@ -83,6 +83,11 @@ static func draw_release(canvas: CanvasItem, profile: Dictionary, start: Vector2
 			else:
 				draw_clip(canvas, key, at + chest * 0.3, progress, scale * (1.6 if key == "fire" else 1.0), layer, direction.angle() if key == "impact" else 0.0, color)
 	return true
+
+
+static func _socket(profile: Dictionary, name: String, fallback: Vector2) -> Vector2:
+	var point: Variant = profile.get("emission_sockets", {}).get(name)
+	return point if point is Vector2 else fallback
 
 
 static func _draw_release_ray(canvas: CanvasItem, key: String, origin: Vector2, target: Vector2,
@@ -106,7 +111,7 @@ static func draw_anticipation(canvas: CanvasItem, at: Vector2, facing: float, si
 	var key := release_key(profile)
 	var magical: bool = key in ["energy", "black_hole", "holy_light", "heal", "blink"]
 	var charge_key := "energy_charge" if magical else "gold_charge"
-	var anchor := at + Vector2(facing * size * 0.25, -size * 0.51)
+	var anchor := _socket(profile, "cast" if magical or profile.get("style", "") == "guard" else "hand", at + Vector2(facing * size * 0.25, -size * 0.51))
 	var scale := clampf(size / 100.0, 0.32, 1.0) * lerpf(0.55, 1.0, gathering) * (1.0 + long_cast * 0.20)
 	var tint := Color.WHITE.lerp(profile.get("color", Color.WHITE), 0.36)
 	tint.a = 0.15 + readiness * 0.16 + gathering * 0.28 + poised * 0.22

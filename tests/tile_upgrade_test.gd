@@ -448,12 +448,13 @@ func _check_authored_forge_choices(game: Control) -> void:
 			return
 		for index in range(choices.size()):
 			var option: Button = forge._cards[choices[index]]
-			_check(option.is_visible_in_tree() and option.text == names[index]
+			_check(option.is_visible_in_tree() and (option.find_child("ForgeChoiceName", true, false) as Label).text == names[index]
 				and ArenaSim.TILES[choices[index]].upgrade_path == paths[index],
 				"The %s displays Reversal Plate's %s upgrade name." % [labels, names[index]])
 		var choice: String = choices[branch]
 		await _click(forge, str(forge._cards[choice].name))
-		await _click(forge, str(forge._confirm.name))
+		if not forge._direct_pick:
+			await _click(forge, str(forge._confirm.name))
 		var restored := FrontierRun.new()
 		if not _check(restored.load_save(save_path) and restored.data.phase == "map",
 			"The confirmed %s path saves and returns to the map." % labels):
@@ -484,25 +485,18 @@ func _check_assisted_camp_forge(game: Control) -> void:
 	run.data.phase = "rest"
 	run.loadout.lanes[0] = locked_timeline.duplicate(true)
 	_preview_forge_source(game, source)
-	var in_storage := game.storage_screen.find_child("StorageForgeSelected", true, false) as Button
-	var requirement: String = run.camp_forge_blocker(source)
-	_check("Marksman's Arsenal" in requirement and "14 Marks" in requirement and in_storage.disabled
-		and "Marksman's Arsenal" in game.storage_screen._status.text
-		and not run.choose_camp_upgrade(source, "deadeye") and run.loadout.lanes[0] == locked_timeline,
-		"A locked family explains its exact prerequisite before the click and refuses the same request in the model.")
-	game.storage_close()
-	_check(game.camp_button.visible and game.camp_button.disabled and "Marksman's Arsenal" in game.setup_hint.text,
-		"The arena Forge control shows the same lock and reason outside the storage overlay.")
-
-	run.profile.meta.append("shot_artifice")
+	_check(run.camp_forge_blocker(source).is_empty() and not run.camp_forge_plan(source, "deadeye").is_empty()
+		and run.loadout.lanes[0] == locked_timeline,
+		"The rest forge offers an owned tile directly before its reward-pool unlock, without changing inventory on inspection.")
 	_preview_forge_source(game, source)
 	await _click(game.storage_screen, "StorageForgeSelected")
 	var forge: Control = game.forge_screen
-	await _click(forge, str(forge._cards["deadeye"].name))
+	forge._cards["deadeye"].grab_focus()
+	await process_frame
 	_check(not forge._confirm.disabled and "Bash moves from beat 3 to 4" in forge._room_instruction.text
 		and run.loadout.lanes[0] == locked_timeline,
 		"Inspecting the wider upgrade previews which neighbor slides, leaving the original timeline intact.")
-	await _click(forge, str(forge._confirm.name))
+	await _click(forge, str(forge._cards["deadeye"].name))
 	_check(run.data.phase == "map" and run.loadout.lanes[0] == [
 		_tile("deadeye", 0, "farthest"), _tile("bash", 3), _tile("cover", 5, "self")],
 		"One confirm applies the previewed move and retains existing targeting.")
@@ -517,7 +511,8 @@ func _check_assisted_camp_forge(game: Control) -> void:
 	run.loadout.storage = [blocked_storage.duplicate(true), blocked_storage.duplicate(true), blocked_storage.duplicate(true)]
 	_preview_forge_source(game, source)
 	await _click(game.storage_screen, "StorageForgeSelected")
-	await _click(forge, str(forge._cards["deadeye"].name))
+	forge._cards["deadeye"].grab_focus()
+	await process_frame
 	var before := run.loadout.duplicate(true)
 	_check(forge._confirm.disabled and "No room" in forge._room_instruction.text
 		and not run.choose_camp_upgrade(source, "deadeye") and run.loadout == before and run.data.phase == "rest",
@@ -526,22 +521,24 @@ func _check_assisted_camp_forge(game: Control) -> void:
 	run.loadout.storage[0] = []
 	_preview_forge_source(game, source)
 	await _click(game.storage_screen, "StorageForgeSelected")
-	await _click(forge, str(forge._cards["deadeye"].name))
+	forge._cards["deadeye"].grab_focus()
+	await process_frame
 	_check(not forge._confirm.disabled and "Bash goes to storage row 1, cell 1" in forge._room_instruction.text,
 		"Once storage opens up, the Forge names the tile to stow and its destination before confirmation.")
 	before = run.loadout.duplicate(true)
 	run.save_path = save_path + ".missing/save.json"
-	await _click(forge, str(forge._confirm.name))
+	await _click(forge, str(forge._cards["deadeye"].name))
 	_check(forge.visible and forge._error.visible and run.data.phase == "rest" and run.loadout == before,
 		"A save failure rolls back the wider upgrade and its storage move and leaves Forge open for retry.")
 	run.save_path = save_path
-	await _click(forge, str(forge._confirm.name))
+	await _click(forge, str(forge._cards["deadeye"].name))
 	var restored := FrontierRun.new()
 	_check(restored.load_save(save_path) and restored.data.phase == "map" and restored.loadout.lanes[0][0].id == "deadeye"
 		and restored.loadout.storage[0].size() == 1 and restored.loadout.storage[0][0].id == "bash"
 		and restored.loadout.storage[0][0].start == 0 and restored.loadout.storage[0][0].get("enchantment") == "guarded",
 		"A successful retry saves the upgraded tile and intact displaced tile together.")
 
+	run.profile.meta.append("shot_artifice")
 	var smith := {"type": "event", "row": 1, "label": "Traveling Smith"}
 	run.data.node = smith
 	run.data.phase = "event"

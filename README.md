@@ -8,7 +8,7 @@ From the title screen, choose **New Expedition**, select **Brass Frontier**, and
 
 **New Expedition** starts a run with the active slot's unlocks and Aether Marks. **Save Slots** switches among three independent profiles. Choose **Reset Save Slot** on an occupied slot to clear its progress and start a fresh Brass Frontier Easy expedition. Earlier saves open in Slot 1.
 
-Each class has its own combat reward deck. Use **View class deck** on a hero or recruit card to inspect each tile and the class's signature Uncommon. After the victory animation, choose or skip a tile directly in the arena for each hero in party order. Rerolls start at 5 gold and double in price with each use until the next act. Tiles go to that hero's timeline when space allows, then to shared storage. The expedition saves after each pick. After choosing a recruit, the run seed offers two of their class's three starting kits. Choose one to put both tiles on the new hero's timeline.
+Each class has its own combat reward deck. Use **View class deck** on a hero or recruit card to inspect each tile and the class's signature Uncommon. After the victory animation, click a reward to equip it on its hero's timeline when it fits, or put it in shared storage otherwise. You can also drag rewards into position. Rewards resolve for each hero in party order. Rerolls start at 5 gold and double in price with each use until the next act. The expedition saves after each pick. After choosing a recruit, the run seed offers two of their class's three starting kits. Choose one to put both tiles on the new hero's timeline.
 
 In **Brass Frontier Medium and Hard**, the lead hero's first tile draft offers their familiar class starter, a shared or relic-linked tile, and one of two alternate attacks from their class deck. The seed determines which alternate appears. Starshot can see Backdraft Bolt or Parallax Shot, and Lancer can see Phalanx Charge or Recoil Thrust. Take an alternate and the first combat draft favors new tiles while still offering a third copy when you can combine it.
 
@@ -27,6 +27,8 @@ Tiles pulse in their hero's color when they fire. Critical hits appear as larger
 Attacks have a ready pose and a release effect that follows their actual timing. Bash lunges, Slam drives down into a ripple, Shot recoils, Pull draws a tether, and Blink leaves a trail between its start and landing point. Tile upgrades vary the effect. Enemy windups and impacts distinguish moves such as charges, volleys, shields, and heals.
 
 Sprite Fusion supplies the combat character art and animated effects. Wider tiles build up through longer, more elaborate weapon and spell preparations. Their impacts release when the playhead reaches the tile's right edge.
+
+All twelve heroes select class-appropriate native action poses and have animated hit reactions and defeats. The complete Act I enemy roster has native movement and attack cycles. Per-frame hand, weapon and muzzle landmarks attach effects to the displayed pose; distance-driven strides, target-facing backpedaling and layered recoil keep movement and impacts connected to the characters. Weapon recovery follows its own animation clock while longer spell effects finish playing.
 
 Each combat tile combines Sprite Fusion contact art with original animated pixel particles. Authored emitters give abilities distinct material, motion and timing; forge paths reshape their particle wakes without wireframe overlays.
 
@@ -50,7 +52,7 @@ Combine any three identical tiles below Legendary to choose between two upgrades
 
 Each forge choice adds or changes a combat effect. You can switch branches at each rarity. Select a tile in the forge to read its effects before committing.
 
-A camp can advance one eligible tile instead of healing the party. The **Aether Chart** unlocks camp upgrades and direct reward drops for Blink, Shot, and Guard. **Wayfarer's Pin** adds a starter relic choice that grants each hero 6 Guard on their first successful teleport each loop. It can also appear in shops and elite rewards.
+A camp can advance any owned tile below Legendary by one rarity instead of healing the party. Click the tile, then choose its next-tier path; this consumes only that tile and requires no matching copies or family unlock. The combine-three rule remains in effect elsewhere. The **Aether Chart** unlocks direct reward drops, shop offers and Traveling Smith upgrades for Blink, Shot, and Guard. **Wayfarer's Pin** adds a starter relic choice that grants each hero 6 Guard on their first successful teleport each loop. It can also appear in shops and elite rewards.
 
 **Marksman's Arsenal** unlocks precision fire and shots that hit clustered enemies. Precision tiles let heroes keep their distance when the lane has no melee attacks. **Bastion Workshop** unlocks counters fueled by Guard and tiles that shield vulnerable allies. Shops offer one specialist upgrade from the unlocked families, from Uncommon on the first leg to Rare on the second and Epic on the third. **Pathfinder's Chart** adds seeded mystery encounters with gold wagers, relic brokers, and optional elite bounties.
 

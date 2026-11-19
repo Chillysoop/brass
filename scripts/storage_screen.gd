@@ -1,5 +1,6 @@
 extends Control
 
+const ICON := preload("res://assets/icons/storage.svg")
 const GameIcons = preload("res://scripts/game_icons.gd")
 const CombatIcons = preload("res://scripts/combat_icons.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
@@ -36,9 +37,12 @@ var _popup_tile_row_size := Vector2.ZERO
 var _docked := false
 var _heading: Label
 var _close: Button
+var _expand: Button
+var _chest: TextureRect
 var _footer: HBoxContainer
 var _dock_footer: HFlowContainer
 var _status: Label
+var _instruction: Label
 var _capacity: Label
 var _send: Button
 var _discard: Button
@@ -72,12 +76,15 @@ func set_docked(docked: bool) -> void:
 	_frame.reparent(self if docked else _stage, false)
 	_frame.set_anchors_and_offsets_preset(PRESET_FULL_RECT if docked else PRESET_TOP_LEFT)
 	_frame.custom_minimum_size.x = 0 if docked else 740
-	var border := _box(PANEL, GOLD_DARK, 12)
+	var border := _box(PANEL, GOLD.darkened(0.22), 12)
+	border.set_border_width_all(2)
 	if docked:
 		border.content_margin_left = 6
 		border.content_margin_right = 6
 	_frame.add_theme_stylebox_override("panel", border)
-	_heading.add_theme_font_size_override("font_size", 18 if docked else 22)
+	_heading.add_theme_font_size_override("font_size", 18 if docked else 25)
+	_chest.custom_minimum_size = Vector2(26, 26) if docked else Vector2(34, 34)
+	_expand.visible = docked
 	_close.visible = not docked
 	_grid.size_flags_vertical = SIZE_EXPAND_FILL if docked else SIZE_FILL
 	size_flags_vertical = SIZE_EXPAND_FILL if docked else SIZE_FILL
@@ -121,7 +128,9 @@ func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can
 	for row_index in range(ROWS):
 		var tiles: Array = rows[row_index] if row_index < rows.size() else []
 		used += _build_row(row_index, tiles, offers)
-	_capacity.text = ("%d / %d" if _docked else "%d / %d cells used") % [used, COLUMNS * ROWS]
+	_capacity.text = "%d / %d" % [used, COLUMNS * ROWS]
+	_instruction.text = "Click a tile to upgrade · no duplicates needed" if camp else "Spare tiles · drag to your sequence"
+	_heading.text = "STORAGE" if _docked else "TILE STORAGE"
 	_capacity.tooltip_text = "%d of %d storage cells used" % [used, COLUMNS * ROWS]
 	_send.disabled = not _selected.has("row")
 	_discard.disabled = not _selected.has("lane") or protect_selected
@@ -134,7 +143,7 @@ func render(rows: Array, selected: Dictionary, offers: Array, camp := false, can
 	if _selected.is_empty():
 		var message := "Drag to move tiles." if _docked else "Drag between storage and the timeline."
 		if camp:
-			message = "Select a tile in the sequence or storage to upgrade."
+			message = "Click any tile to choose its next-tier path."
 		show_message("Select a tile to enchant." if _enchantment_rows.visible and not camp else message)
 	elif camp and not forge_blocker.is_empty():
 		show_message(forge_blocker)
@@ -206,16 +215,34 @@ func _build() -> void:
 	var header := HBoxContainer.new()
 	header.add_theme_constant_override("separation", 12)
 	_layout.add_child(header)
-	_heading = _label("Tile storage", 22, GOLD)
+	_chest = TextureRect.new()
+	_chest.texture = ICON
+	_chest.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	_chest.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	_chest.custom_minimum_size = Vector2(34, 34)
+	_chest.mouse_filter = MOUSE_FILTER_IGNORE
+	header.add_child(_chest)
+	_heading = _label("TILE STORAGE", 25, GOLD)
+	_heading.name = "StorageHeading"
 	_heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	header.add_child(_heading)
 	_capacity = _label("", 14, TEAL)
 	_capacity.mouse_filter = Control.MOUSE_FILTER_PASS
 	_capacity.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	header.add_child(_capacity)
+	_expand = _button("↗", func(): _host.run_expand_reward_storage())
+	_expand.name = "ExpandStorage"
+	_expand.tooltip_text = "Expand storage to full-size tiles."
+	_expand.accessibility_name = _expand.tooltip_text
+	_expand.hide()
+	header.add_child(_expand)
 	_close = _button("Close", func(): _host.storage_close())
 	_close.name = "CloseStorage"
 	header.add_child(_close)
+	_instruction = _label("Spare tiles · drag to your sequence", 13, CREAM)
+	_instruction.name = "StorageInstruction"
+	_instruction.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	_layout.add_child(_instruction)
 	_grid = ScrollContainer.new()
 	_grid.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	_grid.follow_focus = true
@@ -336,7 +363,7 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 	var width: int = tile.width
 	var metric := {} if _docked else CombatIcons.tile_corner_stat(tile)
 	var icon_only := _docked and width == 1
-	var card := _button("" if icon_only else caption, func(): _host.storage_pick(row_index, item))
+	var card := _button("" if icon_only else caption, func(): _host.storage_pick(row_index, item, true))
 	card.name = "StoredTile_%s_%d_%d" % [item.id, row_index, item.start]
 	card.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	GameIcons.decorate(card, GameIcons.tile(item.id, tile), 15 if width == 1 or _docked else 22)

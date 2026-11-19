@@ -548,11 +548,8 @@ func _check_medium_rewards(game: Control) -> void:
 	_check_reward_tile_identity(game.frontier_screen, first_offers, lead)
 	var first_tile: String = first_offers[0]
 	var first_button := game.frontier_screen.find_child("RewardTile_" + first_tile, true, false) as Button
-	var first_details := first_button.get_parent().find_child("ChoiceDetails", true, false) as Control
-	var body_point := first_details.get_global_rect().get_center()
-	_push_mouse_button(body_point, true)
-	_push_mouse_button(body_point, false)
-	_check(run.reward_position() == 0 and run.loadout.lanes[0].is_empty(), "Clicking the card body does not claim it.")
+	_check(first_button.text.is_empty() and first_button.get_parent().get_meta("floating_tile_choice", false),
+		"Reward tiles use a borderless clickable art choice without a storage CTA.")
 	await _drag_reward(game, first_tile, 1, 4)
 	_check(run.reward_position() == 0 and run.loadout.lanes[1].is_empty(), "The lead's tile cannot be dropped on the recruit's timeline.")
 	await _drag_reward(game, first_tile, 0, 4)
@@ -610,7 +607,7 @@ func _check_medium_rewards(game: Control) -> void:
 	_check(run.data.phase == "map" and run.loadout.lanes[0].is_empty()
 		and run.loadout.storage[0].size() == 1 and run.loadout.storage[0][0].id == stowed,
 		"When its own timeline is full, a tile reward goes to storage and leaves the other hero's lane alone.")
-	_check(_reward_header_has(game.frontier_screen, "RewardPlacement", "%s sent to storage" % ArenaSim.TILES[stowed].label),
+	_check(_reward_header_has(game.frontier_screen, "RewardPlacement", "Stored · %s" % ArenaSim.TILES[stowed].label),
 		"The route map tells the player which reward was sent to storage.")
 	_check(run.load_save(save_path), "Resume the map after a reward goes to storage.")
 	game.run_return()

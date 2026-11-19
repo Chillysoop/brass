@@ -7,6 +7,8 @@ const Particles = preload("res://scripts/combat_particles.gd")
 const GOLDEN_ANGLE := 2.39996323
 const MAX_PARTICLES := 38
 const BACK_MATERIALS := ["smoke", "dust"]
+const SOURCE_SOCKETS := {"shot": "muzzle", "bolt": "cast", "ward": "cast", "heal": "cast", "mark": "cast",
+	"guard": "cast", "slash": "blade", "spin": "blade", "thrust": "blade", "heavy": "blade"}
 const ACCENT_PRIORITY := ["burn", "overflow", "echo", "harmony", "intercept", "pull", "chain", "rune", "heal", "guard",
 	"pierce", "charge", "return", "mark", "crit", "finish", "repeat", "block", "windup", "travel", "ally", "splash", "push", "blink"]
 
@@ -29,9 +31,10 @@ static func draw_release(canvas: CanvasItem, recipe: Dictionary, start: Vector2,
 	if prescription.is_empty():
 		return
 	var direction := start.direction_to(target) if start.distance_squared_to(target) > 0.01 else Vector2.RIGHT
-	var source := start - Vector2(0, unit * 0.9)
-	var at := target - Vector2(0, unit * 0.8) if hit else source + direction * unit * 0.75
 	var family: String = recipe.get("family", "")
+	var socket_name: String = SOURCE_SOCKETS.get(family, "hand")
+	var source := _socket(recipe, socket_name, start - Vector2(0, unit * 0.9))
+	var at := target - Vector2(0, unit * 0.8) if hit else source + direction * unit * 0.75
 	if family in ["heal", "guard", "ward"]:
 		at = target - Vector2(0, unit * 0.55) if hit else source
 	var landing := arrival - Vector2(0, unit * 0.7)
@@ -56,7 +59,30 @@ static func draw_release(canvas: CanvasItem, recipe: Dictionary, start: Vector2,
 static func _profile(recipe: Dictionary) -> Dictionary:
 	return {"style": recipe.get("family", "thrust"),
 		"sprite_fusion": recipe.get("sprite_fusion", "impact"),
-		"color": recipe.get("color", Color.WHITE)}
+		"color": recipe.get("color", Color.WHITE),
+		"emission_sockets": recipe.get("emission_sockets", {}), "actor_origin": recipe.get("actor_origin", Vector2.ZERO)}
+
+
+static func _socket(recipe: Dictionary, name: String, fallback: Vector2) -> Vector2:
+	var point: Variant = recipe.get("emission_sockets", {}).get(name)
+	return point if point is Vector2 else fallback
+
+
+static func draw_weapon_trace(canvas: CanvasItem, profile: Dictionary, progress: float, size: float) -> void:
+	if progress < 0.0 or progress >= 0.42 or profile.get("style", "") not in ["slash", "spin", "thrust", "heavy"]:
+		return
+	var sockets: Dictionary = profile.get("emission_sockets", {})
+	var blade: Variant = sockets.get("blade")
+	var hand: Variant = sockets.get("hand")
+	if not blade is Vector2 or not hand is Vector2:
+		return
+	var phase := progress / 0.42
+	var material := "spark" if profile.style == "thrust" else "slash"
+	var direction: Vector2 = hand.direction_to(blade)
+	var diameter := clampf(size * 1.3, 18.0, 48.0)
+	var aspect := Vector2(1.65, 0.7) if material == "spark" else Vector2.ONE
+	Particles.stamp(canvas, material, blade, phase * 0.85, diameter, direction.angle(),
+		Particles.tint(profile.get("accent", Color.WHITE), 1.0 - phase, material), aspect)
 
 
 static func _contact(canvas: CanvasItem, prescription: Dictionary, at: Vector2, direction: Vector2,
@@ -273,7 +299,7 @@ static func draw_anticipation(canvas: CanvasItem, recipe: Dictionary, at: Vector
 	var focus := smoothstep(float(tempo[0]), float(tempo[1]), p)
 	var ready := smoothstep(float(tempo[1]), float(tempo[2]), p)
 	var long_cast := clampf((beats - 1.0) / 4.0, 0.0, 1.0)
-	var hand := at + Vector2(facing * size * 0.26, -size * 0.55)
+	var hand := _socket(recipe, "cast" if recipe.get("family", "") in ["bolt", "ward", "heal", "mark", "guard"] else "hand", at + Vector2(facing * size * 0.26, -size * 0.55))
 	var material: String = spec.get("material", "spark")
 	var color: Color = recipe.get("color", Color.WHITE)
 	var streams := clampi(int(spec.get("streams", 1)), 1, 5)

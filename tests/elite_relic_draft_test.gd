@@ -342,8 +342,8 @@ func _check_reward_screen() -> void:
 	_check(game.storage_screen.is_visible_in_tree() and game.storage_screen.get_parent() == game.combat_sidebar,
 		"The elite tile draft keeps storage open beside the arena.")
 	await _click(game.frontier_screen, "RewardTile_" + companion)
-	_check(run.data.phase == "map" and run.loadout.storage[0].any(func(item: Dictionary): return item.id == companion),
-		"Sending the companion to storage must stow it and return to the route.")
+	_check(run.data.phase == "map" and run.loadout.lanes[0].any(func(item: Dictionary): return item.id == companion),
+		"One click equips the companion in the available hero timeline and returns to the route.")
 	var next := _reach_elite(run, elites[1])
 	var before: int = run.data.relics.size()
 	if _win_elite(run, next):

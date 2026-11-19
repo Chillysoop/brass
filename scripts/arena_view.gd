@@ -196,9 +196,15 @@ var _curved_charges: Dictionary = {}
 var _sprite_geometry: Dictionary = {}
 var _combat_sprites: Dictionary = {}
 var _sprite_hits: Dictionary = {}
+var _sprite_blocks: Dictionary = {}
+var _sprite_reactions: Dictionary = {}
 var _sprite_deaths: Dictionary = {}
 var _gait_phases: Dictionary = {}
 var _gait_strengths: Dictionary = {}
+var _gait_distances: Dictionary = {}
+var _movement_recoveries: Dictionary = {}
+var _emission_sockets: Dictionary = {}
+var _actor_screen_origins: Dictionary = {}
 var _effects: Array[Dictionary] = []
 var _combat_numbers: Array[Dictionary] = []
 var _combat_number_font := SystemFont.new()
@@ -255,9 +261,15 @@ func reset_view(units_data: Array, lanes: Array = [], reinforcement: Dictionary 
 	_curved_charges.clear()
 	_combat_sprites.clear()
 	_sprite_hits.clear()
+	_sprite_blocks.clear()
+	_sprite_reactions.clear()
 	_sprite_deaths.clear()
 	_gait_phases.clear()
 	_gait_strengths.clear()
+	_gait_distances.clear()
+	_movement_recoveries.clear()
+	_emission_sockets.clear()
+	_actor_screen_origins.clear()
 	_animation_time = 0.0
 	for unit in units:
 		_positions[unit.id] = unit.pos
@@ -297,7 +309,14 @@ func present(units_data: Array, events: Array, tick := 0, attack_cues: Array = [
 			_add_combat_number(event)
 		if event.kind == "hit" and int(event.get("amount", 0)) > 0:
 			_sprite_hits[event.target] = 0.0
-		elif event.kind == "defeat_unit":
+		if event.kind == "hit" and (int(event.get("amount", 0)) > 0 or int(event.get("blocked", 0)) > 0):
+			var absorbed := int(event.get("blocked", 0)) > 0
+			if absorbed:
+				_sprite_blocks[event.target] = 0.0
+			_sprite_reactions[event.target] = {"age": 0.0, "guard": absorbed,
+				"direction": Vector2(event.get("from", Vector2.ZERO)).direction_to(event.get("to", Vector2.ZERO)),
+				"strength": 1.3 if event.get("critical", false) else 1.0}
+		if event.kind == "defeat_unit":
 			for fallen: Dictionary in units:
 				if fallen.id == event.target:
 					var identity := _character_identity(fallen)
@@ -344,11 +363,24 @@ func _process(delta: float) -> void:
 	if playback_paused:
 		return
 	_animation_time += delta
-	var changed := not _sprite_hits.is_empty() or not _sprite_deaths.is_empty()
+	var changed := not _sprite_hits.is_empty() or not _sprite_blocks.is_empty() or not _sprite_reactions.is_empty() \
+		or not _sprite_deaths.is_empty() or not _movement_recoveries.is_empty()
 	for id: String in _sprite_hits.keys():
 		_sprite_hits[id] += delta
 		if float(_sprite_hits[id]) >= 0.25:
 			_sprite_hits.erase(id)
+	for id: String in _sprite_blocks.keys():
+		_sprite_blocks[id] += delta
+		if float(_sprite_blocks[id]) >= 0.22:
+			_sprite_blocks.erase(id)
+	for id: String in _sprite_reactions.keys():
+		_sprite_reactions[id].age += delta
+		if float(_sprite_reactions[id].age) >= 0.25:
+			_sprite_reactions.erase(id)
+	for id: String in _movement_recoveries.keys():
+		_movement_recoveries[id].age += delta
+		if float(_movement_recoveries[id].age) >= 0.30:
+			_movement_recoveries.erase(id)
 	for id: String in _sprite_deaths.keys():
 		var death: Dictionary = _sprite_deaths[id]
 		death.age += delta
@@ -402,6 +434,7 @@ func _process(delta: float) -> void:
 
 
 func _register_movement_effect(kind: String, event: Dictionary) -> void:
+	_movement_recoveries[event.actor] = {"kind": kind, "age": -CURVED_CHARGE_SECONDS if kind == "charge" else -0.08}
 	if _curved_charges.erase(event.actor):
 		_positions[event.actor] = event.from
 	if kind == "teleport":
@@ -440,6 +473,7 @@ func _update_gait(unit: Dictionary, traveled: Vector2, delta: float) -> void:
 	var direction := -1.0 if drive.x * facing < -6.0 else 1.0
 	var stride_length := maxf(34.0, float(unit.radius) * 1.8)
 	_gait_phases[unit.id] = fposmod(phase + TAU * driven * direction / stride_length, TAU)
+	_gait_distances[unit.id] = float(_gait_distances.get(unit.id, 0.0)) + driven
 	_gait_strengths[unit.id] = minf(1.0, minf(drive.length(), driven / maxf(delta, 0.0001)) / 76.0)
 
 
@@ -458,9 +492,11 @@ func _draw() -> void:
 	_draw_intents(field)
 	if not _reinforcement_warning.is_empty():
 		_draw_reinforcement_markers(field)
+	_update_actor_sockets(field, sprite_scale)
 	for effect in _effects:
 		_draw_ground_effect(effect, field)
 	for cast: Dictionary in _attack_casts:
+		var profile := _profile_for_cast(cast, field, sprite_scale)
 		var moving: bool = cast.profile.style in ["blink", "dash"]
 		var origin: Vector2 = cast.from if moving else cast.get("strike_from", cast.from)
 		var start := _project(origin, field)
@@ -468,7 +504,7 @@ func _draw() -> void:
 		var arrival := _project(cast.get("arrival", cast.from), field)
 		var radius := clampf(float(cast.get("radius", 0.0)), 0.0, 240.0)
 		var cast_size := clampf(sprite_scale * 61.0, 16.0, 39.0)
-		AttackAnimation.draw_cast_back(self, cast.profile, start, target, arrival,
+		AttackAnimation.draw_cast_back(self, profile, start, target, arrival,
 			float(cast.age) / float(cast.lifetime), cast_size, cast.get("landed", true), radius * field.size / WORLD_SIZE)
 	_draw_afterimages(field, sprite_scale)
 	var ordered_units := units.duplicate()
@@ -497,6 +533,7 @@ func _draw() -> void:
 	for cast: Dictionary in _attack_casts:
 		if cast.tile in [REPAIRMASTER_DASH, REPAIRMASTER_REPAIR]:
 			continue
+		var profile := _profile_for_cast(cast, field, sprite_scale)
 		var moving: bool = cast.profile.style in ["blink", "dash"]
 		var origin: Vector2 = cast.from if moving else cast.get("strike_from", cast.from)
 		var start := _project(origin, field)
@@ -514,13 +551,13 @@ func _draw() -> void:
 				var contact := _project(cast.contact_points[0], field)
 				_draw_vanguard_contact(contact, arrival.direction_to(contact), progress)
 			continue
-		AttackAnimation.draw_cast(self, cast.profile, start, target, arrival, progress,
+		AttackAnimation.draw_cast(self, profile, start, target, arrival, progress,
 			cast_size, cast.get("landed", true), radius * field.size / WORLD_SIZE)
 		if radius <= 0.0 and cast.profile.style in ["pull", "bolt", "shot", "ward", "heal"]:
 			for contact: Vector2 in cast.get("contact_points", []):
 				var end := _project(contact, field)
 				if end.distance_squared_to(target) > 36.0:
-					AttackAnimation.draw_secondary_contact(self, cast.profile, start, end, progress, cast_size)
+					AttackAnimation.draw_secondary_contact(self, profile, start, end, progress, cast_size)
 	for effect in _effects:
 		_draw_feedback(effect, field)
 	figure_space.append_array(hud_space)
@@ -552,8 +589,8 @@ func _draw_arena(board: Rect2) -> void:
 			draw_line(start, start + Vector2(7.0 + index * 1.7, 1.0), Color("#ae8354"), 1.0, true)
 	draw_rect(board, FRAME, false, 2.0)
 
-func _sprite_facing(unit: Dictionary, cast: Dictionary) -> float:
-	if not cast.is_empty() and not cast.get("from_afterimage", false):
+func _sprite_facing(unit: Dictionary, cast: Dictionary, prepare: Dictionary = {}) -> float:
+	if not cast.is_empty() and not _preparation_takes_over(prepare, cast) and not cast.get("from_afterimage", false):
 		var origin: Vector2 = cast.get("strike_from", cast.from)
 		if cast.get("profile", {}).get("style", "") in ["blink", "dash"]:
 			origin = cast.get("arrival", origin)
@@ -591,9 +628,11 @@ func _draw_echo(unit: Dictionary, point: Vector2, unit_scale: float, facing: flo
 		var cast: Dictionary = _actor_casts.get(unit.id, {})
 		var animation := "idle"
 		var frame := 0
-		if cast.get("from_afterimage", false) and sheet.is_animated("attack"):
-			animation = "attack"
-			frame = sheet.attack_frame(float(cast.age) / float(cast.lifetime), true)
+		if cast.get("from_afterimage", false):
+			var action: String = sheet.action_for(cast.profile, _character_identity(unit))
+			if not action.is_empty():
+				animation = action
+				frame = sheet.attack_frame(float(cast.age) / minf(float(cast.lifetime), sheet.release_seconds(action)), true, action)
 		draw_set_transform(point)
 		sheet.draw_frame(self, animation, frame, height, facing, Color("#bc91f4", opacity * 0.81))
 		draw_set_transform(Vector2.ZERO)
@@ -643,25 +682,208 @@ func _model_height(art_key: String) -> float:
 	return 132.0
 
 
+func _locomotion_frame(sheet: RefCounted, unit: Dictionary) -> Dictionary:
+	var drive: Vector2 = unit.get("drive_velocity", Vector2.ZERO)
+	var facing: float = unit.get("facing", 1.0 if unit.side == "hero" else -1.0)
+	var backward := drive.x * facing < -6.0
+	var state := "run"
+	if backward and sheet.is_animated("backpedal"):
+		state = "backpedal"
+	elif absf(drive.y) > absf(drive.x) * 1.25 and sheet.is_animated("strafe"):
+		state = "strafe"
+	elif drive.length() > 125.0 and sheet.is_animated("sprint"):
+		state = "sprint"
+	if not sheet.is_animated(state):
+		return {}
+	var stride_length := maxf(34.0, float(unit.radius) * 1.8)
+	return {"state": state, "frame": sheet.stride_frame(state, float(_gait_distances.get(unit.id, 0.0)),
+		stride_length, backward and state == "run")}
+
+
 func _sheet_frame(sheet: RefCounted, unit: Dictionary, prepare: Dictionary, cast: Dictionary, motion: float) -> Dictionary:
-	var next_tile_moving := (motion > 0.08 and not prepare.is_empty() and not cast.is_empty()
-		and int(prepare.get("start_tick", -1)) >= int(cast.get("tick", 0)) and float(cast.age) > 0.08)
-	if not cast.is_empty() and not next_tile_moving and not cast.get("from_afterimage", false) and sheet.is_animated("attack"):
-		return {"state": "attack", "frame": sheet.attack_frame(float(cast.age) / float(cast.lifetime), true)}
+	var identity := _character_identity(unit)
+	var cast_profile: Dictionary = cast.get("profile", {})
+	var action: String = sheet.action_for(cast_profile, identity)
+	var movement := _movement_body_frame(sheet, unit, prepare, cast)
+	if not movement.is_empty():
+		return movement
+	var next_tile_preparing := _preparation_takes_over(prepare, cast)
+	var body_seconds: float = minf(float(cast.get("lifetime", 0.62)), sheet.release_seconds(action))
+	if not cast.is_empty() and float(cast.age) < body_seconds and not next_tile_preparing and not cast.get("from_afterimage", false) and not action.is_empty():
+		return {"state": action, "frame": sheet.attack_frame(float(cast.age) / maxf(0.01, body_seconds), true, action)}
+	if not prepare.is_empty():
+		action = sheet.action_for(prepare.get("profile", {}), identity)
+		if not action.is_empty():
+			if motion > 0.08 and prepare.charge < 0.66:
+				var locomotion := _locomotion_frame(sheet, unit)
+				if not locomotion.is_empty():
+					return locomotion
+			var preparation: float = prepare.charge
+			if motion > 0.08:
+				preparation = inverse_lerp(0.66, 1.0, preparation)
+			return {"state": action, "frame": sheet.attack_frame(preparation, false, action)}
+	if _sprite_blocks.has(unit.id) and sheet.is_animated("block"):
+		return {"state": "block", "frame": sheet.frame_at("block", float(_sprite_blocks[unit.id]))}
 	if _sprite_hits.has(unit.id) and sheet.is_animated("hit"):
 		var progress := float(_sprite_hits[unit.id]) / 0.25
 		return {"state": "hit", "frame": mini(sheet.frame_count("hit") - 1, floori(progress * sheet.frame_count("hit")))}
-	if not prepare.is_empty() and sheet.is_animated("attack"):
-		if motion > 0.08 and prepare.charge < 0.66 and sheet.is_animated("run"):
-			return {"state": "run", "frame": sheet.frame_at("run", _animation_time * minf(1.75, _attack_rate))}
-		var preparation: float = prepare.charge
-		if motion > 0.08:
-			preparation = inverse_lerp(0.66, 1.0, preparation)
-		return {"state": "attack", "frame": sheet.attack_frame(preparation, false)}
-	var state := "run" if motion > 0.08 else "idle"
-	if sheet.is_animated(state):
-		return {"state": state, "frame": sheet.frame_at(state, _animation_time * minf(1.75, _attack_rate))}
+	if motion > 0.08:
+		return _locomotion_frame(sheet, unit)
+	var recovery: Dictionary = _movement_recoveries.get(unit.id, {})
+	if not recovery.is_empty() and recovery.age >= 0.0 and sheet.is_animated("recover"):
+		return {"state": "recover", "frame": sheet.frame_at("recover", recovery.age)}
+	if sheet.is_animated("idle"):
+		return {"state": "idle", "frame": sheet.frame_at("idle", _animation_time)}
 	return {}
+
+
+func _preparation_takes_over(prepare: Dictionary, cast: Dictionary) -> bool:
+	return not prepare.is_empty() and not cast.is_empty() \
+		and int(prepare.get("start_tick", -1)) >= int(cast.get("tick", 0)) and float(cast.get("age", 0.0)) > 0.08
+
+
+func _movement_body_frame(sheet: RefCounted, unit: Dictionary, prepare: Dictionary, cast: Dictionary) -> Dictionary:
+	var recovery: Dictionary = _movement_recoveries.get(unit.id, {})
+	if recovery.is_empty() or recovery.age < 0.0 or recovery.kind != "retreat" or not sheet.is_animated("attack_mobility"):
+		return {}
+	if not prepare.is_empty() and float(prepare.get("charge", 0.0)) >= 0.66:
+		return {}
+	if not cast.is_empty() and (float(cast.age) <= 0.08 or cast.get("profile", {}).get("style", "") in ["blink", "dash"]):
+		return {}
+	return {"state": "attack_mobility", "frame": sheet.attack_frame(float(recovery.age) / 0.30, true, "attack_mobility")}
+
+
+func _body_pose(unit: Dictionary, art_height: float, motion: float, stride: float,
+		cast: Dictionary, prepare: Dictionary, sheet: RefCounted) -> Dictionary:
+	var release_duration := AttackAnimation.release_duration(cast.profile) if not cast.is_empty() else 0.18
+	var from_afterimage: bool = cast.get("from_afterimage", false)
+	var preparing_next := _preparation_takes_over(prepare, cast)
+	var recovering_movement: bool = sheet != null and not _movement_body_frame(sheet, unit, prepare, cast).is_empty()
+	var acting := not cast.is_empty() and not from_afterimage and not preparing_next and not recovering_movement and float(cast.age) < release_duration
+	var sheet_attacking := false
+	if sheet != null and not cast.is_empty() and not from_afterimage:
+		var action: String = sheet.action_for(cast.get("profile", {}), _character_identity(unit))
+		sheet_attacking = not preparing_next and not recovering_movement and not action.is_empty() and float(cast.age) < sheet.release_seconds(action)
+	var facing := _sprite_facing(unit, cast if acting or sheet_attacking else {}, prepare)
+	var pose := Vector4.ZERO
+	var brace := 0.0
+	var arm_swing := sin(stride) * motion * 0.19
+	var arms := Vector3(-arm_swing, arm_swing, 0.0)
+	var profile: Dictionary = {}
+	if acting:
+		brace = pow(1.0 - float(cast.age) / release_duration, 1.7)
+		profile = cast.profile
+		pose = AttackAnimation.pose(profile, brace, facing, true)
+		arms = CombatSpritePose.arm_pose(profile, brace, true)
+	elif not prepare.is_empty() and not recovering_movement:
+		brace = smoothstep(0.04, 1.0, prepare.charge)
+		profile = prepare.profile
+		pose = AttackAnimation.pose(profile, brace, facing, false)
+		arms = CombatSpritePose.arm_pose(profile, brace, false)
+	if unit.side == "hero" and not profile.is_empty():
+		pose += CombatSpritePose.class_stance(_character_identity(unit), profile, brace, facing, acting)
+	var frame := _sheet_frame(sheet, unit, prepare, cast, motion) if sheet != null else {}
+	var native := not frame.is_empty()
+	var body_pose := pose * (0.20 if native else 1.0)
+	var bounce := Vector2(0.0, -absf(sin(stride)) * motion * (0.35 if native else 1.7))
+	var lean := sin(stride) * motion * (0.005 if native else 0.022)
+	bounce += Vector2(body_pose.x, body_pose.y) * art_height
+	lean += body_pose.z
+	if not acting and prepare.is_empty() and motion < 0.08:
+		var breathing := sin(_animation_time * (2.0 if unit.side == "hero" else 2.4))
+		body_pose.w += breathing * 0.003
+	var reaction: Dictionary = _sprite_reactions.get(unit.id, {})
+	if not reaction.is_empty():
+		var intensity := exp(-float(reaction.age) * 17.0) * float(reaction.strength)
+		if frame.get("state", "") in ["hit", "block"]:
+			intensity *= 0.35
+		var direction: Vector2 = reaction.direction
+		var amount := 0.022 if reaction.guard else 0.045
+		bounce += direction * minf(5.5, art_height * amount) * intensity
+		lean += direction.x * intensity * (0.025 if reaction.guard else 0.055)
+		body_pose.w -= intensity * (0.008 if reaction.guard else 0.012)
+	var recovery: Dictionary = _movement_recoveries.get(unit.id, {})
+	if not recovery.is_empty() and recovery.age >= 0.0 and not acting and prepare.is_empty():
+		var settle := (1.0 - smoothstep(0.0, 0.30, float(recovery.age)))
+		body_pose.w -= settle * (0.012 if recovery.kind == "teleport" else 0.025)
+		lean += settle * facing * (0.015 if recovery.kind == "teleport" else 0.035)
+	return {"pose": pose, "body_pose": body_pose, "arms": arms, "brace": brace, "acting": acting,
+		"facing": facing, "frame": frame, "bounce": bounce, "lean": lean, "native": native}
+
+
+func _update_actor_sockets(field: Rect2, unit_scale: float) -> void:
+	_emission_sockets.clear()
+	_actor_screen_origins.clear()
+	for unit: Dictionary in units:
+		if unit.hp <= 0:
+			continue
+		var sheet: RefCounted = CombatSpriteSheet.for_identity(unit.side, _character_identity(unit))
+		if sheet == null:
+			continue
+		var point := _project(_positions.get(unit.id, unit.pos), field)
+		var height := maxf(39.0, unit_scale * sheet.display_height(_model_height(unit.get("sprite", ""))))
+		var body := _body_pose(unit, height, _gait_strengths.get(unit.id, 0.0), _gait_phases.get(unit.id, 0.0),
+			_actor_casts.get(unit.id, {}), _windup_details(unit), sheet)
+		var frame: Dictionary = body.frame
+		var state: String = frame.get("state", "idle")
+		var index: int = frame.get("frame", 0)
+		var transform := _body_transform(body, point)
+		var anchors := {}
+		if body.native:
+			for name: String in CombatSpriteSheet.SOCKETS:
+				anchors[name] = transform * sheet.socket_offset(state, index, name, height, body.facing)
+		else:
+			var geometry_key: String = "sprite_fusion/" + unit.side + "/" + _character_identity(unit)
+			var mesh := _combat_sprite(unit.id, geometry_key, sheet.idle_texture(), sheet.native_facing())
+			var layout: Dictionary = sheet.fallback_layout(height)
+			transform = _body_transform(body, point, sheet.native_facing(), true)
+			transform.origin += transform.basis_xform(layout.offset)
+			var legs := CombatSpritePose.leg_pose(_gait_phases.get(unit.id, 0.0),
+				_gait_strengths.get(unit.id, 0.0) * (1.0 - body.brace * 0.75), body.brace)
+			for name: String in CombatSpriteSheet.SOCKETS:
+				var uv: Vector2 = sheet.socket_pixel("idle", 0, name) / sheet.frame_size("idle", 0)
+				anchors[name] = transform * mesh.anchor_offset(uv, layout.height, legs, body.arms)
+		_emission_sockets[unit.id] = anchors
+		_actor_screen_origins[unit.id] = point
+
+
+func _body_transform(body: Dictionary, point: Vector2, native_facing := 1.0, mirror := false) -> Transform2D:
+	var pose: Vector4 = body.body_pose
+	var flip := -1.0 if mirror and (body.facing > 0.0) != (native_facing > 0.0) else 1.0
+	return Transform2D(body.lean, Vector2(flip * (1.0 - pose.w * 0.67), 1.0 + pose.w), 0.0, point + body.bounce)
+
+
+func _profile_with_actor_sockets(profile: Dictionary, actor: String) -> Dictionary:
+	if not _emission_sockets.has(actor):
+		return profile
+	var local := profile.duplicate()
+	local.emission_sockets = _emission_sockets[actor].duplicate()
+	local.actor_origin = _actor_screen_origins[actor]
+	return local
+
+
+func _profile_for_cast(cast: Dictionary, field: Rect2, unit_scale: float) -> Dictionary:
+	if not cast.get("from_afterimage", false):
+		return _profile_with_actor_sockets(cast.profile, cast.actor)
+	for unit: Dictionary in units:
+		if unit.id != cast.actor:
+			continue
+		var sheet: RefCounted = CombatSpriteSheet.for_identity(unit.side, _character_identity(unit))
+		if sheet == null:
+			break
+		var point := _project(cast.get("strike_from", cast.from), field)
+		var height := maxf(39.0, unit_scale * sheet.display_height(132.0))
+		var facing := -1.0 if cast.to.x < cast.get("strike_from", cast.from).x else 1.0
+		var action: String = sheet.action_for(cast.profile, _character_identity(unit))
+		var frame: int = sheet.attack_frame(float(cast.age) / minf(float(cast.lifetime), sheet.release_seconds(action)), true, action)
+		var anchors := {}
+		for name: String in CombatSpriteSheet.SOCKETS:
+			anchors[name] = point + sheet.socket_offset(action, frame, name, height, facing)
+		var profile: Dictionary = cast.profile.duplicate()
+		profile.emission_sockets = anchors
+		profile.actor_origin = point
+		return profile
+	return cast.profile
 
 
 func _draw_death(death: Dictionary, point: Vector2, unit_scale: float) -> void:
@@ -717,57 +939,34 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float,
 	var art_height := maxf(39.0, unit_scale * model_height)
 	var motion: float = _gait_strengths.get(unit.id, 0.0)
 	var stride: float = _gait_phases.get(unit.id, 0.0)
-	var bounce := Vector2(0.0, -absf(sin(stride)) * motion * 1.7)
-	var lean := sin(stride) * motion * 0.022
 	var cast: Dictionary = _actor_casts.get(unit.id, {})
 	var prepare := _windup_details(unit)
-	var release_duration := AttackAnimation.release_duration(cast.profile) if not cast.is_empty() else 0.18
-	var from_afterimage: bool = cast.get("from_afterimage", false)
-	var acting := not cast.is_empty() and not from_afterimage and float(cast.age) < release_duration
-	var sheet_attacking: bool = sheet != null and sheet.is_animated("attack") and not from_afterimage and not cast.is_empty()
-	var facing := _sprite_facing(unit, cast if acting or sheet_attacking else {})
-	var pose := Vector4.ZERO
-	var brace := 0.0
-	var arm_swing := sin(stride) * motion * 0.19
-	var arms := Vector3(-arm_swing, arm_swing, 0.0)
-	if acting:
-		brace = pow(1.0 - float(cast.age) / release_duration, 1.7)
-		pose = AttackAnimation.pose(cast.profile, brace, facing, true)
-		arms = CombatSpritePose.arm_pose(cast.profile, brace, true)
-	elif not prepare.is_empty():
-		brace = smoothstep(0.04, 1.0, prepare.charge)
-		pose = AttackAnimation.pose(prepare.profile, brace, facing, false)
-		arms = CombatSpritePose.arm_pose(prepare.profile, brace, false)
-	bounce += Vector2(pose.x, pose.y) * art_height
-	lean += pose.z
+	var body := _body_pose(unit, art_height, motion, stride, cast, prepare, sheet)
+	var bounce: Vector2 = body.bounce
+	var arms: Vector3 = body.arms
+	var brace: float = body.brace
+	var acting: bool = body.acting
+	var facing: float = body.facing
+	var frame: Dictionary = body.frame
 	var flash := 0.0
-	for effect in _effects:
-		if effect.kind != "hit":
-			continue
-		if effect.target == unit.id:
+	for effect: Dictionary in _effects:
+		if effect.kind == "hit" and effect.target == unit.id:
 			flash = maxf(flash, 1.0 - float(effect.age) * 10.0)
-		if not acting and not from_afterimage and effect.actor == unit.id and float(effect.age) < 0.16:
-			var hit_direction: Vector2 = (effect.to - effect.from).normalized()
-			var recoil := sin(float(effect.age) / 0.16 * PI)
-			bounce += hit_direction * recoil * 7.0
-			lean += hit_direction.x * recoil * 0.08
 	_draw_ellipse(point + Vector2(1.5, 2.0), Vector2(radius * 1.2, radius * 0.36), Color(0.1, 0.09, 0.08, 0.43))
 	if texture:
 		var native_facing := 1.0 if friendly else -1.0
 		if sheet != null:
 			native_facing = sheet.native_facing()
-		var flip := 1.0 if (facing > 0.0) == (native_facing > 0.0) else -1.0
-		var scale := Vector2(flip * (1.0 - pose.w * 0.67), 1.0 + pose.w)
-		var transform := Transform2D(lean, scale, 0.0, point + bounce)
+		var transform := _body_transform(body, point, native_facing, true)
 		if art_key == "brass_cannon":
 			arms = Vector3.ZERO
 			if cast.get("tile") == CANNON_SHOT:
-				cannon_muzzles[unit.id] = transform * (CANNON_MUZZLE_OFFSET * art_height)
+				var socket: Variant = _emission_sockets.get(unit.id, {}).get("muzzle") if sheet != null and sheet.has_socket(frame.get("state", "idle"), frame.get("frame", 0), "muzzle") else null
+				cannon_muzzles[unit.id] = socket if socket is Vector2 else transform * (CANNON_MUZZLE_OFFSET * art_height)
 		var tint := RIGHT_RELAY_COLOR.lerp(Color.WHITE, 0.32) if unit.get("crown_role") == "relay_right" else Color.WHITE
 		tint = tint.lerp(GOLD, flash * 0.6)
-		var frame := _sheet_frame(sheet, unit, prepare, cast, motion) if sheet != null else {}
 		if not frame.is_empty():
-			draw_set_transform(point)
+			draw_set_transform_matrix(_body_transform(body, point))
 			sheet.draw_frame(self, frame.state, frame.frame, art_height, facing, tint)
 		else:
 			var mesh_height := art_height
@@ -788,7 +987,7 @@ func _draw_unit(unit: Dictionary, point: Vector2, unit_scale: float,
 		var initial := String(unit.name).left(1)
 		_draw_centered(initial, body_center + Vector2(0.0, 5.0), 15, WHITE)
 	if not acting and not prepare.is_empty():
-		AttackAnimation.windup(self, point + bounce, facing, art_height, prepare.charge, prepare.profile, prepare.get("beats", 2.0))
+		AttackAnimation.windup(self, point + bounce, facing, art_height, prepare.charge, _profile_with_actor_sockets(prepare.profile, unit.id), prepare.get("beats", 2.0))
 	var health_width := clampf(radius * 2.7, 31.0, 58.0)
 	var bar_offset := 7.0 if friendly else 13.0
 	var bar := Rect2(point + Vector2(-health_width * 0.5, -art_height - bar_offset), Vector2(health_width, 5.0))

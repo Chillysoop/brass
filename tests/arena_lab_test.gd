@@ -663,11 +663,7 @@ func _check_blink_forge(lab: Control) -> void:
 	lab._open_storage()
 	lab.storage_pick(0, lab.storage_rows[0][0])
 	lab.storage_forge()
-	_check(not lab.forge_screen.visible, "The rest site must also respect the Blink forge unlock.")
-
-	lab.run.profile.meta.append("blink_artifice")
-	lab.storage_forge()
-	_check(lab.forge_screen.visible, "An unlocked expedition can open the Blink forge from storage at rest.")
+	_check(lab.forge_screen.visible, "A rest site can upgrade a single owned Blink before its reward-pool unlock.")
 	lab.forge_choose("phase_cut")
 	var restored := FrontierRun.new()
 	_check(restored.load_save(save_path) and restored.data.phase == "map"

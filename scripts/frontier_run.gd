@@ -73,10 +73,10 @@ const META_NODES := {
 	"purse": {"label": "Well-stocked Purse", "description": "Begin each run with 8 extra gold.", "cost": 5, "requires": []},
 	"curated_cache": {"label": "Gravity Hook", "description": "Permanently add Gravity Hook to normal drafts and shops.", "cost": 8, "requires": ["stout_start"]},
 	"relic_archive": {"label": "Relic Archive", "description": "Permanently add Trail Ration to the starter relic draft.", "cost": 8, "requires": ["purse"]},
-	"blink_artifice": {"label": "Blink Artifice", "description": "Upgrade a single Blink tile at camp and find Blink upgrades in rewards and shops.", "cost": 18, "requires": ["curated_cache"]},
+	"blink_artifice": {"label": "Blink Artifice", "description": "Find Blink upgrades in rewards and shops, and unlock Blink at the Traveling Smith.", "cost": 18, "requires": ["curated_cache"]},
 	"wayfarers_pin": {"label": "Wayfarer's Pin", "description": "Add Wayfarer's Pin to future relic drafts, shops and elite rewards. Each hero gains 6 guard on their first successful teleport each loop.", "cost": 14, "requires": ["blink_artifice"]},
-	"shot_artifice": {"label": "Marksman's Arsenal", "description": "Upgrade a single Shot tile at camp and find Shot upgrades in rewards and shops.", "cost": 14, "requires": ["purse"]},
-	"guard_artifice": {"label": "Bastion Workshop", "description": "Upgrade a single Guard tile at camp and find Guard upgrades in rewards and shops.", "cost": 14, "requires": ["stout_start"]},
+	"shot_artifice": {"label": "Marksman's Arsenal", "description": "Find Shot upgrades in rewards and shops, and unlock Shot at the Traveling Smith.", "cost": 14, "requires": ["purse"]},
+	"guard_artifice": {"label": "Bastion Workshop", "description": "Find Guard upgrades in rewards and shops, and unlock Guard at the Traveling Smith.", "cost": 14, "requires": ["stout_start"]},
 	"navigation": {"label": "Pathfinder's Chart", "description": "Find wagers, relic brokers, and optional elite bounties at mystery nodes.", "cost": 12, "requires": ["purse"]},
 	"enchantments": {"label": "Tile Enchantments", "description": "Draft movable enchantments after the Brass Frontier opening and after recruitment.", "cost": 8, "requires": ["curated_cache"]},
 }
@@ -1852,7 +1852,7 @@ func _camp_forge_requirement(id: String) -> String:
 			return "%s is already Legendary." % tile.label
 		return "This tile has no forge upgrade."
 	var family: String = tile.get("family", "")
-	if not forge_family_available(family):
+	if data.get("phase") != "rest" and not forge_family_available(family):
 		var unlock: Dictionary = META_NODES[FORGE_UNLOCKS[family]]
 		return "Unlock %s in the Aether Chart (%d Marks)." % [unlock.label, unlock.cost]
 	return ""

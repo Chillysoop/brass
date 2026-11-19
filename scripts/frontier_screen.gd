@@ -11,6 +11,7 @@ const ClassDecks = preload("res://scripts/class_decks.gd")
 const ClassMasteries = preload("res://scripts/class_masteries.gd")
 const TileKeywords = preload("res://scripts/tile_keywords.gd")
 const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
+const TileChoiceArt = preload("res://scripts/tile_choice_art.gd")
 const RelicPortraitShader = preload("res://assets/relic-portrait.gdshader")
 const INK := Color("#101820")
 const PANEL := Color("#182632")
@@ -166,10 +167,11 @@ func _shell(phase: String, compact_classes: bool) -> void:
 	base.mouse_filter = MOUSE_FILTER_IGNORE
 	add_child(base)
 	base.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
-	if phase in ["relic", "boss_relic"] or (phase == "reward" and not _run.elite_relic_offers().is_empty()):
+	if phase in ["relic", "boss_relic", "reward"]:
 		base.color = Color.TRANSPARENT
 		var light := Gradient.new()
-		light.colors = PackedColorArray([Color(0.23, 0.14, 0.23, 0.94), Color(0.063, 0.038, 0.075, 0.89)])
+		var relic_choices: bool = phase != "reward" or not _run.elite_relic_offers().is_empty()
+		light.colors = PackedColorArray([Color(0.23, 0.14, 0.23, 0.94), Color(0.063, 0.038, 0.075, 0.89)]) if relic_choices 			else PackedColorArray([Color(0.16, 0.23, 0.24, 0.94), Color(0.04, 0.065, 0.08, 0.94)])
 		var wash := GradientTexture2D.new()
 		wash.gradient = light
 		wash.fill = GradientTexture2D.FILL_RADIAL
@@ -235,7 +237,7 @@ func _reward_placement_banner(parent: BoxContainer, storage_shortcut := true) ->
 	if tile.is_empty():
 		return
 	var stored := placement.has("row")
-	var text := "%s sent to storage" % tile.label
+	var text := "Stored · %s" % tile.label
 	if not stored:
 		var party := _party()
 		var lane := int(placement.get("lane", -1))
@@ -780,8 +782,7 @@ func _reward() -> void:
 	var party := _party()
 	var owner := _reward_owner(lane, party)
 	if place_by_drag:
-		title = {"salvage_bench": "Drag a copy to the sequence", "class_cache": "Drag an Uncommon to the sequence"}.get(
-			mystery, "Drag a tile to the sequence")
+		title = {"salvage_bench": "Choose a copy", "class_cache": "Choose an Uncommon"}.get(mystery, "Choose a tile")
 	if lane >= 0 and lane < party.size():
 		var hero_id: String = party[lane].id
 		_reward_heading(title, milestone, hero_id)
@@ -808,19 +809,15 @@ func _reward() -> void:
 		if not owner.is_empty() and tile.get("base_tile", id) == ClassDecks.signature(owner):
 			hint = "Signature tile" if hint.is_empty() else "Signature tile · " + hint
 		var card := _choice(cards, tile.label, tile.description + ("\n" + hint if not hint.is_empty() else ""),
-			"Send to storage" if place_by_drag else "Select", func():
-				if place_by_drag:
-					_send_reward_to_storage(id, notice)
-				else:
-					_claim_reward(id, notice))
+			"Select", func(): _claim_reward(id, notice))
 		var select_tile: Button = card.get_child(card.get_child_count() - 1)
 		select_tile.name = "RewardTile_" + id
 		_add_tile_header(card, id, tile, owner, _battle_overlay)
 		_add_reward_copy_pips(card.get_child(0), select_tile, id)
+		_style_tile_choice(card, id, _battle_overlay)
+		_enable_reward_card_click(card, select_tile)
 		if place_by_drag:
 			_enable_reward_card_drag(card, id, select_tile)
-		else:
-			_enable_reward_card_click(card, select_tile)
 	if not _battle_overlay:
 		_layout.add_child(notice)
 	var actions := _footer_actions()
@@ -918,13 +915,13 @@ func _enable_reward_card_drag(card: VBoxContainer, id: String, storage_button: B
 	var remaining: Array[Node] = [panel]
 	while not remaining.is_empty():
 		var source := remaining.pop_back() as Control
-		if source == null or source == storage_button:
+		if source == null:
 			continue
 		remaining.append_array(source.get_children())
 		if source.mouse_filter != MOUSE_FILTER_IGNORE:
-			source.mouse_default_cursor_shape = CURSOR_DRAG
+			source.mouse_default_cursor_shape = CURSOR_POINTING_HAND
 			source.set_drag_forwarding(begin_drag.bind(source), Callable(), Callable())
-	storage_button.tooltip_text = "Send %s to the first free span in storage." % spec.label
+	storage_button.tooltip_text = "Click to equip %s, or drag it to an exact position. A full sequence sends it to storage." % spec.label
 
 
 func _enable_reward_card_click(card: VBoxContainer, action: Button) -> void:
@@ -939,7 +936,7 @@ func _enable_reward_card_click(card: VBoxContainer, action: Button) -> void:
 		elif not press.is_empty():
 			var origin: Vector2 = press.pop_back()
 			receiver.accept_event()
-			if origin.distance_squared_to(event.global_position) <= 100.0:
+			if not get_viewport().gui_is_dragging() and origin.distance_squared_to(event.global_position) <= 100.0:
 				action.pressed.emit()
 	# Keep the real button for keyboard navigation and leave every keyword hover in place.
 	var remaining: Array[Node] = [panel]
@@ -1039,7 +1036,7 @@ func _relic_heading(title: String, subtitle: String) -> void:
 
 
 func _relic_draft_card(cards: HBoxContainer, id: String, button_prefix: String, select: Callable,
-		role := "", companion := "", owner := "") -> void:
+		_role := "", companion := "", owner := "") -> void:
 	var spec: Dictionary = FrontierRun.RELICS[id]
 	var tone: Color = RELIC_DRAFT_TONES.get(id, GOLD)
 	var card := _panel_stack(cards, Vector2.ZERO, true)
@@ -1072,11 +1069,6 @@ func _relic_draft_card(cards: HBoxContainer, id: String, button_prefix: String, 
 	card.add_child(title)
 	if not owner.is_empty():
 		_add_relic_owner(card, owner)
-	if not role.is_empty():
-		var role_label := _label(role, 13, tone)
-		role_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		role_label.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		card.add_child(role_label)
 	var details := TileKeywords.description(spec.description, 13 if _battle_overlay else 17, RELIC_MUTED)
 	details.name = "ChoiceDetails"
 	details.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
@@ -1221,15 +1213,8 @@ func _claim_reward(id: String, notice: Label) -> void:
 	if _host.run_claim_reward(id):
 		_host.run_return()
 	else:
-		notice.text = _run.save_error if not _run.save_error.is_empty() else "No room for this tile. Manage tiles to free a continuous span."
+		notice.text = _run.save_error if not _run.save_error.is_empty() else "No room. Move or discard a tile in storage and choose again."
 		notice.tooltip_text = notice.text
-
-
-func _send_reward_to_storage(id: String, notice: Label) -> void:
-	if not _host.run_send_reward_to_storage(id):
-		notice.text = _run.save_error if not _run.save_error.is_empty() else "No room in storage. Rearrange tiles or drag the reward to your sequence."
-		notice.tooltip_text = notice.text
-		notice.mouse_filter = MOUSE_FILTER_STOP
 
 
 func _reroll_reward(notice: Label) -> void:
@@ -1325,7 +1310,7 @@ func _buy_tile(id: String, notice: Label) -> void:
 	if _host.run_buy_shop(id):
 		_host.run_return()
 	else:
-		notice.text = _run.save_error if not _run.save_error.is_empty() else "No room for this tile. Manage tiles to free a continuous span."
+		notice.text = _run.save_error if not _run.save_error.is_empty() else "No room. Move or discard a tile in storage and choose again."
 
 
 func _event() -> void:
@@ -1407,7 +1392,7 @@ func _rest() -> void:
 	var can_heal := _party_needs_healing()
 	_add_card_icon(_choice(cards, "Rest", "Recover up to 30% of max HP per hero.", "Heal" if can_heal else "Party at full health",
 		func(): _run.rest("heal"); _host.run_return(), not can_heal), "rest")
-	_add_card_icon(_choice(cards, "Forge", "Advance one tile to the next rarity.", "Open forge", func(): _host.run_rest_forge()), "forge")
+	_add_card_icon(_choice(cards, "Forge", "Click any owned tile, then choose its next rarity. No matching copies needed.", "Open forge", func(): _host.run_rest_forge()), "forge")
 	_continue(_leave)
 
 
@@ -1528,8 +1513,8 @@ func _chart() -> void:
 			"kind": {
 				"stout_start": "Starting health", "purse": "Starting gold",
 				"curated_cache": "Tile unlock", "relic_archive": "Relic unlock",
-				"blink_artifice": "Camp and reward unlock", "wayfarers_pin": "Relic unlock", "navigation": "Event unlock",
-				"shot_artifice": "Camp and reward unlock", "guard_artifice": "Camp and reward unlock",
+				"blink_artifice": "Reward unlock", "wayfarers_pin": "Relic unlock", "navigation": "Event unlock",
+				"shot_artifice": "Reward unlock", "guard_artifice": "Reward unlock",
 				"enchantments": "Reward unlock"
 			}.get(id, "Upgrade")
 		})
@@ -1680,6 +1665,7 @@ func tile_hover_card(id: String, owner: String, enchantment_id: String) -> Contr
 	var description := card.get_node("ChoiceDetails") as RichTextLabel
 	title.autowrap_mode = TextServer.AUTOWRAP_OFF
 	_add_tile_header(card, id, spec, owner, true)
+	_style_tile_choice(card, id, true, true)
 	# Godot sizes tooltips before their containers lay out the text.
 	var frame := (card.get_parent() as PanelContainer).get_theme_stylebox("panel")
 	description.size.x = preview.get_combined_minimum_size().x - frame.get_minimum_size().x
@@ -1742,6 +1728,73 @@ func _add_tile_header(card: VBoxContainer, id: String, spec: Dictionary, owner :
 			panel.tooltip_text += " · %s signature" % _hero_name(origin)
 	card.add_child(row)
 	card.move_child(row, 0)
+
+
+func _style_tile_choice(card: VBoxContainer, id: String, compact: bool, hover_preview := false) -> void:
+	var panel := card.get_parent() as PanelContainer
+	var surround := StyleBoxEmpty.new()
+	surround.content_margin_left = 5
+	surround.content_margin_right = 5
+	surround.content_margin_top = 2
+	surround.content_margin_bottom = 2
+	panel.add_theme_stylebox_override("panel", surround)
+	panel.set_meta("floating_tile_choice", true)
+	panel.size_flags_vertical = SIZE_SHRINK_BEGIN
+	card.add_theme_constant_override("separation", 3 if compact else 6)
+	var spec: Dictionary = ArenaSim.TILES[id]
+	var header := card.get_child(0) as HBoxContainer
+	if header != null:
+		for child in header.get_children():
+			if child is TextureRect:
+				header.remove_child(child)
+				child.queue_free()
+	for child in card.get_children():
+		if child is PanelContainer:
+			card.remove_child(child)
+			child.queue_free()
+	var title: Label
+	for child in card.get_children():
+		if child is Label:
+			title = child
+			break
+	if title != null:
+		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		# One-word names stay visually close to their artwork.
+		title.add_theme_font_size_override("font_size", 18 if compact else 25)
+	var art := TileChoiceArt.new()
+	art.name = "TileChoiceArtwork"
+	# The arena is shorter with three hero timelines; size art against the overlay,
+	# leaving the reward footer inside the battle even at compact window sizes.
+	var art_height := clampf(size.y * 0.20, 48.0, 110.0) if compact else 110.0
+	art.configure(GameIcons.icon(GameIcons.tile(id, spec)), GameIcons.rarity(spec), 58 if hover_preview else art_height)
+	card.add_child(art)
+	card.move_child(art, 0)
+	if title != null:
+		card.move_child(title, 1)
+	var details := card.find_child("ChoiceDetails", true, false) as RichTextLabel
+	if details != null:
+		details.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		if compact and not hover_preview:
+			details.custom_minimum_size.y = clampf(get_viewport_rect().size.y * 0.07, 34.0, 64.0)
+	var stats := card.find_child("TileStats", true, false) as HBoxContainer
+	if stats != null:
+		stats.alignment = BoxContainer.ALIGNMENT_CENTER
+	var action := card.find_child("RewardTile_" + id, true, false) as Button
+	if action != null:
+		# A transparent full-card button retains keyboard/screen-reader access without a CTA rectangle.
+		action.text = ""
+		action.accessibility_name = "Choose %s. Equip automatically, or store when the sequence is full." % spec.label
+		action.tooltip_text = "Click to equip. Drag to choose an exact position."
+		for state: String in ["normal", "hover", "pressed", "focus"]:
+			action.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+		action.reparent(panel, false)
+		panel.move_child(action, 0)
+		panel.mouse_entered.connect(func(): art.highlight(true))
+		panel.mouse_exited.connect(func(): art.highlight(false))
+		action.focus_entered.connect(func(): art.highlight(true))
+		action.focus_exited.connect(func(): art.highlight(false))
+		art.modulate.a = 0.3
+		art.create_tween().tween_property(art, "modulate:a", 1.0, 0.2)
 
 
 func _tile_card_frame(spec: Dictionary, selected := false, margin := 18) -> StyleBoxFlat:

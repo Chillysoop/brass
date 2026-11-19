@@ -83,8 +83,10 @@ func _run() -> void:
 	view._sprite_hits[hero.id] = 0.05
 	_expect(view._sheet_frame(sheet, hero, preparing, cast, 1.0).state == "attack",
 		"A hit reaction cannot replace the actual strike contact frame.")
-	_expect(view._sheet_frame(sheet, hero, preparing, {}, 1.0).state == "hit",
-		"A hit reaction can interrupt anticipation without changing its combat deadline.")
+	_expect(view._sheet_frame(sheet, hero, preparing, {}, 1.0).state == "run",
+		"Layered recoil leaves early preparation locomotion intact.")
+	_expect(view._sheet_frame(sheet, hero, {}, {}, 0.0).state == "hit",
+		"An idle actor can play its authored hit clip without replacing an active action.")
 	hero.hp = 0
 	view.present(sim.units, [{"kind": "defeat_unit", "actor": sim.units.back().id,
 		"target": hero.id, "tile": "enemy_attack", "from": sim.units.back().pos, "to": hero.pos}], sim.tick, [], 3)

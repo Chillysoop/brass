@@ -4,6 +4,7 @@ const ArenaSim = preload("res://scripts/arena_sim.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const GameIcons = preload("res://scripts/game_icons.gd")
 const CombatIcons = preload("res://scripts/combat_icons.gd")
+const TileChoiceArt = preload("res://scripts/tile_choice_art.gd")
 const TileKeywords = preload("res://scripts/tile_keywords.gd")
 const INK := Color("#101820")
 const PANEL := Color("#192732")
@@ -25,6 +26,7 @@ var _next_ids: Array = []
 var _inspected_id := ""
 var _inspected_plan: Variant = null
 var _is_combine := true
+var _direct_pick := false
 var _cards: Dictionary = {}
 var _title: Label
 var _subtitle: Label
@@ -58,6 +60,8 @@ func open(source_id: String, copies := 3, reward := false, can_keep_reward := fa
 	_tiers = TilePacking.forge_tiers(source_id)
 	_next_ids = TilePacking.next_options(source_id)
 	_is_combine = copies == 3
+	_direct_pick = not _is_combine and _host.campaign and _host.run.data.get("phase") == "rest"
+	_confirm.visible = not _direct_pick
 	var source: Dictionary = _host.tile_spec(source_id)
 	_title.text = "Upgrade ready!" if _is_combine else "Tile forge"
 	_subtitle.text = ("Choose an upgrade path for %s" if _is_combine else "Upgrade %s") % source.label
@@ -322,26 +326,53 @@ func _add_tier(tier: int) -> void:
 	var options := VBoxContainer.new()
 	options.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	options.alignment = BoxContainer.ALIGNMENT_CENTER
-	options.add_theme_constant_override("separation", 40)
+	options.add_theme_constant_override("separation", 18)
 	column.add_child(options)
 	for id: String in ids:
 		var tile: Dictionary = _host.tile_spec(id)
-		var card := _button(tile.get("forge_name", tile.label), func(): _inspect(id))
-		GameIcons.decorate(card, GameIcons.tile(id, tile), 25)
-		card.custom_minimum_size.y = 88
-		card.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		card.add_theme_font_size_override("font_size", 17)
-		card.add_theme_color_override("font_color", CREAM)
-		card.add_theme_color_override("font_hover_color", CREAM)
-		card.add_theme_color_override("font_pressed_color", CREAM)
+		var card := _button("", func(): _pick_path(id))
+		card.name = "ForgeTile_" + id
+		card.accessibility_name = tile.label
+		card.custom_minimum_size.y = 106
+		var display := VBoxContainer.new()
+		display.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		display.alignment = BoxContainer.ALIGNMENT_CENTER
+		display.add_theme_constant_override("separation", 2)
+		card.add_child(display)
+		display.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		var art := TileChoiceArt.new()
+		art.name = "ForgeArtwork"
+		art.configure(GameIcons.icon(GameIcons.tile(id, tile)), GameIcons.rarity(tile), 62)
+		display.add_child(art)
+		var name := _label(tile.get("forge_name", tile.label), 15, CREAM)
+		name.name = "ForgeChoiceName"
+		name.mouse_filter = Control.MOUSE_FILTER_IGNORE
+		name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		display.add_child(name)
+		card.set_meta("artwork", art)
+		card.mouse_entered.connect(func():
+			art.highlight(true)
+			if _direct_pick:
+				_inspect(id))
+		card.mouse_exited.connect(func(): art.highlight(id == _inspected_id))
+		card.focus_entered.connect(func():
+			art.highlight(true)
+			if _direct_pick:
+				_inspect(id))
+		for state: String in ["normal", "hover", "pressed", "focus"]:
+			card.add_theme_stylebox_override(state, StyleBoxEmpty.new())
 		var detail_copy: String = "%s\n%s" % [GameIcons.tile_stats(tile), tile.description]
 		card.tooltip_text = TileKeywords.with_definitions("%s · %s" % [GameIcons.rarity_name(tile), detail_copy], detail_copy)
-		var focus := _box(Color.TRANSPARENT, CREAM, 2)
-		focus.draw_center = false
-		card.add_theme_stylebox_override("focus", focus)
 		card.item_rect_changed.connect(_links.queue_redraw)
 		options.add_child(card)
 		_cards[id] = card
+
+
+func _pick_path(id: String) -> void:
+	_inspect(id)
+	if _direct_pick and id in _next_ids and not _confirm.disabled:
+		_confirm_upgrade()
 
 
 func _draw_links() -> void:
@@ -402,18 +433,10 @@ func _inspect(id: String) -> void:
 		var card: Button = _cards[card_id]
 		var available := card_id in _next_ids
 		var selected := card_id == id
-		var option: Dictionary = _host.tile_spec(card_id)
-		var color := GameIcons.rarity(option)
-		var fill := PANEL.lerp(color, 0.24 if selected else (0.13 if available else 0.04))
-		var frame := _box(fill, color, 2 if selected or available else 1)
-		frame.border_width_top = 5 if selected or available else 3
-		card.add_theme_stylebox_override("normal", frame)
-		var hover := frame.duplicate() as StyleBoxFlat
-		hover.bg_color = fill.lightened(0.11)
-		card.add_theme_stylebox_override("hover", hover)
-		var pressed := frame.duplicate() as StyleBoxFlat
-		pressed.bg_color = fill.darkened(0.10)
-		card.add_theme_stylebox_override("pressed", pressed)
+		var art := card.get_meta("artwork") as Control
+		art.highlight(selected)
+		art.modulate.a = 1.0 if selected or available else 0.52
+
 
 
 func _show_layout(layout: Dictionary, upgrade: Dictionary, fits: bool) -> void:

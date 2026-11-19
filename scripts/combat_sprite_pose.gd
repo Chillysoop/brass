@@ -2,6 +2,14 @@ extends RefCounted
 
 const GRID_COLUMNS := 14
 const GRID_ROWS := 16
+const CLASS_STANCES := {
+	"warden": Vector4(0.015, 0.012, -0.018, -0.012), "bulwark": Vector4(0.004, 0.018, -0.012, -0.022),
+	"breaker": Vector4(0.032, -0.015, 0.052, -0.014), "hexwright": Vector4(-0.018, -0.012, -0.034, 0.008),
+	"wayfarer": Vector4(0.025, -0.023, 0.034, 0.010), "lancer": Vector4(0.045, 0.005, 0.022, -0.010),
+	"cantor": Vector4(0.003, -0.021, -0.012, 0.016), "apothecary": Vector4(0.020, -0.005, 0.036, -0.004),
+	"rune_smith": Vector4(0.018, 0.009, 0.048, -0.018), "starshot": Vector4(-0.020, 0.005, -0.030, -0.008),
+	"cinder_mage": Vector4(0.009, -0.028, -0.026, 0.018), "duelist": Vector4(0.038, -0.008, 0.042, -0.006),
+}
 
 var _geometry: Dictionary
 var _mesh := ArrayMesh.new()
@@ -98,6 +106,32 @@ func draw(canvas: CanvasItem, height: float, pose: Vector4, arms: Vector3, tint:
 		0.0, Vector2.ZERO), tint)
 
 
+func anchor_offset(uv: Vector2, height: float, pose: Vector4, arms: Vector3) -> Vector2:
+	var sample := uv.clamp(Vector2.ZERO, Vector2.ONE) * Vector2(GRID_COLUMNS, GRID_ROWS)
+	var column := mini(GRID_COLUMNS - 1, floori(sample.x))
+	var row := mini(GRID_ROWS - 1, floori(sample.y))
+	var fraction := sample - Vector2(column, row)
+	var weights: PackedVector4Array = _geometry.weights
+	var index := row * (GRID_COLUMNS + 1) + column
+	var upper: Vector4 = weights[index].lerp(weights[index + 1], fraction.x)
+	var lower: Vector4 = weights[index + GRID_COLUMNS + 1].lerp(weights[index + GRID_COLUMNS + 2], fraction.x)
+	var weight := upper.lerp(lower, fraction.y)
+	var point := uv - Vector2(0.5, 1.0)
+	var forward: float = _geometry.forward
+	var aspect: float = _geometry.aspect
+	var shift := Vector2((pose.x * weight.x + pose.y * weight.y) * forward,
+		pose.z * weight.x + pose.w * weight.y)
+	var local := point * Vector2(aspect, 1.0)
+	var front_pivot: Vector2 = _geometry.pivots[0] * Vector2(aspect, 1.0)
+	var back_pivot: Vector2 = _geometry.pivots[1] * Vector2(aspect, 1.0)
+	var front_delta := Transform2D(arms.x * forward, Vector2.ZERO) * (local - front_pivot) + front_pivot - local
+	var back_delta := Transform2D(arms.y * forward, Vector2.ZERO) * (local - back_pivot) + back_pivot - local
+	front_delta.x += arms.z * forward
+	shift += front_delta * weight.z + back_delta * weight.w
+	shift.x /= aspect
+	return (point + shift) * Vector2(height * aspect, height)
+
+
 # The four leg channels contain front and rear stride displacement followed by foot lift.
 # Arms contain the shoulder rotations and the extension of the leading hand.
 func _update_vertices(pose: Vector4, arms: Vector3) -> void:
@@ -156,3 +190,20 @@ static func arm_pose(profile: Dictionary, weight: float, released: bool) -> Vect
 		else:
 			angle *= -0.75
 	return angle * minf(weight * float(profile.weight), 1.3)
+
+
+static func class_stance(identity: String, profile: Dictionary, weight: float, facing: float,
+		released: bool) -> Vector4:
+	var stance: Vector4 = CLASS_STANCES.get(identity, Vector4.ZERO)
+	var style: String = profile.get("style", "")
+	if style in ["guard", "ward"]:
+		stance.x *= 0.35
+		stance.y = maxf(stance.y, 0.012)
+		stance.w = minf(stance.w, -0.012)
+	elif style in ["blink", "dash"]:
+		stance.y -= 0.012
+		stance.z += 0.025
+	if not released:
+		stance.x *= -0.55
+		stance.z *= -0.65
+	return stance * Vector4(facing, 1, facing, 1) * clampf(weight, 0.0, 1.0)

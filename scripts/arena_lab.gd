@@ -195,7 +195,8 @@ func _build() -> void:
 	fixture_picker.item_selected.connect(func(index: int): _load_fixture(["duo", "solo", "forge", "blink_forge", "build_forge"][index]))
 	_build_speed_controls(header)
 	storage_button = _button("Tile storage", _toggle_storage)
-	GameIcons.decorate(storage_button, "forge", 18)
+	storage_button.icon = StorageScreen.ICON
+	storage_button.add_theme_constant_override("icon_max_width", 26)
 	storage_button.tooltip_text = "Drag tiles between storage and timelines."
 	reset_button = _button("Reset fight", _reset_fight)
 	return_button = _button("Title", _leave_arena)
@@ -535,6 +536,12 @@ func _update_controls() -> void:
 	fixture_picker.disabled = state != "setup"
 	storage_button.disabled = not _can_edit_loadout()
 	storage_button.visible = not _placing_tile_reward()
+	var stored_tiles := 0
+	for stored_row: Array in storage_rows:
+		stored_tiles += stored_row.size()
+	storage_button.text = "Tile storage · %d" % stored_tiles if stored_tiles > 0 else "Tile storage"
+	storage_button.add_theme_color_override("font_color", GOLD)
+	storage_button.tooltip_text = "Shared tile storage · %d tiles. Drag tiles between this stash and your sequence." % stored_tiles
 	var enchantments := _held_enchantments()
 	enchantment_button.visible = state == "setup" and not enchantments.is_empty()
 	if enchantment_button.visible:
@@ -671,7 +678,7 @@ func _rebuild_loadout() -> void:
 		var blocker: String = run.camp_forge_blocker(selected)
 		camp_button.disabled = not blocker.is_empty()
 		camp_button.tooltip_text = blocker
-		setup_hint.text = blocker if not blocker.is_empty() else "Choose Forge selected to upgrade this tile for free."
+		setup_hint.text = "Click any tile in your sequence or storage to upgrade it one tier. No matching copies needed." if selected.is_empty() else blocker
 	elif campaign and not run.recovered_starter.is_empty():
 		setup_hint.text = "%s was restored to your timeline so you can continue." % ArenaSim.TILES[run.recovered_starter].label
 	elif state == "setup" and _teaching_timeline() and not lanes[0].is_empty():
@@ -924,7 +931,7 @@ func _build_lane(lane_index: int, row_height: int) -> void:
 	var board := Control.new()
 	var cards := {}
 	tile_cards.append(cards)
-	var offers: Array = _combine_offers(lanes[lane_index]) if _can_edit_loadout() else []
+	var offers: Array = _combine_offers(lanes[lane_index]) if _can_edit_loadout() and not camp_forge else []
 	var offer_height := 0 if offers.is_empty() else 33
 	board.custom_minimum_size.y = row_height + offer_height
 	board.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -980,7 +987,7 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	var tile_title: String = tile.get("short_label", tile.label)
 	var name_button := SequenceTileButton.new()
 	name_button.text = tile_title
-	name_button.pressed.connect(func(): _select(payload))
+	name_button.pressed.connect(func(): _select(payload, true))
 	var class_id := _lane_hero_class(lane_index)
 	name_button.preview = frontier_screen.tile_hover_card.bind(item.id, class_id, item.get("enchantment", ""))
 	var icon_key := GameIcons.tile(item.id, tile)
@@ -1185,11 +1192,14 @@ func _set_all(lane_index: int, rule: String) -> void:
 		LABELS[rule], " · %d unchanged" % skipped if skipped else ""
 	]
 
-func _select(payload: Dictionary) -> void:
+func _select(payload: Dictionary, activate_forge := false) -> void:
 	if not _can_edit_loadout():
 		return
-	selected = {} if selected == payload else payload.duplicate()
+	selected = payload.duplicate() if activate_forge and camp_forge else ({} if selected == payload else payload.duplicate())
 	_rebuild_loadout()
+	if activate_forge and camp_forge and not _editing_camp_forge() and run.camp_forge_blocker(selected).is_empty():
+		_open_camp_forge()
+		return
 	if not selected.is_empty():
 		var first: Control
 		if selected.get("lane", -1) >= 0:
@@ -1508,6 +1518,11 @@ func _toggle_storage() -> void:
 		_open_storage()
 
 func storage_close() -> void:
+	if _placing_tile_reward():
+		_set_reward_storage(true)
+		_render_storage()
+		_update_controls()
+		return
 	storage_screen.hide()
 	arena_screen.show()
 	_rebuild_loadout()
@@ -1522,8 +1537,8 @@ func _render_storage() -> void:
 	var protect_selected := _editing_camp_forge() and is_same(_selected_tile(), pending_forge.camp_tile)
 	var can_forge := camp_forge and not _editing_camp_forge()
 	var blocker: String = run.camp_forge_blocker(selected) if can_forge else ""
-	storage_screen.render(storage_rows, selected, all_offers, can_forge,
-		_selected_combine_copies().size() >= 3, _enchantment_controls(), protect_selected, blocker)
+	storage_screen.render(storage_rows, selected, [] if camp_forge else all_offers, can_forge,
+		not camp_forge and _selected_combine_copies().size() >= 3, _enchantment_controls(), protect_selected, blocker)
 
 func _held_enchantments() -> Array:
 	return run.enchantments() if campaign or not retry_options.is_empty() else []
@@ -1577,10 +1592,12 @@ func storage_enchant_selected(id: String) -> void:
 		return
 	_rebuild_loadout()
 
-func storage_pick(row: int, item: Dictionary) -> void:
+func storage_pick(row: int, item: Dictionary, activate_forge := false) -> void:
 	var payload := {"id": item.id, "lane": -1, "row": row, "start": item.start}
-	selected = {} if selected == payload else payload
+	selected = payload if activate_forge and camp_forge else ({} if selected == payload else payload)
 	_rebuild_loadout()
+	if activate_forge and camp_forge and not _editing_camp_forge() and run.camp_forge_blocker(selected).is_empty():
+		_open_camp_forge()
 
 func storage_can_place(row: int, start: int, payload: Dictionary) -> bool:
 	var ignored: int = payload.get("start", -1) if payload.get("row", -1) == row else -1
@@ -2081,6 +2098,13 @@ func _after_forge_upgrade() -> void:
 func run_open_enchantment_loadout() -> void:
 	run_show_arena()
 	_open_storage()
+
+func run_expand_reward_storage() -> void:
+	if not _placing_tile_reward():
+		return
+	_set_reward_storage(false)
+	storage_screen.show()
+	_render_storage()
 
 func run_open_reward_storage() -> void:
 	var placement: Dictionary = run.current_reward_placement()

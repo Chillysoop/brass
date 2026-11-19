@@ -320,9 +320,15 @@ func _check_practice_retry() -> void:
 		var stored_id := str(run.data.offers.front())
 		_check(game.storage_screen.is_visible_in_tree() and game.storage_screen.get_parent() == game.combat_sidebar,
 			"A resumed reward opens storage beside the original battlefield.")
+		var lane: int = run.reward_lane()
+		var fits := false
+		for beat in range(ArenaSim.BEATS):
+			fits = fits or TilePacking.can_place(run.loadout.lanes[lane], stored_id, beat, ArenaSim.BEATS)
 		await _press_named(game.frontier_screen, "RewardTile_" + stored_id)
-		_check(run.data.phase == "map" and run.loadout.storage[0].any(func(tile: Dictionary): return tile.id == stored_id),
-			"Sending a reward to storage stows the tile and returns to the route.")
+		var equipped: bool = run.loadout.lanes[lane].any(func(tile: Dictionary): return tile.id == stored_id)
+		var stored: bool = run.loadout.storage.any(func(row: Array): return row.any(func(tile: Dictionary): return tile.id == stored_id))
+		_check(run.data.phase == "map" and (equipped if fits else stored),
+			"A reward click equips when its recipient has room, otherwise stores, and returns to the route.")
 	run.abandon_run()
 
 
@@ -337,28 +343,21 @@ func _check_slam_at_rest() -> void:
 		game._entry("slam", 4, "nearest"), game._entry("slam", 8, "nearest")])
 	game.run_return()
 	await _press_text(game.frontier_screen, "Open forge")
-	var offers: Array = game._combine_offers(game.lanes[0])
-	_check(offers.size() == 1 and offers[0].id == "slam", "Three touching Slams should offer a combine at the camp forge.")
-	await _press_text(game.arena_screen, "Yes")
-	_check(game.forge_screen.visible and game.forge_screen._cards.size() == 9,
-		"Common Slam should show all nine tiles in its forge tree on a fresh profile.")
-	game.forge_choose("shockwave")
-	_check(game.lanes[0] == [game._entry("shockwave", 0, "nearest")] and game.run.data.phase == "rest",
-		"Combining three Slams should save the chosen tile without consuming the rest action.")
+	await _press_text(game.arena_screen, "Slam")
+	_check(game.forge_screen.visible and game.forge_screen._cards.size() == 9 and game.forge_screen._direct_pick,
+		"One click on a Slam at rest opens its direct next-tier choices, even with three touching copies.")
+	await _press_named(game.forge_screen, str(game.forge_screen._cards["shockwave"].name))
+	var tiles: Array = game.run.loadout.lanes[0].duplicate()
+	for row: Array in game.run.loadout.storage:
+		tiles.append_array(row)
+	_check(tiles.filter(func(tile: Dictionary): return tile.id == "slam").size() == 2
+		and tiles.filter(func(tile: Dictionary): return tile.id == "shockwave").size() == 1
+		and game.run.data.phase == "map",
+		"The rest action upgrades only the clicked Slam and consumes the site without combining its neighbors.")
 	_check(TilePacking.next_options("shockwave") == TilePacking.next_options("sundering_slam")
 		and TilePacking.next_options("quake") == TilePacking.next_options("armor_crush")
 		and TilePacking.next_options("fault_line") == TilePacking.next_options("hammerfall"),
-		"Slam's two options must lead to the same next tier from either branch.")
-	game.storage_rows[0].assign([game._entry("slam", 0, "nearest")])
-	game._open_storage()
-	game.storage_pick(0, game.storage_rows[0][0])
-	game.storage_forge()
-	_check(game.forge_screen.visible, "The camp action should open the forge for a single stored Slam.")
-	game.forge_choose("sundering_slam")
-	var restored := FrontierRun.new()
-	_check(restored.load_save(save_path) and restored.data.phase == "map"
-		and restored.loadout.storage[0] == [game._entry("sundering_slam", 0, "nearest")],
-		"Using the camp action should upgrade the stored Slam, save the result and return to the map.")
+		"Slam keeps two shared next-tier options from either prior branch.")
 	_check(game.run.abandon_run(), "Close the test Slam expedition.")
 
 
