@@ -1468,6 +1468,10 @@ func _first_reroll_copy(hero_id: String, rows: Array, pools: Dictionary, salt: i
 
 
 func _reroll_tiles(pools: Dictionary, salt: int, copy := "", signatures: Array = []) -> Array[String]:
+	var node: Dictionary = data.get("node", {})
+	if node.get("encounter_override", node.get("type")) == "boss" and data.offers.size() == 3 \
+			and data.offers.all(func(id: String): return ArenaSim.TILES[id].rarity == "legendary"):
+		return _boss_reroll_tiles(pools[4], salt, signatures)
 	var rng := _rng(int(data.seed), _node_salt(salt))
 	var replacements: Array[String] = []
 	var signature_slot: int = data.offers.find_custom(func(id: String): return id in signatures)
@@ -1494,6 +1498,51 @@ func _reroll_tiles(pools: Dictionary, salt: int, copy := "", signatures: Array =
 			return []
 		replacements.append(fresh[rng.randi_range(0, fresh.size() - 1)])
 	return replacements
+
+
+func _boss_reroll_tiles(pool: Array, salt: int, signatures: Array) -> Array[String]:
+	var signature_slot: int = data.offers.find_custom(func(id: String): return id in signatures)
+	var candidates: Array = []
+	var available_roots := {}
+	for id: String in pool + signatures:
+		available_roots[_reward_family(id)] = true
+	for index in range(data.offers.size()):
+		var current: String = data.offers[index]
+		if index == signature_slot:
+			candidates.append([signatures[1] if current == signatures[0] else signatures[0]])
+			continue
+		var shuffled := _sample(pool, pool.size(), int(data.seed), _node_salt(salt + index * 1069))
+		var eligible := shuffled.filter(func(id: String):
+			return id != current and (signature_slot < 0 or id not in signatures))
+		var fresh := eligible.filter(func(id: String): return id not in data.offers)
+		candidates.append(fresh + eligible.filter(func(id: String): return id not in fresh))
+	# A singleton tree can need to change slots to keep both root diversity and a
+	# different tile in every slot. Three slots make this small matching search bounded.
+	for minimum in range(mini(3, available_roots.size()), 0, -1):
+		var chosen := _match_boss_reroll(candidates, [], minimum)
+		if not chosen.is_empty():
+			return chosen
+	return []
+
+
+func _match_boss_reroll(candidates: Array, selected: Array[String], minimum_roots: int) -> Array[String]:
+	var roots := {}
+	for id: String in selected:
+		roots[_reward_family(id)] = true
+	var index := selected.size()
+	if roots.size() + candidates.size() - index < minimum_roots:
+		return []
+	if index == candidates.size():
+		return selected.duplicate() if roots.size() >= minimum_roots else []
+	for id: String in candidates[index]:
+		if id in selected:
+			continue
+		selected.append(id)
+		var chosen := _match_boss_reroll(candidates, selected, minimum_roots)
+		selected.pop_back()
+		if not chosen.is_empty():
+			return chosen
+	return []
 
 
 func current_reward_placement() -> Dictionary:
@@ -2331,9 +2380,11 @@ func _combat_reward_draft(kind: String, lane: int) -> Dictionary:
 		var legendary := _class_reward_pool(hero_id, 4, rows)
 		var signatures := _boss_signature_legendaries(hero_id)
 		var ordinary := legendary.filter(func(id: String): return id not in signatures)
-		var offers := _sample(ordinary, 3 if signatures.is_empty() else 2, int(data.seed), _node_salt(81 + salt))
+		var fixed: Array = []
 		if not signatures.is_empty():
-			offers.append(_sample(signatures, 1, int(data.seed), _node_salt(203 + salt))[0])
+			fixed.append(_sample(signatures, 1, int(data.seed), _node_salt(203 + salt))[0])
+		var offers := _boss_tile_sample(ordinary, 3 - fixed.size(), _node_salt(81 + salt), fixed)
+		offers.append_array(fixed)
 		return {"offers": offers, "hints": {}}
 	if kind == "elite":
 		var pool := _class_reward_pool(hero_id, 1, rows) + _class_reward_pool(hero_id, 2, rows) + _class_reward_pool(hero_id, 3, rows)
@@ -2358,6 +2409,33 @@ func _combat_reward_draft(kind: String, lane: int) -> Dictionary:
 		return {"offers": _sample(fixed, 3, int(data.seed), _node_salt(85 + salt)), "hints": hints}
 	var signature_offer := _signature_milestone_offer(kind, lane, hero_id, salt)
 	return _normal_reward_draft(lane, rows, signature_offer)
+
+
+func _boss_tile_sample(pool: Array, count: int, salt: int, reserved: Array = []) -> Array:
+	var offers: Array = []
+	if count <= 0:
+		return offers
+	# Keep the existing weighted shuffle, but show different upgrade trees before
+	# filling a small pool with alternate paths from a tree already represented.
+	var shuffled := _sample(pool, pool.size(), int(data.seed), salt)
+	var roots := {}
+	for id: String in reserved:
+		roots[_reward_family(id)] = true
+	for id: String in shuffled:
+		var family := _reward_family(id)
+		if roots.has(family):
+			continue
+		offers.append(id)
+		roots[family] = true
+		if offers.size() == count:
+			return offers
+	for id: String in shuffled:
+		if id in offers or id in reserved:
+			continue
+		offers.append(id)
+		if offers.size() == count:
+			break
+	return offers
 
 
 func _boss_signature_legendaries(hero_id: String) -> Array:

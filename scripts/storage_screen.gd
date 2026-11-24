@@ -1,11 +1,17 @@
 extends Control
 
+class StoredTileButton extends Button:
+	var preview: Callable
+
+	func _make_custom_tooltip(_for_text: String) -> Object:
+		return preview.call()
+
+
 const ICON := preload("res://assets/icons/storage.svg")
 const GameIcons = preload("res://scripts/game_icons.gd")
 const CombatIcons = preload("res://scripts/combat_icons.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
-const TileKeywords = preload("res://scripts/tile_keywords.gd")
 
 const COLUMNS := TilePacking.STORAGE_COLUMNS
 const ROWS := TilePacking.STORAGE_ROWS
@@ -363,7 +369,8 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 	var width: int = tile.width
 	var metric := {} if _docked else CombatIcons.tile_corner_stat(tile)
 	var icon_only := _docked and width == 1
-	var card := _button("" if icon_only else caption, func(): _host.storage_pick(row_index, item, true))
+	var preview: Callable = _host.frontier_screen.tile_hover_card.bind(item.id, "", item.get("enchantment", ""), true)
+	var card := _button("" if icon_only else caption, func(): _host.storage_pick(row_index, item, true), preview)
 	card.name = "StoredTile_%s_%d_%d" % [item.id, row_index, item.start]
 	card.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	GameIcons.decorate(card, GameIcons.tile(item.id, tile), 15 if width == 1 or _docked else 22)
@@ -380,13 +387,12 @@ func _build_tile(row: Control, row_index: int, item: Dictionary, tile: Dictionar
 	if not origin.is_empty():
 		ownership += " · %s signature" % GameIcons.hero_label(origin)
 	var copy: String = tile.get("description", "")
-	card.tooltip_text = "%s · %s · %s\n%s\n%s" % [name, GameIcons.rarity_name(tile), GameIcons.tile_stats(tile), ownership, copy]
+	# A non-empty tooltip activates the same rich preview used by sequence tiles.
+	card.tooltip_text = name
 	var enchantment := TileEnchantments.info(item.get("enchantment", ""))
 	if not enchantment.is_empty():
-		card.tooltip_text += "\n%s · %s" % [enchantment.label, enchantment.description]
-		copy += "\n" + enchantment.description
-	card.tooltip_text = TileKeywords.with_definitions(card.tooltip_text, GameIcons.tile_stats(tile) + "\n" + copy)
-	card.accessibility_name = name
+		copy += "\n%s · %s" % [enchantment.label, enchantment.description]
+	card.accessibility_name = "%s · %s · %s. %s" % [name, GameIcons.rarity_name(tile), ownership, copy]
 	var rarity := GameIcons.rarity(tile)
 	for mode: String in ["normal", "hover", "pressed"]:
 		var fill := STORED.lightened(0.16) if mode == "hover" else STORED
@@ -610,8 +616,10 @@ func _end_drag() -> void:
 	_clear_preview()
 
 
-func _button(value: String, callback: Callable) -> Button:
-	var button := Button.new()
+func _button(value: String, callback: Callable, preview := Callable()) -> Button:
+	var button: Button = StoredTileButton.new() if preview.is_valid() else Button.new()
+	if button is StoredTileButton:
+		button.preview = preview
 	button.text = value
 	button.add_theme_font_size_override("font_size", 14)
 	button.add_theme_stylebox_override("normal", _box(Color("#263642"), EDGE))

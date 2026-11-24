@@ -1,5 +1,12 @@
 extends Control
 
+class ForgeTileButton extends Button:
+	var preview: Callable
+
+	func _make_custom_tooltip(_for_text: String) -> Object:
+		return preview.call()
+
+
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 const GameIcons = preload("res://scripts/game_icons.gd")
@@ -60,7 +67,7 @@ func open(source_id: String, copies := 3, reward := false, can_keep_reward := fa
 	_tiers = TilePacking.forge_tiers(source_id)
 	_next_ids = TilePacking.next_options(source_id)
 	_is_combine = copies == 3
-	_direct_pick = not _is_combine and _host.campaign and _host.run.data.get("phase") == "rest"
+	_direct_pick = reward or (not _is_combine and _host.campaign and _host.run.data.get("phase") == "rest")
 	_confirm.visible = not _direct_pick
 	var source: Dictionary = _host.tile_spec(source_id)
 	_title.text = "Upgrade ready!" if _is_combine else "Tile forge"
@@ -330,7 +337,8 @@ func _add_tier(tier: int) -> void:
 	column.add_child(options)
 	for id: String in ids:
 		var tile: Dictionary = _host.tile_spec(id)
-		var card := _button("", func(): _pick_path(id))
+		var preview: Callable = _host.frontier_screen.tile_hover_card.bind(id, _host.forge_owner(), "")
+		var card := _button("", func(): _pick_path(id), preview)
 		card.name = "ForgeTile_" + id
 		card.accessibility_name = tile.label
 		card.custom_minimum_size.y = 106
@@ -354,16 +362,15 @@ func _add_tier(tier: int) -> void:
 		card.mouse_entered.connect(func():
 			art.highlight(true)
 			if _direct_pick:
-				_inspect(id))
+				_inspect(id, false))
 		card.mouse_exited.connect(func(): art.highlight(id == _inspected_id))
 		card.focus_entered.connect(func():
 			art.highlight(true)
 			if _direct_pick:
-				_inspect(id))
+				_inspect(id, false))
 		for state: String in ["normal", "hover", "pressed", "focus"]:
 			card.add_theme_stylebox_override(state, StyleBoxEmpty.new())
-		var detail_copy: String = "%s\n%s" % [GameIcons.tile_stats(tile), tile.description]
-		card.tooltip_text = TileKeywords.with_definitions("%s · %s" % [GameIcons.rarity_name(tile), detail_copy], detail_copy)
+		card.tooltip_text = tile.label
 		card.item_rect_changed.connect(_links.queue_redraw)
 		options.add_child(card)
 		_cards[id] = card
@@ -373,6 +380,8 @@ func _pick_path(id: String) -> void:
 	_inspect(id)
 	if _direct_pick and id in _next_ids and not _confirm.disabled:
 		_confirm_upgrade()
+	elif _direct_pick and id in _next_ids:
+		show_error("Make room for this upgrade, or choose another path.")
 
 
 func _draw_links() -> void:
@@ -396,8 +405,9 @@ func _draw_links() -> void:
 				]), line_color, 2.5 if chosen else 1.5, true)
 
 
-func _inspect(id: String) -> void:
-	_clear_merge_intro()
+func _inspect(id: String, dismiss_merge := true) -> void:
+	if dismiss_merge:
+		_clear_merge_intro()
 	_inspected_id = id
 	var tile: Dictionary = _host.tile_spec(id)
 	var rarity := GameIcons.rarity_name(tile)
@@ -553,8 +563,10 @@ func _label(value: String, points: int, color: Color) -> Label:
 	return label
 
 
-func _button(value: String, action: Callable) -> Button:
-	var button := Button.new()
+func _button(value: String, action: Callable, preview := Callable()) -> Button:
+	var button: Button = ForgeTileButton.new() if preview.is_valid() else Button.new()
+	if button is ForgeTileButton:
+		button.preview = preview
 	button.text = value
 	button.pressed.connect(action)
 	return button

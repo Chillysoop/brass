@@ -218,9 +218,12 @@ func _check_reward_combine(game: Control) -> void:
 		return
 
 	var choice: String = TilePacking.next_options(source)[0]
-	game.forge_choose(choice)
+	await _click(game.forge_screen, str(game.forge_screen._cards[choice].name))
 	_check(run.reward_lane() == 1 and run.data.offers == next_hero_offers and not game.forge_screen.visible,
 		"Confirming the upgrade spends exactly one reward and restores the second hero's draft.")
+	_check(game.showing_rewards and game.frontier_screen.is_visible_in_tree()
+		and game.frontier_screen.find_child("RewardTile_" + str(next_hero_offers[0]), true, false) != null,
+		"A fitting reward upgrade immediately displays the next hero's pick without an intervening Continue screen.")
 	_check(run.loadout.lanes[0].filter(func(tile: Dictionary): return tile.id == choice).size() == 1
 		and not run.loadout.lanes[0].any(func(tile: Dictionary): return tile.id == source)
 		and not run.loadout.storage[0].any(func(tile: Dictionary): return tile.id == source)

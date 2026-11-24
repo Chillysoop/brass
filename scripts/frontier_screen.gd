@@ -1,5 +1,19 @@
 extends Control
 
+class RewardTileButton extends Button:
+	var preview: Callable
+
+	func _make_custom_tooltip(_for_text: String) -> Object:
+		return preview.call()
+
+
+class RewardTileCard extends VBoxContainer:
+	var preview: Callable
+
+	func _make_custom_tooltip(_for_text: String) -> Object:
+		return preview.call()
+
+
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ExpeditionMenu = preload("res://scripts/expedition_menu.gd")
@@ -803,13 +817,8 @@ func _reward() -> void:
 			cards = _cards_row(wrapping)
 		var id: String = offers[index]
 		var tile: Dictionary = ArenaSim.TILES[id]
-		var hint: String = _run.reward_hint(id)
-		if hint in ["Third copy", "Owned copy"]:
-			hint = ""
-		if not owner.is_empty() and tile.get("base_tile", id) == ClassDecks.signature(owner):
-			hint = "Signature tile" if hint.is_empty() else "Signature tile · " + hint
-		var card := _choice(cards, tile.label, tile.description + ("\n" + hint if not hint.is_empty() else ""),
-			"Select", func(): _claim_reward(id, notice))
+		var card := _choice(cards, tile.label, tile.description,
+			"Select", func(): _claim_reward(id, notice), false, false, tile_hover_card.bind(id, owner, ""))
 		var select_tile: Button = card.get_child(card.get_child_count() - 1)
 		select_tile.name = "RewardTile_" + id
 		_add_tile_header(card, id, tile, owner, _battle_overlay)
@@ -964,8 +973,10 @@ func _reward_heading(title: String, milestone: String, hero_id: String) -> void:
 	row.add_theme_constant_override("separation", 13)
 	_layout.add_child(row)
 	var art := GameIcons.hero_art(hero_id)
+	var portrait: TextureRect
 	if art:
-		row.add_child(_icon_view(art, 32 if _battle_overlay else 54))
+		portrait = _icon_view(art, 32 if _battle_overlay else 54)
+		row.add_child(portrait)
 	var hero := _label(_hero_name(hero_id), 26 if _battle_overlay else 34, CREAM, true)
 	hero.name = "RewardHero"
 	row.add_child(hero)
@@ -979,6 +990,14 @@ func _reward_heading(title: String, milestone: String, hero_id: String) -> void:
 		progress.name = "RewardProgress"
 		progress.size_flags_vertical = SIZE_SHRINK_CENTER
 		row.add_child(progress)
+	if _battle_overlay:
+		var fit_heading := func():
+			var dense := size.y < 300
+			hero.add_theme_font_size_override("font_size", 20 if dense else 26)
+			context.add_theme_font_size_override("font_size", 15 if dense else 18)
+			if portrait != null:
+				portrait.custom_minimum_size = Vector2(24, 24) if dense else Vector2(32, 32)
+		_responsive(fit_heading, row)
 	if not milestone.is_empty():
 		if _battle_overlay:
 			context.tooltip_text = milestone
@@ -994,7 +1013,7 @@ func _elite_relic_draft(offers: Array) -> void:
 	for offer: Dictionary in offers:
 		var id: String = offer.id
 		_relic_draft_card(cards, id, "EliteRelic_", func(): _refresh_after_choice(_run.choose_elite_relic(id)),
-			offer.role, offer.companion, offer.get("owner", ""))
+			offer.get("owner", ""))
 
 
 func _boss_relic_draft() -> void:
@@ -1015,6 +1034,10 @@ func _relic_heading(title: String, subtitle: String) -> void:
 	var label := _label(title, 24 if _battle_overlay else 48, GOLD, true)
 	label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	heading.add_child(label)
+	if _battle_overlay:
+		var fit_overlay_heading := func():
+			label.add_theme_font_size_override("font_size", 20 if size.y < 260 else 24)
+		_responsive(fit_overlay_heading, heading)
 	if not subtitle.is_empty() and _battle_overlay:
 		label.tooltip_text = subtitle
 		label.mouse_filter = MOUSE_FILTER_STOP
@@ -1036,14 +1059,16 @@ func _relic_heading(title: String, subtitle: String) -> void:
 
 
 func _relic_draft_card(cards: HBoxContainer, id: String, button_prefix: String, select: Callable,
-		_role := "", companion := "", owner := "") -> void:
+		owner := "") -> void:
 	var spec: Dictionary = FrontierRun.RELICS[id]
 	var tone: Color = RELIC_DRAFT_TONES.get(id, GOLD)
 	var card := _panel_stack(cards, Vector2.ZERO, true)
 	card.add_theme_constant_override("separation", 2 if _battle_overlay else 6)
 	var panel := card.get_parent() as PanelContainer
 	panel.name = "RelicChoice_" + id
-	panel.size_flags_vertical = SIZE_FILL if _battle_overlay else SIZE_SHRINK_CENTER
+	# Keep the complete choice together instead of stretching the description
+	# between a small portrait and a claim button at the bottom of the arena.
+	panel.size_flags_vertical = SIZE_SHRINK_CENTER
 	var surround := StyleBoxEmpty.new()
 	var inset := 3 if _battle_overlay else 12
 	surround.content_margin_left = inset
@@ -1051,7 +1076,7 @@ func _relic_draft_card(cards: HBoxContainer, id: String, button_prefix: String, 
 	panel.add_theme_stylebox_override("panel", surround)
 
 	var art := GameIcons.relic_art(id)
-	var portrait := _icon_view(art, 63 if _battle_overlay else 205)
+	var portrait := _icon_view(art, 128 if _battle_overlay else 205)
 	portrait.name = "RelicPortrait"
 	portrait.custom_minimum_size.x = 0
 	if art is AtlasTexture:
@@ -1076,17 +1101,8 @@ func _relic_draft_card(cards: HBoxContainer, id: String, button_prefix: String, 
 		details.add_theme_constant_override("line_separation", -1)
 		details.fit_content = false
 		details.scroll_active = true
-		details.custom_minimum_size.y = 34
-		details.size_flags_vertical = SIZE_EXPAND_FILL
+		details.size_flags_vertical = SIZE_SHRINK_BEGIN
 	card.add_child(details)
-	if not companion.is_empty():
-		var tile: Dictionary = ArenaSim.TILES[companion]
-		var hint := _label("Tile offer · " + tile.label, 13, GameIcons.rarity(tile))
-		hint.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		hint.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		hint.tooltip_text = "%s · %s" % [tile.get("rarity", "common").capitalize(), _hero_name(_reward_owner(_run.reward_lane(), _party()))]
-		hint.mouse_filter = MOUSE_FILTER_PASS
-		card.add_child(hint)
 
 	var button := _button("Claim relic", select, true)
 	button.name = button_prefix + id
@@ -1102,14 +1118,27 @@ func _relic_draft_card(cards: HBoxContainer, id: String, button_prefix: String, 
 		button.add_theme_stylebox_override(state, surface)
 	button.add_theme_color_override("font_color", GOLD)
 	card.add_child(button)
-	if not _battle_overlay:
-		var fit_card := func():
+	var fit_card := func():
+		if _battle_overlay:
+			var focused: bool = get_parent() == _host.relic_focus_layer
+			var owner_space := 24.0 if not owner.is_empty() else 0.0
+			var short_arena := size.y < 260
+			portrait.custom_minimum_size.y = clampf(size.y * 0.25, 112.0, 170.0) if focused \
+				else clampf(minf(size.y * 0.30, size.y - 145.0 - owner_space), 32.0, 144.0)
+			details.fit_content = focused
+			details.scroll_active = not focused
+			details.custom_minimum_size.y = 0.0 if focused \
+				else clampf(size.y - portrait.custom_minimum_size.y - 137.0 - owner_space, 24.0, 144.0)
+			title.add_theme_font_size_override("font_size", 18 if short_arena else 20)
+			details.add_theme_font_size_override("normal_font_size", 14 if focused else (12 if short_arena else 13))
+			button.custom_minimum_size.y = 27 if short_arena else 33
+			button.add_theme_font_size_override("font_size", 13 if short_arena else 16)
+		else:
 			var compact := size.y < 630 or size.x < 960
 			portrait.custom_minimum_size.y = 112 if compact else 205
 			title.add_theme_font_size_override("font_size", 22 if compact else 29)
 			details.add_theme_font_size_override("normal_font_size", 14 if compact else 17)
-		_layout.resized.connect(fit_card)
-		fit_card.call()
+	_responsive(fit_card, panel)
 	_enable_reward_card_click(card, button)
 	if panel.get_index() == 0:
 		button.grab_focus()
@@ -1614,9 +1643,9 @@ func _footer_actions() -> HBoxContainer:
 
 
 func _choice(parent: Control, name: String, body: String, cta: String, chosen: Callable,
-		disabled := false, tile_preview := false) -> VBoxContainer:
+		disabled := false, tile_preview := false, preview := Callable()) -> VBoxContainer:
 	var compact := _battle_overlay or tile_preview
-	var card := _panel_stack(parent, Vector2(0, 0 if compact else 280), true)
+	var card := _panel_stack(parent, Vector2(0, 0 if compact else 280), true, preview)
 	if compact:
 		card.add_theme_constant_override("separation", 3 if _battle_overlay and not tile_preview else 5)
 	if not name.is_empty():
@@ -1645,13 +1674,13 @@ func _choice(parent: Control, name: String, body: String, cta: String, chosen: C
 	details.size_flags_vertical = SIZE_EXPAND_FILL
 	card.add_child(details)
 	if not cta.is_empty():
-		var action := _button(cta, chosen, true)
+		var action := _button(cta, chosen, true, false, preview)
 		action.disabled = disabled
 		card.add_child(action)
 	return card
 
 
-func tile_hover_card(id: String, owner: String, enchantment_id: String) -> Control:
+func tile_hover_card(id: String, owner: String, enchantment_id: String, shared_storage := false) -> Control:
 	var spec: Dictionary = ArenaSim.TILES[id]
 	var body: String = spec.description
 	var enchantment := TileEnchantments.info(enchantment_id)
@@ -1666,6 +1695,11 @@ func tile_hover_card(id: String, owner: String, enchantment_id: String) -> Contr
 	title.autowrap_mode = TextServer.AUTOWRAP_OFF
 	_add_tile_header(card, id, spec, owner, true)
 	_style_tile_choice(card, id, true, true)
+	if shared_storage:
+		var location := _label("Shared storage", 13, MUTED)
+		location.name = "StorageTileLocation"
+		location.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		card.add_child(location)
 	# Godot sizes tooltips before their containers lay out the text.
 	var frame := (card.get_parent() as PanelContainer).get_theme_stylebox("panel")
 	description.size.x = preview.get_combined_minimum_size().x - frame.get_minimum_size().x
@@ -1759,6 +1793,8 @@ func _style_tile_choice(card: VBoxContainer, id: String, compact: bool, hover_pr
 			break
 	if title != null:
 		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		if card is RewardTileCard:
+			title.tooltip_text = ""
 		# One-word names stay visually close to their artwork.
 		title.add_theme_font_size_override("font_size", 18 if compact else 25)
 	var art := TileChoiceArt.new()
@@ -1779,6 +1815,37 @@ func _style_tile_choice(card: VBoxContainer, id: String, compact: bool, hover_pr
 	var stats := card.find_child("TileStats", true, false) as HBoxContainer
 	if stats != null:
 		stats.alignment = BoxContainer.ALIGNMENT_CENTER
+	if compact and not hover_preview:
+		var rarity := header.find_child("TileRarityBadge", true, false) as Label
+		var rarity_text := rarity.text if rarity != null else ""
+		var fit_tile := func():
+			var dense := size.y < 300
+			var single_hero: bool = _host.lanes.size() == 1
+			var narrow := single_hero and size.x < 700 and size.y < 500
+			var available_art := 24.0 if dense else (48.0 if narrow else clampf(size.y * 0.20, 48.0, 110.0))
+			art.custom_minimum_size = Vector2(24, 24) if dense else Vector2(0, available_art)
+			card.add_theme_constant_override("separation", 2 if dense else 3)
+			if dense and art.get_parent() != header:
+				art.reparent(header, false)
+				header.move_child(art, 0)
+				card.move_child(header, 0)
+			elif not dense and art.get_parent() != card:
+				art.reparent(card, false)
+				card.move_child(art, 0)
+				card.move_child(title, 1)
+				card.move_child(header, 2)
+			header.add_theme_constant_override("separation", 4 if dense else 8)
+			if rarity != null:
+				rarity.text = GameIcons.rarity_pips(spec) if dense else rarity_text
+				rarity.size_flags_horizontal = SIZE_SHRINK_BEGIN if dense else SIZE_EXPAND_FILL
+			if title != null:
+				title.add_theme_font_size_override("font_size", 15 if dense else 18)
+				title.max_lines_visible = 1 if dense else 2
+			if details != null:
+				details.add_theme_font_size_override("normal_font_size", 12 if dense or narrow else 14)
+				details.custom_minimum_size.y = 20 if dense else (clampf(size.y - available_art - 190.0, 34.0, 250.0)
+					if single_hero else clampf(size.y * 0.07, 34.0, 64.0))
+		_responsive(fit_tile, panel)
 	var action := card.find_child("RewardTile_" + id, true, false) as Button
 	if action != null:
 		# A transparent full-card button retains keyboard/screen-reader access without a CTA rectangle.
@@ -1804,6 +1871,17 @@ func _tile_card_frame(spec: Dictionary, selected := false, margin := 18) -> Styl
 		frame.set_border_width_all(2)
 		frame.border_width_left = 5
 	return frame
+
+
+func _responsive(fit: Callable, lifetime: Node) -> void:
+	# The overlay's arena can shrink before a container's old minimum changes.
+	# Listen to the actual overlay as well, and release callbacks with each card.
+	resized.connect(fit)
+	_layout.resized.connect(fit)
+	lifetime.tree_exiting.connect(func():
+		if resized.is_connected(fit):
+			resized.disconnect(fit))
+	fit.call()
 
 
 func _rarity_frame(spec: Dictionary, fill: Color, radius: int, margin: int) -> StyleBoxFlat:
@@ -1846,14 +1924,17 @@ func _add_portrait(card: VBoxContainer, texture: Texture2D, height: int) -> void
 	card.move_child(portrait, 0)
 
 
-func _panel_stack(parent: Control, minimum: Vector2, expand := false) -> VBoxContainer:
+func _panel_stack(parent: Control, minimum: Vector2, expand := false, preview := Callable()) -> VBoxContainer:
 	var panel := PanelContainer.new()
 	panel.add_theme_stylebox_override("panel", _box(PANEL, EDGE, 9, 13 if _battle_overlay else 18))
 	panel.custom_minimum_size = minimum
 	if expand:
 		panel.size_flags_horizontal = SIZE_EXPAND_FILL
 	parent.add_child(panel)
-	var stack := VBoxContainer.new()
+	var stack: VBoxContainer = RewardTileCard.new() if preview.is_valid() else VBoxContainer.new()
+	if stack is RewardTileCard:
+		stack.preview = preview
+		stack.tooltip_text = "Ability details"
 	stack.add_theme_constant_override("separation", 13)
 	panel.add_child(stack)
 	return stack
@@ -1902,8 +1983,10 @@ func _label(value: String, points: int, color: Color, display := false) -> Label
 	return label
 
 
-func _button(title: String, activate: Callable, primary := false, compact := false) -> Button:
-	var button := Button.new()
+func _button(title: String, activate: Callable, primary := false, compact := false, preview := Callable()) -> Button:
+	var button: Button = RewardTileButton.new() if preview.is_valid() else Button.new()
+	if button is RewardTileButton:
+		button.preview = preview
 	button.text = title
 	button.custom_minimum_size.y = 30 if compact else (33 if _battle_overlay else 41)
 	if compact:

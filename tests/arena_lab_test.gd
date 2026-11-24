@@ -20,6 +20,7 @@ func _run() -> void:
 	lab.run_practice()
 	await process_frame
 	lab.set_physics_process(false)
+	await _check_practice_exit(lab)
 	_check(lab.lanes.size() == 2, "Duo setup should start with two lanes.")
 	var preview = lab.sim.target_for(0, "pull", "farthest")
 	_check(preview.get("id") == "clockwork", "Pull's default preview should identify the far enemy.")
@@ -131,6 +132,28 @@ func _run() -> void:
 	lab.queue_free()
 	await process_frame
 	quit(0 if failures.is_empty() else 1)
+
+
+func _check_practice_exit(lab: Control) -> void:
+	var expected: Vector2 = lab.arena_screen.global_position + Vector2(
+		lab.arena_screen.get_theme_constant("margin_left"), lab.arena_screen.get_theme_constant("margin_top"))
+	_check(lab.return_button.is_visible_in_tree() and not lab.save_title_button.is_visible_in_tree()
+		and lab.return_button.get_parent() == lab.save_title_button.get_parent()
+		and lab.return_button.global_position.is_equal_approx(expected),
+		"Practice has one Title exit in the same top-left header position used by campaign Save & title.")
+	_click(lab.return_button.get_global_rect().get_center())
+	await process_frame
+	_check(not lab.arena_screen.is_visible_in_tree() and lab.frontier_screen.is_visible_in_tree(),
+		"The top-left Practice Title button returns to the real title menu.")
+	lab.run_practice()
+	await process_frame
+	await process_frame
+	lab._action()
+	_check(lab.return_button.is_visible_in_tree() and lab.return_button.global_position.is_equal_approx(expected),
+		"Practice keeps its Title exit in the top-left while combat is running.")
+	lab._reset_fight()
+	await process_frame
+
 
 func _check_practice_arsenal(lab: Control) -> void:
 	lab._load_fixture("duo")

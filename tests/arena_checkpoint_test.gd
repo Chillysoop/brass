@@ -231,6 +231,10 @@ func _check_defeat_animation(lab: Control) -> void:
 	_check(lab.action.text == "See results", "Campaign defeat offers one exit to the results.")
 	lab.retry_button.pressed.emit()
 	_check(lab.state == "setup" and not lab.campaign, "Defeat can be retried in Practice.")
+	_check(lab.return_button.is_visible_in_tree() and not lab.save_title_button.is_visible_in_tree()
+		and lab.return_button.get_parent() == lab.save_title_button.get_parent()
+		and lab.return_button.text == "Back to battle result",
+		"Retry in Practice uses the single top-left exit to return to the saved battle result.")
 	lab.return_button.pressed.emit()
 	_check(lab.arena.is_visible_in_tree() and lab.action.text == "See results"
 		and lab.sim.outcome == "defeat" and run.data.result == "defeat",

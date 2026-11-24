@@ -4,6 +4,7 @@ const Arena := preload("res://arena.tscn")
 const ArenaSim := preload("res://scripts/arena_sim.gd")
 const ClassDecks := preload("res://scripts/class_decks.gd")
 const FrontierRun := preload("res://scripts/frontier_run.gd")
+const TilePacking := preload("res://scripts/tile_packing.gd")
 
 var failures: Array[String] = []
 var save_path := "user://boss-relic-test-%d.json" % Time.get_ticks_usec()
@@ -14,6 +15,7 @@ func _initialize() -> void:
 
 
 func _run() -> void:
+	_check_boss_tile_variety()
 	var game = Arena.instantiate()
 	root.add_child(game)
 	await process_frame
@@ -27,8 +29,121 @@ func _run() -> void:
 	for failure: String in failures:
 		printerr(failure)
 	if failures.is_empty():
-		print("Boss relic draft, save and resume, and Guild Ledger shop branch passed on the same seed.")
+		print("Boss tile variety, limited pools, relic draft, save and resume, and Guild Ledger shop branch passed.")
 	quit(0 if failures.is_empty() else 1)
+
+
+func _check_boss_tile_variety() -> void:
+	# Seed 3 previously drew both Line Guard paths while six different roots were
+	# available: the same redundant-choice problem seen in the novice playtest.
+	var reproduced := _boss_tile_fixture(["hexwright"], "easy")
+	reproduced.data.seed = 3
+	reproduced.loadout.lanes = [[_boss_tile("grapple", 0)]]
+	reproduced.loadout.storage[0] = [_boss_tile("cover", 0), _boss_tile("line_guard", 2)]
+	var fixed: Array = reproduced._combat_reward_draft("boss", 0).offers
+	_check(fixed.size() == 3 and _boss_roots(fixed).size() == 3
+		and fixed == reproduced._combat_reward_draft("boss", 0).offers,
+		"Seed 3 must offer three different Legendary upgrade trees, deterministically.")
+	var classes := FrontierRun.HEROES.keys()
+	for class_index in range(classes.size()):
+		var party := [classes[class_index], classes[(class_index + 1) % classes.size()],
+			classes[(class_index + 2) % classes.size()]]
+		var run := _boss_tile_fixture(party, "hard")
+		for unlocked in [false, true]:
+			run.profile.meta = FrontierRun.FORGE_UNLOCKS.values() if unlocked else []
+			for segment in range(1, 4):
+				run.data.segment = segment
+				run.data.node.row = segment * FrontierRun.NODES_PER_SEGMENT - 1
+				for seed_value in range(1, 33):
+					run.data.seed = seed_value
+					for lane in range(party.size()):
+						var hero_id: String = party[lane]
+						var pool := run._class_reward_pool(hero_id, 4, run._reward_inventory(lane))
+						var offers: Array = run._combat_reward_draft("boss", lane).offers
+						var signature := ClassDecks.signature(hero_id)
+						_check(offers.size() == 3 and _boss_roots(offers).size() == mini(3, _boss_roots(pool).size())
+							and offers.all(func(id: String): return id in pool and ArenaSim.TILES[id].rarity == "legendary"),
+							"%s Act %d seed %d must use three eligible Legendary roots when available." % [hero_id, segment, seed_value])
+						_check(offers == run._combat_reward_draft("boss", lane).offers
+							and offers.all(func(id: String): return not ClassDecks.is_signature(_boss_root(id)) or _boss_root(id) == signature),
+							"Boss drafts must remain deterministic and preserve each hero's signature ownership.")
+						var reserved := run._boss_signature_legendaries(hero_id)
+						if not reserved.is_empty():
+							_check(offers.any(func(id: String): return id in reserved),
+								"Hard intermediate bosses must retain the hero's Legendary signature choice.")
+						var ordinary := pool.filter(func(id: String): return id not in reserved)
+						var original := run._sample(ordinary, 1, int(run.data.seed), run._node_salt(81 + lane * 1069))
+						_check(not original.is_empty() and offers[0] == original[0],
+							"Root diversity must retain the original pool's weighted first pick.")
+						run.data.offers = offers
+						var rerolled := run._reroll_tiles({4: pool}, 421 + lane * 1069, "", reserved)
+						_check(rerolled.size() == 3 and _boss_roots(rerolled).size() == 3
+							and rerolled.all(func(id: String): return id in pool + reserved and ArenaSim.TILES[id].rarity == "legendary")
+							and rerolled == run._reroll_tiles({4: pool}, 421 + lane * 1069, "", reserved),
+							"Paid boss rerolls must keep deterministic distinct roots and eligible Legendary ownership.")
+						if rerolled.size() == 3:
+							_check(range(3).all(func(index: int): return rerolled[index] != offers[index]),
+								"A boss reroll must replace every slot, including singleton trees that need a different slot.")
+							if not reserved.is_empty():
+								_check(rerolled[2] in reserved and rerolled[2] != offers[2],
+									"Intermediate Hard rerolls must alternate the reserved signature in its original slot.")
+	var cover: Array = TilePacking.forge_tiers("cover").back()
+	var line: Array = TilePacking.forge_tiers("line_guard").back()
+	for seed_value in range(1, 65):
+		reproduced.data.seed = seed_value
+		var pool := cover + line
+		var limited := reproduced._boss_tile_sample(pool, 3, 81)
+		_check(limited.size() == 3 and _boss_roots(limited).size() == 2
+			and limited.all(func(id: String): return id in pool and limited.count(id) == 1)
+			and limited == reproduced._boss_tile_sample(pool, 3, 81),
+			"Two-root pools must fill three deterministic choices without duplicating tile IDs.")
+		var one_root := reproduced._boss_tile_sample(cover, 3, 81)
+		_check(one_root.size() == cover.size() and one_root.all(func(id: String): return id in cover and one_root.count(id) == 1),
+			"One-root pools must return only the available distinct tiles.")
+		var reserved := reproduced._boss_tile_sample(cover + [line[1], "meteor_seal"], 2, 81, [line[0]])
+		_check(_boss_roots(reserved + [line[0]]).size() == 3,
+			"Reserved paths must count toward root diversity before other paths are selected.")
+		reproduced.data.offers = limited
+		var rerolled := reproduced._reroll_tiles({4: pool}, 421)
+		_check(rerolled.size() == 3 and _boss_roots(rerolled).size() == 2
+			and rerolled.all(func(id: String): return id in pool and rerolled.count(id) == 1),
+			"A paid reroll with only two roots must still offer three different eligible tiles.")
+	_check(reproduced._boss_tile_sample([], 3, 81).is_empty()
+		and reproduced._boss_tile_sample(cover, 0, 81).is_empty(), "Empty and zero-count boss pools must be safe.")
+
+
+func _boss_tile_fixture(classes: Array, difficulty: String) -> FrontierRun:
+	var run := FrontierRun.new()
+	run.data = {"hero": classes[0], "heroes": [], "location": "brass", "difficulty": difficulty,
+		"segment": 1, "seed": 1, "layers": [[], [], [], [], [], [], []],
+		"node": {"row": 6, "column": 1, "type": "boss"}}
+	if difficulty == "hard":
+		run.data.layers.resize(FrontierRun.NODES_PER_SEGMENT * 3)
+	run.loadout = {"lanes": [], "storage": [[], [], []]}
+	for hero_id: String in classes:
+		run.data.heroes.append({"id": hero_id})
+		var lane: Array = []
+		var start := 0
+		for id: String in [ClassDecks.starter(hero_id), "cover", "line_guard", ClassDecks.signature(hero_id)]:
+			lane.append(_boss_tile(id, start))
+			start += int(ArenaSim.TILES[id].width)
+		run.loadout.lanes.append(lane)
+	return run
+
+
+func _boss_tile(id: String, start: int) -> Dictionary:
+	return {"id": id, "start": start, "target": ArenaSim.TILES[id].targets[0]}
+
+
+func _boss_root(id: String) -> String:
+	return ArenaSim.TILES[id].get("family", id)
+
+
+func _boss_roots(ids: Array) -> Dictionary:
+	var roots := {}
+	for id: String in ids:
+		roots[_boss_root(id)] = true
+	return roots
 
 
 func _check_draft_and_shop(game: Control) -> void:

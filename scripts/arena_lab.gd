@@ -65,6 +65,7 @@ var pending_forge: Dictionary = {}
 var decline_dialog: ConfirmationDialog
 var arena_screen: MarginContainer
 var storage_screen: Control
+var storage_popup_layer: Control
 var forge_screen: Control
 var storage_button: Button
 var enchantment_button: Button
@@ -72,12 +73,16 @@ var relic_strip: HBoxContainer
 var relic_badges: Dictionary = {}
 var relic_pulses: Dictionary = {}
 var lane_stack: VBoxContainer
+var lane_scroller: ScrollContainer
+var battle_layout_pending := false
+var tile_layout_columns: Array[int] = []
 var palette: HBoxContainer
 var arsenal_button: Button
 var arsenal_panel: PanelContainer
 var arena
 var battle_stage: HBoxContainer
 var combat_sidebar: VBoxContainer
+var relic_focus_layer: Control
 var save_title_button: Button
 var battle_heading: Label
 var fixture_picker: OptionButton
@@ -200,6 +205,8 @@ func _build() -> void:
 	storage_button.tooltip_text = "Drag tiles between storage and timelines."
 	reset_button = _button("Reset fight", _reset_fight)
 	return_button = _button("Title", _leave_arena)
+	header.add_child(return_button)
+	header.move_child(return_button, 0)
 	combat_meter_toggle = _button("Combat stats", _toggle_combat_meter)
 	combat_meter_toggle.name = "CombatStatsToggle"
 	combat_meter_toggle.toggle_mode = true
@@ -244,7 +251,20 @@ func _build() -> void:
 	sequence_bar.add_child(storage_button)
 	lane_stack = VBoxContainer.new()
 	lane_stack.add_theme_constant_override("separation", 5)
-	stack.add_child(lane_stack)
+	lane_stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	lane_scroller = ScrollContainer.new()
+	lane_scroller.name = "PartySequences"
+	lane_scroller.custom_minimum_size.y = 69
+	lane_scroller.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	lane_scroller.follow_focus = true
+	stack.add_child(lane_scroller)
+	lane_scroller.add_child(lane_stack)
+	stack.resized.connect(_queue_battle_layout)
+	stack.minimum_size_changed.connect(_queue_battle_layout)
+	lane_stack.minimum_size_changed.connect(_queue_battle_layout)
+	combat_sidebar.minimum_size_changed.connect(_queue_battle_layout)
+	combat_sidebar.visibility_changed.connect(_queue_battle_layout)
+	arena_screen.visibility_changed.connect(_queue_battle_layout)
 	var tray := HBoxContainer.new()
 	tray.alignment = BoxContainer.ALIGNMENT_END
 	tray.add_theme_constant_override("separation", 6)
@@ -261,18 +281,30 @@ func _build() -> void:
 	tray.add_child(fixture_picker)
 	tray.add_child(retry_button)
 	tray.add_child(reset_button)
-	tray.add_child(return_button)
 	camp_button = _button("Forge selected", _open_camp_forge)
 	camp_button.name = "ForgeSelected"
 	tray.add_child(camp_button)
 	setup_hint = _label("", 14, MUTED)
 	setup_hint.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	stack.add_child(setup_hint)
+	storage_popup_layer = Control.new()
+	storage_popup_layer.name = "StoragePopupLayer"
+	storage_popup_layer.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	add_child(storage_popup_layer)
 	storage_screen = StorageScreen.new()
-	arena.add_child(storage_screen)
+	storage_popup_layer.add_child(storage_screen)
 	storage_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	storage_screen.configure(self)
 	storage_screen.hide()
+	storage_screen.visibility_changed.connect(_queue_battle_layout)
+	storage_screen._frame.minimum_size_changed.connect(_queue_battle_layout)
+	relic_focus_layer = Control.new()
+	relic_focus_layer.name = "RelicChoiceFocus"
+	relic_focus_layer.mouse_filter = Control.MOUSE_FILTER_STOP
+	add_child(relic_focus_layer)
+	relic_focus_layer.hide()
+	battle_stage.item_rect_changed.connect(_fit_relic_focus)
+	resized.connect(_fit_relic_focus)
 	_build_practice_arsenal()
 	forge_screen = ForgeScreen.new()
 	add_child(forge_screen)
@@ -292,6 +324,57 @@ func _build() -> void:
 	add_child(frontier_screen)
 	frontier_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	frontier_screen.configure(self)
+	_queue_battle_layout()
+
+
+func _queue_battle_layout() -> void:
+	if is_instance_valid(storage_popup_layer):
+		storage_popup_layer.visible = arena_screen.visible
+	if battle_layout_pending:
+		return
+	battle_layout_pending = true
+	_fit_battle_layout.call_deferred()
+
+
+func _fit_relic_focus() -> void:
+	if not is_instance_valid(relic_focus_layer) or not is_instance_valid(battle_stage):
+		return
+	var bounds := arena_screen.get_global_rect()
+	var left := float(arena_screen.get_theme_constant("margin_left"))
+	var right := float(arena_screen.get_theme_constant("margin_right"))
+	var bottom := float(arena_screen.get_theme_constant("margin_bottom"))
+	var top := battle_stage.global_position.y
+	relic_focus_layer.global_position = Vector2(bounds.position.x + left, top)
+	relic_focus_layer.size = Vector2(maxf(0.0, bounds.size.x - left - right), maxf(0.0, bounds.end.y - bottom - top))
+
+
+func _fit_battle_layout() -> void:
+	battle_layout_pending = false
+	if not is_instance_valid(lane_scroller) or not arena_screen.is_visible_in_tree():
+		return
+	if tile_layout_columns != _tile_layout_columns():
+		_rebuild_loadout()
+		_queue_battle_layout()
+		return
+	var stack := battle_stage.get_parent() as VBoxContainer
+	# Preserve tile and targeting sizes. Give the arena only the height left after
+	# the party and header, scrolling the party only when even a short arena cannot fit.
+	var chrome := stack.get_combined_minimum_size().y - battle_stage.get_combined_minimum_size().y \
+		- lane_scroller.get_combined_minimum_size().y
+	var content_height := size.y - arena_screen.get_theme_constant("margin_top") - arena_screen.get_theme_constant("margin_bottom")
+	var available := maxf(0.0, content_height - chrome)
+	var stage_minimum := maxf(160.0, combat_sidebar.get_combined_minimum_size().y if combat_sidebar.visible else 0.0)
+	if storage_screen.visible and not storage_screen._docked:
+		var storage_chrome: float = storage_screen._frame.get_combined_minimum_size().y - storage_screen._grid.get_combined_minimum_size().y
+		stage_minimum = maxf(stage_minimum, storage_chrome + storage_screen._tile_row_size.y + 4.0)
+	var lanes_height := minf(lane_stack.get_combined_minimum_size().y, maxf(69.0, available - stage_minimum))
+	var arena_height := minf(290.0, maxf(stage_minimum, available - lanes_height))
+	if not is_equal_approx(lane_scroller.custom_minimum_size.y, lanes_height):
+		lane_scroller.custom_minimum_size.y = lanes_height
+	if not is_equal_approx(arena.custom_minimum_size.y, arena_height):
+		arena.custom_minimum_size.y = arena_height
+	storage_popup_layer.global_position = battle_stage.global_position
+	storage_popup_layer.size = battle_stage.size
 
 func _build_speed_controls(header: HBoxContainer) -> void:
 	speed_controls = HBoxContainer.new()
@@ -524,7 +607,8 @@ func _update_controls() -> void:
 	save_title_button.visible = campaign and not combat_save_pending and not animating and state in ["setup", "finished"]
 	var battle_title := FrontierScreen.battle_title(run.data.get("node", {}))
 	battle_heading.text = battle_title if campaign and (encounter_setup or showing_rewards) and not battle_title.is_empty() else "BRASS & AETHER"
-	combat_meter_toggle.visible = not campaign or encounter_setup or (showing_rewards and run.has_combat_reward())
+	combat_meter_toggle.visible = (not campaign or encounter_setup or (showing_rewards and run.has_combat_reward())) \
+		and not relic_focus_layer.visible
 	combat_meter_toggle.set_pressed_no_signal(combat_meter_open)
 	combat_meter.visible = combat_meter_toggle.visible and combat_meter_open
 	combat_sidebar.visible = combat_meter.visible or _placing_tile_reward()
@@ -643,6 +727,7 @@ func _party_has_tiles() -> bool:
 
 func _rebuild_loadout() -> void:
 	_clear_drag_preview()
+	tile_layout_columns = _tile_layout_columns()
 	for child in lane_stack.get_children():
 		lane_stack.remove_child(child)
 		child.queue_free()
@@ -689,6 +774,7 @@ func _rebuild_loadout() -> void:
 		setup_hint.text = "Drag tiles to slide neighbors aside. Tiles fire at their right edge."
 	if storage_screen.visible:
 		_render_storage()
+	_queue_battle_layout()
 
 
 func _build_practice_arsenal() -> void:
@@ -859,11 +945,28 @@ func _pulse_relic(id: String) -> void:
 	relic_pulses[id] = pulse
 
 func _tile_row_height() -> int:
+	var target_rows := 1
 	for lane: Array in lanes:
 		for tile: Dictionary in lane:
-			if ArenaSim.TILES[tile.id].width == 1 and sim.target_rules(tile.id).size() > 4:
-				return 89
-	return 69
+			target_rows = maxi(target_rows, ceili(float(sim.target_rules(tile.id).size()) / _tile_target_columns(ArenaSim.TILES[tile.id].width)))
+	return 69 + (target_rows - 1) * 20
+
+
+func _tile_layout_columns() -> Array[int]:
+	var columns: Array[int] = []
+	for width in range(1, ArenaSim.BEATS + 1):
+		columns.append(_tile_target_columns(width))
+	return columns
+
+
+func _tile_target_columns(width: int) -> int:
+	var scrollbar := lane_scroller.get_v_scroll_bar()
+	var scrollbar_width := scrollbar.size.x if scrollbar.visible else 0.0
+	var board_width := arena_screen.size.x - arena_screen.get_theme_constant("margin_left") \
+		- arena_screen.get_theme_constant("margin_right") - 157.0 - 8.0 - scrollbar_width
+	var spacing := 1 if width == 1 else 2
+	var span := width * board_width / ArenaSim.BEATS - 2.0
+	return maxi(1, floori((span + spacing) / (16.0 + spacing)))
 
 func _build_lane(lane_index: int, row_height: int) -> void:
 	var row := HBoxContainer.new()
@@ -995,6 +1098,7 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 	name_button.alignment = HORIZONTAL_ALIGNMENT_LEFT
 	if tile.width == 1:
 		name_button.add_theme_constant_override("h_separation", 3)
+		name_button.clip_text = true
 	name_button.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	name_button.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	name_button.add_theme_font_size_override("font_size", 13)
@@ -1032,11 +1136,14 @@ func _build_tile(board: Control, lane_index: int, item: Dictionary, offer_height
 		var target_caption := _setup_target_caption(lane_index, item, item.target)
 		setup_hint.text = "%s · %s" % [tile.label, LABELS[rule] if target_caption.is_empty() else target_caption]
 	var target_group := ButtonGroup.new()
-	var rule_rows := [available_rules]
-	if tile.width == 1 and available_rules.size() > 4:
-		rule_rows = [available_rules.slice(0, 4), available_rules.slice(4)]
+	var rule_rows := []
+	var columns := _tile_target_columns(tile.width)
+	for first in range(0, available_rules.size(), columns):
+		rule_rows.append(available_rules.slice(first, first + columns))
 	for rules: Array in rule_rows:
 		var targets := _target_buttons(rules, current_rule, choose, false, target_group)
+		if tile.width == 1:
+			targets.add_theme_constant_override("separation", 1)
 		card.add_child(targets)
 		_drop_destination(targets, board, lane_index, offer_height)
 		for target_button: Control in targets.get_children():
@@ -1961,12 +2068,13 @@ func _show_frontier(page := "") -> void:
 	frontier_screen.render(run, page)
 
 func _place_frontier_screen(parent: Control) -> void:
+	relic_focus_layer.visible = parent == relic_focus_layer and arena_screen.visible
 	if frontier_screen.get_parent() != parent:
 		frontier_screen.reparent(parent, false)
 		frontier_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 func _set_reward_storage(docked: bool) -> void:
-	var parent: Control = combat_sidebar if docked else arena
+	var parent: Control = combat_sidebar if docked else storage_popup_layer
 	if storage_screen.get_parent() != parent:
 		storage_screen.reparent(parent, false)
 		storage_screen.set_docked(docked)
@@ -1997,7 +2105,11 @@ func _show_rewards() -> void:
 	battle_stage.show()
 	arena.show()
 	forge_screen.hide()
-	_place_frontier_screen(arena)
+	if lanes.size() > 1 and not run.elite_relic_offers().is_empty():
+		_fit_relic_focus()
+		_place_frontier_screen(relic_focus_layer)
+	else:
+		_place_frontier_screen(arena)
 	frontier_screen.render(run, "", true)
 	_update_controls()
 
@@ -2380,18 +2492,15 @@ func _claim_reward_upgrade(id: String) -> void:
 		run.loadout.suppressed.erase(id)
 		if not notice.is_empty():
 			run.data.enchantment_notice = notice
-		return run.reward(source_id, _reward_placement(id, plan.destination)), true)
+		return run.reward(source_id, _reward_placement(id, plan.destination)))
 
-func _finish_reward_combine(claim: Callable, review_upgrade := false) -> bool:
+func _finish_reward_combine(claim: Callable) -> bool:
 	var pending: Dictionary = run.data.reward_combine
 	var inventory: Dictionary = run.loadout.duplicate(true)
 	var previous_notice: String = run.data.get("enchantment_notice", "")
 	run.data.erase("reward_combine")
 	if claim.call():
-		if review_upgrade:
-			_after_forge_upgrade()
-		else:
-			run_return()
+		run_return()
 		return true
 	run.data.reward_combine = pending
 	if previous_notice.is_empty():

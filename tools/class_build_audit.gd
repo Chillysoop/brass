@@ -769,19 +769,15 @@ func _rest(run: FrontierRun, row: Dictionary, policy: String, lead_policy: Strin
 	if forge.is_empty():
 		row.rests.append({"node": node, "action": "heal"})
 		return run.rest("heal")
-	var checkpoint := run.loadout.duplicate(true)
 	var item: Dictionary = run.loadout.lanes[forge.lane][forge.index]
 	var source: String = item.id
 	var upgrade: String = forge.tile
-	item.id = upgrade
-	if item.target not in ArenaSim.TILES[upgrade].targets:
-		item.target = ArenaSim.TILES[upgrade].targets[0]
-	if not run.rest("forge", "%s upgraded to %s." % [ArenaSim.TILES[source].label, ArenaSim.TILES[upgrade].label]):
-		run.loadout = checkpoint
+	var start: int = item.start
+	if not run.choose_camp_upgrade({"lane": forge.lane, "id": source, "start": start}, upgrade):
 		return false
 	row.rests.append({"node": node, "action": "forge"})
 	_record_upgrade(row, "camp_forge", source, upgrade, forge.lane, node, forge.fitting,
-		{"id": upgrade, "lane": forge.lane, "start": item.start})
+		{"id": upgrade, "lane": forge.lane, "start": start})
 	return true
 
 
@@ -796,8 +792,6 @@ func _camp_choice(run: FrontierRun, target_lane: int, policy: String, lead_polic
 		var before := _build_score(current, lane_policy, class_id)
 		for index in range(items.size()):
 			var item: Dictionary = items[index]
-			if not run.forge_family_available(_family(item.id)):
-				continue
 			var fitting := TilePacking.next_options(item.id).filter(func(id: String):
 				return TilePacking.can_place(items, id, item.start, ArenaSim.BEATS, item.start))
 			for upgrade: String in fitting:

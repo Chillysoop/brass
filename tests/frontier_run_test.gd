@@ -702,11 +702,15 @@ func _check_intermediate_boss_rerolls(run: FrontierRun, path: String, original: 
 			return
 		gold -= price
 		var after: Array = run.data.offers.duplicate()
+		var reroll_roots := {}
+		for id: String in after:
+			reroll_roots[ArenaSim.TILES[id].get("family", id)] = true
 		check(after.size() == 3 and after[0] != after[1] and after[0] != before[0] and after[1] != before[1] \
 			and after.slice(0, 2).any(func(id: String): return id not in before) \
 			and after[2] != before[2] and _legendary_signature_offers(after, hero) == [after[2]] \
+			and reroll_roots.size() == 3 \
 			and after.all(func(id: String): return ArenaSim.TILES[id].rarity == "legendary"),
-			"A paid reroll refreshes both ordinary picks and trades the signature for its sibling.")
+			"A paid reroll refreshes three different roots and trades the signature for its sibling.")
 		check(run.data.gold == gold and run.data.reward_remaining == remaining and run.load_save(path) \
 			and run.reward_reroll_price() == price * 2 and run.data.offers == after and run.data.reward_remaining == remaining,
 			"Reroll cost, visible order and the unopened hero's queued draft survive reload.")
@@ -737,11 +741,15 @@ func _check_hard_intermediate_boss_drafts() -> void:
 				var other := offers.filter(func(id: String): return id not in legendaries)
 				var ordinary_pool := run._class_reward_pool(hero, 4, run._reward_inventory(lane))
 				ordinary_pool = ordinary_pool.filter(func(id: String): return id not in legendaries)
+				var other_roots := {}
+				for id: String in other:
+					other_roots[ArenaSim.TILES[id].get("family", id)] = true
 				check(offers.size() == 3 and signatures == [offers[2]] and other.size() == 2 and other[0] != other[1] \
 					and other.all(func(id: String): return ArenaSim.TILES[id].rarity == "legendary") \
-					and other == run._sample(ordinary_pool, 2, seed, run._node_salt(81 + lane * 1069)) \
+					and other_roots.size() == 2 \
+					and other[0] == run._sample(ordinary_pool, 1, seed, run._node_salt(81 + lane * 1069))[0] \
 					and draft == run._combat_reward_draft("boss", lane),
-					"%s Hard Act %d seed %d reserves one Legendary signature beside two distinct ordinary Legendaries." % [hero, act, seed])
+					"%s Hard Act %d seed %d reserves one Legendary signature beside two distinct ordinary roots." % [hero, act, seed])
 				for id: String in signatures:
 					seen_signatures[id] = true
 				seen_other_offers[other] = true
@@ -758,9 +766,19 @@ func _check_hard_intermediate_boss_drafts() -> void:
 					_set_boss_draft_context(run, region, difficulty, seed, act, classes.slice(0, act))
 					for lane in range(act):
 						var pool := run._class_reward_pool(classes[lane], 4, run._reward_inventory(lane))
-						var ordinary := run._sample(pool, 3, seed, run._node_salt(81 + lane * 1069))
-						check(run._combat_reward_draft("boss", lane).offers == ordinary,
-							"%s %s Act %d should keep the ordinary Legendary draft and seed order." % [region, difficulty, act])
+						var ordinary := run._sample(pool, 1, seed, run._node_salt(81 + lane * 1069))
+						var offers: Array = run._combat_reward_draft("boss", lane).offers
+						var eligible_roots := {}
+						var offered_roots := {}
+						for id: String in pool:
+							eligible_roots[ArenaSim.TILES[id].get("family", id)] = true
+						for id: String in offers:
+							offered_roots[ArenaSim.TILES[id].get("family", id)] = true
+						check(offers.size() == 3 and offers[0] == ordinary[0] \
+							and offers.all(func(id: String): return id in pool and ArenaSim.TILES[id].rarity == "legendary") \
+							and offered_roots.size() == mini(3, eligible_roots.size()) \
+							and offers == run._combat_reward_draft("boss", lane).offers,
+							"%s %s Act %d should keep its seeded first pick and offer distinct eligible Legendary roots." % [region, difficulty, act])
 
 
 func _set_boss_draft_context(run: FrontierRun, region: String, difficulty: String, seed: int, act: int, heroes: Array) -> void:

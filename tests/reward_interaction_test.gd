@@ -2,6 +2,7 @@ extends SceneTree
 
 const Arena = preload("res://arena.tscn")
 const ArenaSim = preload("res://scripts/arena_sim.gd")
+const ClassRelics = preload("res://scripts/class_relics.gd")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const TilePacking = preload("res://scripts/tile_packing.gd")
 var failures: Array[String] = []
@@ -22,8 +23,12 @@ func _run() -> void:
 	await _click_reward_equips()
 	await _full_lane_stores()
 	await _full_inventory_and_save_failure()
+	await _reward_combine_quick_pick()
 	await _rest_forge_one_copy()
+	await _storage_previews()
+	await _reward_long_descriptions()
 	await _relic_labels()
+	await _compact_relic_layout()
 	game.queue_free()
 	await process_frame
 	for path in paths:
@@ -57,6 +62,7 @@ func _fixture() -> FrontierRun:
 func _click_reward_equips() -> void:
 	var run := _fixture()
 	var id: String = run.data.offers[0]
+	run.data.reward_hints[id] = "Leave one beat empty before it"
 	game.run_return()
 	await process_frame
 	var action := game.frontier_screen.find_child("RewardTile_" + id, true, false) as Button
@@ -74,6 +80,8 @@ func _click_reward_equips() -> void:
 	await _press(game.storage_screen.find_child("CloseStorage", true, false) as Button)
 	_check(game.storage_screen._docked and game.storage_screen.visible, "Closing expanded reward storage returns the visible sidebar.")
 	var body := action.get_parent().find_child("ChoiceDetails", true, false) as Control
+	_check((body as RichTextLabel).get_parsed_text() == ArenaSim.TILES[id].description,
+		"Reward ability copy stays complete and contains no appended relic-positioning advice.")
 	await _click_at(body.get_global_rect().get_center())
 	_check(run.data.phase == "map" and run.loadout.lanes[0].size() == 1
 		and run.loadout.lanes[0][0].id == id and run.loadout.lanes[0][0].start == 0
@@ -148,11 +156,19 @@ func _rest_forge_one_copy() -> void:
 	await _proof("forge")
 	_check(game.forge_screen._direct_pick and not game.forge_screen._confirm.visible,
 		"The rest forge needs no extra Upgrade confirmation after choosing a path.")
+	var option: Button = game.forge_screen._cards["phase_cut"]
+	var preview := option._make_custom_tooltip(option.tooltip_text) as Control
+	_check(preview.find_child("TileChoiceArtwork", true, false) != null
+		and (preview.find_child("ChoiceDetails", true, false) as RichTextLabel).get_parsed_text() == ArenaSim.TILES.phase_cut.description,
+		"Forge options share the illustrated tile preview and full mechanics without a legacy glossary popup.")
+	preview.free()
 	await _press(game.forge_screen._cards["phase_cut"])
 	_check(run.data.phase == "map" and run.loadout.storage[0].size() == 1
 		and run.loadout.storage[0][0].id == "phase_cut" and run.loadout.lanes[0][0].id == "jab"
 		and run.loadout.storage[0][0].get("enchantment") == "guarded",
 		"Rest upgrades only the chosen copy, keeps its compatible enchantment and consumes one rest action.")
+	_check(game.arena_screen.is_visible_in_tree() and game.storage_screen.is_visible_in_tree()
+		and game.arena.units.is_empty(), "A rest upgrade retains the empty arena and open storage for arranging tiles.")
 	var restored := FrontierRun.new()
 	_check(restored.load_save(run.save_path) and restored.loadout.storage[0] == run.loadout.storage[0],
 		"The one-click upgrade and its enchantment persist together.")
@@ -172,6 +188,36 @@ func _rest_forge_one_copy() -> void:
 		"The rest action advances only the clicked copy, leaving its two matching neighbors intact.")
 
 
+func _reward_combine_quick_pick() -> void:
+	var run := _fixture()
+	run.data.offers = ["bash", "rake", "guard"]
+	run.loadout.lanes[0] = [_tile("bash", 0), _tile("bash", 2)]
+	var before := run.loadout.duplicate(true)
+	game.run_return()
+	await _press(game.frontier_screen.find_child("RewardTile_bash", true, false) as Button)
+	_check(game.forge_screen.visible and game.forge_screen._direct_pick
+		and not game.forge_screen._confirm.visible and game.forge_screen._merge_intro != null,
+		"A reward set plays its merge introduction and offers direct next-tier choices without an extra confirmation.")
+	var future: String = TilePacking.forge_tiers("bash").back()[0]
+	await _press(game.forge_screen._cards[future])
+	_check(run.loadout == before and run.data.has("reward_combine") and game.forge_screen.visible,
+		"Clicking an inspectable future rarity cannot consume the pending reward or copies.")
+	var choice: String = TilePacking.next_options("bash")[0]
+	var path := run.save_path
+	run.save_path = path + ".missing/save.json"
+	await _press(game.forge_screen._cards[choice])
+	_check(run.loadout == before and run.data.has("reward_combine") and game.forge_screen.visible
+		and game.forge_screen._error.visible, "A failed direct combine save restores both copies and leaves the same choice open for retry.")
+	run.save_path = path
+	await _press(game.forge_screen._cards[choice])
+	_check(run.data.phase == "map" and not game.forge_screen.visible and not game.arena_screen.visible
+		and game.frontier_screen.visible and run.loadout.lanes[0].size() == 1 and run.loadout.lanes[0][0].id == choice,
+		"One valid reward path click consumes the set, saves once and returns directly to the map without an empty-arena Continue.")
+	var restored := FrontierRun.new()
+	_check(restored.load_save(path) and restored.data.phase == "map" and restored.loadout == run.loadout,
+		"The direct reward upgrade and advanced phase persist together.")
+
+
 func _relic_labels() -> void:
 	var run := _fixture()
 	for layer: Array in run.data.layers:
@@ -186,6 +232,125 @@ func _relic_labels() -> void:
 	var text := _texts(game.frontier_screen)
 	_check(not ["Fits your build", "Fit your build", "Pivot", "Wildcard", "Closest fit", "Long-term pivot"].any(
 		func(value: String): return value in text), "Relic choices omit fit, pivot and wildcard direction labels.")
+	_check(not text.any(func(value: String): return value.begins_with("Tile offer") or value.begins_with("Tile after")),
+		"Relic choices do not advertise a tile before the later draft.")
+
+
+func _storage_previews() -> void:
+	var run := _fixture()
+	var stored := _tile("bash", 0)
+	stored.enchantment = "guarded"
+	run.loadout.storage[0] = [stored]
+	game.run_return()
+	await process_frame
+	for docked: bool in [true, false]:
+		if not docked:
+			game.run_expand_reward_storage()
+			await process_frame
+		var card := game.storage_screen.find_child("StoredTile_bash_0_0", true, false) as Button
+		var preview := card._make_custom_tooltip(card.tooltip_text) as Control
+		root.add_child(preview)
+		await process_frame
+		var body := preview.find_child("ChoiceDetails", true, false) as RichTextLabel
+		var location := preview.find_child("StorageTileLocation", true, false) as Label
+		_check(preview.find_child("TileChoiceArtwork", true, false) != null
+			and preview.find_child("TileStats", true, false) != null,
+			"Stored tiles use the illustrated reward preview with icon statistics in both storage modes.")
+		_check(body != null and ArenaSim.TILES.bash.description in body.get_parsed_text()
+			and "Guarded" in body.get_parsed_text() and location != null and location.text == "Shared storage",
+			"The storage preview retains the full ability, enchantment and shared-storage ownership.")
+		_check(not "beats" in card.tooltip_text and not "Beat ·" in body.get_parsed_text(),
+			"Storage no longer adds the legacy beat explanation to its preview.")
+		if docked:
+			await _proof("storage-preview")
+		preview.queue_free()
+		await process_frame
+	game.storage_close()
+
+
+func _compact_relic_layout() -> void:
+	var run: FrontierRun = game.run
+	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
+	for hero_count: int in [1, 3]:
+		if hero_count == 3:
+			run.data.heroes.append({"id": "starshot", "hp": 100, "max_hp": 100})
+			run.data.heroes.append({"id": "apothecary", "hp": 100, "max_hp": 100})
+			run.loadout.lanes.append([_tile("shot", 0)])
+			run.loadout.lanes.append([{"id": "triage_kit", "start": 0, "target": "ally_lowest"}])
+			run.loadout.defaults.append_array(["nearest", "nearest"])
+			run.data.elite_relic_offers[2] = {"id": ClassRelics.id_for("warden"), "owner": "warden", "role": "", "companion": ""}
+			run.data.party_elite_relic_pending = true
+		for window_size: Vector2i in [Vector2i(1280, 800), Vector2i(856, 565)]:
+			root.size = window_size
+			for show_stats: bool in [false, true]:
+				game.combat_meter_open = show_stats
+				game.campaign = false
+				game.state = "setup"
+				game.run_return()
+				await process_frame
+				await process_frame
+				var focused: bool = hero_count > 1
+				var area: Control = game.relic_focus_layer if focused else game.arena
+				var arena_rect: Rect2 = area.get_global_rect().intersection(root.get_visible_rect()).grow(1)
+				_check(game.relic_focus_layer.visible == focused
+					and (not focused or game.frontier_screen.get_parent() == game.relic_focus_layer),
+					"Party relics use the full combat-area focus while solo relics keep their existing arena layout.")
+				_check(game.save_title_button.is_visible_in_tree()
+					and game.save_title_button.get_global_rect().end.y < arena_rect.position.y,
+					"The existing top-left Save & title stays accessible above relic choices.")
+				for offer: Dictionary in run.elite_relic_offers():
+					var card := game.frontier_screen.find_child("RelicChoice_" + offer.id, true, false) as Control
+					var portrait := card.find_child("RelicPortrait", true, false) as Control
+					var details := card.find_child("ChoiceDetails", true, false) as RichTextLabel
+					var claim := card.find_child("EliteRelic_" + offer.id, true, false) as Control
+					_check(arena_rect.encloses(card.get_global_rect()) and arena_rect.encloses(claim.get_global_rect()),
+						"The complete relic choice and claim stay within %d-hero %s rewards (stats %s): %s inside %s; overlay %s, art %s, copy %s." % [hero_count, window_size, show_stats, card.get_global_rect(), arena_rect, game.frontier_screen.size, portrait.custom_minimum_size, details.custom_minimum_size])
+					_check((portrait.custom_minimum_size.y >= 84 or arena_rect.size.y < 260)
+						and claim.get_global_rect().position.y - details.get_global_rect().end.y <= 4,
+						"Relic artwork is prominent and Claim remains next to the description instead of the arena footer.")
+					_check(details.get_parsed_text() == FrontierRun.RELICS[offer.id].description
+						and details.get_content_height() <= details.size.y + 1,
+						"The complete %s effect is readable without scrolling in %d-hero %s choices (%d within %s)." % [offer.id, hero_count, window_size, details.get_content_height(), details.size])
+					if focused:
+						_check(not details.scroll_active and portrait.custom_minimum_size.y >= 112,
+							"Focused party choices show meaningful relic artwork and the full description rather than a small scroll viewport.")
+				if window_size.x == 856 and show_stats:
+					await _proof("relic-compact-%d" % hero_count)
+	var picked: String = run.elite_relic_offers()[0].id
+	await _press(game.frontier_screen.find_child("EliteRelic_" + picked, true, false) as Button)
+	_check(not game.relic_focus_layer.visible and game.frontier_screen.get_parent() == game.arena
+		and game.storage_screen.visible and game.storage_screen._docked and game.combat_meter.visible,
+		"Claiming a party relic restores the arena tile draft, open storage and the previous stats preference immediately.")
+
+
+func _reward_long_descriptions() -> void:
+	var run := _fixture()
+	run.data.offers = ["armor_crush", "slam", "bash"]
+	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
+	for window_size: Vector2i in [Vector2i(1280, 800), Vector2i(856, 565)]:
+		root.size = window_size
+		for show_stats: bool in [false, true]:
+			game.combat_meter_open = show_stats
+			game.campaign = false
+			game.state = "setup"
+			game.run_return()
+			await process_frame
+			await process_frame
+			var action := game.frontier_screen.find_child("RewardTile_armor_crush", true, false) as Button
+			var body := action.get_parent().find_child("ChoiceDetails", true, false) as RichTextLabel
+			var field: Rect2 = game.arena.get_global_rect().intersection(root.get_visible_rect()).grow(1)
+			var skip := game.frontier_screen.find_child("SkipReward", true, false) as Control
+			_check(field.encloses(action.get_global_rect()) and field.encloses(skip.get_global_rect()),
+				"The full ability and Skip remain inside the single-hero reward arena.")
+			_check(body.get_parsed_text() == ArenaSim.TILES.armor_crush.description
+				and body.get_content_height() <= body.size.y + 1,
+				"The complete Armor Crush condition fits the single-hero %s reward (stats %s): %d within %s." % [window_size, show_stats, body.get_content_height(), body.size])
+			var preview := action._make_custom_tooltip(action.tooltip_text) as Control
+			_check((preview.find_child("ChoiceDetails", true, false) as RichTextLabel).get_parsed_text() == ArenaSim.TILES.armor_crush.description,
+				"Reward artwork also opens the full illustrated ability preview without a scroll budget.")
+			preview.free()
+			if window_size.x == 856 and show_stats:
+				await _proof("armor-crush")
 
 
 func _filled(capacity: int) -> Array:

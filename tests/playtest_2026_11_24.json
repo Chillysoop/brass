@@ -1,0 +1,304 @@
+{
+  "date": "2026-11-24",
+  "baseline_build": "9dfd615",
+  "method": {
+    "interface": "Installed Windows game, using visible UI only for all gameplay choices, movement, rewards, forging, shops, save/profile navigation, and meta purchases.",
+    "profiles": "Three separate empty slots in an isolated APPDATA directory. No actual player saves touched.",
+    "knowledge": "First attempt approached through on-screen instructions; later attempts use lessons learned through play. No gameplay source read by root before all three attempts finished.",
+    "scope": "Brass Frontier Easy / Act I, the only difficulty available on an empty profile. Each clear is a game-defined victory. These are not claims of three full three-act clears.",
+    "supplemental": "Independent code-driven class audits and hidden render/regression tests are separate evidence, not counted as UI playtests.",
+    "meta_spending_during_attempts": 0,
+    "speeds_tested": [
+      1,
+      3
+    ]
+  },
+  "attempts": [
+    {
+      "slot": 1,
+      "seed": 2828357233,
+      "class": "Warden",
+      "difficulty": "Easy",
+      "result": "Victory",
+      "finalHP": 92,
+      "healthMax": 100,
+      "marks": 22,
+      "unlocked": "Medium",
+      "relics": [
+        "Pocket Bell",
+        "Barrage Rack"
+      ],
+      "tiles": [
+        "Rampart Rush",
+        "Shield Ram",
+        "Rake",
+        "Retreat Shot",
+        "Closing Shield"
+      ],
+      "nodes": [
+        "Gate Trial",
+        "Relay Duel",
+        "Relay Market",
+        "Tempered Guard",
+        "Dust Patrol",
+        "Lantern Camp",
+        "Tollkeeper+drone"
+      ],
+      "checks": [
+        "Reward click equips",
+        "Full timeline click reward stores",
+        "Sequence bump slides",
+        "Storage round-trip same width",
+        "Save/title and resume preserves layout",
+        "Purchased shop card remains grey",
+        "Direct rest no duplicates",
+        "Legendary trophy and Medium unlock"
+      ],
+      "notes": [
+        "No health damage before boss; only8loss overall",
+        "Relic draft tiny art, distant claims, misleading tile-after footer",
+        "Storage tooltip legacy beat prose"
+      ],
+      "enemy_identity_note": "Enemy identity labels in live notes were visual inferences; results rely on visible encounter names."
+    },
+    {
+      "slot": 2,
+      "seed": 4172420220,
+      "class": "Starshot",
+      "difficulty": "Easy",
+      "result": "Victory",
+      "finalHP": 13,
+      "healthMax": 100,
+      "marks": 20,
+      "unlocked": "Medium",
+      "relics": [
+        "Brass Metronome"
+      ],
+      "tiles": [
+        "Rivet Bolt",
+        "Spark Shot · Backstep",
+        "Field Dressing",
+        "Backdraft Bolt"
+      ],
+      "nodes": [
+        "Gate Trial",
+        "Jammed Crane success60%",
+        "Scrap Brigade",
+        "Dust Patrol",
+        "Piston Guard",
+        "Ember Post",
+        "Tollkeeper"
+      ],
+      "checks": [
+        "Ranged firing distance",
+        "Backpedals facingenemy",
+        "Visible barrel emission",
+        "Reroll5gold→10gold persistsact",
+        "Normal3rewardSparkcombineSignal",
+        "RestUncommon→Rare singlecopy",
+        "Victory animation",
+        "Slot2 isolated unlock"
+      ],
+      "notes": [
+        "95HPafterbruiser,100afterhealing,13atbossfinish",
+        "Upgrade reward fit requires superfluous arena Continue; fixassigned",
+        "Forgehoverlegacybeatsglossary; fixassigned"
+      ],
+      "enemy_identity_note": "Enemy identity labels in live notes were visual inferences; results rely on visible encounter names."
+    },
+    {
+      "slot": 3,
+      "seed": 271011869,
+      "class": "Hexwright",
+      "difficulty": "Easy",
+      "result": "Victory",
+      "finalHP": 25,
+      "healthMax": 100,
+      "relics": [
+        "Stepped Gear",
+        "Barrage Rack"
+      ],
+      "tiles": [
+        "Cover",
+        "Armor Crush",
+        "Grapple",
+        "Shot",
+        "Line Guard · Rally Dose"
+      ],
+      "nodes": [
+        "Gate Trial",
+        "Wall Patrol",
+        "Relay Market",
+        "Tempered Guard",
+        "Roadside Quartermaster",
+        "Ember Post",
+        "Tollkeeper+repair drone"
+      ],
+      "checks": [
+        "Heavy/quick sequence bump",
+        "Heavy preparation and magic at3x",
+        "Shopheals onceonly",
+        "EqualwidthswapStorageCover/LineGuard",
+        "Restheal30autocontinues",
+        "Distinctseed/lineups"
+      ],
+      "notes": [
+        "91afteropening,58afterbruiser,73aftershopheal,28afterelite,58afterrest,25atfinish",
+        "BossdraftCoverRecoveryWard/CoverChorusClinic/LineGuardChorusClinic repeatsroot"
+      ],
+      "marks": 22,
+      "unlocked": "Medium",
+      "enemy_identity_note": "Enemy identity labels in live notes were visual inferences; results rely on visible encounter names."
+    }
+  ],
+  "observations": [
+    {
+      "area": "Onboarding",
+      "finding": "Region and difficulty locks are large and legible. Hero passive text and class-deck inspection explain initial choice. Timeline footer explains firing at the tile's right edge.",
+      "assessment": "Opening UI was navigable without reading code or an external guide."
+    },
+    {
+      "area": "Reward interaction",
+      "finding": "Single-click rewards equipped when space existed and went to storage when full. A third Spark Shot opened its upgrade choice and consumed the reward plus two owned copies.",
+      "assessment": "Core flow worked; successful reward combine still required a redundant empty-arena Continue in baseline."
+    },
+    {
+      "area": "Inventory",
+      "finding": "Different-width timeline dragging moved neighboring tiles. A stored Cover swapped with same-width Line Guard. Storage and sequence blocks kept contiguous widths.",
+      "assessment": "Movement was practical; storage/forge hover copy used an older tooltip style."
+    },
+    {
+      "area": "Combat presentation",
+      "finding": "Starshot fired from a distance, retreated while facing her target, and emitted visible shots from the weapon. Critical numbers were gold and larger. Enemies visibly prepared named attacks and repairs. Victory animation appeared before rewards.",
+      "assessment": "The three heroes were visually recognizable and played differently; no visible animation blocker found."
+    },
+    {
+      "area": "Upgrade readability",
+      "finding": "Long reward descriptions scrolled despite spare vertical space; Armor Crush's final conditional clause was initially hidden. Forge tooltips added large Beat/Reach/Range glossary blocks over the tree.",
+      "assessment": "Important ability text needed more space and consistent hover treatment."
+    },
+    {
+      "area": "Relic presentation",
+      "finding": "Elite relic artwork was tiny and claims were far below their descriptions, leaving a large empty middle area. A tile-after footer did not match the subsequent draft.",
+      "assessment": "The tile-after label belonged to a different relic card, not to the selected relic; its separated position made it read as a global preview. Removed the preview labels while preserving companion reward mechanics."
+    },
+    {
+      "area": "Progression and saving",
+      "finding": "Save/title/resume retained the manually rearranged loadout. Each independent slot earned its own Marks and Medium unlock. Slot 3 bought Stout Start, Gravity Hook, and Tile Enchantments between runs for 21 Marks total.",
+      "assessment": "No save loss, crash, or progression blocker observed in the three attempts."
+    },
+    {
+      "area": "Legendary variety",
+      "finding": "The third final-boss draft offered two Cover variants plus a Line Guard variant with the same Chorus Clinic name.",
+      "assessment": "Distinct base upgrade trees should be preferred within one boss draft."
+    }
+  ],
+  "fixes": [
+    {
+      "id": "legacy_tile_tooltips",
+      "change": "Reuse full illustrated ability cards for storage and forge, remove duplicated beat/range glossary."
+    },
+    {
+      "id": "relic_layout",
+      "change": "Group larger borderless relic art, name, description, and claim close together; preserve compact/multihero layout."
+    },
+    {
+      "id": "misleading_tile_preview",
+      "change": "Remove tile-after preview footer."
+    },
+    {
+      "id": "unsolicited_relic_coaching",
+      "change": "Show actual tile ability text instead of appending relic positioning advice to it."
+    },
+    {
+      "id": "long_ability_copy",
+      "change": "Use available overlay height for descriptions, retain access to full copy."
+    },
+    {
+      "id": "reward_combine_friction",
+      "change": "Valid next-path click applies fitting reward upgrade and advances after transactional save; retain manual arrangement and save-failure safeguards."
+    },
+    {
+      "id": "compact_party_layout",
+      "change": "Keep three-hero sequences and existing targeting controls reachable in compact windows, including narrow/wide tiles and storage."
+    },
+    {
+      "id": "boss_root_diversity",
+      "change": "Prefer distinct base tile upgrade trees for boss Legendary offers; keep deterministic rarity/class/unlock rules and safe undersized-pool fallback."
+    },
+    {
+      "id": "audit_rest_api",
+      "change": "Update class audit to the current transactional single-copy camp upgrade API."
+    },
+    {
+      "id": "practice_exit_position",
+      "change": "Move the existing Practice title/result exit from the footer to the top-left header; preserve campaign Save & title and Retry in Practice return behavior."
+    }
+  ],
+  "balance": {
+    "human_results_note": "3/3 Easy wins in this small sample are not a population win-rate estimate. Warden was much safer than the two other builds; Starshot nearly died, Hexwright needed recovery decisions.",
+    "independent_audit": {
+      "runs": 384,
+      "medium_first_boss": 192,
+      "hard_full_three_act": 192,
+      "classes": 12,
+      "seeds_per_class": 8,
+      "policies": 2,
+      "stat_meta_upgrades": 0,
+      "roster": "Unlocked for coverage",
+      "direct_camp_upgrades_exercised": 395,
+      "errors": 0,
+      "limitations": "Heuristic pilot choices do not predict human win rates. Results describe the baseline before boss draft diversity changes."
+    },
+    "remaining_priorities": [
+      "Warden's Bash-family passive rarely participates in bespoke shield builds: 15 of 16 audited Medium final builds had no Bash family. Validate a shield-aligned eligibility change separately.",
+      "Rune Smith warrants targeted human playtest: audited Medium first-boss10/16, Hard full-run0/16, versus Cantor16/16 and12/16. Do not tune solely from bots.",
+      "Class root decks still share substantial content: Warden/Bulwark share14/20 Common roots, Lancer/Duelist13/20. Bespoke class mechanics are a stronger next content investment than more generic variants."
+    ]
+  },
+  "constraints": {
+    "map_environmental_work": "Paused",
+    "targeting": "Existing controls only; no expansion",
+    "enemy_tips_or_previews": "No additions",
+    "paid_generation_calls": 0
+  },
+  "meta_check": {
+    "slot": 3,
+    "spent": 21,
+    "remaining": 1,
+    "unlocks": [
+      "Stout Start",
+      "Gravity Hook",
+      "Tile Enchantments"
+    ],
+    "actualUserSaves": "untouched"
+  },
+  "retest": {
+    "status": "Passed",
+    "game_suites": {
+      "passed": 61,
+      "total": 61,
+      "notes": "One integrated full run after reward, layout, and boss draft fixes. Later small Practice exit change passed the two directly affected Arena Lab and checkpoint suites again."
+    },
+    "boss_draft_checks": {
+      "contexts": 6912,
+      "limited_pool_seeds": 64,
+      "coverage": "Initial and paid-reroll root diversity, deterministic class/act/party/unlock contexts, signatures, small pools, and save compatibility."
+    },
+    "render_checks": "Hidden GPU verification of full relic descriptions, long Armor Crush copy, compact three-hero sequences, width-one through width-five inventory geometry and targeting, and full storage popup.",
+    "packed_build": "104 actors, 93 native motions, 18 additional hero actions, 24 hero reactions, 745 tile effects, 144 particle frames verified.",
+    "live_candidate_ui": {
+      "runtime": "Candidate exported pack run in Godot 4.7.2; release executable intentionally blocks main-pack override.",
+      "checks": [
+        "Three independent profiles retained22/20/1Marks",
+        "Slot3 retained all3meta purchases",
+        "Medium available after restart",
+        "Storage illustrated hover, full description and shared-storage context",
+        "Forge illustrated hover without legacy glossary"
+      ],
+      "errors_observed": 0
+    },
+    "save_isolation": "All tests used separate APPDATA data. Actual player profiles were untouched.",
+    "content_tuning": "No combat values, passives, enemy attacks, map environments or targeting rules changed."
+  }
+}
