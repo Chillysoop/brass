@@ -12,6 +12,10 @@ Each class has its own combat reward deck. Use **View class deck** on a hero or 
 
 Storage, sequence, and forge tiles share the same illustrated ability preview. Fitting reward combinations apply when you choose the next-tier path and continue to the next hero's draft or the map after saving. Rest-site upgrades return to the empty arena for further arrangement. Boss Legendary drafts and paid rerolls prefer different base tile upgrade trees whenever the class pool allows it.
 
+Tile and relic descriptions show their complete text without internal scroll areas. Tile choices use framed rarity cards; relic choices keep their separate portrait treatment. Shops use a merchant stock display, coin prices, and a separate services counter. Purchased stock remains visible and marked **Purchased**.
+
+During a run, relics sit at the top left and the top-right game menu holds utility actions such as **Save & title**, **Tile storage**, and **Combat stats**. Primary battle and Continue controls remain directly available in the same right-hand cluster. Tile rewards focus the receiving hero's sequence; storage opens as a right-side drawer so full ability text has room.
+
 The [24 November 2026 playtest record](tests/playtest_2026_11_24.json) separates three UI-only fresh-profile Easy victories from the supplemental model audits and regression checks. Warden finished at 92 HP, Starshot at 13 HP, and Hexwright at 25 HP without stat meta upgrades. These were Act I clears, the only difficulty initially available on each empty profile. Compact party layouts retain the existing targeting controls and full-size inventory tiles, with party scrolling for dense arrangements.
 
 In **Brass Frontier Medium and Hard**, the lead hero's first tile draft offers their familiar class starter, a shared or relic-linked tile, and one of two alternate attacks from their class deck. The seed determines which alternate appears. Starshot can see Backdraft Bolt or Parallax Shot, and Lancer can see Phalanx Charge or Recoil Thrust. Take an alternate and the first combat draft favors new tiles while still offering a third copy when you can combine it.
@@ -40,7 +44,7 @@ The custom particle atlas contains twelve shaded materials and twelve lifecycle 
 
 Tile rarity runs gray, green, blue, purple, and gold from Common to Legendary. Hero badges identify who has a tile equipped or who receives a reward. In shared storage, a signature tile's badge identifies its class of origin.
 
-Open **Combat stats** during or after a fight to rank tiles by damage, assists, kills, or healing. Tiles receive one assist per enemy they damage or move before a different tile kills it. **Retry in Practice** replays the original encounter with an editable copy of your equipment and pre-fight health.
+Open **Combat stats** from the game menu during or after a fight. Its semi-transparent window floats over the arena without shrinking the battlefield. The sword, joined arrows, skull, and healing cross select damage, assists, kills, and healing; hover or focus a tab for its name and explanation. Tiles receive one assist per enemy they damage or move before a different tile kills it. **Retry in Practice** replays the original encounter with an editable copy of your equipment and pre-fight health.
 
 Defeat the Tollkeeper on Easy to bank Aether Marks and unlock **Medium**. Open the **Aether Chart** from the title or after a run to inspect prerequisites and spend Marks on permanent upgrades between expeditions.
 
@@ -64,7 +68,7 @@ The starter relic draft rotates build options. **Overflow Chalice** converts exc
 
 Fresh expeditions can draft moves such as one-beat strikes, shots that create distance, and marks that any hero can spend on the next hit. The **Combat tiles** picker in Arena Practice includes the class expansion and all 24 Arsenal tiles.
 
-Your first elite victory offers a relic draft before the tile rewards, which include each hero's signature Uncommon. **Switchback Lens** rewards changing targets, **Longshot Prism** boosts a hit from far away, and **Twin Bell** rewards two heroes for hitting the same enemy on the same beat. Twin Bell enters the pool once two heroes are alive. **Afterimage**, **Barrage Rack**, and **Siege Fuse** also appear and can add a compatible tile to the reward. Battle Review records the tile and beat that triggered each effect.
+Your first elite victory offers a relic draft before the tile rewards, which include each hero's signature Uncommon. **Switchback Lens** rewards changing targets, **Longshot Prism** boosts a hit from far away, and **Twin Bell** rewards two heroes for hitting the same enemy on the same beat. Twin Bell enters the pool once two heroes are alive. **Afterimage**, **Barrage Rack**, and **Siege Fuse** also appear and can add a compatible tile to the reward. Their icons flash when an effect activates.
 
 The first Act II elite victory with a living party of two opens a draft with two shared relics and one class relic for a living hero. Each class has its own relic, and the class badge identifies who can activate it. The elite still offers a separate tile reward for each hero.
 
@@ -104,7 +108,7 @@ The first two Brass Frontier Hard bosses offer each hero one class-signature Leg
 
 1. Start with **Two heroes**. The preset schedules Hexwright's **Pull · Farthest** at beat 4 and Warden's **Bash · Nearest** at beat 6. Start the battle and watch the tether bring the distant clockwork within striking distance.
 2. **Reset fight**, change Pull's rule to **Nearest**, and compare the target and follow-up. Each tile previews its target in setup and chooses again when it fires.
-3. Open **Tile storage** above the timeline. Drag tiles in either direction while the popup is open. Neighbors shift in the preview if they fit. You can also select a tile and click a clear starting beat or storage cell. Use the popup to discard a selected tile.
+3. Open **Tile storage** from the top-right game menu. Drag tiles in either direction while the popup is open. Neighbors shift in the preview if they fit. You can also select a tile and click a clear starting beat or storage cell. Use the popup to discard a selected tile.
 4. Try **Solo hero**, 2× speed, or a layout using Blink. Reset returns to setup and retains the current layout. Changing fixtures loads that fixture's preset.
 5. Open **Tile storage** to find three touching Bash tiles. Use **Combine → Yes**, inspect any rarity, then confirm one of the two upgrades offered at the next rarity. Three four-beat Slams fit together on a full timeline. In an expedition, a camp can also advance a single Slam if the upgrade fits.
 6. Choose **Forge practice** from the fixture picker to start with three Epic Sunwalls on Warden's lane. Combine them into either Legendary, then try the result in battle or move it into storage.

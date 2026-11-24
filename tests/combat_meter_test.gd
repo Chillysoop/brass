@@ -72,9 +72,26 @@ func _check_damage_and_assists() -> void:
 	meter.set_metric("assists")
 	meter.show()
 	var ranks: VBoxContainer = meter.find_child("CombatRanks", true, false)
+	var backdrop := meter.get_theme_stylebox("panel") as StyleBoxFlat
+	_check(backdrop.bg_color.a > 0.0 and backdrop.bg_color.a < 1.0,
+		"Combat statistics has a translucent backdrop while its text remains readable and opaque.")
 	_check(meter.metric == "assists" and ranks.get_child_count() == 3 and ranks.get_child(0).visible
 		and meter.totals.ranked("damage") == damage and meter.totals.ranked("kills") == kills,
 		"The meter can track while hidden, restore valid serialized results, and switch rankings.")
+	for metric: String in CombatTotals.METRICS:
+		var tab: Button = meter.find_child("CombatMetric_" + metric, true, false)
+		_check(tab.text.is_empty() and tab.find_children("*", "Label", true, false).is_empty()
+			and tab.accessibility_name == CombatMeter.LABELS[metric]
+			and tab.tooltip_text.begins_with(CombatMeter.LABELS[metric])
+			and tab.custom_minimum_size.x >= 44,
+			"Metric tabs use recognizable icons with named, accessible, full-size controls.")
+		tab.pressed.emit()
+		_check(meter.metric == metric, "Each icon tab switches the actual selected ranking.")
+		var first_row: PanelContainer = ranks.get_child(0)
+		var glyph: Control = first_row.get_meta("metric_icon")
+		_check(glyph.get_meta("icon_id") == CombatMeter.ICONS[metric]
+			and first_row.accessibility_name.ends_with(CombatMeter.LABELS[metric].to_lower()),
+			"Changing a metric updates both the number's icon and its accessible meaning.")
 	meter.free()
 
 

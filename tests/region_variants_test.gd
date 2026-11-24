@@ -165,6 +165,12 @@ func _check_compact_map(game: Control, run: FrontierRun) -> void:
 	run.data.relics = FrontierRun.RELICS.keys()
 	run.data.node_notice = "Relic acquired. ".repeat(24)
 	run.loadout.storage[1] = [{"id": "triage_kit", "start": 0, "target": "ally_lowest"}]
+	game.run_return()
+	await process_frame
+	await process_frame
+	board = game.frontier_screen.find_child("ExpeditionMapBoard", true, false) as Control
+	_check(board.get_global_rect() == board_before,
+		"Relic history and long route notices keep the route board at the same size.")
 	run.data.reward_placement = {"id": "triage_kit", "row": 1, "start": 0}
 	game.run_return()
 	await process_frame
@@ -174,10 +180,26 @@ func _check_compact_map(game: Control, run: FrontierRun) -> void:
 	var key := game.frontier_screen.find_child("RouteKey", true, false) as Control
 	var status := game.frontier_screen.find_child("RouteDetails", true, false) as ScrollContainer
 	var storage := footer.find_child("OpenRewardStorage", true, false) as Button
+	var receipt := game.frontier_screen.find_child("RewardPlacement", true, false) as Label
 	var viewport := game.get_viewport_rect()
-	_check(board.get_global_rect() == board_before, "Relic history and a reward receipt keep the route board at the same size.")
-	_check(storage != null and viewport.encloses(storage.get_global_rect()) and viewport.encloses(footer.get_global_rect())
-		and viewport.encloses(key.get_global_rect()), "The route key, reward receipt, and footer actions fit in the compact viewport.")
+	var receipt_row := receipt.get_parent() as Control
+	var layout := receipt_row.get_parent() as VBoxContainer
+	var receipt_space := receipt_row.size.y + layout.get_theme_constant("separation")
+	_check(board.get_global_rect().position == board_before.position and board.size.x == board_before.size.x
+		and is_equal_approx(board.size.y + receipt_space, board_before.size.y),
+		"The contextual reward receipt reserves exactly one row without shifting or widening the route.")
+	_check(receipt.is_visible_in_tree() and viewport.encloses(receipt.get_global_rect())
+		and viewport.encloses(board.get_global_rect()) and viewport.encloses(key.get_global_rect()),
+		"The route board, key, and complete reward receipt fit in the compact viewport.")
+	var menu: Control = game.frontier_screen._action_menu
+	await _click_button(menu.trigger)
+	await process_frame
+	await process_frame
+	_check(menu.is_open() and storage != null and storage.is_visible_in_tree() and not storage.disabled
+		and viewport.encloses(storage.get_global_rect()) and viewport.encloses(footer.get_global_rect()),
+		"The visible top-right menu keeps the map's storage utility accessible inside the compact viewport.")
+	await _click_button(menu.trigger)
+	_check(not menu.is_open(), "The utility menu closes through real mouse input.")
 	_check(status.get_v_scroll_bar().visible, "Overflowing route details can scroll independently.")
 	run.data.erase("reward_placement")
 	game.run_return()
@@ -260,6 +282,20 @@ func _press(parent: Control, node_name: String) -> bool:
 		return false
 	button.pressed.emit()
 	return true
+
+
+func _click_button(button: Button) -> void:
+	if not _check(button != null and button.is_visible_in_tree() and not button.disabled,
+		"Expected a visible enabled utility control before sending mouse input."):
+		return
+	for down: bool in [true, false]:
+		var event := InputEventMouseButton.new()
+		event.position = button.get_global_rect().get_center()
+		event.global_position = event.position
+		event.button_index = MOUSE_BUTTON_LEFT
+		event.pressed = down
+		root.push_input(event, true)
+	await process_frame
 
 
 func _check(condition: bool, description: String) -> bool:

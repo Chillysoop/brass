@@ -548,8 +548,9 @@ func _check_medium_rewards(game: Control) -> void:
 	_check_reward_tile_identity(game.frontier_screen, first_offers, lead)
 	var first_tile: String = first_offers[0]
 	var first_button := game.frontier_screen.find_child("RewardTile_" + first_tile, true, false) as Button
-	_check(first_button.text.is_empty() and first_button.get_parent().get_meta("floating_tile_choice", false),
-		"Reward tiles use a borderless clickable art choice without a storage CTA.")
+	_check(first_button.text.is_empty() and first_button.get_parent().get_meta("grounded_tile_choice", false)
+		and first_button.get_parent().get_theme_stylebox("panel") is StyleBoxFlat,
+		"Reward tiles use defined rarity cards with full-card input and no separate storage CTA.")
 	await _drag_reward(game, first_tile, 1, 4)
 	_check(run.reward_position() == 0 and run.loadout.lanes[1].is_empty(), "The lead's tile cannot be dropped on the recruit's timeline.")
 	await _drag_reward(game, first_tile, 0, 4)
@@ -716,7 +717,22 @@ func _drag_reward(game: Control, id: String, lane: int, start: int) -> void:
 
 func _click(page: Control, node_name: String) -> void:
 	await process_frame
-	var button := page.find_child(node_name, true, false) as Button
+	var search: Node = page
+	var button: Button
+	while button == null and search != null:
+		button = search.find_child(node_name, true, false) as Button
+		search = search.get_parent()
+	if button != null and not button.is_visible_in_tree():
+		var menu: Node = button.get_parent()
+		while menu != null and not menu.has_method("is_open"):
+			menu = menu.get_parent()
+		if menu != null and not menu.is_open():
+			var trigger: Button = menu.get("trigger")
+			_check(trigger.is_visible_in_tree(), "The game menu trigger must be visible before opening a utility action.")
+			for down: bool in [true, false]:
+				_push_mouse_button(trigger.get_global_rect().get_center(), down)
+			await process_frame
+			await process_frame
 	var clickable := button != null and button.is_visible_in_tree() and not button.disabled
 	_check(clickable, "Expected the visible %s button to accept input." % node_name)
 	if not clickable:

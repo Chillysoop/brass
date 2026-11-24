@@ -67,10 +67,13 @@ func _click_reward_equips() -> void:
 	await process_frame
 	var action := game.frontier_screen.find_child("RewardTile_" + id, true, false) as Button
 	_check(action != null and action.text.is_empty()
-		and action.get_parent().get_theme_stylebox("panel") is StyleBoxEmpty,
-		"A reward is borderless artwork with no separate storage CTA.")
-	_check(game.storage_screen.visible and game.storage_screen._docked
-		and game.storage_screen._heading.text == "STORAGE", "The named shared stash stays visible beside rewards.")
+		and action.get_parent().get_theme_stylebox("panel") is StyleBoxFlat
+		and action.get_parent().get_meta("grounded_tile_choice", false),
+		"A reward is a grounded clickable ability card without a separate storage CTA.")
+	_check(not game.storage_screen.visible and game.storage_screen._docked
+		and game.storage_button.is_visible_in_tree(), "The right storage drawer remains accessible while full ability cards use the arena width.")
+	game._open_storage()
+	await process_frame
 	await _proof("reward")
 	await _press(game.storage_screen.find_child("ExpandStorage", true, false) as Button)
 	_check(game.storage_screen.visible and not game.storage_screen._docked
@@ -78,7 +81,7 @@ func _click_reward_equips() -> void:
 		"Storage expands to the same exact tile dimensions as the timeline.")
 	await _proof("storage")
 	await _press(game.storage_screen.find_child("CloseStorage", true, false) as Button)
-	_check(game.storage_screen._docked and game.storage_screen.visible, "Closing expanded reward storage returns the visible sidebar.")
+	_check(game.storage_screen._docked and not game.storage_screen.visible and game.storage_button.is_visible_in_tree(), "Closing expanded reward storage returns the full-width ability choices and drawer control.")
 	var body := action.get_parent().find_child("ChoiceDetails", true, false) as Control
 	_check((body as RichTextLabel).get_parsed_text() == ArenaSim.TILES[id].description,
 		"Reward ability copy stays complete and contains no appended relic-positioning advice.")
@@ -243,6 +246,8 @@ func _storage_previews() -> void:
 	run.loadout.storage[0] = [stored]
 	game.run_return()
 	await process_frame
+	game._open_storage()
+	await process_frame
 	for docked: bool in [true, false]:
 		if not docked:
 			game.run_expand_reward_storage()
@@ -295,9 +300,10 @@ func _compact_relic_layout() -> void:
 				_check(game.relic_focus_layer.visible == focused
 					and (not focused or game.frontier_screen.get_parent() == game.relic_focus_layer),
 					"Party relics use the full combat-area focus while solo relics keep their existing arena layout.")
-				_check(game.save_title_button.is_visible_in_tree()
-					and game.save_title_button.get_global_rect().end.y < arena_rect.position.y,
-					"The existing top-left Save & title stays accessible above relic choices.")
+				_check(game.action_menu.trigger.is_visible_in_tree()
+					and game.action_menu.trigger.get_global_rect().end.y < arena_rect.position.y
+					and not game.save_title_button.is_visible_in_tree(),
+					"The top-right menu keeps Save & title accessible while freeing the left header for relics.")
 				for offer: Dictionary in run.elite_relic_offers():
 					var card := game.frontier_screen.find_child("RelicChoice_" + offer.id, true, false) as Control
 					var portrait := card.find_child("RelicPortrait", true, false) as Control
@@ -319,8 +325,9 @@ func _compact_relic_layout() -> void:
 	var picked: String = run.elite_relic_offers()[0].id
 	await _press(game.frontier_screen.find_child("EliteRelic_" + picked, true, false) as Button)
 	_check(not game.relic_focus_layer.visible and game.frontier_screen.get_parent() == game.arena
-		and game.storage_screen.visible and game.storage_screen._docked and game.combat_meter.visible,
-		"Claiming a party relic restores the arena tile draft, open storage and the previous stats preference immediately.")
+		and not game.storage_screen.visible and game.storage_screen._docked and not game.combat_meter.visible
+		and game.combat_meter_open,
+		"Claiming a party relic restores full-width tile choices and the drawer, preserving the stats preference for combat.")
 
 
 func _reward_long_descriptions() -> void:
@@ -339,9 +346,9 @@ func _reward_long_descriptions() -> void:
 			var action := game.frontier_screen.find_child("RewardTile_armor_crush", true, false) as Button
 			var body := action.get_parent().find_child("ChoiceDetails", true, false) as RichTextLabel
 			var field: Rect2 = game.arena.get_global_rect().intersection(root.get_visible_rect()).grow(1)
-			var skip := game.frontier_screen.find_child("SkipReward", true, false) as Control
-			_check(field.encloses(action.get_global_rect()) and field.encloses(skip.get_global_rect()),
-				"The full ability and Skip remain inside the single-hero reward arena.")
+			var skip := game.action_menu.content.find_child("SkipReward", true, false) as Control
+			_check(field.encloses(action.get_global_rect()) and skip != null,
+				"The full ability stays in the arena and Skip remains available from the top-right menu.")
 			_check(body.get_parsed_text() == ArenaSim.TILES.armor_crush.description
 				and body.get_content_height() <= body.size.y + 1,
 				"The complete Armor Crush condition fits the single-hero %s reward (stats %s): %d within %s." % [window_size, show_stats, body.get_content_height(), body.size])

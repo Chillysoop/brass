@@ -21,10 +21,12 @@ func _run() -> void:
 	await process_frame
 	lab.set_physics_process(false)
 	await _check_practice_exit(lab)
+	await _check_compact_game_menu(lab)
 	_check(lab.lanes.size() == 2, "Duo setup should start with two lanes.")
 	var preview = lab.sim.target_for(0, "pull", "farthest")
 	_check(preview.get("id") == "clockwork", "Pull's default preview should identify the far enemy.")
 	var palette_tile: Button = lab.palette.get_child(2)
+	await _open_menu(lab)
 	_click(palette_tile.get_global_rect().get_center())
 	await process_frame
 	_check(lab.selected.get("id") == "guard", "Clicking the palette should select that tile.")
@@ -41,6 +43,7 @@ func _run() -> void:
 	lab._load_fixture("duo")
 	await process_frame
 	palette_tile = lab.palette.get_child(2)
+	await _open_menu(lab)
 	second_lane = lab.lane_stack.get_child(1).get_child(1)
 	third_beat = second_lane.get_child(2)
 	var from := palette_tile.get_global_rect().get_center()
@@ -89,10 +92,10 @@ func _run() -> void:
 	var first_pulse: ColorRect = lab.tile_cards[0].values().front().get_meta("timing_marker").get_child(0)
 	var second_pulse: ColorRect = lab.tile_cards[1].values().front().get_meta("timing_marker").get_child(0)
 	_check(first_pulse.color != second_pulse.color, "Pulses use distinct colors for the two hero lanes.")
-	_click(lab.combat_meter_toggle.get_global_rect().get_center())
+	await _menu_click(lab, lab.combat_meter_toggle)
 	await process_frame
 	_check(lab.combat_meter.visible and lab.arena.visible, "Toggle the meter without leaving live combat.")
-	_click(lab.combat_meter_toggle.get_global_rect().get_center())
+	await _menu_click(lab, lab.combat_meter_toggle)
 	for step_index in range(3000):
 		lab._physics_process(1.0 / 60.0)
 		if lab.sim.tick == 84:
@@ -104,13 +107,13 @@ func _run() -> void:
 			break
 	_check(lab.sim.outcome == "victory", "The full fight should finish through the arena controls.")
 	await process_frame
-	_click(lab.combat_meter_toggle.get_global_rect().get_center())
+	await _menu_click(lab, lab.combat_meter_toggle)
 	await process_frame
 	_check(lab.combat_meter.visible and lab.arena.visible and not lab.combat_meter.totals.ranked("damage").is_empty(),
 		"The right-side meter retains damage recorded while hidden and leaves the finished arena visible.")
 	lab.combat_meter.set_metric("kills")
 	_check(not lab.combat_meter.totals.ranked("kills").is_empty(), "Switching metrics shows the killing tiles.")
-	_click(lab.combat_meter_toggle.get_global_rect().get_center())
+	await _menu_click(lab, lab.combat_meter_toggle)
 	await process_frame
 	_check(not lab.combat_meter.visible and lab.arena.visible, "Closing the meter leaves the arena visible.")
 	lab._reset_fight()
@@ -135,22 +138,24 @@ func _run() -> void:
 
 
 func _check_practice_exit(lab: Control) -> void:
-	var expected: Vector2 = lab.arena_screen.global_position + Vector2(
-		lab.arena_screen.get_theme_constant("margin_left"), lab.arena_screen.get_theme_constant("margin_top"))
+	await _open_menu(lab)
 	_check(lab.return_button.is_visible_in_tree() and not lab.save_title_button.is_visible_in_tree()
 		and lab.return_button.get_parent() == lab.save_title_button.get_parent()
-		and lab.return_button.global_position.is_equal_approx(expected),
-		"Practice has one Title exit in the same top-left header position used by campaign Save & title.")
+		and lab.action_menu.panel.get_global_rect().encloses(lab.return_button.get_global_rect())
+		and lab.action_menu.trigger.global_position.x > root.size.x * 0.5,
+		"Practice has one Title exit in the top-right game menu used by campaign Save & title.")
 	_click(lab.return_button.get_global_rect().get_center())
 	await process_frame
 	_check(not lab.arena_screen.is_visible_in_tree() and lab.frontier_screen.is_visible_in_tree(),
-		"The top-left Practice Title button returns to the real title menu.")
+		"The menu's Practice Title button returns to the real title menu.")
 	lab.run_practice()
 	await process_frame
 	await process_frame
 	lab._action()
-	_check(lab.return_button.is_visible_in_tree() and lab.return_button.global_position.is_equal_approx(expected),
-		"Practice keeps its Title exit in the top-left while combat is running.")
+	await _open_menu(lab)
+	_check(lab.return_button.is_visible_in_tree() and lab.action_menu.panel.get_global_rect().encloses(lab.return_button.get_global_rect()),
+		"Practice keeps its Title exit available in the game menu while combat is running.")
+	lab.action_menu.close(false)
 	lab._reset_fight()
 	await process_frame
 
@@ -158,7 +163,7 @@ func _check_practice_exit(lab: Control) -> void:
 func _check_practice_arsenal(lab: Control) -> void:
 	lab._load_fixture("duo")
 	await process_frame
-	_click(lab.arsenal_button.get_global_rect().get_center())
+	await _menu_click(lab, lab.arsenal_button)
 	await process_frame
 	var jab: Button = lab.arsenal_panel.find_child("PracticeTile_jab", true, false)
 	var watchfire: Button = lab.arsenal_panel.find_child("PracticeTile_watchfire", true, false)
@@ -175,7 +180,7 @@ func _check_practice_arsenal(lab: Control) -> void:
 	if lab.tile_cards[0].has(0):
 		_check(_tile_has_badges(lab.tile_cards[0][0].get_child(0), "common", "hexwright"),
 			"A one-beat timeline tile should still show both rarity and owner.")
-	_click(lab.arsenal_button.get_global_rect().get_center())
+	await _menu_click(lab, lab.arsenal_button)
 	await process_frame
 	board = lab.lane_stack.get_child(1).get_child(1)
 	var from := watchfire.get_global_rect().get_center()
@@ -189,7 +194,7 @@ func _check_practice_arsenal(lab: Control) -> void:
 	_check(lab.tile_cards[1].has(target_start) and lab.tile_cards[1][target_start].get_meta("tile").id == "watchfire",
 		"An Uncommon tile should drag directly from the picker onto a timeline.")
 	if not lab.arsenal_panel.visible:
-		_click(lab.arsenal_button.get_global_rect().get_center())
+		await _menu_click(lab, lab.arsenal_button)
 	await process_frame
 	var collection := lab.arsenal_panel.find_child("PracticeTileCollection", true, false) as OptionButton
 	collection.select(2)
@@ -280,6 +285,7 @@ func _check_nudge(lab: Control) -> void:
 	await process_frame
 	var board: Control = lab.tile_cards[0][3].get_parent()
 	var palette_tile: Button = lab.palette.get_child(4)
+	await _open_menu(lab)
 	var origin := palette_tile.get_global_rect().get_center()
 	var destination := board.get_global_rect().position + Vector2(board.size.x * 2.5 / ArenaSim.BEATS, 12)
 	var before: Array = lab.lanes.duplicate(true)
@@ -785,6 +791,122 @@ func _check_retry_boss_telegraphs(lab: Control) -> void:
 			and lab.arena_screen.find_child(fixture.label, true, false) == null,
 			"%s should keep its timed on-arena windup during the practice replay." % fixture.id)
 		lab.run_menu()
+
+
+func _check_compact_game_menu(lab: Control) -> void:
+	var old_size := root.size
+	var old_mode := root.content_scale_mode
+	root.content_scale_mode = Window.CONTENT_SCALE_MODE_DISABLED
+	for dimensions: Vector2i in [Vector2i(856, 565), Vector2i(856, 535)]:
+		root.size = dimensions
+		lab.run_practice()
+		lab.set_physics_process(false)
+		await _open_menu(lab)
+		for frame in range(4):
+			await process_frame
+		var screen := root.get_visible_rect().grow(0.1)
+		_check(screen.encloses(lab.action_menu.panel.get_global_rect())
+			and lab.action_menu.trigger.global_position.x > dimensions.x * 0.5,
+			"Every Practice utility remains in the top-right menu at %s." % dimensions)
+		for control: Control in [lab.return_button, lab.storage_button, lab.combat_meter_toggle,
+				lab.arsenal_button, lab.fixture_picker, lab.reset_button, lab.palette]:
+			lab.action_menu._scroller.ensure_control_visible(control)
+			await process_frame
+			await process_frame
+			_check(control.is_visible_in_tree() and lab.action_menu._scroller.get_global_rect().grow(0.1).encloses(control.get_global_rect()),
+				"The full Practice control %s can be reached without shrinking at %s." % [control.name, dimensions])
+		_check(lab.battle_heading.text.is_empty() and not lab.battle_heading.visible,
+			"Practice removes the in-game brand title instead of retaining Aether text.")
+		if dimensions.y == 565:
+			await _proof("hud-practice-menu")
+		lab.action_menu.close(false)
+		lab._action()
+		for step in range(180):
+			lab._physics_process(1.0 / 60.0)
+		lab._action()
+		lab.combat_meter_toggle.set_pressed_no_signal(true)
+		lab.combat_meter_toggle.pressed.emit()
+		await process_frame
+		await process_frame
+		if dimensions.y == 565:
+			await _proof("hud-combat-stats-icons")
+		lab.combat_meter_toggle.set_pressed_no_signal(false)
+		lab.combat_meter_toggle.pressed.emit()
+		await _check_header_relic_capacity(lab)
+	root.size = old_size
+	root.content_scale_mode = old_mode
+	lab.run_practice()
+	lab.set_physics_process(false)
+	await process_frame
+	await process_frame
+
+
+func _check_header_relic_capacity(lab: Control) -> void:
+	var before: Dictionary = lab.run.data.duplicate(true)
+	var previous_campaign: bool = lab.campaign
+	var previous_encounter: bool = lab.encounter_setup
+	lab.campaign = true
+	lab.encounter_setup = true
+	lab.run.data.node = {"type": "battle", "label": "A deliberately long encounter name for the compact header"}
+	lab.run.data.gold = 987
+	var available: Array = FrontierRun.RELICS.keys()
+	for count: int in [20, 30]:
+		lab.run.data.relics = []
+		for index in range(count):
+			lab.run.data.relics.append(available[index % available.size()])
+		lab._rebuild_relic_strip()
+		lab._update_controls()
+		for frame in range(4):
+			await process_frame
+		var bounds := root.get_visible_rect().grow(0.1)
+		_check(lab.relic_strip.get_child_count() == count and lab.relic_scroller.get_h_scroll_bar().visible,
+			"All %d passive relics remain available in the capped left icon strip." % count)
+		for control: Control in [lab.action_menu.trigger, lab.action, lab.header_gold, lab.speed_controls]:
+			_check(bounds.encloses(control.get_global_rect()),
+				"Twenty to thirty relics never displace %s off the compact header." % control.name)
+		_check(lab.relic_scroller.get_global_rect().end.x <= lab.speed_controls.global_position.x,
+			"Relics remain in the left header while the controls stay on the right.")
+		for badge: Control in lab.relic_strip.get_children():
+			_check(badge is TextureRect and not badge is BaseButton, "Equipped relics remain passive information, without clickable button highlights.")
+			var preview := badge._make_custom_tooltip(badge.tooltip_text) as Control
+			var copy := preview.find_child("RelicDescription", true, false) as RichTextLabel
+			_check(copy != null and copy.fit_content and not copy.scroll_active
+				and copy.text == FrontierRun.RELICS[badge.get_meta("relic_id")].description,
+				"Equipped relic hovers preserve the full effect without text scrolling.")
+			preview.free()
+	lab.run.data = before
+	lab.campaign = previous_campaign
+	lab.encounter_setup = previous_encounter
+	lab._rebuild_relic_strip()
+	lab._update_controls()
+
+
+func _proof(label: String) -> void:
+	if DisplayServer.get_name() == "headless":
+		return
+	await create_timer(0.06).timeout
+	await RenderingServer.frame_post_draw
+	var lab := root.get_child(0) as Control
+	_check(root.get_visible_rect().encloses(lab.action.get_global_rect())
+		and root.get_visible_rect().encloses(lab.action_menu.trigger.get_global_rect()),
+		"The rendered %s keeps its primary action and menu fully inside the screen." % label)
+	root.get_texture().get_image().save_png("user://%s.png" % label)
+
+
+func _open_menu(lab: Control) -> void:
+	lab.action_menu.open()
+	await process_frame
+	await process_frame
+
+
+func _menu_click(lab: Control, button: Control) -> void:
+	await _open_menu(lab)
+	lab.action_menu._scroller.ensure_control_visible(button)
+	await process_frame
+	await process_frame
+	_click(button.get_global_rect().get_center())
+	await process_frame
+	await process_frame
 
 
 func _check(passed: bool, description: String) -> void:

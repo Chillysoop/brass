@@ -63,7 +63,7 @@ func _check_bellmaker_unlock(game: Control) -> String:
 	var route := game.frontier_screen.find_child("BellmakerBossNode", true, false) as Button
 	_check(route != null and route.visible and route.text.contains("Bellmaker"),
 		"The map labels the Bellmaker's boss node.")
-	if not _press(game.frontier_screen, "BellmakerBossNode"):
+	if not await _press(game.frontier_screen, "BellmakerBossNode"):
 		return ""
 	await process_frame
 	_check(run.encounter().get("boss_id") == "brass_bellmaker" and game.campaign and game.encounter_setup
@@ -100,7 +100,7 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 		"The mastered class can start a new Medium expedition."):
 		return
 	await _check_compact_mastery_choices(game, "ChooseHero_")
-	if not _press(game.frontier_screen, "ChooseHero_" + hero_id):
+	if not await _press(game.frontier_screen, "ChooseHero_" + hero_id):
 		return
 	await process_frame
 	_check(run.data.phase == "relic" and game.frontier_screen.find_child("ChooseClassMastery", true, false) != null,
@@ -109,7 +109,7 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 		return
 	game.run_return()
 	await process_frame
-	if not _press(game.frontier_screen, "ChooseMasteryFor_" + hero_id):
+	if not await _press(game.frontier_screen, "ChooseMasteryFor_" + hero_id):
 		return
 	await process_frame
 	var masteries := run.mastery_offers()
@@ -118,14 +118,14 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 		and game.frontier_screen.find_child("MasteryOption_" + str(masteries[0].id), true, false) != null,
 		"The mastered hero card selects the class and opens its two optional mastery choices."):
 		return
-	if not _press(game.frontier_screen, "ContinueMasteryDraft"):
+	if not await _press(game.frontier_screen, "ContinueMasteryDraft"):
 		return
 	await process_frame
 	_check(run.selected_mastery().is_empty(), "Continuing straight to relics leaves the optional mastery unselected.")
-	if not _press(game.frontier_screen, "ChooseClassMastery"):
+	if not await _press(game.frontier_screen, "ChooseClassMastery"):
 		return
 	await process_frame
-	if not _press(game.frontier_screen, "MasteryOption_" + str(masteries[1].id)):
+	if not await _press(game.frontier_screen, "MasteryOption_" + str(masteries[1].id)):
 		return
 	await process_frame
 	_check(run.load_save(save_path) and run.mastery_offers() == masteries and run.selected_mastery() == masteries[1].id,
@@ -152,7 +152,7 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 	var recruit: String = run.data.offers.front()
 	run.profile.mastered_classes.append(recruit)
 	await _check_compact_mastery_choices(game, "ChooseRecruit_")
-	if not _press(game.frontier_screen, "ChooseMasteryFor_" + recruit):
+	if not await _press(game.frontier_screen, "ChooseMasteryFor_" + recruit):
 		return
 	await process_frame
 	var recruit_masteries := run.mastery_offers()
@@ -160,7 +160,7 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 		"The mastered recruit card opens mastery selection before loadouts."):
 		return
 	var recruit_mastery: String = recruit_masteries[0].id
-	if not _press(game.frontier_screen, "MasteryOption_" + recruit_mastery):
+	if not await _press(game.frontier_screen, "MasteryOption_" + recruit_mastery):
 		return
 	await process_frame
 	var kits := run.recruit_loadout_offers()
@@ -197,7 +197,7 @@ func _check_mastery_and_recruit(game: Control, hero_id: String) -> void:
 		for index in mini(durations.size(), kit.tiles.size()):
 			_check(durations[index].get_child_count() == ArenaSim.TILES[kit.tiles[index]].width,
 				"Each occupied beat is represented by one duration square.")
-	if not _press(game.frontier_screen, "RecruitLoadout_" + str(kits[1].id)):
+	if not await _press(game.frontier_screen, "RecruitLoadout_" + str(kits[1].id)):
 		return
 	await process_frame
 	if not _check(run.data.phase == "map" and run.data.heroes.size() == 2 and run.loadout.lanes.size() == 2,
@@ -344,11 +344,32 @@ func _stage_boss_on_map(run: FrontierRun) -> void:
 
 
 func _press(parent: Control, node_name: String) -> bool:
-	var button := parent.find_child(node_name, true, false) as Button
+	await process_frame
+	var search: Node = parent
+	var button: Button
+	while button == null and search != null:
+		button = search.find_child(node_name, true, false) as Button
+		search = search.get_parent()
+	if button != null and not button.is_visible_in_tree():
+		var menu: Node = button.get_parent()
+		while menu != null and not menu.has_method("is_open"):
+			menu = menu.get_parent()
+		if menu != null and not menu.is_open():
+			if not await _press(parent, str(menu.trigger.name)):
+				return false
+			await process_frame
+			await process_frame
 	if not _check(button != null and button.is_visible_in_tree() and not button.disabled,
 		"Expected an enabled %s button." % node_name):
 		return false
-	button.pressed.emit()
+	for down: bool in [true, false]:
+		var event := InputEventMouseButton.new()
+		event.position = button.get_global_rect().get_center()
+		event.global_position = event.position
+		event.button_index = MOUSE_BUTTON_LEFT
+		event.pressed = down
+		root.push_input(event, true)
+	await process_frame
 	return true
 
 

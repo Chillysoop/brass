@@ -160,7 +160,7 @@ func _claim_salvage(game: Control) -> String:
 	if not await _press(game.frontier_screen, "MysterySalvageOpen"):
 		return ""
 	_check(run.data.offers == ["bash"], "Salvage offers only the owned Common tile, with duplicate IDs collapsed.")
-	_check(game.frontier_screen.find_child("RerollReward", true, false) == null, "Mystery tile choices cannot be rerolled for gold.")
+	_check(game.action_menu.content.find_child("RerollReward", true, false) == null, "Mystery tile choices cannot be rerolled for gold.")
 	if not await _press(game.frontier_screen, "RewardTile_bash"):
 		return ""
 	if not _check(game.forge_screen.visible and run.load_save(run.save_path), "The copied Bash opens and saves a three-copy forge choice."):
@@ -209,11 +209,15 @@ func _claim_cache(game: Control) -> String:
 	var pick: String = offers[0]
 	await process_frame
 	var reward_card := game.frontier_screen.find_child("DragReward_" + pick, true, false) as Control
-	if not _check(reward_card != null and reward_card.is_visible_in_tree() and game.storage_screen.is_visible_in_tree()
-		and game.storage_screen.get_parent() == game.combat_sidebar and game.arena.units.is_empty(),
-		"Mystery tile rewards offer drag placement and docked storage in an empty arena."):
+	if not _check(reward_card != null and reward_card.is_visible_in_tree() and not game.storage_screen.is_visible_in_tree()
+		and game.storage_screen._docked and game.storage_screen.get_parent() == game.reward_storage_drawer
+		and game.storage_button.is_visible_in_tree() and game.arena.units.is_empty(),
+		"Mystery tile rewards keep full-width drag placement and a collapsed storage drawer in an empty arena."):
 		return ""
-	game._place({"id": pick, "reward": true}, 0, 4, true)
+	await _click_at(game.storage_button.get_global_rect().get_center())
+	_check(game.storage_screen.is_visible_in_tree(), "The top-right storage control opens the mystery reward drawer.")
+	await _click_at(game.storage_button.get_global_rect().get_center())
+	await _drag_reward(game, pick, 4)
 	var ids: Array = run.loadout.lanes[0].map(func(tile: Dictionary): return tile.id)
 	_check(ids == ["bash", "bash", pick], "The Class Cache equips the chosen Uncommon beside the two owned copies.")
 	return pick
@@ -284,13 +288,67 @@ func _win_battle(run: FrontierRun) -> bool:
 
 func _press(page: Control, node_name: String) -> bool:
 	await process_frame
-	var button := page.find_child(node_name, true, false) as Button
+	var search: Node = page
+	var button: Button
+	while button == null and search != null:
+		button = search.find_child(node_name, true, false) as Button
+		search = search.get_parent()
+	if button != null and not button.is_visible_in_tree():
+		var menu: Node = button.get_parent()
+		while menu != null and not menu.has_method("is_open"):
+			menu = menu.get_parent()
+		if menu != null and not menu.is_open():
+			var trigger: Button = menu.get("trigger")
+			if not _check(trigger.is_visible_in_tree(), "The game menu trigger is visible before opening a mystery utility action."):
+				return false
+			await _click_at(trigger.get_global_rect().get_center())
 	if not _check(button != null and button.is_visible_in_tree() and not button.disabled,
 		"The %s button accepts input." % node_name):
 		return false
-	button.pressed.emit()
-	await process_frame
+	await _click_at(button.get_global_rect().get_center())
 	return true
+
+
+func _click_at(at: Vector2) -> void:
+	for down: bool in [true, false]:
+		_push_mouse_button(at, down)
+	await process_frame
+	await process_frame
+
+
+func _drag_reward(game: Control, id: String, start: int) -> void:
+	var card := game.frontier_screen.find_child("DragReward_" + id, true, false) as Control
+	var details := card.find_child("ChoiceDetails", true, false) as Control
+	var source := details.get_global_rect().get_center()
+	var board := game.lane_stack.get_child(0).get_child(1) as Control
+	var target := board.global_position + Vector2(board.size.x * (start + 0.5) / ArenaSim.BEATS, board.size.y * 0.5)
+	var threshold := source + Vector2(18, 0)
+	_push_mouse_motion(source, source, false)
+	_push_mouse_button(source, true)
+	_push_mouse_motion(source, threshold, true)
+	_push_mouse_motion(threshold, target, true)
+	_check(root.gui_is_dragging(), "Dragging the Class Cache reward body carries its tile.")
+	_push_mouse_button(target, false)
+	await process_frame
+	await process_frame
+
+
+func _push_mouse_button(at: Vector2, down: bool) -> void:
+	var event := InputEventMouseButton.new()
+	event.position = at
+	event.global_position = at
+	event.button_index = MOUSE_BUTTON_LEFT
+	event.pressed = down
+	root.push_input(event, true)
+
+
+func _push_mouse_motion(from: Vector2, to: Vector2, held: bool) -> void:
+	var event := InputEventMouseMotion.new()
+	event.position = to
+	event.relative = to - from
+	if held:
+		event.button_mask = MOUSE_BUTTON_MASK_LEFT
+	root.push_input(event, true)
 
 
 func _check(ok: bool, description: String) -> bool:

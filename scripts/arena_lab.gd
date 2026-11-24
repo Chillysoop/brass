@@ -7,6 +7,13 @@ class SequenceTileButton extends Button:
 		return preview.call()
 
 
+class EquippedRelicIcon extends TextureRect:
+	var preview: Callable
+
+	func _make_custom_tooltip(_for_text: String) -> Object:
+		return preview.call()
+
+
 const ArenaSim = preload("res://scripts/arena_sim.gd")
 const ArenaView = preload("res://scripts/arena_view.gd")
 const StorageScreen = preload("res://scripts/storage_screen.gd")
@@ -19,6 +26,7 @@ const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 const TileKeywords = preload("res://scripts/tile_keywords.gd")
 const FrontierRun = preload("res://scripts/frontier_run.gd")
 const FrontierScreen = preload("res://scripts/frontier_screen.gd")
+const GameActionMenu = preload("res://scripts/game_action_menu.gd")
 const ArsenalTiles = preload("res://scripts/arsenal_tiles.gd")
 const ClassExpansionTiles = preload("res://scripts/class_expansion_tiles.gd")
 const ClassDecks = preload("res://scripts/class_decks.gd")
@@ -66,17 +74,21 @@ var decline_dialog: ConfirmationDialog
 var arena_screen: MarginContainer
 var storage_screen: Control
 var storage_popup_layer: Control
+var reward_storage_drawer: VBoxContainer
+var reward_drawer_open := false
+var reward_stats_open := false
 var forge_screen: Control
 var storage_button: Button
 var enchantment_button: Button
 var relic_strip: HBoxContainer
+var relic_scroller: ScrollContainer
 var relic_badges: Dictionary = {}
 var relic_pulses: Dictionary = {}
 var lane_stack: VBoxContainer
 var lane_scroller: ScrollContainer
 var battle_layout_pending := false
 var tile_layout_columns: Array[int] = []
-var palette: HBoxContainer
+var palette: GridContainer
 var arsenal_button: Button
 var arsenal_panel: PanelContainer
 var arena
@@ -85,6 +97,9 @@ var combat_sidebar: VBoxContainer
 var relic_focus_layer: Control
 var save_title_button: Button
 var battle_heading: Label
+var action_menu: Control
+var header_gold: HBoxContainer
+var header_gold_label: Label
 var fixture_picker: OptionButton
 var speed_controls: HBoxContainer
 var speed_buttons: Array[Button] = []
@@ -182,15 +197,37 @@ func _build() -> void:
 	stack.add_theme_constant_override("separation", 8)
 	margin.add_child(stack)
 	var header := HBoxContainer.new()
+	header.name = "CombatHeader"
 	header.add_theme_constant_override("separation", 9)
 	stack.add_child(header)
+	action_menu = GameActionMenu.new()
+	add_child(action_menu)
+	action_menu.configure(self)
+	relic_scroller = ScrollContainer.new()
+	relic_scroller.name = "EquippedRelicViewport"
+	relic_scroller.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	relic_scroller.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	relic_scroller.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	relic_scroller.custom_minimum_size.y = 34
+	relic_scroller.tooltip_text = "Equipped relics"
+	header.add_child(relic_scroller)
+	relic_strip = HBoxContainer.new()
+	relic_strip.name = "EquippedRelics"
+	relic_strip.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	relic_strip.add_theme_constant_override("separation", 5)
+	relic_scroller.add_child(relic_strip)
 	save_title_button = _button("Save & title", run_save_title)
 	save_title_button.name = "SaveTitle"
-	header.add_child(save_title_button)
-	battle_heading = _label("BRASS & AETHER", 26, GOLD)
-	battle_heading.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	action_menu.add_action(save_title_button)
+	battle_heading = _label("", 18, GOLD)
 	battle_heading.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
+	battle_heading.clip_text = true
+	battle_heading.custom_minimum_size.x = 140
 	header.add_child(battle_heading)
+	header_gold = CombatIcons.stat("gold", "0", 17)
+	header_gold.name = "CombatGold"
+	header_gold_label = header_gold.get_child(1) as Label
+	header.add_child(header_gold)
 	fixture_picker = OptionButton.new()
 	fixture_picker.add_item("Two heroes")
 	fixture_picker.add_item("Solo hero")
@@ -205,21 +242,23 @@ func _build() -> void:
 	storage_button.tooltip_text = "Drag tiles between storage and timelines."
 	reset_button = _button("Reset fight", _reset_fight)
 	return_button = _button("Title", _leave_arena)
-	header.add_child(return_button)
-	header.move_child(return_button, 0)
+	action_menu.add_action(return_button)
 	combat_meter_toggle = _button("Combat stats", _toggle_combat_meter)
 	combat_meter_toggle.name = "CombatStatsToggle"
 	combat_meter_toggle.toggle_mode = true
 	combat_meter_toggle.tooltip_text = "Show or hide tile totals for damage, assists, kills, and healing."
 	GameIcons.decorate(combat_meter_toggle, "review", 18)
-	header.add_child(combat_meter_toggle)
+	action_menu.add_action(combat_meter_toggle)
 	retry_button = _button("Retry in Practice", _retry_in_practice)
 	retry_button.name = "RetryInPractice"
 	retry_button.tooltip_text = "Replay this fight with the original party, health, and equipment."
+	action_menu.add_action(retry_button)
 	action = _button("Start battle", _action)
 	action.custom_minimum_size.x = 130
+	action.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	action.add_theme_stylebox_override("normal", _box(Color("#59462f"), GOLD))
 	header.add_child(action)
+	header.add_child(action_menu.trigger)
 
 	battle_stage = HBoxContainer.new()
 	battle_stage.size_flags_vertical = Control.SIZE_EXPAND_FILL
@@ -239,16 +278,10 @@ func _build() -> void:
 	combat_meter.name = "CombatMeter"
 	combat_meter.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	combat_sidebar.add_child(combat_meter)
-	var sequence_bar := HBoxContainer.new()
-	stack.add_child(sequence_bar)
-	relic_strip = HBoxContainer.new()
-	relic_strip.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	relic_strip.add_theme_constant_override("separation", 5)
-	sequence_bar.add_child(relic_strip)
 	enchantment_button = _button("", _toggle_storage)
 	enchantment_button.name = "OpenEnchantment"
-	sequence_bar.add_child(enchantment_button)
-	sequence_bar.add_child(storage_button)
+	action_menu.add_action(enchantment_button)
+	action_menu.add_action(storage_button)
 	lane_stack = VBoxContainer.new()
 	lane_stack.add_theme_constant_override("separation", 5)
 	lane_stack.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -256,6 +289,7 @@ func _build() -> void:
 	lane_scroller.name = "PartySequences"
 	lane_scroller.custom_minimum_size.y = 69
 	lane_scroller.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	lane_scroller.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_RESERVE
 	lane_scroller.follow_focus = true
 	stack.add_child(lane_scroller)
 	lane_scroller.add_child(lane_stack)
@@ -265,25 +299,25 @@ func _build() -> void:
 	combat_sidebar.minimum_size_changed.connect(_queue_battle_layout)
 	combat_sidebar.visibility_changed.connect(_queue_battle_layout)
 	arena_screen.visibility_changed.connect(_queue_battle_layout)
-	var tray := HBoxContainer.new()
-	tray.alignment = BoxContainer.ALIGNMENT_END
-	tray.add_theme_constant_override("separation", 6)
-	stack.add_child(tray)
-	palette = HBoxContainer.new()
-	palette.add_theme_constant_override("separation", 5)
-	palette.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	tray.add_child(palette)
+	var practice_tools := VBoxContainer.new()
+	practice_tools.name = "PracticeQuickTiles"
+	action_menu.add_action(practice_tools, false)
+	palette = GridContainer.new()
+	palette.name = "PracticeTilePalette"
+	palette.columns = 3
+	palette.add_theme_constant_override("h_separation", 5)
+	palette.add_theme_constant_override("v_separation", 5)
+	practice_tools.add_child(palette)
 	arsenal_button = _button("Combat tiles", _toggle_practice_arsenal)
 	arsenal_button.name = "PracticeArsenal"
 	GameIcons.decorate(arsenal_button, "battle", 15)
 	arsenal_button.tooltip_text = "Browse and equip combat tiles in Arena Practice."
-	tray.add_child(arsenal_button)
-	tray.add_child(fixture_picker)
-	tray.add_child(retry_button)
-	tray.add_child(reset_button)
+	action_menu.add_action(arsenal_button)
+	action_menu.add_action(fixture_picker)
+	action_menu.add_action(reset_button)
 	camp_button = _button("Forge selected", _open_camp_forge)
 	camp_button.name = "ForgeSelected"
-	tray.add_child(camp_button)
+	action_menu.add_action(camp_button)
 	setup_hint = _label("", 14, MUTED)
 	setup_hint.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 	stack.add_child(setup_hint)
@@ -324,12 +358,18 @@ func _build() -> void:
 	add_child(frontier_screen)
 	frontier_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	frontier_screen.configure(self)
+	reward_storage_drawer = VBoxContainer.new()
+	reward_storage_drawer.name = "RewardStorageDrawer"
+	add_child(reward_storage_drawer)
+	reward_storage_drawer.hide()
 	_queue_battle_layout()
 
 
 func _queue_battle_layout() -> void:
 	if is_instance_valid(storage_popup_layer):
 		storage_popup_layer.visible = arena_screen.visible
+	if is_instance_valid(reward_storage_drawer):
+		reward_storage_drawer.visible = arena_screen.visible and (combat_meter.visible or (_placing_tile_reward() and reward_drawer_open))
 	if battle_layout_pending:
 		return
 	battle_layout_pending = true
@@ -375,10 +415,15 @@ func _fit_battle_layout() -> void:
 		arena.custom_minimum_size.y = arena_height
 	storage_popup_layer.global_position = battle_stage.global_position
 	storage_popup_layer.size = battle_stage.size
+	if is_instance_valid(reward_storage_drawer):
+		var width := minf(265.0, battle_stage.size.x * 0.36)
+		reward_storage_drawer.global_position = Vector2(battle_stage.get_global_rect().end.x - width, battle_stage.global_position.y)
+		reward_storage_drawer.size = Vector2(width, battle_stage.size.y)
 
 func _build_speed_controls(header: HBoxContainer) -> void:
 	speed_controls = HBoxContainer.new()
 	speed_controls.name = "CombatSpeed"
+	speed_controls.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	speed_controls.add_theme_constant_override("separation", 3)
 	header.add_child(speed_controls)
 	var group := ButtonGroup.new()
@@ -606,12 +651,20 @@ func _update_controls() -> void:
 	action.visible = not (campaign and animating) and not showing_rewards
 	save_title_button.visible = campaign and not combat_save_pending and not animating and state in ["setup", "finished"]
 	var battle_title := FrontierScreen.battle_title(run.data.get("node", {}))
-	battle_heading.text = battle_title if campaign and (encounter_setup or showing_rewards) and not battle_title.is_empty() else "BRASS & AETHER"
+	battle_heading.text = battle_title if campaign and (encounter_setup or showing_rewards) else ""
+	battle_heading.visible = size.x >= 1060 and not battle_heading.text.is_empty()
+	header_gold.visible = campaign
+	header_gold_label.text = str(run.data.get("gold", 0))
 	combat_meter_toggle.visible = (not campaign or encounter_setup or (showing_rewards and run.has_combat_reward())) \
 		and not relic_focus_layer.visible
-	combat_meter_toggle.set_pressed_no_signal(combat_meter_open)
-	combat_meter.visible = combat_meter_toggle.visible and combat_meter_open
-	combat_sidebar.visible = combat_meter.visible or _placing_tile_reward()
+	var choosing_tile := _reward_focus_lane() >= 0
+	combat_meter_toggle.set_pressed_no_signal(reward_stats_open if choosing_tile else combat_meter_open)
+	if combat_meter.get_parent() != reward_storage_drawer:
+		combat_meter.reparent(reward_storage_drawer, false)
+	combat_meter.visible = combat_meter_toggle.visible and (reward_stats_open if choosing_tile else combat_meter_open)
+	# Statistics overlap the arena in every state; they never take space from it.
+	combat_sidebar.hide()
+	reward_storage_drawer.visible = arena_screen.visible and (combat_meter.visible or (choosing_tile and reward_drawer_open))
 	reset_button.visible = not campaign
 	fixture_picker.visible = not campaign and retry_options.is_empty()
 	return_button.visible = not campaign
@@ -619,13 +672,28 @@ func _update_controls() -> void:
 	camp_button.visible = camp_forge and not _editing_camp_forge() and not storage_screen.visible
 	fixture_picker.disabled = state != "setup"
 	storage_button.disabled = not _can_edit_loadout()
-	storage_button.visible = not _placing_tile_reward()
+	storage_button.visible = true
 	var stored_tiles := 0
+	var used_cells := 0
 	for stored_row: Array in storage_rows:
 		stored_tiles += stored_row.size()
-	storage_button.text = "Tile storage · %d" % stored_tiles if stored_tiles > 0 else "Tile storage"
+		for tile: Dictionary in stored_row:
+			used_cells += int(ArenaSim.TILES[tile.id].width)
+	if _placing_tile_reward():
+		if storage_button.get_parent() != action.get_parent():
+			storage_button.reparent(action.get_parent(), false)
+			action.get_parent().move_child(storage_button, action_menu.trigger.get_index())
+		storage_button.size_flags_horizontal = Control.SIZE_SHRINK_END
+		storage_button.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+		storage_button.text = "%d / 24" % used_cells
+	else:
+		if storage_button.get_parent() != action_menu.content:
+			action_menu.add_action(storage_button)
+		storage_button.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		storage_button.text = "Tile storage · %d" % stored_tiles if stored_tiles > 0 else "Tile storage"
 	storage_button.add_theme_color_override("font_color", GOLD)
 	storage_button.tooltip_text = "Shared tile storage · %d tiles. Drag tiles between this stash and your sequence." % stored_tiles
+	storage_button.accessibility_name = "Tile storage · %d of 24 cells used" % used_cells
 	var enchantments := _held_enchantments()
 	enchantment_button.visible = state == "setup" and not enchantments.is_empty()
 	if enchantment_button.visible:
@@ -639,7 +707,7 @@ func _update_controls() -> void:
 		and not animating and not battle_snapshot.is_empty() and not str(sim.outcome).is_empty()
 	palette.visible = state == "setup" and not campaign and retry_options.is_empty()
 	arsenal_button.visible = palette.visible
-	palette.get_parent().visible = not campaign or camp_forge or retry_button.visible
+	palette.get_parent().visible = palette.visible
 	setup_hint.visible = state == "setup"
 	var elapsed: int = sim.tick
 	var teaching := _teaching_timeline()
@@ -676,6 +744,14 @@ func _update_controls() -> void:
 			back.modulate.a = card.modulate.a
 
 func _toggle_combat_meter() -> void:
+	if _reward_focus_lane() >= 0:
+		reward_stats_open = not reward_stats_open
+		if reward_stats_open:
+			reward_drawer_open = false
+			_set_reward_storage(true)
+		_update_controls()
+		_queue_battle_layout()
+		return
 	combat_meter_open = combat_meter_toggle.button_pressed
 	_update_controls()
 
@@ -740,8 +816,10 @@ func _rebuild_loadout() -> void:
 	lane_health_labels.clear()
 	_rebuild_relic_strip()
 	var tile_row_height := _tile_row_height()
+	var focus_lane := _reward_focus_lane()
 	for lane_index in range(lanes.size()):
 		_build_lane(lane_index, tile_row_height)
+		lane_stack.get_child(lane_index).visible = focus_lane < 0 or lane_index == focus_lane
 	for id: String in ([] if campaign else PRACTICE_TILES):
 		var tile: Dictionary = ArenaSim.TILES[id]
 		var payload := {"id": id}
@@ -905,7 +983,7 @@ func _rebuild_relic_strip() -> void:
 		var relic: Dictionary = FrontierRun.RELICS.get(id, {})
 		if relic.is_empty():
 			continue
-		var badge := TextureRect.new()
+		var badge := EquippedRelicIcon.new()
 		badge.texture = GameIcons.icon(GameIcons.relic(id))
 		badge.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
 		badge.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
@@ -929,8 +1007,43 @@ func _rebuild_relic_strip() -> void:
 				mark.offset_top = -2
 		badge.tooltip_text = "%s\n%s" % [label, relic.description]
 		badge.accessibility_name = label
+		badge.set_meta("relic_id", id)
+		badge.preview = _relic_hover_card.bind(label, relic.description, badge.texture)
 		relic_strip.add_child(badge)
 		relic_badges[id] = badge
+
+
+func _relic_hover_card(label: String, description: String, texture: Texture2D) -> Control:
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", _box(PANEL, EDGE, 8))
+	var column := VBoxContainer.new()
+	column.add_theme_constant_override("separation", 8)
+	card.add_child(column)
+	var header := HBoxContainer.new()
+	header.add_theme_constant_override("separation", 8)
+	column.add_child(header)
+	var art := TextureRect.new()
+	art.texture = texture
+	art.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	art.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	art.custom_minimum_size = Vector2(32, 32)
+	header.add_child(art)
+	var name := _label(label, 18, GOLD)
+	name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	header.add_child(name)
+	var body := RichTextLabel.new()
+	body.name = "RelicDescription"
+	body.text = description
+	body.fit_content = true
+	body.scroll_active = false
+	body.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	body.add_theme_font_size_override("normal_font_size", 14)
+	body.custom_minimum_size.x = 300
+	body.size.x = 300
+	body.custom_minimum_size.y = body.get_content_height()
+	column.add_child(body)
+	return card
 
 
 func _pulse_relic(id: String) -> void:
@@ -946,10 +1059,20 @@ func _pulse_relic(id: String) -> void:
 
 func _tile_row_height() -> int:
 	var target_rows := 1
-	for lane: Array in lanes:
+	var focus_lane := _reward_focus_lane()
+	for lane_index in range(lanes.size()):
+		if focus_lane >= 0 and lane_index != focus_lane:
+			continue
+		var lane: Array = lanes[lane_index]
 		for tile: Dictionary in lane:
 			target_rows = maxi(target_rows, ceili(float(sim.target_rules(tile.id).size()) / _tile_target_columns(ArenaSim.TILES[tile.id].width)))
 	return 69 + (target_rows - 1) * 20
+
+
+func _reward_focus_lane() -> int:
+	if showing_rewards and run.data.get("phase") == "reward" and run.elite_relic_offers().is_empty():
+		return run.reward_lane()
+	return -1
 
 
 func _tile_layout_columns() -> Array[int]:
@@ -961,7 +1084,8 @@ func _tile_layout_columns() -> Array[int]:
 
 func _tile_target_columns(width: int) -> int:
 	var scrollbar := lane_scroller.get_v_scroll_bar()
-	var scrollbar_width := scrollbar.size.x if scrollbar.visible else 0.0
+	var scrollbar_width := maxf(scrollbar.size.x, scrollbar.get_combined_minimum_size().x) \
+		if scrollbar.visible or lane_scroller.vertical_scroll_mode == ScrollContainer.SCROLL_MODE_RESERVE else 0.0
 	var board_width := arena_screen.size.x - arena_screen.get_theme_constant("margin_left") \
 		- arena_screen.get_theme_constant("margin_right") - 157.0 - 8.0 - scrollbar_width
 	var spacing := 1 if width == 1 else 2
@@ -1040,7 +1164,7 @@ func _build_lane(lane_index: int, row_height: int) -> void:
 	board.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	board.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	row.add_child(board)
-	if lane_index == 0:
+	if lane_index == maxi(0, _reward_focus_lane()):
 		board.resized.connect(func():
 			storage_screen.set_tile_size(board.size.x / ArenaSim.BEATS, row_height)
 		)
@@ -1468,6 +1592,13 @@ func _clear_drag_preview() -> void:
 func _input(event: InputEvent) -> void:
 	if event is InputEventMouse:
 		drag_pointer = event.position
+	if event is InputEventMouseMotion and _placing_tile_reward() and not reward_drawer_open \
+			and get_viewport().gui_is_dragging():
+		var edge := battle_stage.get_global_rect()
+		edge.position.x = edge.end.x - 28.0
+		edge.size.x = 28.0
+		if edge.has_point(drag_pointer):
+			_open_storage()
 	if is_instance_valid(drag_board) and (not arena_screen.is_visible_in_tree()
 		or not drag_board.get_rect().has_point(drag_board.get_parent().get_global_transform_with_canvas().affine_inverse() * drag_pointer)):
 		_clear_drag_preview()
@@ -1479,6 +1610,8 @@ func _unhandled_key_input(event: InputEvent) -> void:
 		get_viewport().set_input_as_handled()
 
 func _notification(what: int) -> void:
+	if what == NOTIFICATION_DRAG_BEGIN and is_instance_valid(action_menu):
+		action_menu.close(false)
 	if what == NOTIFICATION_DRAG_END:
 		_clear_drag_preview()
 
@@ -1611,10 +1744,19 @@ func tile_spec(id: String) -> Dictionary:
 	return ArenaSim.TILES.get(id, {})
 
 func _open_storage() -> void:
+	if _placing_tile_reward():
+		reward_drawer_open = true
+		reward_stats_open = false
+		_set_reward_storage(true)
+		_render_storage()
+		_queue_battle_layout()
+		_update_controls()
+		return
 	if state == "setup":
 		arsenal_panel.hide()
 		arena_screen.show()
 		storage_screen.show()
+		storage_popup_layer.move_to_front()
 		camp_button.hide()
 		_render_storage()
 
@@ -1626,6 +1768,7 @@ func _toggle_storage() -> void:
 
 func storage_close() -> void:
 	if _placing_tile_reward():
+		reward_drawer_open = false
 		_set_reward_storage(true)
 		_render_storage()
 		_update_controls()
@@ -2046,6 +2189,7 @@ func _persist_inventory(before: Dictionary) -> bool:
 	return false
 
 func _show_frontier(page := "") -> void:
+	action_menu.close(false)
 	_hide_result_animation()
 	showing_rewards = false
 	state = "setup"
@@ -2074,15 +2218,28 @@ func _place_frontier_screen(parent: Control) -> void:
 		frontier_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 
 func _set_reward_storage(docked: bool) -> void:
-	var parent: Control = combat_sidebar if docked else storage_popup_layer
+	if not docked:
+		reward_drawer_open = false
+		reward_stats_open = false
+	var parent: Control = reward_storage_drawer if docked else storage_popup_layer
 	if storage_screen.get_parent() != parent:
 		storage_screen.reparent(parent, false)
 		storage_screen.set_docked(docked)
 		if not docked:
 			storage_screen.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	storage_screen.visible = docked
+	storage_screen.visible = docked and reward_drawer_open
+	if docked:
+		storage_screen._close.text = "×"
+		storage_screen._close.accessibility_name = "Close tile storage"
+		storage_screen._close.tooltip_text = "Close tile storage"
+		storage_screen._close.show()
+	else:
+		storage_screen._close.text = "Close"
+	if is_instance_valid(reward_storage_drawer):
+		reward_storage_drawer.visible = arena_screen.visible and (combat_meter.visible or (docked and reward_drawer_open))
 
 func _show_rewards() -> void:
+	action_menu.close(false)
 	if not campaign or state != "finished":
 		run_show_arena()
 		state = "finished"
@@ -2099,6 +2256,8 @@ func _show_rewards() -> void:
 		arena_screen.hide()
 		return
 	showing_rewards = true
+	reward_drawer_open = false
+	reward_stats_open = false
 	_set_reward_storage(_placing_tile_reward())
 	_rebuild_loadout()
 	arena_screen.show()
@@ -2216,6 +2375,7 @@ func run_expand_reward_storage() -> void:
 		return
 	_set_reward_storage(false)
 	storage_screen.show()
+	storage_popup_layer.move_to_front()
 	_render_storage()
 
 func run_open_reward_storage() -> void:

@@ -26,6 +26,7 @@ const ClassMasteries = preload("res://scripts/class_masteries.gd")
 const TileKeywords = preload("res://scripts/tile_keywords.gd")
 const TileEnchantments = preload("res://scripts/tile_enchantments.gd")
 const TileChoiceArt = preload("res://scripts/tile_choice_art.gd")
+const GameActionMenu = preload("res://scripts/game_action_menu.gd")
 const RelicPortraitShader = preload("res://assets/relic-portrait.gdshader")
 const INK := Color("#101820")
 const PANEL := Color("#182632")
@@ -84,7 +85,9 @@ var _host
 var _run
 var _layout: VBoxContainer
 var _top_actions: HBoxContainer
-var _bottom_actions: HBoxContainer
+var _bottom_actions: VBoxContainer
+var _action_menu: Control
+var _menu_context: VBoxContainer
 var _expedition_menu: ExpeditionMenu
 var _aether_chart: AetherChartMenu
 var _class_roster: ClassRosterMenu
@@ -95,6 +98,10 @@ var _battle_overlay := false
 
 func configure(host: Control) -> void:
 	_host = host
+	visibility_changed.connect(func():
+		if not visible:
+			_clear_menu_context()
+	)
 	_display_font = SystemFont.new()
 	_display_font.font_names = PackedStringArray(["Georgia", "Cambria"])
 	_expedition_menu = ExpeditionMenu.new()
@@ -132,6 +139,7 @@ func configure(host: Control) -> void:
 
 
 func render(model, page_override: String = "", battle_overlay := false) -> void:
+	_clear_menu_context()
 	_run = model
 	_battle_overlay = battle_overlay
 	for child in get_children():
@@ -185,7 +193,7 @@ func _shell(phase: String, compact_classes: bool) -> void:
 		base.color = Color.TRANSPARENT
 		var light := Gradient.new()
 		var relic_choices: bool = phase != "reward" or not _run.elite_relic_offers().is_empty()
-		light.colors = PackedColorArray([Color(0.23, 0.14, 0.23, 0.94), Color(0.063, 0.038, 0.075, 0.89)]) if relic_choices 			else PackedColorArray([Color(0.16, 0.23, 0.24, 0.94), Color(0.04, 0.065, 0.08, 0.94)])
+		light.colors = PackedColorArray([Color(0.23, 0.14, 0.23, 0.96), Color(0.063, 0.038, 0.075, 0.94)]) if relic_choices else PackedColorArray([Color(0.12, 0.19, 0.22, 0.96), Color(0.035, 0.06, 0.08, 0.94)])
 		var wash := GradientTexture2D.new()
 		wash.gradient = light
 		wash.fill = GradientTexture2D.FILL_RADIAL
@@ -199,50 +207,89 @@ func _shell(phase: String, compact_classes: bool) -> void:
 	add_child(margin)
 	margin.set_anchors_and_offsets_preset(PRESET_FULL_RECT)
 	for side in ["left", "right"]:
-		margin.add_theme_constant_override("margin_" + side, 14 if _battle_overlay else 37)
+		margin.add_theme_constant_override("margin_" + side, 8 if _battle_overlay else 25)
 	for side in ["top", "bottom"]:
-		margin.add_theme_constant_override("margin_" + side, 6 if _battle_overlay else (14 if compact_classes else 25))
+		margin.add_theme_constant_override("margin_" + side, 4 if _battle_overlay else (12 if compact_classes else 18))
 	_layout = VBoxContainer.new()
 	_bottom_actions = null
-	_layout.add_theme_constant_override("separation", 5 if _battle_overlay else (8 if compact_classes else 13))
+	_layout.add_theme_constant_override("separation", 6 if _battle_overlay else (8 if compact_classes else 12))
 	margin.add_child(_layout)
 	var bar := HBoxContainer.new()
+	bar.name = "RunHeader"
 	bar.add_theme_constant_override("separation", 10)
 	_layout.add_child(bar)
-	if not _battle_overlay and phase != "result":
-		var save_title := _button("Save & title", _host.run_save_title)
-		save_title.name = "SaveTitle"
-		bar.add_child(save_title)
-	if _battle_overlay:
-		_reward_placement_banner(bar)
-	var title := _label(_run.save_error if _battle_overlay else "BRASS & AETHER",
-		15 if _battle_overlay else 19, RUST if _battle_overlay else GOLD)
-	title.size_flags_horizontal = SIZE_EXPAND_FILL
-	if _battle_overlay:
-		title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-		title.tooltip_text = title.text
-	bar.add_child(title)
-	if phase != "result":
-		for member: Dictionary in ([] if _battle_overlay else _party()):
-			var member_id: String = member.get("id", "")
-			var hp_text := "%d/%d" % [int(member.hp), int(member.max_hp)]
-			var health := CombatIcons.stat("health", hp_text, 17)
-			if not member_id.is_empty():
-				health.add_child(GameIcons.hero_badge(member_id))
-				health.move_child(health.get_child(health.get_child_count() - 1), 0)
-				health.tooltip_text = "%s health: %s" % [_hero_name(member_id), hp_text]
-				health.accessibility_name = health.tooltip_text
-			bar.add_child(health)
-		bar.add_child(CombatIcons.stat("gold", str(int(_run.data.get("gold", 0)))))
 	_top_actions = HBoxContainer.new()
 	_top_actions.add_theme_constant_override("separation", 8)
-	bar.add_child(_top_actions)
+	if _battle_overlay:
+		_action_menu = _host.action_menu
+		if not _run.save_error.is_empty():
+			var error := _label(_run.save_error, 14, RUST)
+			error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+			bar.add_child(error)
+		_reward_placement_banner(bar)
+		bar.add_child(_top_actions)
+	else:
+		_add_header_relics(bar)
+		if phase != "result":
+			for member: Dictionary in _party():
+				var member_id: String = member.get("id", "")
+				var hp_text := "%d/%d" % [int(member.hp), int(member.max_hp)]
+				var health := CombatIcons.stat("health", hp_text, 17)
+				if not member_id.is_empty():
+					health.add_child(GameIcons.hero_badge(member_id))
+					health.move_child(health.get_child(health.get_child_count() - 1), 0)
+				health.tooltip_text = "%s health: %s" % [_hero_name(member_id), hp_text]
+				health.accessibility_name = health.tooltip_text
+				bar.add_child(health)
+			bar.add_child(CombatIcons.stat("gold", str(int(_run.data.get("gold", 0)))))
+		bar.add_child(_top_actions)
+		_action_menu = GameActionMenu.new()
+		add_child(_action_menu)
+		_action_menu.configure(self)
+		_top_actions.add_child(_action_menu.trigger)
+		if phase != "result":
+			var save_title := _button("Save & title", _host.run_save_title)
+			save_title.name = "SaveTitle"
+			_action_menu.add_action(save_title)
 	if phase != "map" and not _battle_overlay:
 		_reward_placement_banner(_layout)
 	if phase == "reward":
 		_add_enchantment_notice(_layout)
 	if not _battle_overlay and not _run.save_error.is_empty():
 		_layout.add_child(_label(_run.save_error, 15, RUST))
+
+
+func _add_header_relics(parent: Control) -> void:
+	var viewport := ScrollContainer.new()
+	viewport.name = "RunRelics"
+	viewport.size_flags_horizontal = SIZE_EXPAND_FILL
+	viewport.custom_minimum_size = Vector2(0, 30)
+	viewport.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	viewport.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	parent.add_child(viewport)
+	var row := HBoxContainer.new()
+	row.name = "RunRelicIcons"
+	row.add_theme_constant_override("separation", 4)
+	viewport.add_child(row)
+	var owned: Array = _run.data.get("relics", [])
+	for id: String in owned:
+		var relic: Dictionary = FrontierRun.RELICS.get(id, {})
+		if relic.is_empty():
+			continue
+		var portrait := _icon_view(GameIcons.relic_art(id), 22 if owned.size() > 8 else 28)
+		portrait.name = "RunRelic_" + id
+		portrait.mouse_filter = MOUSE_FILTER_STOP
+		portrait.tooltip_text = "%s\n%s" % [relic.label, relic.description]
+		portrait.accessibility_name = portrait.tooltip_text
+		row.add_child(portrait)
+
+
+func _clear_menu_context() -> void:
+	if is_instance_valid(_menu_context):
+		if _menu_context.get_parent() != null:
+			_menu_context.get_parent().remove_child(_menu_context)
+		_menu_context.queue_free()
+	_menu_context = null
 
 
 func _reward_placement_banner(parent: BoxContainer, storage_shortcut := true) -> void:
@@ -259,9 +306,7 @@ func _reward_placement_banner(parent: BoxContainer, storage_shortcut := true) ->
 		text = "%s added to timeline" % tile.label if owner.is_empty() else "%s added to %s’s timeline" % [tile.label, owner]
 	var row := HBoxContainer.new()
 	row.size_flags_horizontal = SIZE_EXPAND_FILL
-	parent.add_child(row)
-	if parent == _bottom_actions:
-		parent.move_child(row, 0)
+	(_layout if parent == _bottom_actions else parent).add_child(row)
 	var notice := _label(text, 17, TEAL)
 	notice.name = "RewardPlacement"
 	notice.size_flags_horizontal = SIZE_EXPAND_FILL
@@ -272,10 +317,10 @@ func _reward_placement_banner(parent: BoxContainer, storage_shortcut := true) ->
 		_add_storage_shortcut(row)
 
 
-func _add_storage_shortcut(parent: BoxContainer) -> void:
+func _add_storage_shortcut(_parent: BoxContainer) -> void:
 	var open := _button("Open storage", _host.run_open_reward_storage)
 	open.name = "OpenRewardStorage"
-	parent.add_child(open)
+	_footer_actions().add_child(open)
 
 
 func _add_enchantment_notice(parent: BoxContainer) -> void:
@@ -445,6 +490,7 @@ func _add_draft_cards(cards: HBoxContainer, offers: Array, phase: String, compac
 		var card := _choice(cards, entry.label, info, "Choose", func(): _pick_draft(phase, id))
 		var hero_id: String = _run.data.get("pending_recruit", _run.data.get("hero", ""))
 		_add_tile_header(card, id, entry, hero_id)
+		_style_tile_choice(card, id, false)
 		if id == ClassDecks.starter(hero_id):
 			var badge := _label("Class starter", 15, TEAL)
 			card.add_child(badge)
@@ -467,17 +513,8 @@ func _add_class_draft_card(cards: HBoxContainer, id: String, phase: String, comp
 	var details := _label(entry.description, 14 if compact else 17, MUTED)
 	details.name = "ChoiceDetails"
 	details.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	if compact:
-		var description_scroll := ScrollContainer.new()
-		description_scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-		description_scroll.custom_minimum_size.y = 36
-		description_scroll.size_flags_vertical = SIZE_EXPAND_FILL
-		details.size_flags_horizontal = SIZE_EXPAND_FILL
-		description_scroll.add_child(details)
-		card.add_child(description_scroll)
-	else:
-		details.size_flags_vertical = SIZE_EXPAND_FILL
-		card.add_child(details)
+	details.size_flags_vertical = SIZE_EXPAND_FILL
+	card.add_child(details)
 	var actions := HFlowContainer.new()
 	actions.add_theme_constant_override("h_separation", 8)
 	actions.add_theme_constant_override("v_separation", 6)
@@ -536,16 +573,14 @@ func _show_class_deck(hero_id: String) -> void:
 		deck.add_child(grid)
 		for tile_id: String in pool:
 			var spec: Dictionary = ArenaSim.TILES[tile_id]
-			var tile := Button.new()
+			var tile := RewardTileButton.new()
+			tile.preview = tile_hover_card.bind(tile_id, hero_id, "")
 			tile.text = spec.label
 			tile.custom_minimum_size.y = 30
 			tile.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
 			tile.size_flags_horizontal = SIZE_EXPAND_FILL
-			var tooltip: String = "%s · %s\n%s\n%s" % [_hero_name(hero_id), GameIcons.rarity_name(spec), GameIcons.tile_stats(spec), spec.description]
-			var critical := GameIcons.critical_tooltip(tile_id, hero_id)
-			if not critical.is_empty():
-				tooltip += "\n" + critical
-			tile.tooltip_text = TileKeywords.with_definitions(tooltip, spec.description)
+			tile.tooltip_text = spec.label
+			tile.accessibility_name = "%s · %s · %s" % [_hero_name(hero_id), spec.label, spec.description]
 			tile.mouse_default_cursor_shape = CURSOR_POINTING_HAND
 			GameIcons.decorate(tile, GameIcons.tile(tile_id, spec), 18)
 			var fill := PANEL.lerp(GameIcons.rarity(spec), 0.16 if tile_id == signature else 0.07)
@@ -611,12 +646,6 @@ func _map() -> void:
 	details.size_flags_horizontal = SIZE_EXPAND_FILL
 	details.add_theme_constant_override("separation", 13)
 	scroll.add_child(details)
-	var relic_names := PackedStringArray()
-	for id: String in _run.data.get("relics", []):
-		relic_names.append(FrontierRun.RELICS.get(id, {}).get("label", id.capitalize()))
-	var relics := _label("Relics  ·  " + ", ".join(relic_names), 15, MUTED)
-	relics.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	details.add_child(relics)
 	if not str(_run.data.get("node_notice", "")).is_empty():
 		details.add_child(_notice())
 	_add_enchantment_notice(details)
@@ -839,14 +868,14 @@ func _reward() -> void:
 	if not final_boss and not place_by_drag:
 		actions.add_child(_button("Manage tiles", func(): _host.run_show_arena()))
 	var bonus: int = _run.reward_skip_gold()
-	var skip := _button("Skip for +%d gold" % bonus if bonus > 0 else "Skip reward", func(): _claim_reward("skip", notice))
+	var skip := _coin_button("Skip", "+%d" % bonus, func(): _claim_reward("skip", notice)) if bonus > 0 else _button("Skip reward", func(): _claim_reward("skip", notice))
 	skip.name = "SkipReward"
 	if bonus == 0 and not final_boss and _run.reward_count() > 1:
 		skip.tooltip_text = "The gold bonus is paid once per fight."
 	actions.add_child(skip)
 	var price: int = _run.reward_reroll_price()
 	if price > 0:
-		var reroll := _button("Reroll · %d gold" % price, func(): _reroll_reward(notice))
+		var reroll := _coin_button("Reroll", str(price), func(): _reroll_reward(notice))
 		reroll.name = "RerollReward"
 		reroll.disabled = int(_run.data.gold) < price
 		reroll.tooltip_text = "The price doubles each time you reroll in this act."
@@ -992,11 +1021,10 @@ func _reward_heading(title: String, milestone: String, hero_id: String) -> void:
 		row.add_child(progress)
 	if _battle_overlay:
 		var fit_heading := func():
-			var dense := size.y < 300
-			hero.add_theme_font_size_override("font_size", 20 if dense else 26)
-			context.add_theme_font_size_override("font_size", 15 if dense else 18)
+			hero.add_theme_font_size_override("font_size", 18)
+			context.add_theme_font_size_override("font_size", 15)
 			if portrait != null:
-				portrait.custom_minimum_size = Vector2(24, 24) if dense else Vector2(32, 32)
+				portrait.custom_minimum_size = Vector2(22, 22)
 		_responsive(fit_heading, row)
 	if not milestone.is_empty():
 		if _battle_overlay:
@@ -1099,8 +1127,8 @@ func _relic_draft_card(cards: HBoxContainer, id: String, button_prefix: String, 
 	details.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	if _battle_overlay:
 		details.add_theme_constant_override("line_separation", -1)
-		details.fit_content = false
-		details.scroll_active = true
+		details.fit_content = true
+		details.scroll_active = false
 		details.size_flags_vertical = SIZE_SHRINK_BEGIN
 	card.add_child(details)
 
@@ -1125,12 +1153,11 @@ func _relic_draft_card(cards: HBoxContainer, id: String, button_prefix: String, 
 			var short_arena := size.y < 260
 			portrait.custom_minimum_size.y = clampf(size.y * 0.25, 112.0, 170.0) if focused \
 				else clampf(minf(size.y * 0.30, size.y - 145.0 - owner_space), 32.0, 144.0)
-			details.fit_content = focused
-			details.scroll_active = not focused
-			details.custom_minimum_size.y = 0.0 if focused \
-				else clampf(size.y - portrait.custom_minimum_size.y - 137.0 - owner_space, 24.0, 144.0)
+			details.fit_content = true
+			details.scroll_active = false
+			details.custom_minimum_size.y = 0.0
 			title.add_theme_font_size_override("font_size", 18 if short_arena else 20)
-			details.add_theme_font_size_override("normal_font_size", 14 if focused else (12 if short_arena else 13))
+			details.add_theme_font_size_override("normal_font_size", 14)
 			button.custom_minimum_size.y = 27 if short_arena else 33
 			button.add_theme_font_size_override("font_size", 13 if short_arena else 16)
 		else:
@@ -1178,7 +1205,7 @@ func _enchantment_draft() -> void:
 		button.accessibility_name = "Claim %s. %s" % [offer.label, offer.description]
 		card.add_child(button)
 		var description := TileKeywords.description(offer.description, 16, MUTED)
-		description.size_flags_vertical = SIZE_EXPAND_FILL
+		description.size_flags_vertical = SIZE_SHRINK_BEGIN
 		card.add_child(description)
 		_enable_reward_card_click(card, button)
 		_add_enchantment_equip(card, id)
@@ -1243,6 +1270,7 @@ func _claim_reward(id: String, notice: Label) -> void:
 		_host.run_return()
 	else:
 		notice.text = _run.save_error if not _run.save_error.is_empty() else "No room. Move or discard a tile in storage and choose again."
+		notice.show()
 		notice.tooltip_text = notice.text
 
 
@@ -1255,84 +1283,191 @@ func _reroll_reward(notice: Label) -> void:
 
 
 func _shop() -> void:
-	_page_title(_run.data.get("node", {}).get("label", "Relay Market"), "")
+	var sign := PanelContainer.new()
+	sign.name = "ShopSign"
+	sign.add_theme_stylebox_override("panel", _box(Color("#44352a"), Color("#ba945c"), 5, 10))
+	_layout.add_child(sign)
+	var masthead := HBoxContainer.new()
+	masthead.add_theme_constant_override("separation", 12)
+	sign.add_child(masthead)
+	masthead.add_child(_icon_view(GameIcons.icon("shop"), 43))
+	var heading := VBoxContainer.new()
+	heading.size_flags_horizontal = SIZE_EXPAND_FILL
+	heading.add_theme_constant_override("separation", 0)
+	masthead.add_child(heading)
+	heading.add_child(_label("SHOP", 26, GOLD, true))
+	heading.add_child(_label(_run.data.get("node", {}).get("label", "Relay Market"), 15, CREAM))
+	_continue(_leave)
+	var manage := _button("Manage tiles", func(): _host.run_show_arena())
+	manage.name = "ShopManageTiles"
+	_footer_actions().add_child(manage)
+	var counter := HBoxContainer.new()
+	counter.name = "MerchantCounter"
+	counter.size_flags_vertical = SIZE_EXPAND_FILL
+	counter.add_theme_constant_override("separation", 12)
+	_layout.add_child(counter)
+	var shelves := PanelContainer.new()
+	shelves.name = "ShopShelves"
+	shelves.size_flags_horizontal = SIZE_EXPAND_FILL
+	shelves.add_theme_stylebox_override("panel", _box(Color("#203139"), Color("#997a4c"), 7, 8))
+	counter.add_child(shelves)
+	var catalog := ScrollContainer.new()
+	catalog.name = "ShopCatalog"
+	catalog.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	catalog.follow_focus = true
+	shelves.add_child(catalog)
+	var catalog_rows := VBoxContainer.new()
+	catalog_rows.size_flags_horizontal = SIZE_EXPAND_FILL
+	catalog_rows.add_theme_constant_override("separation", 9)
+	catalog.add_child(catalog_rows)
+	var stock := GridContainer.new()
+	stock.name = "MerchantStock"
+	stock.columns = 2
+	stock.size_flags_horizontal = SIZE_EXPAND_FILL
+	stock.add_theme_constant_override("h_separation", 8)
+	stock.add_theme_constant_override("v_separation", 8)
+	catalog_rows.add_child(stock)
 	var notice := _notice()
 	var offers: Array = _run.shop_stock()
 	var deck_offer: String = _run.shop_deck_offer_id()
-	var has_ledger_stock := offers.any(func(id: String):
-		return id != deck_offer and not _run.shop_class_offer_owner(id).is_empty())
-	var compact := has_ledger_stock or offers.size() > 4
-	var cards: HBoxContainer
-	var ledger_cards: HBoxContainer
-	if not has_ledger_stock:
-		cards = _cards_row()
-	else:
-		var scroll := ScrollContainer.new()
-		scroll.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-		scroll.follow_focus = true
-		scroll.size_flags_vertical = SIZE_EXPAND_FILL
-		_layout.add_child(scroll)
-		var stock := VBoxContainer.new()
-		stock.size_flags_horizontal = SIZE_EXPAND_FILL
-		stock.add_theme_constant_override("separation", 10)
-		scroll.add_child(stock)
-		cards = _cards_row(stock)
-		stock.add_child(_label("Guild Ledger", 19, GOLD, true))
-		ledger_cards = _cards_row(stock)
-		ledger_cards.name = "GuildLedgerStock"
+	var ledger: GridContainer
+	if offers.any(func(id: String): return id != deck_offer and not _run.shop_class_offer_owner(id).is_empty()):
+		catalog_rows.add_child(_label("Guild Ledger", 17, GOLD, true))
+		ledger = GridContainer.new()
+		ledger.name = "GuildLedgerStock"
+		ledger.columns = 2
+		ledger.size_flags_horizontal = SIZE_EXPAND_FILL
+		ledger.add_theme_constant_override("h_separation", 8)
+		ledger.add_theme_constant_override("v_separation", 8)
+		catalog_rows.add_child(ledger)
 	for id: String in offers:
-		var tile: Dictionary = ArenaSim.TILES[id]
-		var price: int = _run.shop_price(id)
-		var purchased: bool = _run.shop_tile_purchased(id)
-		var owner: String = _run.shop_class_offer_owner(id)
-		var row := cards if owner.is_empty() or id == deck_offer else ledger_cards
-		var caption := "Purchased" if purchased else "Buy · %d gold" % price
-		var destination: String = "" if purchased else _host.run_shop_placement_label(id)
-		var unavailable := purchased or int(_run.data.get("gold", 0)) < price or destination.is_empty()
-		var body: String = tile.description
-		if not purchased:
-			body += "\n" + (destination if not destination.is_empty() else "Make room to buy this tile.")
-		var card := _choice(row, tile.label, body, caption, func(): _buy_tile(id, notice), unavailable)
-		var purchase: Button = card.get_child(card.get_child_count() - 1)
-		purchase.name = "ShopTile_" + id
-		var panel := card.get_parent() as PanelContainer
-		if compact:
-			panel.custom_minimum_size.y = 0
-			card.add_theme_constant_override("separation", 8)
-			card.get_child(0).add_theme_font_size_override("font_size", 22)
-			card.get_child(1).add_theme_font_size_override("font_size", 15)
-			_add_tile_header(card, id, tile, owner, true)
-		else:
-			_add_tile_header(card, id, tile, owner)
-		if purchased:
-			panel.add_theme_stylebox_override("panel", _box(Color("#1b242b"), Color("#56636a"), 9, 12 if compact else 18))
-			card.modulate = Color("#a9afb4")
+		var extra: bool = id != deck_offer and not _run.shop_class_offer_owner(id).is_empty()
+		_shop_stock_card(ledger if extra else stock, id, notice)
 	if offers.is_empty():
-		cards.add_child(_label("No tiles left.", 20, MUTED))
-	_layout.add_child(notice)
-	_continue(_leave)
-	var actions := _footer_actions()
-	actions.add_child(_button("Manage tiles", func(): _host.run_show_arena()))
-	var heal_label := "Heal 15 HP each · 12 gold" if _party().size() > 1 else "Heal 15 HP · 12 gold"
-	if _run.data.get("shop_healed", false):
-		heal_label = "Heal used"
-	elif not _party_needs_healing():
-		heal_label = "Party at full health"
-	var healing := _button(heal_label, func():
-		_refresh_after_choice(_run.shop_heal())
-	)
+		stock.add_child(_label("Sold out", 20, MUTED))
+	var services := _panel_stack(counter, Vector2(190, 0))
+	services.get_parent().name = "ShopServices"
+	services.get_parent().size_flags_horizontal = SIZE_SHRINK_END
+	services.get_parent().add_theme_stylebox_override("panel", _box(Color("#352b25"), Color("#b39460"), 7, 10))
+	services.add_theme_constant_override("separation", 8)
+	services.add_child(_label("SERVICES", 17, GOLD, true))
+	var recovery := HBoxContainer.new()
+	recovery.name = "ShopRecovery"
+	recovery.add_child(CombatIcons.stat("health", "+15", 18, "Restore 15 health to each living hero."))
+	if _party().size() > 1:
+		recovery.add_child(_label("each", 13, MUTED))
+	services.add_child(recovery)
+	var used: bool = _run.data.get("shop_healed", false)
+	var healing := _coin_button("Recover", "12", func(): _refresh_after_choice(_run.shop_heal()),
+		int(_run.data.get("gold", 0)) < 12 or used or not _party_needs_healing())
 	healing.name = "ShopHeal"
-	healing.disabled = int(_run.data.get("gold", 0)) < 12 or _run.data.get("shop_healed", false) or not _party_needs_healing()
-	actions.add_child(healing)
+	healing.tooltip_text = "Healing purchased." if used else "Restore 15 HP to each living hero for 12 gold."
+	if used:
+		healing.text = "Purchased"
+		for child in healing.get_children():
+			child.hide()
+	services.add_child(healing)
+	if used or not _party_needs_healing():
+		services.add_child(_label("Purchased" if used else "Full health", 13, MUTED))
+	services.add_child(HSeparator.new())
 	var relic_id: String = _run.data.get("shop_relic", "")
 	if FrontierRun.RELICS.has(relic_id):
 		var relic: Dictionary = FrontierRun.RELICS[relic_id]
-		var buy_relic := _button("%s · 30 gold" % relic.label, func():
-			_refresh_after_choice(_run.shop_buy_relic())
-		)
-		buy_relic.disabled = int(_run.data.get("gold", 0)) < 30
-		buy_relic.tooltip_text = relic.description
-		actions.add_child(buy_relic)
+		services.add_child(_icon_view(GameIcons.relic_art(relic_id), 45))
+		var relic_name := _label(relic.label, 17, CREAM, true)
+		relic_name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		services.add_child(relic_name)
+		var relic_copy := TileKeywords.description(relic.description, 13 if size.y < 650 else 14, MUTED)
+		relic_copy.name = "ShopRelicDescription"
+		services.add_child(relic_copy)
+		var buy_relic := _coin_button("Buy relic", "30", func(): _refresh_after_choice(_run.shop_buy_relic()), int(_run.data.get("gold", 0)) < 30)
+		buy_relic.name = "ShopRelic"
+		buy_relic.tooltip_text = "%s. %s. Price: 30 gold." % [relic.label, relic.description]
+		services.add_child(buy_relic)
+	else:
+		services.add_child(_label("Relic sold", 15, MUTED))
+	masthead.add_child(notice)
+	notice.name = "ShopNotice"
+	notice.size_flags_horizontal = SIZE_EXPAND_FILL
+	notice.size_flags_vertical = SIZE_SHRINK_CENTER
+	notice.visible = not notice.text.is_empty()
+	notice.minimum_size_changed.connect(func(): notice.visible = not notice.text.is_empty())
+
+
+func _shop_stock_card(parent: Control, id: String, notice: Label) -> void:
+	var tile: Dictionary = ArenaSim.TILES[id]
+	var price: int = _run.shop_price(id)
+	var purchased: bool = _run.shop_tile_purchased(id)
+	var owner: String = _run.shop_class_offer_owner(id)
+	var destination: String = "" if purchased else _host.run_shop_placement_label(id)
+	var unavailable := purchased or int(_run.data.get("gold", 0)) < price or destination.is_empty()
+	var panel := PanelContainer.new()
+	panel.name = "ShopStock_" + id
+	panel.size_flags_horizontal = SIZE_EXPAND_FILL
+	panel.add_theme_stylebox_override("panel", _box(Color("#20262a") if purchased else Color("#17242a"),
+		Color("#52615f") if purchased else GameIcons.rarity(tile).darkened(0.3), 5, 9))
+	parent.add_child(panel)
+	var stack := VBoxContainer.new()
+	stack.add_theme_constant_override("separation", 5)
+	panel.add_child(stack)
+	var identity := HBoxContainer.new()
+	identity.add_theme_constant_override("separation", 7)
+	stack.add_child(identity)
+	identity.add_child(_icon_view(GameIcons.icon(GameIcons.tile(id, tile)), 32))
+	var name := _label(tile.label, 16, CREAM, true)
+	name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+	name.size_flags_horizontal = SIZE_EXPAND_FILL
+	identity.add_child(name)
+	var rarity := GameIcons.rarity_badge(tile)
+	rarity.text = GameIcons.rarity_pips(tile)
+	identity.add_child(rarity)
+	var stats := CombatIcons.tile_stats(tile, 13)
+	stack.add_child(stats)
+	var body := TileKeywords.description(tile.description, 14, MUTED, TILE_DESCRIPTION_EXCLUSIONS)
+	body.name = "ChoiceDetails"
+	stack.add_child(body)
+	if not purchased and not destination.is_empty():
+		var placement := _label(destination, 12, TEAL)
+		placement.name = "ShopDestination"
+		placement.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
+		stack.add_child(placement)
+	var purchase := _coin_button("Buy", str(price), func(): _buy_tile(id, notice), unavailable)
+	purchase.name = "ShopTile_" + id
+	purchase.accessibility_name = "%s. %s. %d gold. %s" % [tile.label, tile.description, price, "Purchased" if purchased else destination]
+	purchase.tooltip_text = purchase.accessibility_name
+	if purchased:
+		purchase.text = "Purchased"
+		for child in purchase.get_children():
+			child.hide()
+		panel.modulate = Color("#949c9f")
+	if not owner.is_empty():
+		identity.add_child(GameIcons.hero_badge(owner, true))
+	stack.add_child(purchase)
+
+
+func _coin_button(caption: String, amount: String, chosen: Callable, disabled := false) -> Button:
+	var button := _button("", chosen, true)
+	button.disabled = disabled
+	button.custom_minimum_size = Vector2(100, 30)
+	button.accessibility_name = "%s · %s gold" % [caption, amount]
+	var row := HBoxContainer.new()
+	row.name = "CoinButtonContent"
+	row.alignment = BoxContainer.ALIGNMENT_CENTER
+	row.mouse_filter = MOUSE_FILTER_IGNORE
+	row.modulate.a = 0.42 if disabled else 1.0
+	row.add_theme_constant_override("separation", 7)
+	button.add_child(row)
+	row.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	row.add_child(_label(caption, 14, CREAM))
+	row.add_child(CombatIcons.stat("gold", amount, 15))
+	var pending: Array[Node] = [row]
+	while not pending.is_empty():
+		var node := pending.pop_back() as Control
+		if node == null:
+			continue
+		node.mouse_filter = MOUSE_FILTER_IGNORE
+		pending.append_array(node.get_children())
+	return button
 
 
 func _buy_tile(id: String, notice: Label) -> void:
@@ -1340,6 +1475,7 @@ func _buy_tile(id: String, notice: Label) -> void:
 		_host.run_return()
 	else:
 		notice.text = _run.save_error if not _run.save_error.is_empty() else "No room. Move or discard a tile in storage and choose again."
+		notice.show()
 
 
 func _event() -> void:
@@ -1633,45 +1769,30 @@ func _continue(chosen: Callable, tooltip := "") -> Button:
 	return button
 
 
-func _footer_actions() -> HBoxContainer:
+func _footer_actions() -> VBoxContainer:
 	if not is_instance_valid(_bottom_actions):
-		_bottom_actions = HBoxContainer.new()
-		_bottom_actions.alignment = BoxContainer.ALIGNMENT_END
-		_bottom_actions.add_theme_constant_override("separation", 8)
-		_layout.add_child(_bottom_actions)
+		_bottom_actions = VBoxContainer.new()
+		_bottom_actions.name = "PageActions"
+		_bottom_actions.add_theme_constant_override("separation", 5)
+		_menu_context = _bottom_actions
+		_action_menu.content.add_child(_bottom_actions)
 	return _bottom_actions
 
 
 func _choice(parent: Control, name: String, body: String, cta: String, chosen: Callable,
 		disabled := false, tile_preview := false, preview := Callable()) -> VBoxContainer:
 	var compact := _battle_overlay or tile_preview
-	var card := _panel_stack(parent, Vector2(0, 0 if compact else 280), true, preview)
-	if compact:
-		card.add_theme_constant_override("separation", 3 if _battle_overlay and not tile_preview else 5)
+	var card := _panel_stack(parent, Vector2(0, 0 if compact else 220), true, preview)
+	card.add_theme_constant_override("separation", 5 if compact else 9)
 	if not name.is_empty():
-		var title := _label(name, 22 if compact else 27, CREAM, true)
+		var title := _label(name, 20 if compact else 25, CREAM, true)
 		title.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		if _battle_overlay and not tile_preview:
-			title.add_theme_font_size_override("font_size", 18)
-			title.max_lines_visible = 2
-			title.text_overrun_behavior = TextServer.OVERRUN_TRIM_ELLIPSIS
-			title.tooltip_text = name
-			title.mouse_filter = MOUSE_FILTER_PASS
 		card.add_child(title)
-	var details: Control
-	if compact:
-		var copy := TileKeywords.description(body, 14, MUTED, TILE_DESCRIPTION_EXCLUSIONS)
-		copy.add_theme_constant_override("line_separation", -1)
-		copy.fit_content = tile_preview
-		copy.scroll_active = not tile_preview
-		copy.custom_minimum_size.y = 0 if tile_preview else 28
-		details = copy
-	else:
-		var copy := _label(body, 17, MUTED)
-		copy.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		details = copy
+	var details := TileKeywords.description(body, 14 if compact else 16, MUTED, TILE_DESCRIPTION_EXCLUSIONS)
 	details.name = "ChoiceDetails"
-	details.size_flags_vertical = SIZE_EXPAND_FILL
+	details.fit_content = true
+	details.scroll_active = false
+	details.size_flags_vertical = SIZE_SHRINK_BEGIN
 	card.add_child(details)
 	if not cta.is_empty():
 		var action := _button(cta, chosen, true, false, preview)
@@ -1688,7 +1809,7 @@ func tile_hover_card(id: String, owner: String, enchantment_id: String, shared_s
 		body += "\n\n%s · %s" % [enchantment.label, enchantment.description]
 	var preview := VBoxContainer.new()
 	preview.name = "TimelineTilePreview"
-	preview.custom_minimum_size.x = 300
+	preview.custom_minimum_size.x = 420 if body.length() > 320 else 300
 	var card := _choice(preview, spec.label, body, "", Callable(), false, true)
 	var title := card.get_child(0) as Label
 	var description := card.get_node("ChoiceDetails") as RichTextLabel
@@ -1721,7 +1842,7 @@ func _add_tile_header(card: VBoxContainer, id: String, spec: Dictionary, owner :
 		description = details
 	var content := VBoxContainer.new()
 	content.add_theme_constant_override("separation", 3 if compact else 7)
-	content.size_flags_vertical = SIZE_EXPAND_FILL
+	content.size_flags_vertical = SIZE_SHRINK_BEGIN
 	card.add_child(content)
 	card.move_child(content, description.get_index())
 	var stats := CombatIcons.tile_stats(spec, 14 if compact else 16)
@@ -1731,10 +1852,7 @@ func _add_tile_header(card: VBoxContainer, id: String, spec: Dictionary, owner :
 		attack.accessibility_name = attack.tooltip_text
 	content.add_child(stats)
 	description.reparent(content, false)
-	description.size_flags_vertical = SIZE_EXPAND_FILL
-	if _battle_overlay and not (description as RichTextLabel).fit_content:
-		content.custom_minimum_size.y = description.custom_minimum_size.y
-		description.custom_minimum_size.y = 0
+	description.size_flags_vertical = SIZE_SHRINK_BEGIN
 	var panel := card.get_parent() as PanelContainer
 	var color := GameIcons.rarity(spec)
 	panel.add_theme_stylebox_override("panel", _tile_card_frame(spec, false, 12 if compact else 18))
@@ -1766,16 +1884,24 @@ func _add_tile_header(card: VBoxContainer, id: String, spec: Dictionary, owner :
 
 func _style_tile_choice(card: VBoxContainer, id: String, compact: bool, hover_preview := false) -> void:
 	var panel := card.get_parent() as PanelContainer
-	var surround := StyleBoxEmpty.new()
-	surround.content_margin_left = 5
-	surround.content_margin_right = 5
-	surround.content_margin_top = 2
-	surround.content_margin_bottom = 2
-	panel.add_theme_stylebox_override("panel", surround)
-	panel.set_meta("floating_tile_choice", true)
-	panel.size_flags_vertical = SIZE_SHRINK_BEGIN
-	card.add_theme_constant_override("separation", 3 if compact else 6)
 	var spec: Dictionary = ArenaSim.TILES[id]
+	panel.name = "TileChoice_" + id
+	panel.set_meta("grounded_tile_choice", true)
+	panel.add_theme_stylebox_override("panel", _tile_card_frame(spec, false, 6 if compact else 15))
+	panel.size_flags_vertical = SIZE_SHRINK_BEGIN
+	var choice_row := panel.get_parent() as HBoxContainer
+	if choice_row != null and not choice_row.has_meta("equal_tile_widths"):
+		choice_row.set_meta("equal_tile_widths", true)
+		var fit_widths := func():
+			var count := choice_row.get_child_count()
+			var margin := _layout.get_parent() as MarginContainer
+			var available := size.x - margin.get_theme_constant("margin_left") - margin.get_theme_constant("margin_right")
+			var share := floorf((available - choice_row.get_theme_constant("separation") * (count - 1)) / maxi(1, count))
+			for surface: Control in choice_row.get_children():
+				surface.custom_minimum_size.x = maxf(0, share)
+		_responsive(fit_widths, choice_row)
+		fit_widths.call_deferred()
+	card.add_theme_constant_override("separation", 3 if compact else 8)
 	var header := card.get_child(0) as HBoxContainer
 	if header != null:
 		for child in header.get_children():
@@ -1791,64 +1917,55 @@ func _style_tile_choice(card: VBoxContainer, id: String, compact: bool, hover_pr
 		if child is Label:
 			title = child
 			break
-	if title != null:
-		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		if card is RewardTileCard:
-			title.tooltip_text = ""
-		# One-word names stay visually close to their artwork.
-		title.add_theme_font_size_override("font_size", 18 if compact else 25)
+	var identity := HBoxContainer.new()
+	identity.name = "TileCardIdentity"
+	identity.add_theme_constant_override("separation", 7)
+	card.add_child(identity)
+	card.move_child(identity, 1)
 	var art := TileChoiceArt.new()
 	art.name = "TileChoiceArtwork"
-	# The arena is shorter with three hero timelines; size art against the overlay,
-	# leaving the reward footer inside the battle even at compact window sizes.
-	var art_height := clampf(size.y * 0.20, 48.0, 110.0) if compact else 110.0
-	art.configure(GameIcons.icon(GameIcons.tile(id, spec)), GameIcons.rarity(spec), 58 if hover_preview else art_height)
-	card.add_child(art)
-	card.move_child(art, 0)
+	var art_height := 48 if hover_preview else (28 if compact else 58)
+	art.configure(GameIcons.icon(GameIcons.tile(id, spec)), GameIcons.rarity(spec), art_height)
+	art.custom_minimum_size = Vector2.ONE * art_height
+	identity.add_child(art)
 	if title != null:
-		card.move_child(title, 1)
+		title.reparent(identity, false)
+		title.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		title.size_flags_horizontal = SIZE_EXPAND_FILL
+		title.size_flags_vertical = SIZE_SHRINK_CENTER
+		title.max_lines_visible = -1
+		title.text_overrun_behavior = TextServer.OVERRUN_NO_TRIMMING
+		title.tooltip_text = ""
+		title.add_theme_font_size_override("font_size", 15 if compact else 21)
 	var details := card.find_child("ChoiceDetails", true, false) as RichTextLabel
 	if details != null:
-		details.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
-		if compact and not hover_preview:
-			details.custom_minimum_size.y = clampf(get_viewport_rect().size.y * 0.07, 34.0, 64.0)
+		details.horizontal_alignment = HORIZONTAL_ALIGNMENT_LEFT
+		details.fit_content = true
+		details.scroll_active = false
+		details.custom_minimum_size.y = 0
+		details.size_flags_vertical = SIZE_SHRINK_BEGIN
+		var fit_copy := func():
+			var dense := compact and not hover_preview and size.x < 1000 and str(spec.description).length() > 380
+			details.add_theme_font_size_override("normal_font_size", 13 if dense else (14 if compact else 15))
+			details.add_theme_constant_override("line_separation", -3 if dense else 0)
+		_responsive(fit_copy, details)
 	var stats := card.find_child("TileStats", true, false) as HBoxContainer
 	if stats != null:
-		stats.alignment = BoxContainer.ALIGNMENT_CENTER
-	if compact and not hover_preview:
-		var rarity := header.find_child("TileRarityBadge", true, false) as Label
-		var rarity_text := rarity.text if rarity != null else ""
-		var fit_tile := func():
-			var dense := size.y < 300
-			var single_hero: bool = _host.lanes.size() == 1
-			var narrow := single_hero and size.x < 700 and size.y < 500
-			var available_art := 24.0 if dense else (48.0 if narrow else clampf(size.y * 0.20, 48.0, 110.0))
-			art.custom_minimum_size = Vector2(24, 24) if dense else Vector2(0, available_art)
-			card.add_theme_constant_override("separation", 2 if dense else 3)
-			if dense and art.get_parent() != header:
-				art.reparent(header, false)
-				header.move_child(art, 0)
-				card.move_child(header, 0)
-			elif not dense and art.get_parent() != card:
-				art.reparent(card, false)
-				card.move_child(art, 0)
-				card.move_child(title, 1)
-				card.move_child(header, 2)
-			header.add_theme_constant_override("separation", 4 if dense else 8)
-			if rarity != null:
-				rarity.text = GameIcons.rarity_pips(spec) if dense else rarity_text
-				rarity.size_flags_horizontal = SIZE_SHRINK_BEGIN if dense else SIZE_EXPAND_FILL
-			if title != null:
-				title.add_theme_font_size_override("font_size", 15 if dense else 18)
-				title.max_lines_visible = 1 if dense else 2
-			if details != null:
-				details.add_theme_font_size_override("normal_font_size", 12 if dense or narrow else 14)
-				details.custom_minimum_size.y = 20 if dense else (clampf(size.y - available_art - 190.0, 34.0, 250.0)
-					if single_hero else clampf(size.y * 0.07, 34.0, 64.0))
-		_responsive(fit_tile, panel)
+		var metrics := HFlowContainer.new()
+		metrics.name = "TileStats"
+		metrics.add_theme_constant_override("h_separation", 6)
+		metrics.add_theme_constant_override("v_separation", 2)
+		var holder := stats.get_parent()
+		var place := stats.get_index()
+		holder.add_child(metrics)
+		holder.move_child(metrics, place)
+		for child: Node in stats.get_children():
+			child.reparent(metrics, false)
+		holder.remove_child(stats)
+		stats.queue_free()
+		metrics.name = "TileStats"
 	var action := card.find_child("RewardTile_" + id, true, false) as Button
 	if action != null:
-		# A transparent full-card button retains keyboard/screen-reader access without a CTA rectangle.
 		action.text = ""
 		action.accessibility_name = "Choose %s. Equip automatically, or store when the sequence is full." % spec.label
 		action.tooltip_text = "Click to equip. Drag to choose an exact position."
@@ -1856,12 +1973,13 @@ func _style_tile_choice(card: VBoxContainer, id: String, compact: bool, hover_pr
 			action.add_theme_stylebox_override(state, StyleBoxEmpty.new())
 		action.reparent(panel, false)
 		panel.move_child(action, 0)
-		panel.mouse_entered.connect(func(): art.highlight(true))
-		panel.mouse_exited.connect(func(): art.highlight(false))
-		action.focus_entered.connect(func(): art.highlight(true))
-		action.focus_exited.connect(func(): art.highlight(false))
-		art.modulate.a = 0.3
-		art.create_tween().tween_property(art, "modulate:a", 1.0, 0.2)
+		var highlight := func(active: bool):
+			art.highlight(active)
+			panel.add_theme_stylebox_override("panel", _tile_card_frame(spec, active, 6 if compact else 15))
+		panel.mouse_entered.connect(func(): highlight.call(true))
+		panel.mouse_exited.connect(func(): highlight.call(false))
+		action.focus_entered.connect(func(): highlight.call(true))
+		action.focus_exited.connect(func(): highlight.call(false))
 
 
 func _tile_card_frame(spec: Dictionary, selected := false, margin := 18) -> StyleBoxFlat:
@@ -1875,12 +1993,24 @@ func _tile_card_frame(spec: Dictionary, selected := false, margin := 18) -> Styl
 
 func _responsive(fit: Callable, lifetime: Node) -> void:
 	# The overlay's arena can shrink before a container's old minimum changes.
-	# Listen to the actual overlay as well, and release callbacks with each card.
-	resized.connect(fit)
-	_layout.resized.connect(fit)
+	# Tooltips are also built off-tree: subscribe only while the card is shown.
+	var layout_ref: WeakRef = weakref(_layout)
+	var connect_resize := func():
+		if not resized.is_connected(fit):
+			resized.connect(fit)
+		var resize_layout: Object = layout_ref.get_ref()
+		if resize_layout != null and not resize_layout.resized.is_connected(fit):
+			resize_layout.resized.connect(fit)
+	lifetime.tree_entered.connect(connect_resize)
 	lifetime.tree_exiting.connect(func():
 		if resized.is_connected(fit):
-			resized.disconnect(fit))
+			resized.disconnect(fit)
+		var resize_layout: Object = layout_ref.get_ref()
+		if resize_layout != null and resize_layout.resized.is_connected(fit):
+			resize_layout.resized.disconnect(fit)
+	)
+	if lifetime.is_inside_tree():
+		connect_resize.call()
 	fit.call()
 
 

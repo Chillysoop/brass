@@ -318,8 +318,18 @@ func _check_practice_retry() -> void:
 		_check(loaded and game.combat_meter.snapshot() == meter,
 			"Resuming the saved reward preserves the original combat totals.")
 		var stored_id := str(run.data.offers.front())
-		_check(game.storage_screen.is_visible_in_tree() and game.storage_screen.get_parent() == game.combat_sidebar,
-			"A resumed reward opens storage beside the original battlefield.")
+		_check(not game.storage_screen.is_visible_in_tree() and game.storage_button.is_visible_in_tree()
+			and game.storage_button.get_parent() == game.action.get_parent() and game.storage_button.size.x <= 112,
+			"A resumed reward preserves complete choices and exposes compact storage in the header.")
+		var field: Rect2 = game.arena.get_global_rect()
+		await _click(game.storage_button, "the resumed reward storage header control")
+		await process_frame
+		_check(game.storage_screen.is_visible_in_tree() and game.storage_screen.get_parent() == game.reward_storage_drawer
+			and game.arena.get_global_rect().is_equal_approx(field),
+			"The resumed reward storage opens over the original battlefield without shrinking it.")
+		await _click(game.storage_button, "the resumed reward storage close control")
+		await process_frame
+		_check(not game.storage_screen.is_visible_in_tree(), "The same compact header control closes resumed reward storage.")
 		var lane: int = run.reward_lane()
 		var fits := false
 		for beat in range(ArenaSim.BEATS):
@@ -560,7 +570,7 @@ func _reach_second_enchantment(run: FrontierRun) -> bool:
 func _select_enchantment_tile(lane: int, start: int) -> void:
 	await process_frame
 	var tile_card: Control = game.tile_cards[lane][start]
-	_click(tile_card.get_child(0) as Button, "the timeline tile for the enchantment")
+	await _click(tile_card.get_child(0) as Button, "the timeline tile for the enchantment")
 	await process_frame
 
 
@@ -606,23 +616,47 @@ func _check_class_roster() -> void:
 
 func _press_text(parent: Control, prefix: String) -> void:
 	await process_frame
-	for control in parent.find_children("*", "Button", true, false):
-		var button := control as Button
-		if button.is_visible_in_tree() and button.text.begins_with(prefix):
-			_click(button, prefix)
+	var search: Node = parent
+	while search != null:
+		var hidden: Button
+		for control in search.find_children("*", "Button", true, false):
+			var button := control as Button
+			if button.text.begins_with(prefix):
+				if button.is_visible_in_tree():
+					await _click(button, prefix)
+					await process_frame
+					return
+				if hidden == null:
+					hidden = button
+		if hidden != null:
+			await _click(hidden, prefix)
 			await process_frame
 			return
+		search = search.get_parent()
 	_check(false, "Expected a visible button starting with “%s”." % prefix)
 
 
 func _press_named(parent: Control, node_name: String) -> void:
 	await process_frame
-	var button := parent.find_child(node_name, true, false) as Button
-	_click(button, node_name)
+	var search: Node = parent
+	var button: Button
+	while button == null and search != null:
+		button = search.find_child(node_name, true, false) as Button
+		search = search.get_parent()
+	await _click(button, node_name)
 	await process_frame
 
 
 func _click(button: Button, description: String) -> void:
+	if button != null and not button.is_visible_in_tree():
+		var menu: Node = button.get_parent()
+		while menu != null and not menu.has_method("is_open"):
+			menu = menu.get_parent()
+		if menu != null and not menu.is_open():
+			var trigger: Button = menu.get("trigger")
+			await _click(trigger, "the visible game menu")
+			await process_frame
+			await process_frame
 	if button == null or not button.is_visible_in_tree() or button.disabled:
 		_check(false, "Expected an enabled button for %s." % description)
 		return

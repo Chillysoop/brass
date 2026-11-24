@@ -12,7 +12,7 @@ const GOLD := Color("#ecc482")
 const CREAM := Color("#f3e7d1")
 const MUTED := Color("#aababc")
 const LABELS := {"damage": "Damage", "assists": "Assists", "kills": "Kills", "healing": "Healing"}
-const ICONS := {"damage": "attack", "assists": "pull", "kills": "stun", "healing": "heal"}
+const ICONS := {"damage": "attack", "assists": "assists", "kills": "kills", "healing": "heal"}
 const HELP := {
 	"damage": "Health lost to this tile after Guard. Excess damage is excluded.",
 	"assists": "Hit or moved an enemy before a different tile defeated it. One assist per tile and enemy.",
@@ -34,13 +34,13 @@ func _ready() -> void:
 	name = "CombatMeter"
 	custom_minimum_size.x = 245
 	size_flags_vertical = SIZE_EXPAND_FILL
-	add_theme_stylebox_override("panel", _frame(PANEL, EDGE, 10))
+	add_theme_stylebox_override("panel", _frame(Color(PANEL, 0.80), Color(EDGE, 0.88), 10))
 	var body := VBoxContainer.new()
 	body.add_theme_constant_override("separation", 8)
 	add_child(body)
 	body.add_child(_label("Combat stats", 19, GOLD))
 	var tabs := GridContainer.new()
-	tabs.columns = 2
+	tabs.columns = 4
 	tabs.add_theme_constant_override("h_separation", 5)
 	tabs.add_theme_constant_override("v_separation", 4)
 	body.add_child(tabs)
@@ -51,13 +51,12 @@ func _ready() -> void:
 		var name_row := HBoxContainer.new()
 		name_row.mouse_filter = MOUSE_FILTER_IGNORE
 		name_row.add_theme_constant_override("separation", 4)
-		name_row.add_child(CombatIcons.icon(ICONS[id], 13))
-		name_row.add_child(_label(LABELS[id], 13, CREAM))
+		name_row.add_child(CombatIcons.icon(ICONS[id], 21))
 		tab.add_child(name_row)
 		name_row.set_anchors_and_offsets_preset(PRESET_CENTER, PRESET_MODE_MINSIZE)
 		tab.accessibility_name = LABELS[id]
-		tab.tooltip_text = HELP[id]
-		tab.custom_minimum_size.y = 32
+		tab.tooltip_text = "%s · %s" % [LABELS[id], HELP[id]]
+		tab.custom_minimum_size = Vector2(44, 36)
 		tab.size_flags_horizontal = SIZE_EXPAND_FILL
 		tab.toggle_mode = true
 		tab.button_group = group
@@ -137,7 +136,7 @@ func _update_rows() -> void:
 
 func _build_row() -> PanelContainer:
 	var frame := PanelContainer.new()
-	frame.add_theme_stylebox_override("panel", _frame(RECESS, EDGE, 6))
+	frame.add_theme_stylebox_override("panel", _frame(Color(RECESS, 0.58), Color(EDGE, 0.66), 6))
 	frame.mouse_filter = MOUSE_FILTER_PASS
 	_leaderboard.add_child(frame)
 	var column := VBoxContainer.new()
@@ -160,7 +159,13 @@ func _build_row() -> PanelContainer:
 	heading.add_child(title)
 	var amount := _label("", 15, GOLD)
 	amount.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
-	heading.add_child(amount)
+	var value := HBoxContainer.new()
+	value.mouse_filter = MOUSE_FILTER_IGNORE
+	value.add_theme_constant_override("separation", 3)
+	var metric_icon := CombatIcons.icon(ICONS[metric], 14)
+	value.add_child(metric_icon)
+	value.add_child(amount)
+	heading.add_child(value)
 	var hero := _label("", 12, MUTED)
 	column.add_child(hero)
 	var bar := ProgressBar.new()
@@ -174,6 +179,7 @@ func _build_row() -> PanelContainer:
 	frame.set_meta("art", art)
 	frame.set_meta("label", title)
 	frame.set_meta("amount", amount)
+	frame.set_meta("metric_icon", metric_icon)
 	frame.set_meta("hero", hero)
 	frame.set_meta("bar", bar)
 	return frame
@@ -185,6 +191,10 @@ func _paint_row(frame: PanelContainer, row: Dictionary, leader: int) -> void:
 	frame.get_meta("art").texture = GameIcons.icon(GameIcons.tile(row.tile, tile))
 	frame.get_meta("label").text = tile.label
 	frame.get_meta("amount").text = str(row[metric])
+	var glyph: Control = frame.get_meta("metric_icon")
+	glyph.set_meta("icon_id", ICONS[metric])
+	glyph.accessibility_name = LABELS[metric]
+	glyph.queue_redraw()
 	var hero: Label = frame.get_meta("hero")
 	hero.text = row.hero
 	hero.add_theme_color_override("font_color", color)

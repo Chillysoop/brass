@@ -339,8 +339,16 @@ func _check_reward_screen() -> void:
 		and restored.data.relics == run.data.relics and restored.data.offers == run.data.offers,
 		"Resuming between the relic and tile steps must preserve the chosen relic and offers.")
 	_check(not run.choose_elite_relic("siege_fuse"), "The player cannot claim another relic once the draft is complete.")
-	_check(game.storage_screen.is_visible_in_tree() and game.storage_screen.get_parent() == game.combat_sidebar,
-		"The elite tile draft keeps storage open beside the arena.")
+	_check(not game.storage_screen.is_visible_in_tree() and game.storage_button.is_visible_in_tree()
+		and game.storage_button.get_parent() == game.action.get_parent() and game.storage_button.size.x <= 112,
+		"The elite tile draft keeps complete choices unobscured and exposes compact storage in the header.")
+	var field: Rect2 = game.arena.get_global_rect()
+	await _click(game, str(game.storage_button.name))
+	_check(game.storage_screen.is_visible_in_tree() and game.storage_screen.get_parent() == game.reward_storage_drawer
+		and game.arena.get_global_rect().is_equal_approx(field),
+		"One header click opens the elite reward storage overlay without shrinking the original battlefield.")
+	await _click(game, str(game.storage_button.name))
+	_check(not game.storage_screen.is_visible_in_tree(), "The same header control closes the elite reward storage overlay.")
 	await _click(game.frontier_screen, "RewardTile_" + companion)
 	_check(run.data.phase == "map" and run.loadout.lanes[0].any(func(item: Dictionary): return item.id == companion),
 		"One click equips the companion in the available hero timeline and returns to the route.")

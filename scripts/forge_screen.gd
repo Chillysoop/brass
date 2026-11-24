@@ -13,6 +13,8 @@ const GameIcons = preload("res://scripts/game_icons.gd")
 const CombatIcons = preload("res://scripts/combat_icons.gd")
 const TileChoiceArt = preload("res://scripts/tile_choice_art.gd")
 const TileKeywords = preload("res://scripts/tile_keywords.gd")
+const GameActionMenu = preload("res://scripts/game_action_menu.gd")
+const FrontierRun = preload("res://scripts/frontier_run.gd")
 const INK := Color("#101820")
 const PANEL := Color("#192732")
 const EDGE := Color("#3c505b")
@@ -53,6 +55,13 @@ var _save_reward: Button
 var _error: Label
 var _merge_intro: Panel
 var _merge_tween: Tween
+var _margin: MarginContainer
+var _layout: VBoxContainer
+var _details: PanelContainer
+var _board_margin: MarginContainer
+var _relics: HBoxContainer
+var _menu: GameActionMenu
+var _fit_pending := false
 
 
 func configure(host: Control) -> void:
@@ -63,6 +72,8 @@ func configure(host: Control) -> void:
 
 func open(source_id: String, copies := 3, reward := false, can_keep_reward := false, inspected := "") -> void:
 	_clear_merge_intro()
+	_menu.close()
+	_rebuild_relics()
 	_source_id = source_id
 	_tiers = TilePacking.forge_tiers(source_id)
 	_next_ids = TilePacking.next_options(source_id)
@@ -100,6 +111,7 @@ func open(source_id: String, copies := 3, reward := false, can_keep_reward := fa
 	_inspect(focus_id)
 	show()
 	_links.queue_redraw()
+	_queue_fit()
 	if _is_combine and not _next_ids.is_empty():
 		_show_merge_intro(source)
 		(_cards[_next_ids.front()] as Button).grab_focus()
@@ -122,117 +134,191 @@ func _build() -> void:
 	backdrop.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	add_child(backdrop)
 
-	var margin := MarginContainer.new()
-	margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	margin.add_theme_constant_override("margin_left", 42)
-	margin.add_theme_constant_override("margin_right", 42)
-	margin.add_theme_constant_override("margin_top", 29)
-	margin.add_theme_constant_override("margin_bottom", 29)
-	add_child(margin)
-
-	var layout := VBoxContainer.new()
-	layout.add_theme_constant_override("separation", 17)
-	margin.add_child(layout)
+	_margin = MarginContainer.new()
+	_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	add_child(_margin)
+	_layout = VBoxContainer.new()
+	_margin.add_child(_layout)
 
 	var header := HBoxContainer.new()
-	layout.add_child(header)
-	_save_reward = _button("Save & title", _host.run_save_title)
-	_save_reward.name = "SaveRewardCombine"
-	_save_reward.custom_minimum_size = Vector2(112, 40)
-	header.add_child(_save_reward)
-	_title = _label("Tile forge", 34, GOLD)
-	_title.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	header.add_child(_title)
-	var back := _button("Back", func(): _host.forge_close())
-	back.name = "BackFromForge"
-	back.custom_minimum_size = Vector2(100, 40)
-	header.add_child(back)
-	var source_row := HBoxContainer.new()
-	source_row.add_theme_constant_override("separation", 10)
-	layout.add_child(source_row)
+	header.add_theme_constant_override("separation", 8)
+	_layout.add_child(header)
+	var relic_scroller := ScrollContainer.new()
+	relic_scroller.name = "ForgeRelicViewport"
+	relic_scroller.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_AUTO
+	relic_scroller.vertical_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	relic_scroller.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	relic_scroller.custom_minimum_size.y = 32
+	header.add_child(relic_scroller)
+	_relics = HBoxContainer.new()
+	_relics.name = "ForgeRelics"
+	_relics.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_relics.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_relics.add_theme_constant_override("separation", 5)
+	relic_scroller.add_child(_relics)
+	_confirm = _button("Choose path", _confirm_upgrade)
+	_confirm.name = "ConfirmForgePath"
+	_confirm.custom_minimum_size.y = 34
+	_confirm.add_theme_font_size_override("font_size", 14)
+	header.add_child(_confirm)
+	_menu = GameActionMenu.new()
+	add_child(_menu)
+	_menu.configure(self)
+	header.add_child(_menu.trigger)
+
+	var context := HBoxContainer.new()
+	context.add_theme_constant_override("separation", 12)
+	_layout.add_child(context)
+	_title = _label("Tile forge", 30, GOLD)
+	_title.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	context.add_child(_title)
 	_owner_slot = HBoxContainer.new()
-	source_row.add_child(_owner_slot)
-	_subtitle = _label("", 16, MUTED)
+	_owner_slot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	context.add_child(_owner_slot)
+	_subtitle = _label("", 14, MUTED)
 	_subtitle.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	_subtitle.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	source_row.add_child(_subtitle)
+	_subtitle.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	context.add_child(_subtitle)
 
 	_board = Panel.new()
+	_board.name = "ForgeTree"
 	_board.size_flags_vertical = Control.SIZE_EXPAND_FILL
-	_board.custom_minimum_size.y = 360
-	_board.add_theme_stylebox_override("panel", _box(Color("#132029"), EDGE))
-	layout.add_child(_board)
+	_board.add_theme_stylebox_override("panel", _box(Color("#132029"), Color("#665740")))
+	_layout.add_child(_board)
 	_links = Control.new()
 	_links.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	_links.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
 	_links.draw.connect(_draw_links)
 	_links.resized.connect(_links.queue_redraw)
 	_board.add_child(_links)
-
-	var board_margin := MarginContainer.new()
-	board_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
-	board_margin.add_theme_constant_override("margin_left", 22)
-	board_margin.add_theme_constant_override("margin_right", 22)
-	board_margin.add_theme_constant_override("margin_top", 24)
-	board_margin.add_theme_constant_override("margin_bottom", 24)
-	_board.add_child(board_margin)
+	_board_margin = MarginContainer.new()
+	_board_margin.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+	_board.add_child(_board_margin)
 	_columns = HBoxContainer.new()
-	_columns.add_theme_constant_override("separation", 30)
-	board_margin.add_child(_columns)
+	_board_margin.add_child(_columns)
 
-	var details := PanelContainer.new()
-	details.custom_minimum_size.y = 155
+	_details = PanelContainer.new()
+	_details.name = "ForgeAbilityDetails"
 	var detail_style := _box(PANEL, EDGE)
-	detail_style.content_margin_left = 18
-	detail_style.content_margin_right = 18
-	detail_style.content_margin_top = 15
-	detail_style.content_margin_bottom = 15
-	details.add_theme_stylebox_override("panel", detail_style)
-	layout.add_child(details)
-	var detail_row := HBoxContainer.new()
-	detail_row.add_theme_constant_override("separation", 18)
-	details.add_child(detail_row)
-
+	detail_style.content_margin_left = 12
+	detail_style.content_margin_right = 12
+	detail_style.content_margin_top = 8
+	detail_style.content_margin_bottom = 8
+	_details.add_theme_stylebox_override("panel", detail_style)
+	_layout.add_child(_details)
 	var copy := VBoxContainer.new()
-	copy.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	copy.add_theme_constant_override("separation", 7)
-	detail_row.add_child(copy)
-	_detail_name = _label("", 25, CREAM)
+	copy.add_theme_constant_override("separation", 4)
+	_details.add_child(copy)
+	_detail_name = _label("", 24, CREAM)
+	_detail_name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
 	copy.add_child(_detail_name)
 	_detail_stats = HBoxContainer.new()
-	_detail_stats.add_theme_constant_override("separation", 12)
+	_detail_stats.add_theme_constant_override("separation", 10)
 	copy.add_child(_detail_stats)
 	_detail_description = TileKeywords.description("", 16, MUTED)
+	_detail_description.name = "FullForgeDescription"
 	copy.add_child(_detail_description)
-	_room_instruction = _label("", 15, BLOCKED)
+
+	_save_reward = _button("Save & title", _host.run_save_title)
+	_save_reward.name = "SaveRewardCombine"
+	_menu.add_action(_save_reward)
+	var back := _button("Back", func(): _host.forge_close())
+	back.name = "BackFromForge"
+	_menu.add_action(back)
+	_edit_layout = _button("Edit timeline", func(): _host.forge_edit_layout(_inspected_id))
+	_edit_layout.name = "EditForgeLayout"
+	_menu.add_action(_edit_layout)
+	_keep_reward = _button("Keep original tile", func(): _host.run_keep_reward_tile())
+	_keep_reward.name = "KeepRewardTile"
+	_menu.add_action(_keep_reward)
+	_room_instruction = _label("", 14, BLOCKED)
 	_room_instruction.name = "ForgeRoomInstruction"
+	_room_instruction.custom_minimum_size.x = 280
 	_room_instruction.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	copy.add_child(_room_instruction)
+	_menu.add_action(_room_instruction, false)
 	_layout_preview = HBoxContainer.new()
 	_layout_preview.name = "ForgeSpacePreview"
 	_layout_preview.add_theme_constant_override("separation", 3)
-	copy.add_child(_layout_preview)
-
-	var actions := VBoxContainer.new()
-	actions.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	actions.add_theme_constant_override("separation", 7)
-	detail_row.add_child(actions)
-	_confirm = _button("Choose a next-tier tile", _confirm_upgrade)
-	_confirm.custom_minimum_size = Vector2(240, 48)
-	actions.add_child(_confirm)
-	_edit_layout = _button("Edit timeline", func(): _host.forge_edit_layout(_inspected_id))
-	_edit_layout.name = "EditForgeLayout"
-	_edit_layout.custom_minimum_size.y = 38
-	actions.add_child(_edit_layout)
-	_keep_reward = _button("Keep original tile", func(): _host.run_keep_reward_tile())
-	_keep_reward.name = "KeepRewardTile"
-	_keep_reward.custom_minimum_size.y = 34
-	actions.add_child(_keep_reward)
-	_error = _label("", 15, Color("#e8a28b"))
+	_menu.add_action(_layout_preview, false)
+	_error = _label("", 14, Color("#e8a28b"))
 	_error.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-	layout.add_child(_error)
+	_layout.add_child(_error)
 	_error.hide()
+	resized.connect(_queue_fit)
+	_columns.minimum_size_changed.connect(_queue_fit)
+	_details.minimum_size_changed.connect(_queue_fit)
+	_detail_description.minimum_size_changed.connect(_queue_fit)
+	_queue_fit()
 
+
+func _rebuild_relics() -> void:
+	for child in _relics.get_children():
+		_relics.remove_child(child)
+		child.queue_free()
+	var options: Dictionary = _host.run.data if _host.campaign else _host.retry_options
+	for id: String in options.get("relics", []):
+		var spec: Dictionary = FrontierRun.RELICS.get(id, {})
+		if spec.is_empty():
+			continue
+		var icon := TextureRect.new()
+		icon.name = "ForgeRelic_" + id
+		icon.texture = GameIcons.relic_art(id)
+		if icon.texture == null:
+			icon.texture = GameIcons.icon(GameIcons.relic(id))
+		icon.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		icon.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		icon.custom_minimum_size = Vector2(28, 28)
+		icon.mouse_filter = Control.MOUSE_FILTER_STOP
+		icon.tooltip_text = "%s\n%s" % [spec.label, spec.description]
+		icon.accessibility_name = spec.label
+		_relics.add_child(icon)
+
+
+func _queue_fit() -> void:
+	if _fit_pending:
+		return
+	_fit_pending = true
+	_fit_layout.call_deferred()
+
+
+func _fit_layout() -> void:
+	_fit_pending = false
+	if _layout == null or not is_inside_tree():
+		return
+	var compact := size.x < 960 or size.y < 680
+	var side := 14 if compact else 32
+	var vertical := 10 if compact else 22
+	for edge: String in ["left", "right"]:
+		_margin.add_theme_constant_override("margin_" + edge, side)
+	for edge: String in ["top", "bottom"]:
+		_margin.add_theme_constant_override("margin_" + edge, vertical)
+	_layout.add_theme_constant_override("separation", 6 if compact else 13)
+	_title.add_theme_font_size_override("font_size", 24 if compact else 30)
+	_subtitle.add_theme_font_size_override("font_size", 14 if compact else 16)
+	_detail_name.add_theme_font_size_override("font_size", 20 if compact else 24)
+	_detail_description.add_theme_font_size_override("normal_font_size", 14 if compact else 16)
+	_detail_description.fit_content = true
+	_detail_description.scroll_active = false
+	var padding := 8 if compact else 18
+	for edge: String in ["left", "right", "top", "bottom"]:
+		_board_margin.add_theme_constant_override("margin_" + edge, padding)
+	_columns.add_theme_constant_override("separation", 14 if compact else 26)
+	for card: Button in _cards.values():
+		if not is_instance_valid(card) or not card.has_meta("choice_name") or not card.has_meta("content"):
+			continue
+		var art: Control = card.get_meta("artwork")
+		var title: Label = card.get_meta("choice_name")
+		var content: HBoxContainer = card.get_meta("content")
+		if not is_instance_valid(art) or not is_instance_valid(title) or not is_instance_valid(content):
+			continue
+		art.custom_minimum_size = Vector2.ONE * (24 if compact else 44)
+		title.add_theme_font_size_override("font_size", 14 if compact else 16)
+		content.add_theme_constant_override("separation", 5 if compact else 9)
+		var frame_height := maxf(44.0 if compact else 68.0, maxf(art.custom_minimum_size.y, title.get_combined_minimum_size().y) + 12.0)
+		card.custom_minimum_size.y = frame_height
+	_board.custom_minimum_size.y = _columns.get_combined_minimum_size().y + padding * 2.0
+	_links.queue_redraw()
 
 func _show_merge_intro(source: Dictionary) -> void:
 	const TILE_SIZE := Vector2(118, 84)
@@ -316,24 +402,23 @@ func _add_tier(tier: int) -> void:
 	var ids: Array = _tiers[tier]
 	var available: bool = ids[0] in _next_ids
 	var column := VBoxContainer.new()
-	column.custom_minimum_size.x = 108
 	column.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	column.add_theme_constant_override("separation", 7)
+	column.add_theme_constant_override("separation", 4)
 	_columns.add_child(column)
 
 	var spec: Dictionary = _host.tile_spec(ids[0])
 	var rarity := GameIcons.rarity_badge(spec)
-	rarity.add_theme_font_size_override("font_size", 19)
+	rarity.add_theme_font_size_override("font_size", 16)
 	rarity.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(rarity)
 	var note := "Choose one" if available else ("Current rarity" if _source_id in ids else "Inspect")
-	var state_label := _label(note, 13, GOLD if available else MUTED)
+	var state_label := _label(note, 14, GOLD if available else MUTED)
 	state_label.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
 	column.add_child(state_label)
 	var options := VBoxContainer.new()
 	options.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	options.alignment = BoxContainer.ALIGNMENT_CENTER
-	options.add_theme_constant_override("separation", 18)
+	options.add_theme_constant_override("separation", 8)
 	column.add_child(options)
 	for id: String in ids:
 		var tile: Dictionary = _host.tile_spec(id)
@@ -341,24 +426,33 @@ func _add_tier(tier: int) -> void:
 		var card := _button("", func(): _pick_path(id), preview)
 		card.name = "ForgeTile_" + id
 		card.accessibility_name = tile.label
-		card.custom_minimum_size.y = 106
-		var display := VBoxContainer.new()
+		card.custom_minimum_size.y = 48
+		var display := HBoxContainer.new()
 		display.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		display.alignment = BoxContainer.ALIGNMENT_CENTER
-		display.add_theme_constant_override("separation", 2)
+		display.add_theme_constant_override("separation", 5)
 		card.add_child(display)
 		display.set_anchors_and_offsets_preset(Control.PRESET_FULL_RECT)
+		display.offset_left = 7
+		display.offset_right = -7
+		display.offset_top = 6
+		display.offset_bottom = -6
 		var art := TileChoiceArt.new()
 		art.name = "ForgeArtwork"
-		art.configure(GameIcons.icon(GameIcons.tile(id, tile)), GameIcons.rarity(tile), 62)
+		art.configure(GameIcons.icon(GameIcons.tile(id, tile)), GameIcons.rarity(tile), 24)
+		art.custom_minimum_size.x = 24
+		art.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		display.add_child(art)
-		var name := _label(tile.get("forge_name", tile.label), 15, CREAM)
+		var name := _label(tile.get("forge_name", tile.label), 14, CREAM)
 		name.name = "ForgeChoiceName"
 		name.mouse_filter = Control.MOUSE_FILTER_IGNORE
 		name.autowrap_mode = TextServer.AUTOWRAP_WORD_SMART
-		name.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+		name.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		name.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		display.add_child(name)
 		card.set_meta("artwork", art)
+		card.set_meta("choice_name", name)
+		card.set_meta("content", display)
 		card.mouse_entered.connect(func():
 			art.highlight(true)
 			if _direct_pick:
@@ -368,8 +462,7 @@ func _add_tier(tier: int) -> void:
 			art.highlight(true)
 			if _direct_pick:
 				_inspect(id, false))
-		for state: String in ["normal", "hover", "pressed", "focus"]:
-			card.add_theme_stylebox_override(state, StyleBoxEmpty.new())
+		_style_path_card(card, tile, false, id in _next_ids)
 		card.tooltip_text = tile.label
 		card.item_rect_changed.connect(_links.queue_redraw)
 		options.add_child(card)
@@ -432,13 +525,17 @@ func _inspect(id: String, dismiss_merge := true) -> void:
 	TileKeywords.set_description(_detail_description, tile.description)
 	_confirm.disabled = not can_choose or not fits
 	var prompt := "Combine into " if _is_combine else "Upgrade to "
-	_confirm.text = prompt + tile.label if can_choose else "Choose a next-tier tile"
+	_confirm.text = ("Combine" if _is_combine else "Upgrade") if can_choose else "Choose path"
+	_confirm.tooltip_text = prompt + tile.label if can_choose else "Choose a next-tier tile."
+	_confirm.accessibility_name = _confirm.tooltip_text
 	if not fits:
 		_confirm.text = "Needs more room"
 	_show_layout(layout, tile, fits)
 	_confirm.add_theme_stylebox_override("normal", _box(Color("#5b442a"), GOLD))
 	_confirm.add_theme_stylebox_override("hover", _box(Color("#715637"), GOLD))
 	_confirm.add_theme_stylebox_override("pressed", _box(Color("#45311d"), GOLD))
+	var detail_frame := _details.get_theme_stylebox("panel") as StyleBoxFlat
+	detail_frame.border_color = GameIcons.rarity(tile).darkened(0.30)
 	for card_id: String in _cards:
 		var card: Button = _cards[card_id]
 		var available := card_id in _next_ids
@@ -446,6 +543,8 @@ func _inspect(id: String, dismiss_merge := true) -> void:
 		var art := card.get_meta("artwork") as Control
 		art.highlight(selected)
 		art.modulate.a = 1.0 if selected or available else 0.52
+		_style_path_card(card, _host.tile_spec(card_id), selected, available)
+	_queue_fit()
 
 
 
@@ -540,6 +639,26 @@ func _show_layout(layout: Dictionary, upgrade: Dictionary, fits: bool) -> void:
 func _confirm_upgrade() -> void:
 	if not _confirm.disabled and _inspected_id in _next_ids:
 		_host.forge_choose(_inspected_id, _inspected_plan)
+
+
+func _style_path_card(card: Button, spec: Dictionary, selected: bool, available: bool) -> void:
+	var tone := GameIcons.rarity(spec)
+	var fill := PANEL.lerp(tone, 0.16 if selected else (0.09 if available else 0.025))
+	var frame := _box(fill, tone if selected or available else tone.darkened(0.53), 2 if selected else 1)
+	frame.set_corner_radius_all(6)
+	frame.border_width_left = 3 if selected or available else 2
+	card.add_theme_stylebox_override("normal", frame)
+	var hover := frame.duplicate() as StyleBoxFlat
+	hover.bg_color = fill.lightened(0.12)
+	hover.border_color = tone
+	card.add_theme_stylebox_override("hover", hover)
+	var pressed := frame.duplicate() as StyleBoxFlat
+	pressed.bg_color = fill.darkened(0.1)
+	card.add_theme_stylebox_override("pressed", pressed)
+	var focus := frame.duplicate() as StyleBoxFlat
+	focus.border_color = GOLD
+	focus.set_border_width_all(2)
+	card.add_theme_stylebox_override("focus", focus)
 
 
 func _box(fill: Color, border: Color, border_width := 1) -> StyleBoxFlat:

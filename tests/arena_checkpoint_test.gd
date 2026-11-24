@@ -95,13 +95,13 @@ func _check_battle_save(lab: Control) -> void:
 		"Reload after retry grants the opening reward and its gold exactly once.")
 	lab._complete_result_animation()
 	_check(lab.showing_rewards and lab.arena.is_visible_in_tree() and lab.frontier_screen.is_visible_in_tree()
-		and lab.frontier_screen.find_child("SkipReward", true, false) is Button,
+		and _reward_control(lab, "SkipReward") is Button,
 		"The victory animation puts the draft and skip option over the arena without another click.")
 	_check_reward_rerolls(lab)
 	if not _set_save_block(true):
 		return
 	lab.save_title_button.pressed.emit()
-	_check(lab.save_title_button.is_visible_in_tree() and lab.showing_rewards and not run.save_error.is_empty(),
+	_check(lab.save_title_button.visible and lab.action_menu.trigger.is_visible_in_tree() and lab.showing_rewards and not run.save_error.is_empty(),
 		"Save & title reports a failed save on the current screen.")
 	_set_save_block(false)
 	lab.save_title_button.pressed.emit()
@@ -113,9 +113,12 @@ func _check_reward_rerolls(lab: Control) -> void:
 	var run: FrontierRun = lab.run
 	var gold := int(run.data.gold)
 	for price in [5, 10]:
-		var button := lab.frontier_screen.find_child("RerollReward", true, false) as Button
+		var button := _reward_control(lab, "RerollReward") as Button
+		lab.action_menu.open()
+		var price_stat := button.find_child("GoldStat", true, false) as HBoxContainer if button != null else null
 		if not _check(button != null and button.is_visible_in_tree() and not button.disabled
-			and str(price) in button.text, "The award screen shows the cost of the next reroll."):
+			and price_stat != null and (price_stat.get_child(1) as Label).text == str(price),
+			"The award screen shows the next reroll price beside a coin icon."):
 			return
 		var original: Array = run.data.offers.duplicate()
 		button.pressed.emit()
@@ -183,21 +186,32 @@ func _check_compact_reward_overlay(lab: Control) -> void:
 	if not _check(run.finish_combat(true, [81, 88, 91]) and run.reward_count() == 3, "The compact arena has three reward lanes."):
 		return
 	lab.run_return()
+	var previous_stats: bool = lab.combat_meter_open
 	lab.combat_meter_toggle.set_pressed_no_signal(true)
 	lab.combat_meter_toggle.pressed.emit()
 	await process_frame
 	await process_frame
 	var visible_field: Rect2 = lab.arena.get_global_rect().intersection(root.get_visible_rect()).grow(1)
-	var meter: Rect2 = lab.combat_meter.get_global_rect()
-	_check(lab.combat_meter.is_visible_in_tree() and meter.position.x >= lab.arena.get_global_rect().end.x,
-		"The combat stats panel stays on the right of compact rewards.")
+	_check(lab.reward_stats_open and lab.combat_meter.is_visible_in_tree()
+		and lab.combat_meter.get_parent() == lab.reward_storage_drawer
+		and lab.combat_meter_open == previous_stats and not lab.combat_sidebar.is_visible_in_tree()
+		and is_equal_approx(lab.arena.get_global_rect().end.x, edge),
+		"Reward stats open as an overlay while preserving the full width and previous combat preference.")
+	lab.combat_meter_toggle.set_pressed_no_signal(false)
+	lab.combat_meter_toggle.pressed.emit()
+	await process_frame
+	await process_frame
+	_check(not lab.reward_stats_open and not lab.reward_storage_drawer.visible, "Closing reward stats restores the unobscured full-text choices.")
 	var field_top: float = visible_field.position.y
-	var expected_save_top_left: Vector2 = Vector2(lab.arena_screen.get_theme_constant("margin_left"),
-		lab.arena_screen.get_theme_constant("margin_top")) + lab.arena_screen.get_global_rect().position
-	var save_at: Vector2 = lab.save_title_button.get_global_rect().position
-	_check(lab.save_title_button.is_visible_in_tree() and save_at.is_equal_approx(expected_save_top_left)
-		and save_at.y < field_top and lab.frontier_screen.find_child("SaveTitle", true, false) == null,
-		"The compact overlay retains a single Save & title in the exact top-left header position.")
+	lab.action_menu.open()
+	await process_frame
+	await process_frame
+	_check(lab.save_title_button.is_visible_in_tree() and lab.action_menu.panel.get_global_rect().encloses(lab.save_title_button.get_global_rect())
+		and lab.action_menu.trigger.global_position.x > root.size.x * 0.5
+		and lab.action_menu.trigger.get_global_rect().end.y < field_top
+		and lab.frontier_screen.find_child("SaveTitle", true, false) == null,
+		"The compact overlay retains a single Save & title in the top-right game menu.")
+	lab.action_menu.close(false)
 	var cards_bottom := field_top
 	for id: String in run.data.offers:
 		var card := lab.frontier_screen.find_child("RewardTile_" + id, true, false) as Button
@@ -206,11 +220,16 @@ func _check_compact_reward_overlay(lab: Control) -> void:
 			"Reward %s is fully clickable inside the compact arena (%s within %s)." % [id, card_rect, visible_field]):
 			continue
 		cards_bottom = maxf(cards_bottom, card.get_global_rect().end.y)
-	var skip := lab.frontier_screen.find_child("SkipReward", true, false) as Button
+	var skip := _reward_control(lab, "SkipReward") as Button
+	if skip != null and lab.action_menu.is_ancestor_of(skip):
+		lab.action_menu.open()
+		await process_frame
+		await process_frame
 	var skip_rect := Rect2() if skip == null else skip.get_global_rect()
-	_check(skip != null and skip.is_visible_in_tree() and visible_field.encloses(skip_rect)
-		and skip_rect.position.y >= cards_bottom,
-		"Skip for gold is directly below the reward choices and inside the compact arena (%s within %s)." % [skip_rect, visible_field])
+	_check(skip != null and skip.is_visible_in_tree() and (lab.action_menu.panel.get_global_rect().encloses(skip_rect)
+		if lab.action_menu.is_ancestor_of(skip) else visible_field.encloses(skip_rect)),
+		"Skip for gold stays reachable with the compact reward choices (%s)." % [skip_rect])
+	lab.action_menu.close(false)
 
 
 func _check_defeat_animation(lab: Control) -> void:
@@ -223,18 +242,18 @@ func _check_defeat_animation(lab: Control) -> void:
 			unit.hp = 0
 	lab._physics_process(1.0 / 60.0)
 	_check(lab.result_banner.is_visible_in_tree() and lab.result_text.text.to_lower() == "defeat"
-		and not lab.retry_button.is_visible_in_tree(), "Defeat appears in the arena before the result actions.")
+		and not lab.retry_button.visible, "Defeat appears in the arena before the result actions.")
 	lab._complete_result_animation()
-	_check(lab.arena.is_visible_in_tree() and lab.combat_meter_toggle.is_visible_in_tree()
+	_check(lab.arena.is_visible_in_tree() and lab.combat_meter_toggle.visible and lab.action_menu.trigger.is_visible_in_tree()
 		and run.data.phase == "result" and run.data.result == "defeat",
 		"The defeat state keeps the arena and stats available with the saved result.")
 	_check(lab.action.text == "See results", "Campaign defeat offers one exit to the results.")
 	lab.retry_button.pressed.emit()
 	_check(lab.state == "setup" and not lab.campaign, "Defeat can be retried in Practice.")
-	_check(lab.return_button.is_visible_in_tree() and not lab.save_title_button.is_visible_in_tree()
+	_check(lab.return_button.visible and not lab.save_title_button.visible
 		and lab.return_button.get_parent() == lab.save_title_button.get_parent()
 		and lab.return_button.text == "Back to battle result",
-		"Retry in Practice uses the single top-left exit to return to the saved battle result.")
+		"Retry in Practice uses the single game-menu exit to return to the saved battle result.")
 	lab.return_button.pressed.emit()
 	_check(lab.arena.is_visible_in_tree() and lab.action.text == "See results"
 		and lab.sim.outcome == "defeat" and run.data.result == "defeat",
@@ -255,6 +274,8 @@ func _check_crowded_reward_drop(lab: Control) -> void:
 	if not _check(run.finish_combat(true, 100), "Finish the opening battle with a full sequence."):
 		return
 	lab.run_return()
+	await process_frame
+	lab._open_storage()
 	await process_frame
 	var swap_hint := lab.storage_screen.find_child("StorageSwapHint", true, false) as Label
 	_check(swap_hint != null and swap_hint.is_visible_in_tree() and "same-width" in swap_hint.text,
@@ -279,6 +300,11 @@ func _set_save_block(blocked: bool) -> bool:
 	var path := ProjectSettings.globalize_path(SAVE_PATH + ".tmp")
 	var result := DirAccess.make_dir_absolute(path) if blocked else DirAccess.remove_absolute(path)
 	return _check(result == OK, "Set isolated save write failure to %s." % blocked)
+
+
+func _reward_control(lab: Control, control_name: String) -> Control:
+	var control := lab.frontier_screen.find_child(control_name, true, false) as Control
+	return lab.action_menu.content.find_child(control_name, true, false) as Control if control == null else control
 
 
 func _check(passed: bool, description: String) -> bool:

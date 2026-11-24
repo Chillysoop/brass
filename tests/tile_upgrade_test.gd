@@ -566,6 +566,15 @@ func _tile(id: String, start: int, target := "nearest") -> Dictionary:
 func _click(page: Control, node_name: String) -> void:
 	await process_frame
 	var button := page.find_child(node_name, true, false) as Button
+	if button != null and not button.is_visible_in_tree():
+		var menu: Node = button.get_parent()
+		while menu != null and not menu.has_method("is_open"):
+			menu = menu.get_parent()
+		if menu != null and not menu.is_open():
+			var trigger: Button = menu.get("trigger")
+			await _click(page, trigger.name)
+			await process_frame
+			button = page.find_child(node_name, true, false) as Button
 	var clickable := button != null and button.is_visible_in_tree() and not button.disabled
 	_check(clickable, "Expected the visible %s button to accept input." % node_name)
 	if not clickable:

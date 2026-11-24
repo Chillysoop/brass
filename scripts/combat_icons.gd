@@ -7,12 +7,14 @@ const PALETTE := {
 	"slow": Color("#94b5ef"), "haste": Color("#ffe17c"), "stun": Color("#f4c79e"),
 	"push": Color("#f7b990"), "pull": Color("#a9ddda"), "teleport": Color("#d5b0f5"),
 	"splash": Color("#99daf5"), "windup": Color("#eead79"),
+	"assists": Color("#9bded0"), "kills": Color("#f1e7ce"),
 }
 const LABELS := {
 	"attack": "Attack damage", "guard": "Guard", "health": "Health", "heal": "Healing",
 	"burn": "Burn", "range": "Reach", "beat": "Beats", "gold": "Gold", "mark": "Marked",
 	"slow": "Slowed", "haste": "Haste", "stun": "Stunned", "push": "Push", "pull": "Pull",
 	"teleport": "Teleport", "splash": "Splash", "windup": "Attack windup",
+	"assists": "Assists", "kills": "Kills",
 }
 const INK := Color("#102232")
 const VALUE := Color("#f0e5cf")
@@ -29,8 +31,10 @@ static func icon(id: String, extent := 18) -> Control:
 	glyph.custom_minimum_size = Vector2.ONE * extent
 	glyph.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	glyph.mouse_filter = Control.MOUSE_FILTER_IGNORE
+	glyph.accessibility_name = LABELS.get(id, id.capitalize())
+	glyph.set_meta("icon_id", id)
 	glyph.draw.connect(func():
-		draw(glyph, id, glyph.size * 0.5, minf(extent, minf(glyph.size.x, glyph.size.y))))
+		draw(glyph, str(glyph.get_meta("icon_id", id)), glyph.size * 0.5, minf(extent, minf(glyph.size.x, glyph.size.y))))
 	glyph.resized.connect(glyph.queue_redraw)
 	return glyph
 
@@ -177,6 +181,18 @@ static func draw(canvas: CanvasItem, id: String, center: Vector2, extent: float,
 			canvas.draw_circle(center, 7.0 * unit, color, true, -1.0, true)
 			canvas.draw_circle(center, 4.7 * unit, shade, false, 1.25 * unit, true)
 			_line(canvas, center, unit, [Vector2(0, -2), Vector2(0, 2)], shade, 1.25)
+		"assists":
+			_line(canvas, center, unit, [Vector2(-7, -6), Vector2(-3, -6), Vector2(1, -1), Vector2(7, -1)], color, 2.2)
+			_line(canvas, center, unit, [Vector2(-7, 6), Vector2(-3, 6), Vector2(1, 1), Vector2(7, 1)], color, 2.2)
+			_line(canvas, center, unit, [Vector2(3, -5), Vector2(8, 0), Vector2(3, 5)], color, 2.2)
+		"kills":
+			canvas.draw_circle(center + Vector2(0, -1.5) * unit, 6.4 * unit, color, true, -1.0, true)
+			_fill(canvas, center, unit, [Vector2(-4, 2), Vector2(4, 2), Vector2(4, 7), Vector2(-4, 7)], color)
+			for side: float in [-2.6, 2.6]:
+				canvas.draw_circle(center + Vector2(side, -1.5) * unit, 1.7 * unit, shade, true, -1.0, true)
+			_fill(canvas, center, unit, [Vector2(0, 1), Vector2(-1.2, 3), Vector2(1.2, 3)], shade)
+			for tooth: float in [-1.5, 1.5]:
+				_line(canvas, center, unit, [Vector2(tooth, 5), Vector2(tooth, 7.5)], shade, 1.0)
 		"mark":
 			canvas.draw_circle(center, 5.0 * unit, color, false, 1.5 * unit, true)
 			for direction: Vector2 in [Vector2.UP, Vector2.DOWN, Vector2.LEFT, Vector2.RIGHT]:
